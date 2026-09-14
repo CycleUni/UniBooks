@@ -3,6 +3,7 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/CFEdgeChat" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/ISBN Search Proxy/ISBNnet Resolver" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/UniBooks-BE" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/UniBooks-FE" vcs="Git" />
   </component>
