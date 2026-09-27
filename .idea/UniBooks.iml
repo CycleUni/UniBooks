@@ -5,27 +5,33 @@
       <configuration>
         <option name="rootFolder" value="$MODULE_DIR$/UniBooks-BE" />
         <option name="settingsModule" value="unibooks/settings.py" />
-        <option name="manageScript" value="$MODULE_DIR$/UniBooks-BE/manage.py" />
+        <option name="manageScript" value="manage.py" />
         <option name="environment" value="&lt;map/&gt;" />
         <option name="doNotUseTestRunner" value="false" />
-        <option name="trackFilePattern" value="migrations" />
+        <option name="trackFilePattern" value="" />
       </configuration>
     </facet>
   </component>
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
       <sourceFolder url="file://$MODULE_DIR$/UniBooks-BE" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/UniBooks-BE/.wrangler/tmp/dev-Ko2Q4S/python_modules" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/UniBooks-BE/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/UniBooks-BE/.wrangler/tmp/dev-3LTsnI/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/UniBooks-BE/.wrangler/tmp/dev-HMHAUd/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/UniBooks-BE/.wrangler/tmp/dev-aGck68/.venv" />
     </content>
     <orderEntry type="jdk" jdkName="~/Documents/GitHub/UniBooks/UniBooks-BE/.venv" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
-  <component name="PackageRequirementsSettings" />
   <component name="PyDocumentationSettings">
     <option name="format" value="PLAIN" />
     <option name="myDocStringFormat" value="Plain" />
   </component>
-  <component name="ReSTService" />
+  <component name="TemplatesService">
+    <option name="TEMPLATE_CONFIGURATION" value="Django" />
+  </component>
   <component name="TestRunnerService">
     <option name="PROJECT_TEST_RUNNER" value="py.test" />
   </component>
