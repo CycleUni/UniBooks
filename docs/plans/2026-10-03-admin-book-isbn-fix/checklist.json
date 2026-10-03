@@ -1,0 +1,34 @@
+[
+  {
+    "id": "C1",
+    "description": "後端測試全過",
+    "acceptance": "pytest exit 0",
+    "verify": "cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && .venv/bin/python -m pytest -q -p no:warnings",
+    "passes": true,
+    "evidence": "verify exit 0: cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && .venv/bin/python -m pytest -q -p no:warnings"
+  },
+  {
+    "id": "C2",
+    "description": "沒有新的 migration",
+    "acceptance": "makemigrations --check 無差異",
+    "verify": "cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && .venv/bin/python manage.py makemigrations --check --dry-run",
+    "passes": true,
+    "evidence": "verify exit 0: cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && .venv/bin/python manage.py makemigrations --check --dry-run"
+  },
+  {
+    "id": "C3",
+    "description": "前端測試全過",
+    "acceptance": "ng test exit 0",
+    "verify": "cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-FE && npx ng test --watch=false",
+    "passes": true,
+    "evidence": "verify exit 0: cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-FE && npx ng test --watch=false"
+  },
+  {
+    "id": "C4",
+    "description": "前端建置成功",
+    "acceptance": "npm run build exit 0",
+    "verify": "cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-FE && npm run build",
+    "passes": true,
+    "evidence": "verify exit 0: cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-FE && npm run build"
+  }
+]

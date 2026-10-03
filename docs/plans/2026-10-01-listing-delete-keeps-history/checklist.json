@@ -1,0 +1,58 @@
+[
+  {
+    "id": "C0",
+    "description": "第0階段：使用者文字不再出現『管理員』",
+    "acceptance": "order.notify.admin_cancelled / row.adminLocked / listing.errAdminLocked 不含 管理員/admin",
+    "verify": "! grep -nE \"'(order\\.notify\\.admin_cancelled|row\\.adminLocked|listing\\.errAdminLocked)': .*(管理員|admin)\" /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-FE/src/app/core/i18n/*.ts",
+    "passes": true,
+    "evidence": "verify exit 0: ! grep -nE \"'(order\\.notify\\.admin_cancelled|row\\.adminLocked|listing\\.errAdminLocked)': .*(管理員|admin)\" /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-FE/src/app/core/i18n/*.ts"
+  },
+  {
+    "id": "C1",
+    "description": "migration 與模型一致",
+    "acceptance": "makemigrations --check 無差異",
+    "verify": "cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && .venv/bin/python manage.py makemigrations --check --dry-run",
+    "passes": true,
+    "evidence": "verify exit 0: cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && .venv/bin/python manage.py makemigrations --check --dry-run"
+  },
+  {
+    "id": "C2",
+    "description": "本地 migrate 成功",
+    "acceptance": "migrate exit 0",
+    "verify": "cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && .venv/bin/python manage.py migrate --noinput",
+    "passes": true,
+    "evidence": "verify exit 0: cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && .venv/bin/python manage.py migrate --noinput"
+  },
+  {
+    "id": "C3",
+    "description": "後端測試全過",
+    "acceptance": "pytest exit 0",
+    "verify": "cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && .venv/bin/python -m pytest -q -p no:warnings",
+    "passes": true,
+    "evidence": "verify exit 0: cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && .venv/bin/python -m pytest -q -p no:warnings"
+  },
+  {
+    "id": "C4",
+    "description": "沒有殘留經由刊登讀賣家/地區/書",
+    "acceptance": "grep 無結果",
+    "verify": "cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && ! grep -rnE \"(order|conversation|report|conv|obj)\\.listing\\.(seller|region|book)\" --include='*.py' orders messaging moderation adminapi core cron | grep -v tests",
+    "passes": true,
+    "evidence": "verify exit 0: cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-BE && ! grep -rnE \"(order|conversation|report|conv|obj)\\.listing\\.(seller|region|book)\" --include='*.py' orders messaging moderation adminapi core cron | grep -v tests"
+  },
+  {
+    "id": "C5",
+    "description": "前端測試全過",
+    "acceptance": "ng test exit 0",
+    "verify": "cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-FE && npx ng test --watch=false",
+    "passes": true,
+    "evidence": "verify exit 0: cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-FE && npx ng test --watch=false"
+  },
+  {
+    "id": "C6",
+    "description": "前端 build 成功",
+    "acceptance": "ng build exit 0",
+    "verify": "cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-FE && npx ng build --configuration development --output-path /private/tmp/claude-501/-Users-kenchou2006-Documents-GitHub-UniBooks/ac9b1e8f-f574-4f0f-a7e2-25d2c56e0d75/scratchpad/build",
+    "passes": true,
+    "evidence": "verify exit 0: cd /Users/kenchou2006/Documents/GitHub/UniBooks/UniBooks-FE && npx ng build --configuration development --output-path /private/tmp/claude-501/-Users-kenchou2006-Documents-GitHub-UniBooks/ac9b1e8f-f574-4f0f-a7e2-25d2c56e0d75/scratchpad/build"
+  }
+]
