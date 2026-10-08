@@ -3,7 +3,13 @@ name: unibooks
 services:
   db:
     image: postgres:16-alpine
-    env_file: .env.docker
+    env_file:
+      - .env.docker
+      # The README's override: a .env beside this file, if present, wins.
+      # A root .env alone only fills ${VAR} placeholders in this file, so
+      # values put there never reached the containers.
+      - path: .env
+        required: false
     environment:
       POSTGRES_DB: ${POSTGRES_DATABASE:-unibooks}
     ports:
@@ -39,7 +45,13 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.backend
-    env_file: .env.docker
+    env_file:
+      - .env.docker
+      # The README's override: a .env beside this file, if present, wins.
+      # A root .env alone only fills ${VAR} placeholders in this file, so
+      # values put there never reached the containers.
+      - path: .env
+        required: false
     environment:
       DJANGO_READ_DOT_ENV_FILE: "0"
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
@@ -54,7 +66,9 @@ services:
       DEFAULT_SUPERUSER_FIRST_NAME: ${DEFAULT_SUPERUSER_FIRST_NAME:-Admin}
       ISBNNET_RESOLVER_URL: ${ISBNNET_RESOLVER_URL:-http://isbnnet-resolver:8789}
     ports:
-      - "8000:8000"
+      # Loopback only, like the database: the backend runs with DEBUG=True and
+      # the template's well-known dev secrets.
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./UniBooks-BE:/app
     working_dir: /app
@@ -70,12 +84,18 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.frontend
-    env_file: .env.docker
+    env_file:
+      - .env.docker
+      # The README's override: a .env beside this file, if present, wins.
+      # A root .env alone only fills ${VAR} placeholders in this file, so
+      # values put there never reached the containers.
+      - path: .env
+        required: false
     environment:
       NG_APP_BACKEND_URL: ${NG_APP_BACKEND_URL:-http://localhost:8000/api/v1}
       NG_APP_ALLOWED_HOSTS: ${NG_APP_ALLOWED_HOSTS:-localhost,127.0.0.1,frontend}
     ports:
-      - "4200:4200"
+      - "127.0.0.1:4200:4200"
     volumes:
       - ./UniBooks-FE/src:/app/src
       - ./UniBooks-FE/scripts:/app/scripts
@@ -97,7 +117,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.isbnnet-resolver
     ports:
-      - "8789:8789"
+      - "127.0.0.1:8789:8789"
     volumes:
       - "./ISBN Search Proxy/ISBNnet Resolver/src:/app/src"
       - "./ISBN Search Proxy/ISBNnet Resolver/wrangler.toml:/app/wrangler.toml"
@@ -108,13 +128,19 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.cfedgechat
-    env_file: .env.docker
+    env_file:
+      - .env.docker
+      # The README's override: a .env beside this file, if present, wins.
+      # A root .env alone only fills ${VAR} placeholders in this file, so
+      # values put there never reached the containers.
+      - path: .env
+        required: false
     environment:
       DJANGO_WEBHOOK_URL: ${DJANGO_WEBHOOK_URL:-http://backend:8000/api/v1/messaging/webhook/edge-chat/}
       APP_ORIGINS: ${APP_ORIGINS:-http://localhost:4200,http://127.0.0.1:4200}
       ENVIRONMENT: ${ENVIRONMENT:-development}
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
     volumes:
       - ./CFEdgeChat/src:/app/src
       - ./CFEdgeChat/wrangler.toml:/app/wrangler.toml

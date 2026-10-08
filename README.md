@@ -1,6 +1,6 @@
 # UniBooks 本地 Docker 開發環境
 
-讓 `UniBooks-BE`（Django 後端）、`UniBooks-FE`（Angular 22 前端）、`CFEdgeChat`（Cloudflare Workers 即時聊天微服務）三個專案一鍵在本地 Docker 中運行。
+讓 `UniBooks-BE`（Django 後端）、`UniBooks-FE`（Angular 22 前端）、`CFEdgeChat`（Cloudflare Workers 即時聊天微服務）、`ISBNnet Resolver`（國家圖書館 ISBN 查詢 Worker）四個專案一鍵在本地 Docker 中運行。
 
 ## 結構
 
@@ -11,17 +11,20 @@ UniBooks/                       <- 本倉庫（submodule 容器）
 ├── docker-compose.yml          <- Docker Compose 編配
 ├── docker/
 │   ├── Dockerfile.backend      <- BE 映像（基於 python:3.14-slim）
-│   ├── Dockerfile.frontend     <- FE 映像（基於 node:24.15.0-alpine）
-│   ├── Dockerfile.cfedgechat   <- Chat 映像（基於 node:23.15.0-alpine）
+│   ├── Dockerfile.frontend     <- FE 映像（基於 node:24.15.0-bookworm-slim）
+│   ├── Dockerfile.cfedgechat   <- Chat 映像（基於 node:24.15.0-bookworm-slim）
+│   ├── Dockerfile.isbnnet-resolver <- ISBN 查詢映像（基於 node:24.15.0-bookworm-slim）
 │   ├── entrypoint.backend.sh
 │   ├── entrypoint.frontend.sh
-│   └── entrypoint.cfedgechat.sh
+│   ├── entrypoint.cfedgechat.sh
+│   └── entrypoint.isbnnet-resolver.sh
 ├── UniBooks-BE/                <- submodule（github.com/CycleUni/UniBooks-BE）
 ├── UniBooks-FE/                <- submodule（github.com/CycleUni/UniBooks-FE）
-└── CFEdgeChat/                 <- submodule（github.com/UniBooks/CFEdgeChat）
+├── CFEdgeChat/                 <- submodule（github.com/CycleUni/CFEdgeChat）
+└── ISBN Search Proxy/ISBNnet Resolver/ <- submodule（github.com/CycleUni/ISBNnet-Resolver）
 ```
 
-**原始三個專案保持完全乾淨** — 所有 Docker 設定檔都只放在本倉庫內。
+**各子專案保持完全乾淨** — 所有 Docker 設定檔都只放在本倉庫內。
 
 ## 啟動
 
@@ -33,7 +36,7 @@ git submodule update --init --recursive
 docker compose up
 ```
 
-首次啟動會建構三個映像（每個約 1-3 分鐘），之後啟動只需數秒。
+首次啟動會建構四個映像（每個約 1-3 分鐘），之後啟動只需數秒。
 
 ## 服務埠
 
@@ -42,8 +45,11 @@ docker compose up
 | 前端 Angular dev server | 4200 | http://localhost:4200 | 熱重載 |
 | 後端 Django dev server | 8000 | http://localhost:8000 | 熱重載 + SQLite/Postgres |
 | CFEdgeChat | 8787 | http://localhost:8787 | Wrangler dev（模擬 Durable Objects） |
+| ISBNnet Resolver | 8789 | http://localhost:8789 | Wrangler dev |
 | PostgreSQL | 5432 | localhost:5432 | 資料持久化在 `postgres_data` volume |
 | Redis | 6379 | localhost:6379 | 快取、限流、JWT 白名單 |
+
+所有埠只綁定 `127.0.0.1`：後端以 `DEBUG=True` 和範本裡公開的開發用密鑰執行，不應對區域網路開放。
 
 ## 互動
 
@@ -77,7 +83,7 @@ git submodule update --remote UniBooks-BE
 
 ## 自訂環境變數
 
-複製 `.env.docker` 為 `.env` 並修改，Compose 會優先讀取 `.env`：
+複製 `.env.docker` 為 `.env` 並修改。每個服務先讀 `.env.docker`，再讀（存在的話）`.env`，同名變數以 `.env` 為準：
 
 ```bash
 cp .env.docker .env

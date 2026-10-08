@@ -12,7 +12,7 @@ WORKDIR /app
 COPY docker/entrypoint.frontend.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-COPY CycleUni-FE/package.json CycleUni-FE/package-lock.json ./
+COPY UniBooks-FE/package.json UniBooks-FE/package-lock.json ./
 ENV PUPPETEER_SKIP_DOWNLOAD=1
 RUN npm install --ignore-scripts
 

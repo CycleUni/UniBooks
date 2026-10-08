@@ -1,16 +1,22 @@
-node_modules
-.git
-.DS_Store
-*.log
-.venv
-__pycache__
-*.pyc
-dist
-.angular
-media
-staticfiles_build
-db.sqlite3
-.env
-.dev.vars
-.idea
-.pytest_cache
+# The build context is the whole monorepo, so every pattern is ** — a bare
+# `node_modules` matched the root only, and each build sent every
+# submodule's node_modules and .venv (about 1.5 GB) plus their .env files.
+**/node_modules
+**/.git
+**/.DS_Store
+**/*.log
+**/.venv
+**/__pycache__
+**/*.pyc
+**/dist
+**/.angular
+**/.wrangler
+**/media
+**/staticfiles_build
+**/db.sqlite3
+**/.env
+**/.dev.vars
+**/.idea
+**/.pytest_cache
+.claude
+Claude outputs
