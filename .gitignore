@@ -1,0 +1,21 @@
+.DS_Store
+node_modules/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.template
+!client/production.env
+
+# build output
+client/dist/
+client/.angular/
+client/out-tsc/
+client/coverage/
+client/src/environments/environment.ts
+client/src/environments/environment.prod.ts
+
+# editors / local tool state
+.idea/
+.vscode/*
+.claude/settings.local.json
