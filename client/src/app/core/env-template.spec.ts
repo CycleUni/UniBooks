@@ -13,9 +13,16 @@ const SET_ENV = fs.readFileSync(path.join(ROOT, 'scripts/set-env.js'), 'utf-8');
 const declared = new Set(
   [...TEMPLATE.matchAll(/^([A-Za-z_][A-Za-z0-9_]*)=/gm)].map(m => m[1]),
 );
+// Shared with the server: read from server/wrangler.jsonc "vars", not the template.
+const shared = new Set(
+  [...(/const SHARED_KEYS = \[([^\]]*)\]/.exec(SET_ENV)?.[1] ?? '').matchAll(/'([A-Z0-9_]+)'/g)].map(m => m[1]),
+);
 const read = [...new Set(
   [...SET_ENV.matchAll(/process\.env\.([A-Za-z_][A-Za-z0-9_]*)/g)].map(m => m[1]),
-)].sort();
+)].filter(name => !shared.has(name)).sort();
+const SERVER_VARS = JSON.parse(
+  fs.readFileSync(path.join(ROOT, '../server/wrangler.jsonc'), 'utf-8').replace(/^\s*\/\/.*$/gm, ''),
+).vars as Record<string, string>;
 
 describe('.env.template', () => {
   it('documents every variable the build actually reads', () => {
@@ -27,7 +34,7 @@ describe('.env.template', () => {
     // Guards the regex above: if it silently matched nothing, the test before
     // this one would pass no matter what the template omitted.
     expect(read).toContain('NG_APP_BACKEND_URL');
-    expect(read.length).toBeGreaterThanOrEqual(6);
+    expect(read.length).toBeGreaterThanOrEqual(5);
   });
 
   it('lists key names without values, as its own header says', () => {
@@ -44,13 +51,15 @@ describe('.env.template', () => {
     expect(duplicates.sort()).toEqual([]);
   });
 
-  it('spells shared variables the way the server Worker spells them', () => {
-    // The point of dropping the NG_APP_ prefix on these: a whole KEY=VALUE
-    // line can be copied between this and server/wrangler.jsonc "vars".
-    // FRONTEND_URL keeps its old name but is the frontend's own now (the
-    // site origin for the CSP's wss: entry).
-    expect(declared.has('FRONTEND_URL')).toBe(true);
-    expect(declared.has('R2_PUBLIC_URL')).toBe(true);
+  it('takes shared settings from the server config instead of repeating them', () => {
+    // One source for values both halves need: a copy here drifted once
+    // (GOOGLE_CLIENT_ID), which breaks Google sign-in outright.
+    expect([...shared].sort()).toEqual(['GOOGLE_CLIENT_ID', 'R2_PUBLIC_URL']);
+    for (const key of shared) {
+      expect(declared.has(key), `${key} must not be in .env.template`).toBe(false);
+      expect(SERVER_VARS[key], `${key} must be in server/wrangler.jsonc vars`).toBeTruthy();
+    }
+    expect(declared.has('FRONTEND_URL')).toBe(false);
     expect(declared.has('NG_APP_MEDIA_URL')).toBe(false);
   });
 

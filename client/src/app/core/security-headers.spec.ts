@@ -116,12 +116,11 @@ describe('public/_headers', () => {
       expect(setEnv).toMatch(/const connect = \[[^\]]*IMPORT_LIST_SOURCE/);
     });
 
-    it('names the site\'s own wss: origin for chat when FRONTEND_URL is set', () => {
-      // Chat is wss://<this host>/api/chat/...; 'self' covers it under CSP3
-      // but not in every browser still about.
+    it("covers the same-origin chat WebSocket with 'self'", () => {
+      // Chat is wss://<this host>/api/chat/…; CSP3 'self' matches it.
       const setEnv = fs.readFileSync(path.join(process.cwd(), 'scripts/set-env.js'), 'utf-8');
-      expect(setEnv).toMatch(/const connect = \["'self'", socketOrigin,/);
-      expect(setEnv).toContain('siteSocketOrigin(process.env.FRONTEND_URL)');
+      expect(setEnv).toMatch(/const connect = \["'self'",/);
+      expect(setEnv).not.toContain('FRONTEND_URL');
       expect(directive('connect-src')).toContain("'self'");
     });
 

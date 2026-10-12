@@ -3,6 +3,41 @@ const path = require('path');
 
 const envDir = path.join(__dirname, '../src/environments');
 
+// ---------------------------------------------------------------------------
+// Settings shared with the server Worker have ONE source: server/wrangler.jsonc
+// "vars" (the production values). Local builds and tests (`npm start`,
+// `npm test`, without --production) overlay server/.dev.vars, the same file
+// `wrangler dev` reads. A variable already set in the environment (CI) wins.
+// Only public values are read; secrets never reach this bundle.
+// ---------------------------------------------------------------------------
+const SHARED_KEYS = ['R2_PUBLIC_URL', 'GOOGLE_CLIENT_ID'];
+const SERVER_DIR = path.join(__dirname, '../../server');
+const PRODUCTION = process.argv.includes('--production');
+
+function readWranglerVars() {
+  const file = path.join(SERVER_DIR, 'wrangler.jsonc');
+  if (!fs.existsSync(file)) return {};
+  // JSON with whole-line // comments (URLs inside strings are left alone).
+  const json = fs.readFileSync(file, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  return JSON.parse(json).vars || {};
+}
+
+function readDevVars() {
+  const file = path.join(SERVER_DIR, '.dev.vars');
+  if (!fs.existsSync(file)) return {};
+  const vars = {};
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+    if (m) vars[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2'); // later lines win, as in wrangler
+  }
+  return vars;
+}
+
+const serverVars = { ...readWranglerVars(), ...(PRODUCTION ? {} : readDevVars()) };
+for (const key of SHARED_KEYS) {
+  if (!process.env[key] && serverVars[key]) process.env[key] = serverVars[key];
+}
+
 if (!fs.existsSync(envDir)) {
   fs.mkdirSync(envDir, { recursive: true });
 }
@@ -82,14 +117,10 @@ if (!HEADERS_ONLY && process.env.NG_APP_ALLOWED_HOSTS) {
 // R2_PUBLIC_URL unset the committed policy ships as it is — a deploy that does
 // not opt in keeps working, with every other security header intact.
 //
-// R2_PUBLIC_URL deliberately carries no NG_APP_ prefix: it is the same value,
-// in the same format, that the server Worker is configured with
-// (server/wrangler.jsonc vars), so a whole KEY=VALUE line can be copied
-// between the two. FRONTEND_URL keeps its historical unprefixed name but is
-// the frontend's own now (the server derives everything from the request
-// origin): the site's origin, used only to name its wss: origin below. The
-// prefix is kept for the other frontend-only settings (NG_APP_BACKEND_URL;
-// NG_APP_CSP_ENFORCE; NG_APP_GA_MEASUREMENT_ID).
+// R2_PUBLIC_URL comes from the server's configuration (see the top of this
+// file), so the media host in the CSP is always the one the server issues
+// image URLs for. Frontend-only settings keep the NG_APP_ prefix
+// (NG_APP_BACKEND_URL, NG_APP_CSP_ENFORCE, NG_APP_GA_MEASUREMENT_ID).
 // ---------------------------------------------------------------------------
 
 /** The origin of an absolute http(s) URL; null for a relative one or none. */
@@ -137,21 +168,11 @@ const SENTRY_INGEST = 'https://*.ingest.us.sentry.io';
 const GA_CONNECT = ['https://*.google-analytics.com', 'https://*.analytics.google.com', 'https://*.googletagmanager.com'];
 const GA_IMG = ['https://*.google-analytics.com', 'https://*.googletagmanager.com'];
 
-/**
- * 'self' covers the same-origin chat WebSocket (wss://<this host>/api/chat/...) under
- * CSP Level 3 (§6.7.2.8: 'self' matches a wss: URL on the page's host), but
- * not in every browser that is still about (MDN: "connect-src 'self' does not
- * resolve to websocket schemes in all browsers", webappsec-csp#7). So the
- * site's own wss: origin is named as well when FRONTEND_URL says what it is.
- * It is this origin, so it widens nothing.
- */
-function siteSocketOrigin(rawUrl) {
-  const origin = originOf(rawUrl);
-  return origin ? origin.replace(/^http/, 'ws') : null;
-}
-
-function buildCsp({ backendOrigin, socketOrigin, mediaOrigin }) {
-  const connect = ["'self'", socketOrigin, backendOrigin, 'https://accounts.google.com', IMPORT_LIST_SOURCE, ...FIREBASE_REGISTRATION, ...GA_CONNECT, SENTRY_INGEST];
+// connect-src 'self' covers the chat WebSocket (wss://<this host>/api/chat/…):
+// CSP Level 3 matches ws:/wss: on the page's own host for 'self', which every
+// supported browser implements.
+function buildCsp({ backendOrigin, mediaOrigin }) {
+  const connect = ["'self'", backendOrigin, 'https://accounts.google.com', IMPORT_LIST_SOURCE, ...FIREBASE_REGISTRATION, ...GA_CONNECT, SENTRY_INGEST];
   const img = ["'self'", 'data:', 'blob:', mediaOrigin || 'https:', 'https://lh3.googleusercontent.com', ...GA_IMG];
   return [
     "default-src 'self'",
@@ -197,18 +218,15 @@ if (HEADERS_ONLY) {
     console.error(`[set-env] ${headersPath} not found — run after ng build`);
     process.exit(1);
   }
-  const socketOrigin = siteSocketOrigin(process.env.FRONTEND_URL);
-  if (!mediaOrigin && !socketOrigin) {
-    console.log('CSP left as committed — set R2_PUBLIC_URL to narrow img-src (and NG_APP_CSP_ENFORCE=1 to enforce)');
+  if (!mediaOrigin) {
+    console.log('CSP left as committed — R2_PUBLIC_URL is not set in server/wrangler.jsonc vars');
   } else {
-    // Enforcing still needs R2_PUBLIC_URL: without it img-src keeps its https:
-    // fallback, which is a policy only worth watching. FRONTEND_URL alone just
-    // adds the site's wss: origin to the committed (Report-Only) policy.
-    const enforce = !!mediaOrigin && process.env.NG_APP_CSP_ENFORCE === '1';
+    // Enforcing needs the media host: without it img-src keeps its https:
+    // fallback, a policy only worth watching.
+    const enforce = process.env.NG_APP_CSP_ENFORCE === '1';
     const original = fs.readFileSync(headersPath, 'utf8');
     const rewritten = rewriteCsp(original, enforce, buildCsp({
       backendOrigin: originOf(backendUrl),
-      socketOrigin,
       mediaOrigin,
     }));
     fs.writeFileSync(headersPath, rewritten, { encoding: 'utf8' });

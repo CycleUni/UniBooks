@@ -4,7 +4,7 @@
   "scripts": {
     "ng": "ng",
     "start": "nodemon",
-    "build": "node --env-file-if-exists=production.env scripts/set-env.js && ng build --stats-json && ts-node --project scripts/tsconfig.scripts.json scripts/build-region-html.ts && node --env-file-if-exists=production.env scripts/set-env.js --headers",
+    "build": "node --env-file-if-exists=production.env scripts/set-env.js --production && ng build --stats-json && ts-node --project scripts/tsconfig.scripts.json scripts/build-region-html.ts && node --env-file-if-exists=production.env scripts/set-env.js --production --headers",
     "watch": "node --env-file-if-exists=.env scripts/set-env.js && ng build --watch --configuration development",
     "test": "node --env-file-if-exists=.env scripts/set-env.js && ng test",
     "icons": "node scripts/generate-icons.js",

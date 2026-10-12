@@ -11,20 +11,14 @@
 # falls back to https:. After `ng build`, `node scripts/set-env.js --headers`
 # (part of `npm run build`) rewrites the CSP in the *built* copy of this file:
 #
-#   R2_PUBLIC_URL           the R2 public domain  -> img-src, replacing https:
-#   FRONTEND_URL            the site origin       -> its wss: origin in connect-src
-#                           ('self' already covers same-origin wss: in CSP3;
-#                           named for browsers that predate that). The
-#                           frontend's own setting; the server has none.
+#   R2_PUBLIC_URL   the R2 public domain -> img-src, replacing https:
 #
-# R2_PUBLIC_URL is spelled exactly as server/wrangler.jsonc spells it. Either
-# one triggers the rewrite. It stays Report-Only; with R2_PUBLIC_URL set,
-# add NG_APP_CSP_ENFORCE=1 to promote
-# it to an enforcing Content-Security-Policy. The production values are in
-# production.env. Do that only after watching a real pass of the app report
-# nothing: there is no report-uri, so violations land in each visitor's
-# browser console, and the flows worth walking are Google sign-in, photo
-# upload, chat, and a book page.
+# R2_PUBLIC_URL is read from server/wrangler.jsonc "vars" (one source for both
+# halves). With it set, NG_APP_CSP_ENFORCE=1 (production.env) promotes the
+# policy to an enforcing Content-Security-Policy; without it the policy stays
+# Report-Only. Before enforcing, walk a real pass of the app with the console
+# open: there is no report-uri, and the flows worth checking are Google
+# sign-in, photo upload, chat, and a book page.
 #
 # Two CSP headers ship, and that is deliberate. The enforcing one carries only
 # directives that cost nothing to turn on here — the app has no <object>, no

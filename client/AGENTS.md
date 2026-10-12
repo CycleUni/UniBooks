@@ -94,8 +94,10 @@
   （`proxy.conf.json` 只有一條 `/api` → :8787，`ws: true`、`changeOrigin: false`，聊天室 WebSocket 也走這條）。
 - 不要在 `src/app` 寫死任何 API 或聊天室的絕對網址；API 一律走 `environment.backendUrl`
   （預設 `/api/v1`），聊天室網址一律用 `core/chat-urls.ts` 由後端回傳的 `edge_chat_url` 組出。
-- 正式建置的設定在 `production.env`（只放會進到公開 bundle 或 header 的值，不放機密）；
-  CSP 由 `scripts/set-env.js --headers` 寫進 `dist` 裡的 `_headers`。
+- 與後端共用的公開值（`R2_PUBLIC_URL`、`GOOGLE_CLIENT_ID`）只有一個來源：`../server/wrangler.jsonc`
+  的 `vars`（本地再疊 `../server/.dev.vars`），由 `scripts/set-env.js` 讀取，不要在前端另寫一份。
+  只有前端用的值放 `production.env`（只放會進到公開 bundle 或 header 的值，不放機密）；
+  CSP 由 `scripts/set-env.js --production --headers` 寫進 `dist` 裡的 `_headers`。
 - 這個資料夾沒有 Pages Functions，也沒有 `wrangler.toml`；伺服器端邏輯都在 `../server`。
 
 ## 9. 登入狀態（Session）

@@ -287,8 +287,10 @@ npm run e2e           # Playwright
 1. **部署**：`cd ../server && npm run deploy`（先跑 `npm run build:fe` = 本專案的
    `npm run build`，產生 `dist/unibooks-fe/browser/`，再套用 D1 migration 並 `wrangler deploy`；
    `wrangler.jsonc` 的 `assets.directory` 指向這個資料夾）。
-2. **建置設定**：`npm run build` 讀 `production.env`（GA、Sentry、Google client ID、
-   R2 公開網域、CSP 是否強制），不讀 `.env`。不需要 `NG_APP_BACKEND_URL`：預設就是同源的 `/api/v1`。
+2. **建置設定**：前後端共用的公開值（`R2_PUBLIC_URL`、`GOOGLE_CLIENT_ID`）只寫在
+   `../server/wrangler.jsonc` 的 `vars`，`scripts/set-env.js` 直接讀取（本地 `npm start`／`npm test`
+   再疊上 `../server/.dev.vars`），兩邊不會不一致。只有前端用的值（GA、Sentry、CSP 是否強制）
+   在 `production.env`；正式建置不讀 `.env`。不需要 `NG_APP_BACKEND_URL`：預設就是同源的 `/api/v1`。
    `public/_headers`、`public/_redirects` 由 Workers Static Assets 照舊套用。
 3. **安全設定**：`angular.json` production 中 `security.allowedHosts` 必須空白，避免跨域 400 錯誤。
 4. **資源路徑**：`angular.json` 的 `deployUrl: "/"`，加上 `src/index.html` 內手寫的
