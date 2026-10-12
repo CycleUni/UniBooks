@@ -1,0 +1,37 @@
+# Copy to .dev.vars for `wrangler dev` / `npm run dev`. Values here override the
+# production `vars` in wrangler.jsonc and supply what production keeps in
+# `wrangler secret put`. Never put real production secrets in this file.
+ENVIRONMENT=development
+
+# Local R2 is simulated by wrangler; the Worker serves it under /api/media in dev.
+R2_PUBLIC_URL=http://localhost:8787/api/media
+ALLOWED_IMAGE_HOSTS=localhost
+
+# Required (each at least 32 characters).
+JWT_SIGNING_KEY=change-me-dev-only-at-least-32-characters-long
+EDGE_CHAT_JWT_SECRET=change-me-dev-only-chat-secret-32-characters
+
+# Email via Mailjet (optional locally; without keys emails are logged and skipped).
+MAILJET_API_KEY=
+MAILJET_SECRET_KEY=
+DEFAULT_FROM_EMAIL=no-reply@example.com
+
+# Book lookups.
+GOOGLE_BOOKS_API_KEY=
+# Used only when the ISBNNET service binding is not running locally.
+ISBNNET_RESOLVER_URL=
+ISBNNET_RESOLVER_SECRET=
+
+# Google sign-in (public client id).
+GOOGLE_CLIENT_ID=
+
+# Optional: push (FCM), ad statistics (Analytics Engine SQL API), Sentry.
+FIREBASE_SERVICE_ACCOUNT_JSON=
+FIREBASE_PROJECT_ID=
+FCM_WEB_API_KEY=
+FCM_WEB_APP_ID=
+FCM_MESSAGING_SENDER_ID=
+FCM_VAPID_KEY=
+CF_ACCOUNT_ID=
+CF_ANALYTICS_TOKEN=
+SENTRY_DSN=
