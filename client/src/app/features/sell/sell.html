@@ -1,0 +1,258 @@
+      <main class="container container--form sell-page">
+      <h2>{{ 'sell.title' | t }}</h2>
+
+      <ui-skeleton *ngIf="isLoading" variant="form" [count]="3"></ui-skeleton>
+
+      <div *ngIf="!isLoggedIn && !isLoading" class="unverified-state">
+        <div class="alert-box warning">
+          <h3>{{ 'sell.notLoggedInTitle' | t }}</h3>
+          <p>{{ 'sell.notLoggedInDesc' | t }}</p>
+          <ui-button  class="mt-4" (onClick)="goToLogin()">{{ 'sell.goLogin' | t }}</ui-button>
+        </div>
+      </div>
+
+      <ng-container *ngIf="isLoggedIn && !isLoading">
+        <ui-verification-prompt
+          *ngIf="showUnverifiedPrompt"
+          (onDismiss)="showUnverifiedPrompt = false"
+          storageKey="unibooks.verification_prompt.sell"
+          [message]="'sell.unverifiedDesc' | t:{suffix: (regionService.currentRegionObj()?.edu_email_suffix?.join(', ') || '.edu')}">
+        </ui-verification-prompt>
+
+        <div class="draft-banner" *ngIf="showDraftPrompt">
+          <p class="draft-banner-text">{{ 'sell.draftFound' | t }}</p>
+          <div class="draft-banner-actions">
+            <ui-button variant="ghost" (onClick)="discardDraft()">{{ 'sell.draftDiscard' | t }}</ui-button>
+            <ui-button (onClick)="resumeDraft()">{{ 'sell.draftResume' | t }}</ui-button>
+          </div>
+        </div>
+
+        <div class="stepper">
+        <div class="step" [class.active]="step === 1">{{ 'sell.step1' | t }}</div>
+        <div class="step" [class.active]="step === 2">{{ 'sell.step2' | t }}</div>
+        <div class="step" [class.active]="step === 3">{{ 'sell.step3' | t }}</div>
+      </div>
+
+      <div class="form-container surface-card">
+        <!-- Step 1 -->
+        <div *ngIf="step === 1" class="step-content">
+          <p class="desc">{{ 'sell.isbnDesc' | t }}</p>
+          <ui-input
+            [placeholder]="'sell.isbnPlaceholder' | t"
+            [(ngModel)]="searchQuery"
+            enterkeyhint="search"
+            (ngModelChange)="onSearchQueryChange()"
+            (compositionstart)="imeComposing = true"
+            (compositionend)="onSearchCompositionEnd()"
+            (keyup.enter)="onSearchEnter($event)"
+          ></ui-input>
+
+          <div  class="mt-4" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <ui-button variant="ghost" (onClick)="toggleScanner()" *ngIf="canSearch">
+              {{ (isScanning ? 'sell.stopScan' : 'sell.scanBarcode') | t }}
+            </ui-button>
+            <ui-button (onClick)="searchBook()" *ngIf="canSearch" [disabled]="isCheckingIsbn || !searchQuery">
+              {{ (isCheckingIsbn ? 'sell.searching' : 'sell.searchBook') | t }}
+            </ui-button>
+            <ui-button variant="ghost" (onClick)="rescan()" *ngIf="!canSearch && lastSearchWasScan && !isCheckingIsbn && !isScanning">
+              {{ 'sell.rescan' | t }}
+            </ui-button>
+          </div>
+
+          <ui-barcode-scanner *ngIf="isScanning" class="mt-4" (decoded)="handleScanResult($event)" (failed)="onScannerFailed()"></ui-barcode-scanner>
+          <div *ngIf="cameraError" class="inline-msg error">{{ cameraError }}</div>
+          <!-- Shaped like the result rows below: a cover beside two lines. -->
+          <ui-skeleton *ngIf="isCheckingIsbn" class="results-container" [count]="2"></ui-skeleton>
+          <!-- Search Results List. Hidden while the camera is open; the results
+               are kept, so stopping the scan brings them back. -->
+          <div *ngIf="searchResults.length > 0 && !bookPreview && !isCheckingIsbn && !isScanning" class="results-container">
+            <h4 class="select-hint">{{ 'sell.selectBook' | t }}</h4>
+            <!-- A real button, not a div with a click handler. Picking the book
+                 is step one of listing one, so while this was a div the whole
+                 sell flow was closed to anyone working without a mouse. The
+                 children are spans rather than divs and headings because a
+                 button may only contain phrasing content — ui-book-cover
+                 already renders nothing but img and span. -->
+            <button type="button" class="book-match selectable" *ngFor="let result of searchResults" (click)="selectBook(result)">
+              <span class="cover">
+                <ui-book-cover
+                  [coverUrl]="result.coverUrl"
+                  [title]="result.title"
+                  [author]="result.author || result.authors"
+                  [isbn]="result.isbn"
+                ></ui-book-cover>
+              </span>
+              <span class="info">
+                <span class="book-title-serif result-title">{{ result.title }}</span>
+                <span class="muted" *ngIf="result.author || result.authors">{{ result.author || result.authors }}</span>
+                <span class="muted result-isbn" *ngIf="result.isbn">ISBN: {{ result.isbn }}</span>
+              </span>
+            </button>
+            <p class="muted mt-4" *ngIf="isTextQuery">{{ 'sell.textSearchIsbnHint' | t }}</p>
+            <div class="actions split mt-4" >
+              <ui-button variant="ghost" (onClick)="enterManually()">{{ 'sell.enterManually' | t }}</ui-button>
+            </div>
+          </div>
+
+          <!-- Selected Book Preview -->
+          <div class="book-match" *ngIf="bookPreview">
+            <div class="cover">
+              <ui-book-cover
+                [coverUrl]="bookPreview.coverUrl"
+                [title]="bookPreview.title"
+                [author]="bookPreview.authors"
+              ></ui-book-cover>
+            </div>
+            <div class="info flex-1" *ngIf="!bookPreview.isManual" >
+              <h3 class="book-title-serif">{{ bookPreview.title }}</h3>
+              <p class="muted" *ngIf="bookPreview.authors">{{ bookPreview.authors }}</p>
+              <div  class="mt-2">
+                <ui-button variant="ghost" (onClick)="clearSelection()"  style="padding: 4px 8px; font-size: var(--text-xs); height: auto;">{{ 'sell.reselect' | t }}</ui-button>
+              </div>
+            </div>
+            <div class="info flex-1" *ngIf="bookPreview.isManual" >
+              <ui-input [placeholder]="'sell.titlePlaceholder' | t" [(ngModel)]="bookPreview.title" (ngModelChange)="onFormChange()" (focusout)="markTouched('title')"  class="mb-2"></ui-input>
+              <div *ngIf="titleErrorKey" class="inline-msg error field-msg">{{ titleErrorKey | t }}</div>
+              <ui-input [placeholder]="'sell.authorPlaceholder' | t" [(ngModel)]="bookPreview.authors" (ngModelChange)="onFormChange()" (focusout)="markTouched('authors')"></ui-input>
+              <div *ngIf="authorErrorKey" class="inline-msg error field-msg">{{ authorErrorKey | t }}</div>
+              <div  class="mt-2">
+                <ui-button variant="ghost" (onClick)="clearSelection()"  style="padding: 4px 8px; font-size: var(--text-xs); height: auto;">{{ 'sell.reselect' | t }}</ui-button>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="apiError && step === 1" class="inline-msg error">
+            {{ apiError }}
+          </div>
+
+          <div class="actions">
+            <ui-button (onClick)="nextStep()" *ngIf="bookPreview">
+              {{ (bookPreview.isManual ? 'sell.confirmManual' : 'sell.confirmBook') | t }}
+            </ui-button>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div *ngIf="step === 2" class="step-content">
+          <ui-condition-picker [label]="'common.condition' | t" [(value)]="condition" (valueChange)="onFormChange()" [options]="conditionOptions"></ui-condition-picker>
+          <ui-dropdown [label]="'sell.categoryLabel' | t" [(ngModel)]="category" (ngModelChange)="onFormChange()" [options]="categoryOptions"></ui-dropdown>
+          <ui-input [label]="'sell.courseLabel' | t" [placeholder]="'sell.coursePlaceholder' | t" [(ngModel)]="course" (ngModelChange)="onFormChange()"></ui-input>
+          <ui-input [label]="'sell.professorLabel' | t" [placeholder]="'sell.professorPlaceholder' | t" [(ngModel)]="professor" (ngModelChange)="onFormChange()"></ui-input>
+          <ui-input [label]="'sell.privateNoteLabel' | t" [placeholder]="'sell.privateNotePlaceholder' | t" [(ngModel)]="privateNote" (ngModelChange)="onFormChange()"></ui-input>
+          <!-- Multi-line: condition notes run to several sentences. The backend
+               stores this as an unbounded TextField, so there is no limit to show. -->
+          <ui-textarea [label]="'sell.descriptionLabel' | t" [placeholder]="'sell.descriptionPlaceholder' | t" [rows]="4" [(ngModel)]="description" (ngModelChange)="onFormChange()"></ui-textarea>
+
+          <div class="photo-upload">
+            <label>{{ 'sell.photoLabel' | t }}</label>
+            <div class="upload-container">
+              <div class="preview-box" *ngFor="let url of uploadedPhotos; let i = index">
+                <img *ngIf="!isPhotoBroken(url)" [src]="url" alt="Uploaded photo" (error)="onPhotoError(url)">
+                <div class="preview-missing" *ngIf="isPhotoBroken(url)" role="img" [attr.aria-label]="'sell.photoUnavailable' | t">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="24" height="24" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                    <path d="M4 19L20 5"></path>
+                  </svg>
+                </div>
+                <button class="remove-btn" (click)="removePhoto(i)">×</button>
+              </div>
+              <!-- Kept while uploading even once the picks fill the cap, so
+                   the "Uploading..." state stays visible until they land. -->
+              <div class="dropzone" *ngIf="uploadedPhotos.length < maxPhotos || isUploading"
+                   (click)="fileInput.click()"
+                   (dragover)="onDragOver($event)"
+                   (dragleave)="onDragLeave($event)"
+                   (drop)="onDrop($event)"
+                   [class.drag-over]="isDragOver">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="28" height="28" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                  <circle cx="8.5" cy="10" r="1.5"></circle>
+                  <path d="M21 16l-5.5-5.5-4 4L8 11l-5 5"></path>
+                </svg>
+                <span *ngIf="!isUploading">{{ 'sell.uploadBox' | t }}</span>
+                <span *ngIf="isUploading">{{ 'sell.uploading' | t }}</span>
+                <input #fileInput type="file" accept="image/*" multiple  style="display: none;" (change)="onFileSelected($event)" [disabled]="isUploading">
+              </div>
+            </div>
+            <div *ngIf="uploadError" class="inline-msg error">
+              {{ uploadError }}
+            </div>
+          </div>
+
+          <div class="actions split">
+            <ui-button variant="ghost" (onClick)="prevStep()">{{ 'sell.prev' | t }}</ui-button>
+            <ui-button (onClick)="nextStep()">{{ 'sell.next' | t }}</ui-button>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div *ngIf="step === 3" class="step-content">
+          <label class="price-field-label">{{ 'acct.priceLabel' | t:{currency: regionService.currency().symbol} }}</label>
+          <div class="price-field">
+            <span class="price-currency">{{ regionService.currency().symbol }}</span>
+            <input class="price-input focus-no-ring" type="number" inputmode="decimal" enterkeyhint="done" min="0" [(ngModel)]="price" (ngModelChange)="onFormChange()" (blur)="markTouched('price')" name="price" />
+          </div>
+          <div *ngIf="priceErrorKey" class="inline-msg error field-msg">{{ priceErrorKey | t }}</div>
+
+          <div *ngIf="priceWarning" class="inline-msg warn field-msg" role="status">
+            {{ 'sell.priceFarAbove' | t:{multiple: priceWarningMultiple, price: (otherCopies!.min | price)} }}
+          </div>
+
+          <p class="price-reference" *ngIf="otherCopies as copies">
+            <ng-container *ngIf="copies.count === 1">{{ 'sell.otherCopiesOne' | t:{price: (copies.min | price)} }}</ng-container>
+            <ng-container *ngIf="copies.count > 1 && copies.min === copies.max">{{ 'sell.otherCopiesSame' | t:{n: copies.count, price: (copies.min | price)} }}</ng-container>
+            <ng-container *ngIf="copies.count > 1 && copies.min !== copies.max">{{ 'sell.otherCopiesRange' | t:{n: copies.count, min: (copies.min | price), max: (copies.max | price)} }}</ng-container>
+          </p>
+
+          <div class="free-btn">
+            <ui-button variant="ghost" (onClick)="setFree()">{{ 'sell.free' | t }}</ui-button>
+          </div>
+
+
+          <!-- What Confirm Listing is about to publish, so a wrong condition or
+               a missing photo is caught here rather than on the live listing. -->
+          <section class="listing-summary" *ngIf="bookPreview">
+            <h3 class="listing-summary-title">{{ 'sell.summaryTitle' | t }}</h3>
+            <dl>
+              <dt>{{ 'sell.summaryBook' | t }}</dt>
+              <dd class="book-title-serif">{{ bookPreview.title }}</dd>
+              <dt>{{ 'common.condition' | t }}</dt>
+              <dd>{{ ('cond.' + condition) | t }}</dd>
+              <dt>{{ 'sell.summaryPrice' | t }}</dt>
+              <dd>
+                <ng-container *ngIf="priceProblemKey; else priceSet">—</ng-container>
+                <ng-template #priceSet>{{ price === 0 ? ('sell.summaryFree' | t) : (price | price) }}</ng-template>
+              </dd>
+              <dt>{{ 'sell.summaryPhotos' | t }}</dt>
+              <dd>{{ submittablePhotoCount || ('sell.summaryNoPhotos' | t) }}</dd>
+            </dl>
+          </section>
+
+          <div *ngIf="apiError && step === 3" class="inline-msg error">
+            {{ apiError }}
+          </div>
+
+          <div class="actions split">
+            <ui-button variant="ghost" (onClick)="prevStep()" [disabled]="isSubmitting">{{ 'sell.prev' | t }}</ui-button>
+            <ui-button (onClick)="submit()" [disabled]="isSubmitting">
+              {{ (isSubmitting ? 'sell.submitting' : 'sell.submit') | t }}
+            </ui-button>
+          </div>
+        </div>
+
+        <!-- Complete -->
+        <div *ngIf="step === 4" class="step-content text-center">
+          <h2>{{ 'sell.successTitle' | t }}</h2>
+          <p>{{ 'sell.successDesc' | t }}</p>
+          <ui-button (onClick)="goToHome()">{{ 'sell.backHome' | t }}</ui-button>
+          <!-- Where this listing lives from now on. The path is spelled with
+               the same keys as the menu it points at, so it can't drift from
+               what the seller will actually see there. -->
+          <p class="success-manage-hint">
+            {{ 'sell.successManageHint' | t }}
+            <a regionLink="/account/listings">{{ 'nav.account' | t }} → {{ 'acct.tabListings' | t }}</a>
+          </p>
+        </div>
+      </div>
+      </ng-container>
+    </main>

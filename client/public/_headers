@@ -1,0 +1,144 @@
+# Served by Workers Static Assets from the UniBooks server Worker
+# (server/wrangler.jsonc "assets"), which reads this file as Pages did. These
+# rules apply to static assets only: the Worker's own responses (/api/v1,
+# /api/chat, /api/cover) set their own headers. /<region>/book is the region's
+# app shell fetched through env.ASSETS, so it carries these headers too.
+#
+# The app, the API (/api/v1) and chat (/api/chat, over wss) are one origin, so connect-src
+# needs no deployment-specific host: 'self' plus the third parties listed
+# below. The one origin a static file cannot know is the R2 public media
+# domain, so what is committed here is a Report-Only policy whose img-src
+# falls back to https:. After `ng build`, `node scripts/set-env.js --headers`
+# (part of `npm run build`) rewrites the CSP in the *built* copy of this file:
+#
+#   R2_PUBLIC_URL           the R2 public domain  -> img-src, replacing https:
+#   FRONTEND_URL            the site origin       -> its wss: origin in connect-src
+#                           ('self' already covers same-origin wss: in CSP3;
+#                           named for browsers that predate that). The
+#                           frontend's own setting; the server has none.
+#
+# R2_PUBLIC_URL is spelled exactly as server/wrangler.jsonc spells it. Either
+# one triggers the rewrite. It stays Report-Only; with R2_PUBLIC_URL set,
+# add NG_APP_CSP_ENFORCE=1 to promote
+# it to an enforcing Content-Security-Policy. The production values are in
+# production.env. Do that only after watching a real pass of the app report
+# nothing: there is no report-uri, so violations land in each visitor's
+# browser console, and the flows worth walking are Google sign-in, photo
+# upload, chat, and a book page.
+#
+# Two CSP headers ship, and that is deliberate. The enforcing one carries only
+# directives that cost nothing to turn on here — the app has no <object>, no
+# cross-origin <form action>, its <base> is this origin, and X-Frame-Options
+# already says what frame-ancestors says — so they need no verification pass
+# and no opt-in. Without that, a deployment that never sets the flag would run
+# with a policy that only ever watches. The Report-Only one carries the full
+# policy, including the directives that would take the site down if they were
+# wrong. NG_APP_CSP_ENFORCE=1 merges them into a single enforcing header.
+#
+# What the policy allows and why:
+#   script-src   GSI (accounts.google.com) and GA (googletagmanager.com) are
+#                injected at runtime. Cloudflare Web Analytics
+#                (static.cloudflareinsights.com) is injected into every HTML
+#                response at the edge; it reports to this origin's /cdn-cgi/rum,
+#                which 'self' in connect-src covers. Its origin rather than
+#                beacon.min.js: the file redirects to a versioned path.
+#                'wasm-unsafe-eval' lets the barcode
+#                scanner compile /zxing/zxing_reader.wasm on browsers without a
+#                native BarcodeDetector (iOS); it allows WebAssembly only, not
+#                eval().
+#                No inline script exists to allow: the pre-paint theme snippet is
+#                /theme-init.js, and angular.json turns off inlineCritical,
+#                whose <link media="print" onload="this.media='all'"> was an
+#                inline event handler.
+#   'unsafe-inline' in style-src: Angular writes component styles into <style>
+#                tags. Removing it needs build-side nonces, not a header edit.
+#   accounts.google.com/gsi/style in style-src: GSI loads its button and
+#                One Tap stylesheet from there.
+#   fonts.*      the Noto family is loaded from Google Fonts in index.html.
+#   img-src      book covers come through this origin's /api/cover proxy;
+#                listing photos and avatars come from the R2 domain, Google
+#                account avatars from lh3.googleusercontent.com, and GA4's
+#                pixels from *.google-analytics.com / *.googletagmanager.com.
+#   connect-src  this origin: the API, chat over wss, photo uploads. Then
+#                Google sign-in, the admin import's CycleUni lists on GitHub,
+#                Firebase push registration, GA4 hits and Sentry reports.
+#   frame-src    GSI renders its button and One Tap in an iframe.
+/*
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()
+  Content-Security-Policy: object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://www.googletagmanager.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: https://lh3.googleusercontent.com https://*.google-analytics.com https://*.googletagmanager.com; connect-src 'self' https://accounts.google.com https://raw.githubusercontent.com/CycleUni/ https://fcmregistrations.googleapis.com https://firebaseinstallations.googleapis.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.ingest.us.sentry.io; frame-src https://accounts.google.com; worker-src 'self' blob:; manifest-src 'self'
+
+# A year-long cache only for the files whose names carry a content hash.
+# It used to sit on /* above, and every rule's headers apply to a matching
+# request, so each SPA route (/tw/search, /tw/book, ...) was served as
+# index.html with a year-long max-age. A browser holding such a copy after a
+# deploy asked for chunks that no longer exist, got index.html back through
+# the SPA fallback, and failed with "Expected a JavaScript module script but the
+# server responded with text/html". Routes now get the platform's default
+# revalidating cache; / and /index.html below say so explicitly.
+#
+# The same still holds for a hashed name a deployment does not have (yet, at
+# that edge, or any more): the SPA fallback (not_found_handling
+# single-page-application) answers it with index.html, and these rules, which
+# match on the URL alone, stamp that HTML with the year-long cache. Static
+# assets cannot tell the two apart without running the Worker first, which
+# would bill every asset request, so the browser repairs it instead:
+# public/asset-recovery.js refetches a bundle that failed this way and reloads.
+/main-*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/polyfills-*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/chunk-*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/styles-*.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/ngsw.json
+  Cache-Control: no-cache
+
+/ngsw-worker.js
+  Cache-Control: no-cache
+
+/sw.js
+  Cache-Control: no-cache
+
+/theme-init.js
+  Cache-Control: no-cache
+
+/asset-recovery.js
+  Cache-Control: no-cache
+
+/safety-worker.js
+  Cache-Control: no-cache
+
+/worker-basic.min.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+/robots.txt
+  Cache-Control: no-cache
+
+/sitemap.xml
+  Cache-Control: no-cache
+
+/apple-touch-icon.png
+  Cache-Control: public, no-cache
+
+/apple-touch-icon-precomposed.png
+  Cache-Control: public, no-cache

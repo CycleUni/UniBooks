@@ -1,0 +1,241 @@
+      <div class="messages-container" [class.mobile-chat-open]="!!activeChat" *ngIf="loadingChats || chats.length > 0">
+        <div class="sidebar">
+          <ui-pull-to-refresh [refreshing]="refreshingInbox" (refresh)="onRefreshInbox()">
+            <messages-inbox-list
+              [chats]="chats"
+              [activeChatId]="activeChat?.id ?? null"
+              [loading]="loadingChats"
+              (select)="openChat($event)"
+              (remove)="deleteConversation($event)"
+            ></messages-inbox-list>
+          </ui-pull-to-refresh>
+        </div>
+
+        <div class="chat-area" *ngIf="activeChat">
+          <div class="chat-top-fixed" #chatTop>
+            <div class="chat-header">
+              <button class="back-btn" type="button" (click)="closeChat()">{{ 'msg.back' | t }}</button>
+              <div class="partner-info">
+                <h4>
+                  <span class="partner-name" [class.name-last]="conversationTitle.nameLast">{{ conversationTitle.before }}<span class="partner-name-value">{{ activeChat.other_party }}</span>{{ conversationTitle.after }}</span>
+                  <ui-role-badge [role]="activeChat.other_party_role"></ui-role-badge>
+                </h4>
+              </div>
+              <div class="connection-status" *ngIf="connectionState === 'reconnecting'">
+                <span class="reconnecting-badge">{{ 'msg.reconnecting' | t }}</span>
+              </div>
+              <button class="report-btn" type="button" *ngIf="!activeChat.pending" (click)="showReport = true" [title]="'msg.reportConversation' | t">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                  <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+                  <line x1="4" y1="22" x2="4" y2="15"/>
+                </svg>
+              </button>
+            </div>
+
+            <div class="listing-banner" *ngIf="activeChat.listing_title">
+              <!-- A real <button>, not a <div (click)>: this is the only way
+                   back to the listing from a conversation, and as a div it was
+                   unreachable by keyboard and announced as nothing at all.
+                   Everything inside is phrasing content (span) because a
+                   button may not contain flow content. -->
+              <!-- Disabled once the seller deletes the listing: there is no
+                   page to go back to, only this conversation's history. -->
+              <button type="button" class="listing-banner-left" (click)="goToListing(activeChat.listing_id)" [disabled]="activeChat.listing_deleted">
+                <img *ngIf="activeChat.listing_photo" [src]="activeChat.listing_photo" [attr.alt]="activeChat.listing_title || ('common.bookCover' | t)" class="listing-thumb">
+                <span class="placeholder-thumb" *ngIf="!activeChat.listing_photo"></span>
+                <span class="listing-details">
+                  <span class="listing-title">{{ activeChat.listing_title }}</span>
+                  <span class="listing-meta" *ngIf="activeChat.listing_deleted">
+                    <span class="condition badge">{{ 'common.listingDeleted' | t }}</span>
+                  </span>
+                  <span class="listing-meta" *ngIf="!activeChat.listing_deleted">
+                    <span class="price">{{ activeChat.listing_price | price }}</span>
+                    <span class="condition badge">{{ ('cond.' + activeChat.listing_condition) | t }}</span>
+                    <span class="course" *ngIf="activeChat.listing_course">{{ activeChat.listing_course }}</span>
+                  </span>
+                </span>
+              </button>
+
+              <div class="listing-banner-actions">
+                <ng-container *ngIf="activeChat.order_id">
+                  <ui-button variant="ghost" (onClick)="goToOrder()">
+                    {{ 'msg.viewOrder' | t }}
+                  </ui-button>
+                </ng-container>
+
+                <ng-container *ngIf="!activeChat.order_id && !activeChat.listing_deleted">
+                  <ng-container *ngIf="activeChat.other_party_role === 'seller'">
+                    <ui-button variant="ghost" (onClick)="goToListing(activeChat.listing_id)">
+                      {{ 'msg.viewListing' | t }}
+                    </ui-button>
+                    <ui-button (onClick)="goToCheckout(activeChat.listing_id)">
+                      {{ 'msg.buyNow' | t }}
+                    </ui-button>
+                  </ng-container>
+
+                  <ng-container *ngIf="activeChat.other_party_role === 'buyer'">
+                    <ui-button variant="ghost" (onClick)="goToListing(activeChat.listing_id)">
+                      {{ 'msg.viewListing' | t }}
+                    </ui-button>
+                  </ng-container>
+                </ng-container>
+              </div>
+            </div>
+          </div>
+
+          <ui-report-modal
+            *ngIf="showReport"
+            [conversationId]="activeChat.id"
+            [reportedPartyId]="reportedPartyId"
+            (close)="showReport = false"
+          ></ui-report-modal>
+
+          <ui-image-lightbox [src]="selectedImageUrl" (close)="closeImageModal()"></ui-image-lightbox>
+
+          <div class="message-history" #scrollMe (scroll)="onHistoryScroll()">
+            <!-- Held in the layout for as long as older pages exist, with only
+                 its text swapped, so starting a load never shifts the list
+                 under the reader. -->
+            <div class="history-top-status" *ngIf="hasMoreHistory">{{ loadingOlder ? ('msg.loadingOlder' | t) : '' }}</div>
+            <ui-skeleton *ngIf="loadingHistory && messages.length === 0" variant="chat-bubbles" [count]="5"></ui-skeleton>
+            <ui-error-state
+              *ngIf="!loadingHistory && historyFailed && messages.length === 0"
+              [message]="'msg.historyLoadFailed' | t"
+              (retry)="retryHistory()"
+            ></ui-error-state>
+            <!-- A chat not started yet: the seller sees nothing until the
+                 buyer sends something (PendingChatStore). -->
+            <p class="pending-hint" *ngIf="activeChat.pending && messages.length === 0">{{ 'msg.pendingHint' | t:{name: activeChat.other_party} }}</p>
+            <div class="msg-bubble" *ngFor="let msg of messages; trackBy: trackMessage" [class.self]="msg.is_mine" [class.failed]="msg.failed" [class.meetup-card]="isMeetupRequest(msg.body)" [class.image-msg]="msg.message_type === 'image'">
+              <ng-container *ngIf="isMeetupRequest(msg.body); else normalMsg">
+                <ui-meetup-card
+                  [body]="msg.body"
+                  [userRole]="activeChat.other_party_role === 'seller' ? 'buyer' : 'seller'"
+                  [isPendingApproval]="isPendingApproval(msg)"
+                  [showDetails]="showsMeetupDetails(msg)"
+                  [canEdit]="canEditMeetup(msg)"
+                  [meetupTime]="activeChat.order_meetup_time"
+                  [meetupLocation]="activeChat.order_meetup_location"
+                  (onEdit)="handleEditMeetup()"
+                  (onAccept)="handleAcceptMeetup()"
+                  (onDecline)="handleDeclineMeetup()"
+                  (onCancel)="handleCancelMeetup()"
+                ></ui-meetup-card>
+              </ng-container>
+              <ng-template #normalMsg>
+                <ng-container *ngIf="msg.message_type === 'image'; else textMsg">
+                  <img 
+                    [src]="msg._expired ? expiredImageSrc() : msg.body" 
+                    [alt]="'msg.image' | t" 
+                    class="chat-image"
+                    referrerpolicy="no-referrer"
+                    loading="lazy"
+                    [class.expired]="msg._expired"
+                    (click)="openImageModal(msg.body, $event)"
+                    (error)="onImageError(msg)"
+                    (load)="scrollToBottom(false)"
+                  >
+                </ng-container>
+                <ng-template #textMsg>
+                  <div class="msg-content">
+                    {{ messageText(msg.body) }}
+                    <button
+                      class="msg-delete-btn"
+                      type="button"
+                      [title]="'msg.delete' | t"
+                      (click)="deleteMessage(msg.id)"
+                    >×</button>
+                  </div>
+                </ng-template>
+              </ng-template>
+              <div class="msg-status" *ngIf="msg.failed">
+                <span class="msg-failed-text">{{ 'msg.sendFailed' | t }}</span>
+                <button class="msg-retry-btn" type="button" (click)="retryMessage(msg)">{{ 'msg.retry' | t }}</button>
+              </div>
+              <div class="msg-time" *ngIf="!msg.failed">{{ formatMessageTime(msg.created_at) }}</div>
+            </div>
+          </div>
+
+          <!-- The listing is gone: the history stays readable, but there is
+               nothing left to arrange, and the chat token is read-only. -->
+          <div class="message-input-area" #inputArea *ngIf="activeChat.listing_deleted">
+            <p class="read-only-note">{{ 'msg.listingDeletedReadOnly' | t }}</p>
+          </div>
+
+          <div class="message-input-area" #inputArea *ngIf="!activeChat.listing_deleted">
+            <div class="input-wrapper">
+              <input
+                type="file"
+                #fileInput
+                accept="image/*"
+                capture="environment"
+                (change)="onFileSelected($event)"
+                 style="display: none;"
+              >
+              <button 
+                type="button" 
+                class="attach-btn" 
+                (click)="fileInput.click()"
+                [disabled]="uploadingImage || connectionState === 'reconnecting' || activeChat.pending"
+                [title]="(activeChat.pending ? 'msg.attachAfterFirst' : 'msg.attachImage') | t"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
+              </button>
+              <ui-input
+                [placeholder]="'msg.placeholder' | t"
+                 class="flex-1"
+                [noMargin]="true"
+                [(ngModel)]="newMessage"
+                enterkeyhint="send"
+                (ngModelChange)="onDraftChange($event)"
+                (compositionstart)="imeComposing = true"
+                (compositionend)="onCompositionEnd()"
+                (keyup.enter)="onEnterKey($event)"
+              ></ui-input>
+            </div>
+            <div *ngIf="uploadingImage" class="upload-progress">
+              <div class="progress-bar" [style.width.%]="uploadProgress"></div>
+              <span>{{ uploadProgress }}%</span>
+            </div>
+            <ui-button 
+              (onClick)="sendMessage()" 
+              [disabled]="(!activeChat.pending && connectionState === 'reconnecting') || uploadingImage || creatingChat"
+            >{{ 'msg.send' | t }}</ui-button>
+          </div>
+        </div>
+
+        <ui-empty class="chat-area select-prompt" [fullPage]="true" *ngIf="!activeChat && !loadingChats">
+          <ui-verification-prompt
+            *ngIf="showUnverifiedPrompt"
+            (onDismiss)="showUnverifiedPrompt = false"
+             class="mb-4 w-full" style="text-align: left; max-width: 500px;">
+          </ui-verification-prompt>
+          <p>{{ 'msg.selectPrompt' | t }}</p>
+        </ui-empty>
+      </div>
+
+      <ui-error-state
+        *ngIf="!loadingChats && inboxLoadFailed && chats.length === 0"
+        [message]="'msg.inboxLoadFailed' | t"
+        (retry)="retryInbox()"
+      ></ui-error-state>
+
+      <ui-pull-to-refresh [refreshing]="refreshingInbox" (refresh)="onRefreshInbox()" *ngIf="!loadingChats && !inboxLoadFailed && chats.length === 0">
+        <ui-empty class="empty-inbox" [fullPage]="true">
+          <ui-verification-prompt
+            *ngIf="showUnverifiedPrompt"
+            (onDismiss)="showUnverifiedPrompt = false"
+             class="mb-4" style="text-align: left; max-width: 500px;">
+          </ui-verification-prompt>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48" aria-hidden="true">
+            <path d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-9l-4 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
+          </svg>
+          <h4>{{ 'msg.emptyInboxTitle' | t }}</h4>
+          <p>{{ 'msg.emptyInboxDesc' | t }}</p>
+          <button class="browse-btn" type="button" regionLink="/search">{{ 'msg.browseBooks' | t }}</button>
+        </ui-empty>
+      </ui-pull-to-refresh>

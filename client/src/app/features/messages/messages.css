@@ -1,0 +1,662 @@
+/* The routed component's host sits between .main-content and the panes, and
+   defaults to display:block — so the flex chain broke there and the surface
+   collapsed to its content size. Same trap the hero hit when it was extracted:
+   a host is not a flex item unless it is told to be. */
+:host {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+    .messages-container {
+      /* Fills the shell rather than sitting in it. This used to be a 1120px
+         box with its own border and a calc(100vh - 200px) height, floating in
+         a scrolling page with the site footer beneath — a small page inside
+         the page. The height was also a guess: any change to the header or
+         footer left it short or overflowing. The layout now hands it the
+         remaining space and the panes scroll internally. */
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      width: 100%;
+      background-color: var(--paper);
+    }
+    .sidebar {
+      width: 320px;
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      background-color: var(--paper-warm);
+      min-height: 0;
+    }
+
+    .chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+    }
+    .empty-inbox svg {
+      color: var(--line);
+      margin-bottom: 16px;
+    }
+    .empty-inbox h4 {
+      margin: 0 0 8px;
+      color: var(--ink);
+      font-size: var(--text-md);
+    }
+    .empty-inbox p {
+      margin: 0 0 20px;
+      max-width: 280px;
+      font-size: var(--text-base);
+      line-height: 1.5;
+    }
+    .browse-btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      background-color: var(--accent);
+      color: var(--on-accent);
+      font-size: var(--text-base);
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .browse-btn:hover {
+      opacity: 0.9;
+    }
+    .chat-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--paper);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    
+    .listing-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px;
+      background: var(--paper-warm);
+      border-bottom: 1px solid var(--line);
+    }
+    .listing-banner-left {
+      display: flex;
+      align-items: center;
+      /* Matches .chat-header's gap (16px) so the thumbnail's indent lines up
+         with .back-btn's indent above it — see .listing-thumb/.placeholder-thumb
+         below for the other half of this alignment fix. */
+      gap: 16px;
+      cursor: pointer;
+      flex: 1;
+      min-width: 0;
+      /* This is a real <button> now, so reset the UA chrome it ships with
+         (border, background, centred text, its own font) that would
+         otherwise redraw the banner. */
+      padding: 0;
+      border: none;
+      background: none;
+      font: inherit;
+      color: inherit;
+      text-align: left;
+      transition: opacity 120ms ease;
+    }
+    .listing-banner-left:hover .listing-title {
+      color: var(--accent);
+    }
+    /* The global button:active scale(0.97) shrinks this full-width banner by
+       a dozen pixels right before the page slides away, which read as a
+       layout glitch rather than feedback. Fade the thumbnail and text instead
+       so nothing changes size. */
+    .listing-banner-left:not(:disabled):active {
+      transform: none;
+      opacity: 0.6;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .listing-banner-left {
+        transition: none;
+      }
+    }
+    .listing-banner-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .listing-thumb, .placeholder-thumb {
+      width: 48px;
+      height: 64px;
+      border-radius: var(--radius-sm);
+      /* Without this, the thumb is a flex item with the default
+         flex-shrink:1, so on narrow viewports it gets squeezed below its
+         48px width whenever the title/actions content is tight for space —
+         which also drags .listing-details' left edge inward, unpredictably
+         misaligning it against .chat-header's .partner-info above (that
+         misalignment reads as "the info bar doesn't line up with the
+         header" and gets worse/better depending on listing title length,
+         which is why it looked inconsistent). Keep the thumb's box a fixed
+         48px so .listing-details always starts at a fixed, predictable
+         offset. */
+      flex-shrink: 0;
+    }
+    .listing-thumb {
+      object-fit: cover;
+      border: 1px solid var(--line);
+    }
+    .placeholder-thumb {
+      background: var(--line);
+    }
+    .listing-details {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      /* Pairs with .listing-thumb/.placeholder-thumb's flex-shrink:0 above:
+         without this, this flex item's automatic minimum width (based on
+         its longest unbreakable content) can still force the thumb to
+         shrink instead of letting the title text wrap. */
+      min-width: 0;
+    }
+    .listing-title {
+      font-family: 'Noto Serif TC', serif;
+      font-weight: 500;
+      font-size: var(--text-base);
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .listing-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px 8px;
+      font-size: var(--text-xs);
+      min-width: 0;
+    }
+    /* Price and condition never break inside themselves; when the row is too
+       narrow (English labels, or two action buttons beside it) they wrap as
+       whole items and the course name is cut short. Before, all three shrank
+       together and "Like new" and the course broke one word per line. */
+    .listing-meta .price,
+    .listing-meta .badge {
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .price {
+      font-family: 'Noto Serif TC', serif;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      font-size: var(--text-lg);
+      color: var(--accent);
+    }
+    .badge {
+      padding: 2px 6px;
+      border-radius: var(--radius-sm);
+      background: var(--paper);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-size: var(--text-xs);
+    }
+    .course {
+      color: var(--muted);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .back-btn {
+      display: none;
+      background: none;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 6px 12px;
+      font-size: var(--text-base);
+      color: var(--ink);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .partner-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .partner-info h4 {
+      margin: 0 0 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    /* When the name is mid-sentence (Chinese: 與 {name} 的對話) the title
+       stays on one line, cut with an ellipsis. When it ends the sentence
+       (English: Conversation with {name}) the title may wrap, and the name is
+       kept whole so the break falls before it instead of splitting 王明越
+       into 王明 / 越; a name wider than the line still breaks inside. The
+       mobile header's height is measured (--chat-top-height), so a second
+       line doesn't cover the first message. */
+    .partner-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .partner-name.name-last {
+      white-space: normal;
+    }
+    .partner-name.name-last .partner-name-value {
+      display: inline-block;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+    .partner-info ui-role-badge {
+      flex-shrink: 0;
+    }
+
+    .partner-info p {
+      margin: 0;
+      font-size: var(--text-base);
+      color: var(--muted);
+    }
+    .partner-info a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .connection-status {
+      display: flex;
+      align-items: center;
+    }
+    .reconnecting-badge {
+      background-color: var(--flag);
+      color: var(--on-flag);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+
+    .history-top-status {
+      text-align: center;
+      /* Fixed height, not padding around variable content: the row is present
+         whether or not it currently reads "loading", and it must occupy the
+         same space either way or the list jumps when a fetch starts.
+         flex-shrink:0 is what makes that hold — .message-history is a column
+         flex container whose content overflows, so without it the empty row
+         collapses to 0 and only springs to 32px once the text appears,
+         reintroducing exactly the shift this row exists to avoid. */
+      height: 32px;
+      flex-shrink: 0;
+      line-height: 32px;
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
+    .message-history {
+      /* min-height:0 is required here even though overflow-y:auto is set:
+         per spec, a flex item's automatic minimum size should already
+         collapse to 0 when it has overflow other than visible, but WebKit
+         (Safari, including iOS) doesn't reliably apply that automatic
+         sizing rule — it keeps the item's content-based intrinsic min
+         height (i.e. the full height of the message list) as a floor and
+         pushes every ancestor up the flex chain taller than the viewport
+         to accommodate it. Chromium implements the spec rule correctly, so
+         this gap was invisible in desktop/emulated testing but produces
+         exactly the "page taller than the actual screen" symptom on real
+         iOS Safari once a chat is open. Explicit min-height:0 removes the
+         ambiguity on every engine. */
+      min-height: 0;
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    /* A column whose children keep their own widths. As a plain block, the
+       bubble took the width of its widest child and .msg-content stretched
+       to fill it, so a one-character message was as wide as its timestamp
+       ("星期二 10:15"). The meetup card sets width:100% itself. */
+    .msg-bubble {
+      max-width: 60%;
+      align-self: flex-start;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .msg-bubble.self {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+    .msg-content {
+      position: relative;
+      padding: 12px 16px;
+      background-color: var(--paper-warm);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      font-size: var(--text-base);
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    
+    /* Dark mode override for opponent's bubble to ensure contrast. html is
+       named in :host-context because the host (and body) never carry
+       data-theme, so a bare :not([data-theme="light"]) always matched them
+       and kept this on after the user explicitly chose light. */
+    :host-context(html[data-theme="dark"]) .msg-bubble:not(.self) .msg-content {
+      background-color: var(--line);
+    }
+    @media (prefers-color-scheme: dark) {
+      :host-context(html:not([data-theme="light"])) .msg-bubble:not(.self) .msg-content {
+        background-color: var(--line);
+      }
+    }
+    .msg-delete-btn {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      width: 20px;
+      height: 20px;
+      line-height: 18px;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background-color: var(--paper);
+      color: var(--muted);
+      font-size: var(--text-base);
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity var(--motion-fast);
+    }
+    .msg-bubble:hover .msg-delete-btn {
+      opacity: 1;
+    }
+    .msg-delete-btn:hover {
+      color: var(--ink);
+      border-color: var(--muted);
+    }
+    .msg-bubble.self .msg-content {
+      background-color: var(--btn-primary-bg);
+      color: var(--btn-primary-ink);
+      border-color: var(--btn-primary-bg);
+    }
+    .msg-bubble.failed .msg-content {
+      background-color: var(--warn-bg);
+      border: 1px solid var(--flag);
+      color: var(--warn-ink);
+    }
+    .msg-bubble.meetup-card {
+      max-width: 340px;
+    }
+
+    .msg-time {
+      font-size: var(--text-xs);
+      color: var(--muted);
+      margin-top: 4px;
+      text-align: right;
+    }
+    .msg-bubble:not(.self) .msg-time {
+      text-align: left;
+    }
+    .msg-status {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .msg-failed-text {
+      font-size: var(--text-xs);
+      color: var(--danger);
+    }
+    .msg-retry-btn {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: var(--text-xs);
+      color: var(--accent);
+      text-decoration: underline;
+      cursor: pointer;
+    }
+
+    .message-input-area {
+      /* Base default: a relative containing block for .upload-progress's
+         position:absolute below. The mobile media query further down
+         overrides this to `fixed`, but that override previously lost to a
+         second, later `.message-input-area { position: relative }` rule
+         near the bottom of this file (same specificity — last one in
+         source order wins) that was silently clobbering it on every mobile
+         width. Declaring it once here removes that duplicate/conflict. */
+      position: relative;
+      padding: 16px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .report-btn {
+      background: none;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .report-btn:hover {
+      color: var(--flag);
+      border-color: var(--flag);
+    }
+    /* Must match the 900px breakpoint in layout.component.css: below it the
+       bottom tab bar takes over and this view must switch to single-pane so
+       the back button exists. */
+    @media (max-width: 900px) {
+      /* Single-pane pattern: show the inbox list, or the active chat with a back button */
+      .sidebar {
+        width: 100%;
+        border-right: none;
+      }
+      .chat-area {
+        display: none;
+      }
+      /* The "select a conversation" prompt is a <ui-empty>, whose own
+         :host(.full-page) { display: flex } has the same specificity as
+         .chat-area above and loads after it, so it won — the prompt stayed
+         on screen as a squeezed column beside the inbox. Out-rank it. */
+      .messages-container .select-prompt {
+        display: none;
+      }
+      .mobile-chat-open .sidebar {
+        display: none;
+      }
+      .mobile-chat-open .chat-area {
+        display: flex;
+      }
+      .back-btn {
+        display: inline-block;
+      }
+      /* .chat-header and .listing-banner used to each be independently
+         position:fixed with a hand-guessed pixel offset so the banner would
+         sit directly below the header. That guess (64px) never exactly
+         matched the header's real rendered height (which shifts with font
+         metrics, translated string length, badge presence, etc.), leaving a
+         thin gap between the two fixed elements that scrolling message
+         content showed through — see the "Meetup Cancelled" bleed-through
+         reported from a real Android device.
+
+         Fix: fix the *wrapper*, not the children. `.chat-top-fixed` is the
+         only position:fixed element here; `.chat-header` and
+         `.listing-banner` stack inside it via normal document flow, so the
+         banner's top is always exactly wherever the header's bottom really
+         rendered — computed by the browser, not guessed by us. This is the
+         same real-bottom-edge trick `.message-input-area` below (and
+         `.bottom-tab-bar` in layout.component.css) uses for the same class
+         of viewport-height unreliability. */
+      .chat-top-fixed {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 101;
+      }
+      .chat-header {
+        padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px;
+      }
+      .message-history {
+        padding: 16px;
+        /* Reserve space for the now-fixed .chat-top-fixed wrapper above
+           (header, or header+banner — see the :has() rule right below) and
+           .message-input-area below — same pattern .main-content uses to
+           clear the fixed .bottom-tab-bar (see layout.component.css) —
+           otherwise content ends up hidden behind them.
+
+           These two numbers (72px / 92px) are hand-measured-from-CSS
+           estimates of .chat-header's and .listing-banner's real rendered
+           heights (padding + border + line-height of their tallest content
+           row), deliberately rounded UP a few px past the tightest exact
+           reading. Unlike the old two-independent-fixed-elements setup,
+           an inaccurate guess here can now only ever produce a small
+           harmless blank strip under the fixed wrapper (scrolls away
+           immediately) — never the see-through/hidden-content bug the
+           gap used to cause, because the gap itself is now structurally
+           impossible (see .chat-top-fixed above). Still worth re-measuring
+           against a real device when possible. */
+        /* --chat-top-height is .chat-top-fixed's measured height (header, or
+           header + banner, safe-area padding included), published by a
+           ResizeObserver in messages.ts; the calc() is the first-frame
+           fallback. */
+        padding-top: calc(16px + var(--chat-top-height, calc(72px + env(safe-area-inset-top, 0px))));
+        /* --input-area-height is the input's real measured height, published
+           by a ResizeObserver in messages.ts; the 72px is only the fallback
+           for the first frame before that lands. The guess alone was too
+           small: with the URL bar showing, this container's bottom edge
+           lines up with the input instead of sitting above it, so the
+           newest message rendered underneath. Its own safe-area padding is
+           already inside offsetHeight, so it isn't added again here. */
+        padding-bottom: calc(16px + var(--input-area-height, calc(72px + env(safe-area-inset-bottom, 0px))));
+      }
+      .chat-area:has(.listing-banner) .message-history {
+        padding-top: calc(16px + var(--chat-top-height, calc(72px + 92px + env(safe-area-inset-top, 0px))));
+      }
+      .msg-bubble {
+        max-width: 85%;
+      }
+      /* Anchored the exact same way as .bottom-tab-bar (position:fixed +
+         bottom:0 in layout.component.css) instead of being sized by the
+         ancestor flex chain's height. A normal-flow element's position is
+         only as correct as the container height math above it — and that
+         math (100svh/100dvh vs. the browser's actual toolbar state at a
+         given instant) has repeatedly proven unreliable on real mobile
+         browsers. `position: fixed; bottom: 0` sidesteps all of that by
+         asking the browser directly for "the real bottom edge" the same
+         way the nav bar does, rather than us re-deriving it. */
+      .message-input-area {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 100;
+        background-color: var(--paper);
+        padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      }
+    }
+
+    /* Image message styles */
+    .msg-bubble.image-msg {
+      max-width: 300px;
+    }
+    .chat-image {
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: 8px;
+      cursor: zoom-in;
+      object-fit: contain;
+      background: var(--paper-warm);
+    }
+
+    /* Input wrapper for attach button + input */
+    .input-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+    .attach-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      color: var(--ink);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+    }
+    .attach-btn:hover:not(:disabled) {
+      background: var(--paper-warm);
+      border-color: var(--muted);
+      color: var(--accent);
+    }
+    .attach-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Upload progress */
+    .upload-progress {
+      position: absolute;
+      bottom: 60px;
+      left: 16px;
+      right: 16px;
+      height: 6px;
+      background: var(--line);
+      border-radius: 3px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      font-size: var(--text-xs);
+      color: var(--muted);
+    }
+    .progress-bar {
+      height: 100%;
+      background: var(--accent);
+      transition: width var(--motion-base);
+    }
+
+
+    .pending-hint {
+      margin: auto 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: var(--text-sm);
+    }
+
+    .read-only-note {
+      flex: 1;
+      margin: 0;
+      padding: 10px 0;
+      color: var(--muted);
+      font-size: var(--text-sm);
+      text-align: center;
+    }

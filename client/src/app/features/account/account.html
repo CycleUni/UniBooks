@@ -1,0 +1,85 @@
+      <div class="container dashboard" [class.at-menu]="atMenu">
+        <aside class="dashboard-sidebar">
+          <div class="profile-card">
+            <!-- Until /auth/me/ answers, placeholders hold each line's place:
+                 "User", "No school" and three zero counts read as facts about
+                 the account, not as "still loading". -->
+            <ng-container *ngIf="profileLoaded; else profilePlaceholder">
+              <div class="avatar" *ngIf="!avatarUrl">{{ getAvatarInitial() }}</div>
+              <div class="avatar-image-container" *ngIf="avatarUrl">
+                <img [src]="avatarUrl" [attr.alt]="displayName ? (displayName + ' ' + ('acct.avatarAlt' | t)) : ('acct.avatarAlt' | t)" class="avatar-image" referrerpolicy="no-referrer">
+              </div>
+              <h3>{{ displayName || ('acct.defaultUser' | t) }}</h3>
+              <p class="school-name">{{ schoolName || ('acct.noSchool' | t) }}</p>
+              <!-- Counts from a failed load would be invented zeros. -->
+              <p class="profile-stats" *ngIf="!profileFailed">
+                <span>{{ 'acct.statActive' | t:{n: activeListingsCount} }}</span>
+                <span>{{ 'acct.statSold' | t:{n: soldListingsCount} }}</span>
+                <span>{{ 'acct.statSubs' | t:{n: subscriptionsCount} }}</span>
+              </p>
+            </ng-container>
+            <ng-template #profilePlaceholder>
+              <div class="avatar ph" role="status" aria-busy="true"><span class="sr-only">{{ 'common.loading' | t }}</span></div>
+              <h3><span class="ph ph-line ph-name"></span></h3>
+              <p class="school-name"><span class="ph ph-line ph-school"></span></p>
+              <p class="profile-stats"><span class="ph ph-line ph-stats"></span></p>
+            </ng-template>
+            <p class="email">{{ auth.getUser()?.email }}</p>
+            <ui-button variant="white"  block class="mt-4" (onClick)="doLogout()">{{ 'acct.logout' | t }}</ui-button>
+          </div>
+
+          <!-- Grouped rather than one flat list of five: the groups answer
+               different questions ("how is my trading going", "what is mine",
+               and for staff "running the site"), and the labels give the eye
+               somewhere to land. -->
+          <nav class="dashboard-nav">
+            <!-- The links sit in their own element so the title can hold a
+                 line of its own above them on a phone while they stay in one
+                 row. Without it the title's full-width basis resolves against
+                 the nav, which forces each group onto its own row instead. -->
+            <div class="nav-group" role="group" aria-labelledby="acct-nav-trade">
+              <h4 class="nav-group-title" id="acct-nav-trade">{{ 'acct.navGroupTrade' | t }}</h4>
+              <div class="nav-links">
+                <a regionLink="/account/listings" routerLinkActive="active">{{ 'acct.tabListings' | t }}</a>
+                <a regionLink="/account/orders" routerLinkActive="active">{{ 'acct.myOrders' | t }}<span class="unread-dot" *ngIf="hasUnreadOrders"></span></a>
+              </div>
+            </div>
+            <div class="nav-group" role="group" aria-labelledby="acct-nav-mine">
+              <h4 class="nav-group-title" id="acct-nav-mine">{{ 'acct.navGroupMine' | t }}</h4>
+              <div class="nav-links">
+                <a regionLink="/account/subscriptions" routerLinkActive="active">{{ 'acct.tabSubs' | t }}</a>
+                <a regionLink="/account/reports" routerLinkActive="active">{{ 'acct.tabReports' | t }}</a>
+                <a regionLink="/account/notifications" routerLinkActive="active">{{ 'acct.tabNotifications' | t }}</a>
+                <a regionLink="/account/settings" routerLinkActive="active">{{ 'acct.tabSettings' | t }}</a>
+              </div>
+            </div>
+            <!-- Staff only, and a group of its own: running the site is not
+                 one of the user's personal pages. -->
+            <div *ngIf="isStaff" class="nav-group admin-group" role="group" aria-labelledby="acct-nav-admin">
+              <h4 class="nav-group-title" id="acct-nav-admin">{{ 'acct.navGroupAdmin' | t }}</h4>
+              <div class="nav-links">
+                <a regionLink="/admin">{{ 'nav.admin' | t }}</a>
+              </div>
+            </div>
+            <!-- Phones only: region and language live here rather than under
+                 every page. Wide screens keep them in the footer. -->
+            <div class="nav-group prefs-group" role="group" aria-labelledby="acct-nav-prefs">
+              <h4 class="nav-group-title" id="acct-nav-prefs">{{ 'acct.navGroupPrefs' | t }}</h4>
+              <div class="nav-links">
+                <ui-prefs-selector variant="rows"></ui-prefs-selector>
+              </div>
+            </div>
+            <!-- Phones: the menu ends with signing out, as account screens in
+                 apps do; wide screens keep the button in the profile card. -->
+            <div class="nav-group menu-logout">
+              <div class="nav-links">
+                <button type="button" (click)="doLogout()">{{ 'acct.logout' | t }}</button>
+              </div>
+            </div>
+          </nav>
+        </aside>
+
+        <main class="dashboard-content">
+          <router-outlet></router-outlet>
+        </main>
+      </div>

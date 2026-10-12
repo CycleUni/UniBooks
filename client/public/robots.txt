@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+# The dynamic sitemap lives under /api/ on this same origin (the server
+# Worker serves app and API together); the longer Allow wins over Disallow.
+Allow: /api/v1/sitemap
+Disallow: /api/
+
+# Fixed pages; generated at build time by scripts/build-region-html.ts.
+Sitemap: https://unibooks.app/sitemap.xml
+# Book and listing pages, built from the database by the server Worker.
+Sitemap: https://unibooks.app/api/v1/sitemap.xml

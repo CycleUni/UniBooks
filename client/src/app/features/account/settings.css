@@ -1,0 +1,130 @@
+    .verify-section { margin-bottom: 24px; }
+    .alert-box {
+      padding: 16px;
+      border-radius: 4px;
+      margin-bottom: 24px;
+    }
+    .alert-box.warning {
+      background-color: var(--warn-bg);
+      border: 1px solid color-mix(in srgb, var(--warn-ink) 40%, transparent);
+      color: var(--warn-ink);
+    }
+    .alert-box.success {
+      background-color: var(--success-light);
+      border: 1px solid color-mix(in srgb, var(--success) 40%, transparent);
+      color: var(--success);
+    }
+    .alert-box strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+    .alert-box p {
+      margin: 0;
+      font-size: var(--text-base);
+    }
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block;
+      font-size: var(--text-base);
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+.auto-verify-box {
+  max-width: 400px;
+  margin-top: 16px;
+  padding: 16px;
+  background-color: var(--paper-warm);
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+.auto-verify-box label {
+  margin-bottom: 4px;
+}
+.auto-verify-box .success-text {
+  color: var(--success);
+}
+.auto-verify-box p {
+  font-size: var(--text-base);
+  margin-top: 0;
+  color: var(--muted);
+}
+.auto-verify-box p.pending-email {
+  margin-bottom: 8px;
+}
+.auto-verify-box p.desc {
+  margin-bottom: 12px;
+}
+
+.avatar-visibility {
+  max-width: 400px;
+  margin-top: 32px;
+  border-top: 1px solid var(--line);
+  padding-top: 32px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.avatar-preview {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.avatar-visibility-text {
+  flex: 1;
+  min-width: 0;
+}
+.avatar-visibility-label {
+  font-weight: 600;
+  color: var(--ink);
+}
+.avatar-visibility-desc {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+.text-danger {
+  color: var(--danger);
+}
+
+/* Sits inside the muted line under the email field, so it has to read as part
+   of that sentence rather than as a second control competing with Save. */
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-left: 6px;
+  font: inherit;
+  color: var(--accent, var(--ink));
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  opacity: 0.8;
+}
+
+.danger-zone {
+  max-width: 400px;
+  margin-top: 48px;
+  border-top: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  padding-top: 32px;
+}
+.danger-zone h3 {
+  color: var(--danger);
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: var(--text-lg);
+}
+.danger-zone p {
+  font-size: var(--text-base);
+  color: var(--muted);
+  margin-bottom: 16px;
+}

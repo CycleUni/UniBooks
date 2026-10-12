@@ -1,0 +1,559 @@
+    .layout-wrapper {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    .layout-wrapper.is-full-bleed {
+      height: 100vh;
+      /* 100svh is the small (toolbar-at-its-largest) viewport height — the
+         one value guaranteed correct from the very first paint on real
+         mobile browsers, unlike 100dvh which can briefly resolve against
+         the large/toolbar-collapsed size before a resize event corrects
+         it. */
+      height: 100svh;
+      /* min-height must be overridden too, not just height: the base
+         .layout-wrapper rule sets min-height:100vh, and min-height beats
+         height in the cascade, so the used height stayed 100vh (the
+         toolbar-collapsed size) and this whole svh fix was inert. With the
+         URL bar showing, the wrapper then ran taller than the visible area
+         and pushed .message-history's bottom — reserved padding and all —
+         off the bottom of the screen, hiding the newest message behind the
+         fixed input until the toolbar collapsed. */
+      min-height: 100vh;
+      min-height: 100svh;
+      /* Deliberately NOT overflow:hidden. `.message-input-area` inside
+         `/messages` is `position: fixed` (matching `.bottom-tab-bar`'s own
+         positioning below) so it tracks the real viewport bottom edge
+         directly instead of depending on this wrapper's height math being
+         exactly right — but a `position:fixed` descendant is still CLIPPED
+         by any ancestor's `overflow:hidden`, even though it's positioned
+         relative to the viewport, not that ancestor. With overflow:hidden
+         here, the tiniest gap between 100svh and the real visible height
+         (which real devices do produce) sliced the fixed input off at this
+         wrapper's edge — same bug as before, just moved one layer up. The
+         flex chain's `min-height: 0` (messages.css `.message-history`)
+         is what actually keeps this shell from needing to scroll; overflow
+         doesn't need to be hidden on top of that as a second safety net,
+         and doing so was actively breaking the fixed input above. */
+    }
+    .app-header {
+      border-bottom: 1px solid var(--line);
+      background-color: var(--paper);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      /* Own layer in page transitions, so it stays put while the page moves
+         (see the ::view-transition rules in styles.css). */
+      view-transition-name: app-header;
+    }
+    /* The column itself comes from .container on the same element — this is
+       the edge every page's content is measured against, so it must not be a
+       private copy of the arithmetic. Block padding only. */
+    .header-content {
+      padding-block: var(--space-4);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand-area {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .school-selector {
+      width: auto;
+      max-width: 200px;
+    }
+    .school-trigger {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0; /* let the label ellipsis instead of forcing the button to grow */
+    }
+    .school-icon {
+      display: none;
+      flex-shrink: 0;
+    }
+    .school-trigger-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--text-sm);
+      border-bottom: 1px dashed var(--line);
+      padding-bottom: 1px;
+    }
+    .school-selector ::ng-deep .dropdown-trigger.icon-only:hover .school-trigger-label,
+    .school-selector ::ng-deep .dropdown-trigger.icon-only[aria-expanded="true"] .school-trigger-label {
+      border-bottom-color: var(--ink);
+    }
+    .logo a {
+      text-decoration: none;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo-mark {
+      display: block;
+      flex: none;
+    }
+    /* The mark's book color has a light and a dark variant; show the one
+       matching the resolved theme (same rules as the palette in styles.css).
+       html is named in :host-context so body, which never carries
+       data-theme, can't satisfy the :not() on its own. */
+    .logo-mark-dark {
+      display: none;
+    }
+    :host-context(html[data-theme="dark"]) .logo-mark-light {
+      display: none;
+    }
+    :host-context(html[data-theme="dark"]) .logo-mark-dark {
+      display: block;
+    }
+    @media (prefers-color-scheme: dark) {
+      :host-context(html:not([data-theme="light"])) .logo-mark-light {
+        display: none;
+      }
+      :host-context(html:not([data-theme="light"])) .logo-mark-dark {
+        display: block;
+      }
+    }
+    .logo-name {
+      font-family: 'Fraunces', 'Noto Serif TC', serif;
+      font-weight: 600;
+      font-size: var(--text-xl);
+      letter-spacing: -0.01em;
+    }
+    .logo-cn {
+      font-size: var(--text-xs);
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .nav-links {
+      display: flex;
+      gap: 28px;
+    }
+    .nav-links a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 0;
+      box-sizing: border-box;
+      min-height: 44px;
+      color: var(--ink-soft, var(--muted));
+      text-decoration: none;
+      font-size: var(--text-sm);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      border-bottom: 1px solid transparent;
+    }
+    .nav-links a:hover {
+      color: var(--ink);
+      border-bottom-color: var(--accent);
+    }
+    /* Stands in for the signed-in name while the profile loads, so the
+       header does not pass for signed out in the meantime. Same fill and
+       pulse as ui-skeleton. */
+    .nav-label-pending {
+      display: inline-block;
+      width: 5.5em;
+      height: 0.9em;
+      border-radius: 4px;
+      background-color: var(--line-strong);
+      animation: nav-label-pulse 1.5s infinite ease-in-out;
+    }
+    @keyframes nav-label-pulse {
+      0%, 100% { opacity: 0.75; }
+      50% { opacity: 0.5; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .nav-label-pending { animation: none; }
+      .app-header { transition: none !important; }
+    }
+    .nav-links a.active-link {
+      color: var(--ink);
+      border-bottom-color: var(--accent);
+    }
+    /* Icons carried the affordance in the original chip-style nav; the
+       text-first editorial treatment drops them but keeps the DOM/markup
+       intact (icons are reused as-is by the mobile bottom-tab-bar below). */
+    .nav-links svg {
+      display: none;
+    }
+    .nav-link-with-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .nav-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 9px;
+      /* Not literal white: on the dark palette --accent is the lighter green,
+         and #fff on it is 3.3:1 — under AA for 11px text. The primary-button
+         token pair is theme-resolved and clears 4.5:1 in both. */
+      background-color: var(--btn-primary-bg);
+      color: var(--btn-primary-ink);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-size: var(--text-xs);
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: normal;
+      transform: translateY(-1px);
+    }
+    .theme-icon-wrap {
+      display: inline-flex;
+    }
+    .main-content {
+      flex: 1;
+      width: 100%;
+      overflow-x: hidden; /* Prevent horizontal overflow from content */
+      box-sizing: border-box;
+      /* At least a screen tall, so the footer starts below the fold. Shorter,
+         it sat on screen while a page waited for its data and was pushed off
+         once that arrived — most of the layout-shift score.
+         (.main-content.full-bleed's min-height:0 outranks this.) */
+      min-height: 100svh;
+    }
+    /* A route that owns the viewport: min-height:0 is what actually lets a
+       flex child shrink below its content size, so the page itself stops
+       scrolling and the route scrolls its own panes instead. Deliberately
+       no overflow:hidden here (see the matching note on
+       .layout-wrapper.is-full-bleed) — this was the second of two
+       overflow:hidden ancestors clipping /messages' position:fixed input
+       area; removing only the outer one on .layout-wrapper left this one
+       still cutting it off one layer down. */
+    .main-content.full-bleed {
+      display: flex;
+      min-height: 0;
+    }
+    .bottom-tab-bar {
+      display: none;
+    }
+    .app-footer {
+      border-top: 1px solid var(--line-strong);
+      background-color: var(--paper-warm);
+      padding-block: var(--space-5);
+      margin-top: var(--space-8);
+    }
+    .footer-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--space-5);
+    }
+    .footer-brand-area {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-right: auto;
+    }
+    .footer-brand {
+      font-family: 'Noto Serif TC', serif;
+      font-weight: 700;
+      color: var(--ink);
+      font-size: var(--text-base);
+      letter-spacing: -0.01em;
+    }
+    /* The one line on the page that says what this actually is; it was set
+       in the same 14px grey as the legal links beside it. */
+    .footer-tagline {
+      font-family: 'Noto Serif TC', serif;
+      color: var(--ink-soft);
+      font-size: var(--text-base);
+    }
+    .footer-links {
+      display: flex;
+      gap: var(--space-5);
+    }
+    .footer-links a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      color: var(--ink-soft);
+      text-decoration: none;
+      font-size: var(--text-sm);
+    }
+    @media (pointer: coarse) {
+      .footer-links a { min-height: var(--tap-min); }
+    }
+    .footer-links a:hover {
+      color: var(--accent);
+    }
+    .footer-prefs {
+      display: flex;
+      align-items: center;
+    }
+    .footer-lang-dropdown {
+      display: inline-block;
+    }
+    .footer-lang-globe {
+      flex-shrink: 0;
+      display: block;
+    }
+    /* The language trigger is a 文A lockup drawn as SVG text — 文 large in
+       --ink, A small and offset in --accent — restored from the original
+       footer design rather than re-invented as a plain text glyph. */
+    .lang-icon-wrap {
+      display: inline-flex;
+    }
+    .footer-lang-dropdown ::ng-deep .dropdown-trigger {
+      font-size: var(--text-sm);
+      color: var(--ink-soft);
+      background-color: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      padding: 6px 10px;
+      min-height: 34px;
+      box-sizing: border-box;
+      gap: 6px;
+    }
+    .footer-lang-dropdown ::ng-deep .dropdown-trigger:hover {
+      color: var(--ink);
+      border-color: var(--line-strong);
+    }
+    .footer-lang-dropdown ::ng-deep .dropdown-trigger[aria-expanded="true"] {
+      color: var(--ink);
+      border-color: var(--accent);
+    }
+    .footer-lang-dropdown ::ng-deep .dropdown-caret {
+      color: var(--ink-soft);
+    }
+    .footer-lang-dropdown ::ng-deep .dropdown-trigger:hover .dropdown-caret,
+    .footer-lang-dropdown ::ng-deep .dropdown-trigger[aria-expanded="true"] .dropdown-caret {
+      color: var(--ink);
+    }
+    @media (pointer: coarse) {
+      .footer-lang-dropdown ::ng-deep .dropdown-trigger {
+        min-height: var(--tap-min);
+        padding: 10px 12px;
+      }
+    }
+
+    @media (max-width: 900px) {
+      /* No will-change: it would make the header the containing block of
+         anything position:fixed inside it, as a transform does only while
+         the bar is hidden. */
+      .app-header {
+        transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .app-header.app-bar-hidden {
+        transform: translateY(-100%);
+      }
+      .header-content {
+        padding-block: 12px;
+      }
+      /* The logo and theme switcher keep their size; the school selector
+         takes what is left and ellipsizes its name within it, so it never
+         wraps onto a second row. */
+      .brand-area {
+        flex-shrink: 0;
+      }
+      .header-right {
+        flex: 1 1 auto;
+        min-width: 0;
+        justify-content: flex-end;
+      }
+      .school-selector {
+        flex: 0 1 auto;
+        min-width: 0;
+      }
+      .school-selector ::ng-deep .dropdown-trigger {
+        min-width: 0;
+      }
+      .school-trigger-label {
+        min-width: 0;
+      }
+      /* Pages pushed over a tab show ui-app-bar instead. The logo, school
+         picker and theme switcher belong to the tabs' own screens. */
+      .app-header.sub-page .header-content {
+        display: none;
+      }
+      /* Primary nav moves to the bottom tab bar on mobile; only the theme
+         switcher stays in the header. */
+      .header-right .nav-links {
+        display: none;
+      }
+      /* Same signal that hides .bottom-tab-bar while a chat is open on
+          mobile (messages.ts sets this true) — the conversation's own
+          .chat-header takes over as the top bar, position:fixed to the
+          real viewport top the same way .message-input-area is fixed to
+          the real bottom. Two competing top:0 bars would overlap if both
+          stayed on screen. */
+      .app-header.hide-on-mobile-chat {
+        display: none;
+      }
+      .main-content {
+        /* Reserve space so page content doesn't end up under the fixed tab bar */
+        padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+      }
+      .main-content.hide-bottom-nav {
+        padding-bottom: 0;
+      }
+      /* Room for the page's ui-action-bar in place of the tab bar's: 10px
+         padding above and below a button that is 44px on one line and up to
+         about 52px when a long English label wraps to two. */
+      .main-content.has-action-bar {
+        padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+      }
+      /* Both bars: the action bar stacked on the tab bar (ui-action-bar). */
+      .main-content.action-bar-over-tabs {
+        padding-bottom: calc(76px + 57px + env(safe-area-inset-bottom, 0px));
+      }
+      .bottom-tab-bar {
+        display: flex;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 100;
+        border-top: 1px solid var(--line);
+        background-color: var(--paper);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        view-transition-name: bottom-tab-bar;
+      }
+      /* `flex: 1 1 0` + `min-width: 0`, not plain `flex: 1`: the bar now holds
+         five tabs (six for staff), and with an auto basis the widest label
+         ("Messages" in English) claimed more room than its share and pushed
+         the last tab off the edge on a 320px screen. */
+      .bottom-tab-bar a {
+        flex: 1 1 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        min-height: 56px;
+        padding-inline: 2px;
+        color: var(--muted);
+        text-decoration: none;
+        position: relative;
+      }
+      .bottom-tab-bar svg {
+        transition: transform 0.08s ease;
+      }
+      .bottom-tab-bar a:active svg {
+        transform: scale(0.88);
+      }
+      .bottom-tab-bar a.active-tab {
+        color: var(--accent);
+      }
+      .bottom-tab-bar .tab-label {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: var(--text-xs);
+        font-weight: 500;
+      }
+      .bottom-tab-bar .tab-with-badge {
+        position: relative;
+      }
+      .bottom-tab-bar .tab-badge {
+        position: absolute;
+        top: 4px;
+        left: 50%;
+        transform: translate(6px, -1px);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 8px;
+        background-color: var(--btn-primary-bg);
+        color: var(--btn-primary-ink);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        font-size: var(--text-xs);
+        font-weight: 700;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: normal;
+      }
+      .app-footer {
+        /* Inline padding lives on .footer-content's .container; adding it to
+           the band as well doubled the footer's gutter to 32px against the
+           page's 16px. */
+        padding-block: 16px calc(16px + 56px + env(safe-area-inset-bottom, 0px));
+        margin-top: 48px;
+      }
+      .footer-content {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 8px;
+      }
+      .footer-brand-area {
+        flex-direction: column;
+        gap: 4px;
+        margin-right: 0;
+      }
+    }
+
+    @media (max-width: 480px) {
+      /* Block only. This used to shorten the inline padding to 12px as well,
+         which pulled the logo 4px outside the page content it is supposed to
+         line up with — on the narrowest screens, where the offset is most
+         visible. */
+      .header-content {
+        padding-block: 10px;
+      }
+      .logo-name {
+        font-size: var(--text-lg);
+      }
+      .header-right {
+        gap: 8px;
+      }
+    }
+
+    /* Too narrow for even a shortened name to be legible: the icon alone
+       carries the selector. */
+    @media (max-width: 360px) {
+      .school-icon {
+        display: inline-flex;
+      }
+      .school-trigger-label {
+        /* Kept in the DOM (not display:none) so the button's accessible name
+           still reads the selected school name to screen readers. */
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+    }
+    .standalone-prefs-container {
+      padding-block: var(--space-5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    /* 900px, not 768px: this padding exists to clear .bottom-tab-bar, and the
+       bar appears at max-width 900. At 768 the two disagreed, so between 769
+       and 900 the bar was on screen with nothing reserved for it and sat on
+       top of the region and language pickers — the only controls down here.
+       The other two clearances in this file already key off 900; this one was
+       the outlier. Any rule that reserves space for the bar has to share its
+       breakpoint. */
+    @media (max-width: 900px) {
+      .standalone-prefs-container {
+        padding-block: 16px calc(16px + 56px + env(safe-area-inset-bottom, 0px));
+      }
+    }

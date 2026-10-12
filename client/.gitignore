@@ -1,0 +1,37 @@
+# 相依套件
+/node_modules/
+npm-debug.log*
+
+# 建置產出
+/dist/
+/out-tsc/
+/.angular/
+
+# 環境變數與金鑰（禁止入版控）
+.env
+.env.local
+.env.production
+.env.development
+.env.*.local
+!.env.example
+src/environments/environment.ts
+src/environments/environment.prod.ts
+*.pem
+*.key
+
+# 測試產出
+/coverage/
+
+# IDE 與系統檔
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# Cloudflare
+.wrangler/
+
+# --- 執行期伺服器 --- 
+*.pid
+*_server.log
+test-output.log

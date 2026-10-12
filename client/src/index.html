@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>UniBooks - Campus Marketplace</title>
+  <meta name="description" content="UniBooks is a second-hand book and item trading platform designed for university students, making campus resource recycling simple.">
+  <base href="/">
+  <!-- interactive-widget=resizes-content: on Android Chrome the default
+       (resizes-visual) keeps the *layout* viewport pinned to the full screen
+       resolution when the on-screen keyboard opens — only the visual
+       viewport shrinks. Since 100dvh/flex sizing in this app is computed
+       against the layout viewport, that default makes the keyboard cover
+       the message input instead of the layout reflowing above it, i.e. the
+       input's position ends up governed by raw device resolution rather
+       than the real visible height. resizes-content makes the layout
+       viewport (and therefore 100dvh) shrink with the keyboard, matching
+       the "real page height, not device resolution" behavior the bottom
+       nav bar's 100dvh already relies on.
+       viewport-fit=cover: without it iOS reports every env(safe-area-inset-*)
+       as 0, so the bottom tab bar's safe-area padding did nothing and, in the
+       home-screen web app, the bar sat in the home indicator's strip. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="UniBooks">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="icon" type="image/png" sizes="48x48" href="/icons/favicon-48x48.png">
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <!-- fonts.gstatic.com only: the build inlines the fonts.googleapis.com
+       sheets below, so the page never asks that origin for anything and a
+       preconnect to it was a wasted connection on every load. -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Chinese faces on wider screens only. On a phone a page could pull in
+       well over half a megabyte of them — every few characters fall in
+       another slice — which a slow link takes seconds to deliver, ahead of
+       the app's own code. There every 'Noto Sans TC' / 'Noto Serif TC' in
+       the styles falls through to the system fonts listed after it (Android's
+       own Noto Sans CJK, PingFang on iOS). The build inlines this sheet and
+       drops the media attribute; scripts/build-region-html.ts puts it back. -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet" media="(min-width: 901px)">
+  <!-- Wordmark face, subset to the letters of the brand name (text=) so it
+       costs a few hundred bytes instead of the whole family. -->
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&text=UniBooks&display=swap" rel="stylesheet">
+  <!-- Repairs a cached copy of a hashed bundle that is really HTML, which
+       would otherwise leave the page blank; see the file's header. Must load
+       before the bundles below it, synchronously, to hear their errors. -->
+  <script src="/asset-recovery.js"></script>
+  <!-- Applies the saved theme before first paint. An external file, not an
+       inline script block: the CSP allows script only from 'self', so inline code
+       would need 'unsafe-inline' or a hash kept in step with every edit.
+       Loaded synchronously on purpose — deferring it brings back the flash
+       of the wrong theme it exists to prevent. -->
+  <script src="/theme-init.js"></script>
+  <!-- theme-init.js adds the "js" class, so only visitors that can't run
+       the app see the crawler summary; everyone else would otherwise catch
+       it for a moment before Angular replaces it. -->
+  <style>html.js .crawler-summary{display:none}</style>
+</head>
+<body>
+  <app-root>
+    <!-- Crawler-readable summary for visitors without JavaScript (and for
+         Google's OAuth verification). Angular replaces the contents of
+         <app-root> as soon as it boots. -->
+    <main class="crawler-summary" style="max-width:640px;margin:0 auto;padding:48px 20px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.6">
+      <h1>UniBooks</h1>
+      <p>UniBooks is a second-hand textbook search and matching platform for university students in Taiwan. Students find the textbooks they need by ISBN, title or course, list books they no longer use, and arrange on-campus meetups with classmates through in-app chat. The platform only matches people and never handles payments.</p>
+      <p>Browsing books needs no account. Listing, ordering and chat require signing in with a school email or a Google account. With Sign in with Google, UniBooks receives only your email address, name and profile picture, used solely to create and identify your account.</p>
+      <p>UniBooks 是專為台灣大專院校學生打造的二手教科書搜尋與媒合平台：用 ISBN、書名或課程找書、刊登不再使用的書，並透過站內訊息與同學約定校園面交。平台不經手任何款項。</p>
+      <p>
+        <a href="https://about.unibooks.app/en/about/privacy">Privacy Policy</a> ·
+        <a href="https://about.unibooks.app/en/about/terms">Terms of Service</a> ·
+        <a href="https://about.unibooks.app/about/privacy">隱私權聲明</a> ·
+        <a href="https://about.unibooks.app/about/terms">服務條款</a> ·
+        <a href="https://about.unibooks.app/en/">About UniBooks</a>
+      </p>
+      <noscript>
+        <p><strong>請啟用 JavaScript 以使用 UniBooks。</strong><br>
+        Please enable JavaScript to use UniBooks.</p>
+      </noscript>
+    </main>
+  </app-root>
+</body>
+</html>

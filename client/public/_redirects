@@ -1,0 +1,13 @@
+# Served by Workers Static Assets (server/wrangler.jsonc "assets"), which
+# reads this file as Pages did.
+#
+# The Angular service worker fetches /index.html (with ?ngsw-cache-bust=…) on
+# every update check, and the asset server answers /index.html with a 307 to
+# / — a second round trip each time. Rewriting it to / serves the same bytes,
+# so the worker's hash check still passes.
+#
+# There is no `/*  /index.html  200` SPA rule any more: Workers rejects it
+# ("Infinite loop detected in this rule and has been ignored") and
+# not_found_handling = "single-page-application" in wrangler.jsonc does that
+# job. scripts/build-region-html.ts appends the per-region rules below.
+/index.html  /  200

@@ -1,0 +1,8 @@
+{
+  "watch": ["src/**/*.ts", "src/**/*.html", "src/**/*.css"],
+  "ext": "ts,html,css,json",
+  "ignore": ["src/**/*.spec.ts", ".angular/**", "dist/**", "node_modules/**", "src/environments/environment.ts", "src/environments/environment.prod.ts"],
+  "delay": "1500",
+  "exitcrash": true,
+  "exec": "node --env-file=.env scripts/set-env.js && ng serve --host 0.0.0.0 --allowed-hosts --proxy-config proxy.conf.json"
+}

@@ -1,0 +1,374 @@
+    /* Width comes from .container--form. The page also carried a dead
+       standalone header (.app-header/.header-content/.logo, nothing in
+       sell.html renders them) whose .header-content was a third private copy
+       of the content-column arithmetic; it is gone with the redeclaration. */
+    .sell-page {
+      margin-block: var(--space-7);
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .stepper {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 32px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+    .step {
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .step.active {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .form-container {
+      padding: 32px;
+    }
+    .desc {
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+    .actions {
+      margin-top: 32px;
+      text-align: right;
+    }
+    .split {
+      display: flex;
+      justify-content: space-between;
+    }
+    .book-match {
+      display: flex;
+      gap: 16px;
+      padding: 16px;
+      background-color: var(--paper-warm);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      margin-top: 16px;
+      border-radius: var(--radius-xs);
+    }
+    /* The selectable variant is a <button>, so it needs the UA styles reset —
+       centred text, its own font and a border of its own would otherwise
+       redraw the row. width/text-align restore the block layout the div had. */
+    .book-match.selectable {
+      cursor: pointer;
+      transition: border-color var(--motion-base), transform var(--motion-base);
+      width: 100%;
+      text-align: left;
+      font: inherit;
+      color: inherit;
+    }
+    .book-match .result-title {
+      display: block;
+      font-size: var(--text-lg);
+      font-weight: 700;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .book-match .result-isbn {
+      font-size: var(--text-xs);
+    }
+    .book-match.selectable:hover {
+      border-color: var(--accent);
+      border-left-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .select-hint {
+      margin-top: 24px;
+      margin-bottom: -4px;
+    }
+    .book-match .cover {
+      width: 60px;
+      height: 84px;
+      background-color: var(--line);
+      flex-shrink: 0;
+      border-radius: var(--radius-xs);
+      overflow: hidden;
+    }
+    .book-match .info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .book-match h3 {
+      margin: 0 0 4px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .book-match .muted {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .photo-upload label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      font-size: var(--text-base);
+    }
+    .dropzone {
+      border: 1.5px dashed var(--line);
+      padding: 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: var(--text-sm);
+      cursor: pointer;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 100px;
+      border-radius: var(--radius-xs);
+      transition: background-color var(--motion-base), border-color var(--motion-base);
+    }
+    .dropzone.drag-over {
+      background-color: var(--paper-warm);
+      border-color: var(--accent);
+    }
+    .upload-container {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .preview-box {
+      width: 100px;
+      height: 100px;
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+    }
+    .preview-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+    .remove-btn {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      background: var(--flag);
+      color: var(--on-flag);
+      border: none;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      font-size: var(--text-base);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .price-field-label {
+      display: block;
+      font-size: var(--text-base);
+      font-weight: 500;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+    .price-field {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1.5px solid var(--line-strong);
+      margin-bottom: 16px;
+      transition: border-color var(--motion-fast);
+    }
+    .price-field:focus-within {
+      border-bottom-color: var(--accent);
+    }
+    .price-currency {
+      font-size: var(--text-base);
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .price-input {
+      flex: 1;
+      width: 100%;
+      border: none;
+      background: none;
+      /* Focus is signalled by .price-field:focus-within's underline; the
+         .focus-no-ring class in styles.css suppresses the global ring. */
+      font-family: 'Noto Serif TC', serif;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      font-size: var(--text-2xl);
+      color: var(--accent);
+      padding: 0;
+    }
+    .free-btn {
+      margin-bottom: 16px;
+    }
+    .info-text {
+      font-size: var(--text-base);
+    }
+    .text-center {
+      text-align: center;
+    }
+    .success-manage-hint {
+      margin: 16px 0 0;
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
+    .success-manage-hint a {
+      color: var(--ink-soft);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      white-space: nowrap;
+    }
+    .unverified-state {
+      padding: 32px 0;
+    }
+    .alert-box {
+      padding: 24px;
+      border-radius: 4px;
+      text-align: center;
+      background-color: var(--warn-bg);
+      border: 1px solid var(--line);
+      color: var(--warn-ink);
+    }
+    .alert-box h3 {
+      margin-top: 0;
+      margin-bottom: 12px;
+    }
+
+    /* Draft restore bar. Sits above the stepper so the choice is made before
+       the form is touched, but stays a notice rather than a blocking modal —
+       ignoring it and typing simply starts a new listing. */
+    .draft-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+      background-color: var(--warn-bg);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius-xs);
+      color: var(--warn-ink);
+    }
+    .draft-banner-text {
+      margin: 0;
+      font-size: var(--text-base);
+      flex: 1;
+      min-width: 180px;
+    }
+    .draft-banner-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* Field-level variant of the global .inline-msg: same colours, tightened
+       up so the message reads as belonging to the input directly above it. */
+    .inline-msg.field-msg {
+      margin: 4px 0 12px;
+    }
+    /* Both the input component and the price row already reserve a bottom gap
+       for whatever follows them; a message that belongs to the field above
+       has to close that gap or it reads as a separate block. */
+    ui-input + .inline-msg.field-msg,
+    .price-field + .inline-msg.field-msg {
+      margin-top: -8px;
+    }
+
+    /* A caution, not an error: the price is allowed, just unusual. */
+    .inline-msg.warn {
+      background-color: var(--warn-bg);
+      color: var(--warn-ink);
+    }
+    .price-reference {
+      margin: 0 0 16px;
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
+    .listing-summary {
+      margin: 8px 0 16px;
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xs);
+      background-color: var(--paper-warm);
+    }
+    .listing-summary-title {
+      margin: 0 0 8px;
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .listing-summary dl {
+      display: grid;
+      grid-template-columns: max-content minmax(0, 1fr);
+      gap: 4px 16px;
+      margin: 0;
+      font-size: var(--text-base);
+    }
+    .listing-summary dt {
+      color: var(--muted);
+    }
+    .listing-summary dd {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+
+    /* A restored draft can reference a photo the server has since removed;
+       the slot keeps its shape instead of collapsing to a torn-image icon. */
+    .preview-missing {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--paper-warm);
+      border-radius: 4px;
+    }
+
+    @media (max-width: 768px) {
+      .sell-page {
+        margin-block: var(--space-5);
+      }
+      .stepper {
+        gap: 8px;
+        font-size: var(--text-base);
+        flex-wrap: wrap;
+      }
+      .form-container {
+        padding: 20px 16px;
+      }
+      .book-match {
+        flex-wrap: wrap;
+      }
+    }
+    .checkbox-group {
+      margin-bottom: 8px;
+    }
+    .group-label {
+      display: block;
+      font-size: var(--text-base);
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .checkboxes {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+    .checkboxes label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--text-base);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+

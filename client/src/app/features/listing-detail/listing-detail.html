@@ -1,0 +1,191 @@
+    <main class="container container--narrow detail-page">
+      <ui-back-button></ui-back-button>
+
+      <ui-breadcrumb [items]="breadcrumbItems"></ui-breadcrumb>
+
+      <ui-skeleton *ngIf="isLoading" variant="detail"></ui-skeleton>
+      
+      <div *ngIf="!isLoading && listing" class="product-layout">
+        
+        <!-- Left Column: Image Gallery -->
+        <div class="gallery-col">
+          <div class="main-image-wrapper">
+            
+            <div class="carousel-track" #carouselTrack (scroll)="onScroll()">
+              <div class="carousel-slide" *ngFor="let photo of allPhotos; let i = index">
+                <img *ngIf="!brokenPhotos.has(i)" [src]="photo" [attr.alt]="listing.book_title" class="main-image" (error)="onImageError(i)" />
+                <div class="placeholder-cover" *ngIf="brokenPhotos.has(i)">
+                  <span>{{ 'book.noPhoto' | t }}</span>
+                </div>
+              </div>
+              <div class="carousel-slide" *ngIf="allPhotos.length === 0">
+                <div class="placeholder-cover">
+                  <span>{{ 'book.noPhoto' | t }}</span>
+                </div>
+              </div>
+            </div>
+
+            <button class="nav-btn prev-btn" *ngIf="allPhotos.length > 1" (click)="scrollGallery(-1)">&#10094;</button>
+            <button class="nav-btn next-btn" *ngIf="allPhotos.length > 1" (click)="scrollGallery(1)">&#10095;</button>
+          </div>
+
+          <div class="thumbnails" *ngIf="allPhotos.length > 1">
+            <div
+              *ngFor="let photo of allPhotos; let i = index"
+              class="thumbnail"
+              [class.active]="i === selectedIndex"
+              (click)="selectPhoto(i)">
+              <img *ngIf="!brokenPhotos.has(i)" [src]="photo" [attr.alt]="listing.book_title + ' — ' + ('common.photoIndex' | t:{n: i + 1})" (error)="onImageError(i)" />
+              <div class="thumbnail-placeholder" *ngIf="brokenPhotos.has(i)"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Details & Actions -->
+        <div class="details-col">
+          <h1 class="book-title-serif">{{ listing.book_title }}</h1>
+          <p class="book-authors" *ngIf="listing.book_authors">{{ listing.book_authors }}</p>
+          
+          <a [regionLink]="['/book']" [queryParams]="{ isbn: listing.isbn }" class="book-link" [innerHTML]="'sell.viewOtherListings' | t">
+          </a>
+
+          <div class="price-condition-row">
+            <div class="price" #bigPrice>{{ listing.price | price: listing.currency }}</div>
+            <div class="condition-badge" [ngClass]="listing.condition">
+              {{ ('cond.' + listing.condition) | t }}
+            </div>
+          </div>
+
+          <!-- A real anchor: as a div with a click binding the seller's
+               profile, and with it their reviews, was unreachable by keyboard. -->
+          <a class="seller-box clickable" [regionLink]="['/seller', listing.seller]">
+            <div class="seller-header">
+              <div class="seller-avatar" *ngIf="!listing.seller_avatar_url">{{ listing.seller_name.charAt(0) }}</div>
+              <div class="seller-avatar-image-container" *ngIf="listing.seller_avatar_url">
+                <img [src]="listing.seller_avatar_url" [attr.alt]="listing.seller_name ? (listing.seller_name + ' ' + ('acct.avatarAlt' | t)) : ('acct.avatarAlt' | t)" class="seller-avatar-image" referrerpolicy="no-referrer">
+              </div>
+              <div class="seller-info-text">
+                <div class="seller-name">{{ listing.seller_name }}</div>
+                <div class="seller-school">{{ listing.school_name || ('acct.noSchool' | t) }}</div>
+                <div class="seller-reputation">
+                  <ui-seller-reputation
+                    [rating]="listing.seller_average_rating"
+                    [reviewCount]="listing.seller_review_count"
+                    [sales]="listing.seller_completed_sales"
+                  ></ui-seller-reputation>
+                </div>
+              </div>
+            </div>
+          </a>
+
+          <div class="info-list">
+            <div class="info-row" *ngIf="listing.course_name">
+              <span class="info-label">{{ 'sell.course' | t }}</span>
+              <span class="info-value">{{ listing.course_name }}</span>
+            </div>
+            <div class="info-row" *ngIf="listing.professor_name">
+              <span class="info-label">{{ 'sell.professor' | t }}</span>
+              <span class="info-value">{{ listing.professor_name }}</span>
+            </div>
+            <div class="info-row" *ngIf="listing.description">
+              <span class="info-label">{{ 'sell.note' | t }}</span>
+              <span class="info-value note-box">{{ listing.description }}</span>
+            </div>
+            <div class="info-row" *ngIf="listing.isbn">
+              <span class="info-label">ISBN</span>
+              <span class="info-value"  style="font-family: monospace;">{{ listing.isbn }}</span>
+            </div>
+          </div>
+
+          <ui-verification-prompt
+            *ngIf="showUnverifiedPrompt"
+            (onDismiss)="showUnverifiedPrompt = false">
+          </ui-verification-prompt>
+
+          <!-- Chatting is the real first step: the order endpoint rejects a
+               meetup request from a buyer who has never messaged the seller
+               (checkout.errNoChat), so contacting is the primary action and
+               arranging the meetup the secondary one. -->
+          <!-- A listing from another region takes the actions' place with an
+               explanation: chat and meetup are region-scoped on the backend
+               and would be refused from this region's site. -->
+          <ng-container *ngIf="!regionMismatch; else regionMismatchNotice">
+          <ng-container *ngIf="isOwnListing(listing)">
+          <ui-action-bar [leadFor]="bigPrice">
+            <span actionBarLead>{{ listing.price | price: listing.currency }}</span>
+            <ui-button variant="white" class="flex-1" style="font-size: var(--text-md); padding: 12px;" link="/account/listings">
+              {{ 'listing.manageOwn' | t }}
+            </ui-button>
+          </ui-action-bar>
+          <p class="chat-first-hint">{{ 'listing.ownListing' | t }}</p>
+          </ng-container>
+          <ng-container *ngIf="!isOwnListing(listing)">
+          <ui-action-bar [leadFor]="bigPrice">
+            <span actionBarLead>{{ listing.price | price: listing.currency }}</span>
+            <ui-button  class="flex-1" style="font-size: var(--text-md); padding: 12px;" (onClick)="contactSeller()">
+              {{ 'book.contactSeller' | t }}
+            </ui-button>
+            <ui-button variant="white"  class="flex-1" style="font-size: var(--text-md); padding: 12px;" (onClick)="buyNow()">
+              {{ 'checkout.arrangeMeetup' | t }}
+            </ui-button>
+          </ui-action-bar>
+          <p class="chat-first-hint">{{ 'checkout.chatFirstHint' | t }}</p>
+          </ng-container>
+          </ng-container>
+          <ng-template #regionMismatchNotice>
+            <div class="region-mismatch" role="status">
+              <h2 class="region-mismatch-title">{{ 'listing.regionMismatchTitle' | t:{listingRegion: regionName(listing.region)} }}</h2>
+              <p class="region-mismatch-desc">{{ 'listing.regionMismatchDesc' | t:{listingRegion: regionName(listing.region), pageRegion: regionName(currentRegion())} }}</p>
+              <ui-button variant="white" (onClick)="switchToListingRegion()">
+                {{ 'listing.regionMismatchSwitch' | t:{listingRegion: regionName(listing.region)} }}
+              </ui-button>
+            </div>
+          </ng-template>
+
+          <button
+            *ngIf="canReport()"
+            type="button"
+            class="report-link"
+            (click)="openReportModal()"
+          >
+            {{ 'moderation.reportButton' | t }}
+          </button>
+
+          <div *ngIf="reportConfirmationMsg" class="report-confirmation">
+            {{ reportConfirmationMsg }}
+          </div>
+        </div>
+
+      </div>
+
+      <app-report-modal
+        *ngIf="showReportModal && listing"
+        [listingId]="listing.id"
+        (closed)="closeReportModal()"
+        (submitted)="onReportSubmitted()"
+      ></app-report-modal>
+
+      <div class="other-listings-section" *ngIf="otherListings.length > 0">
+        <h3 class="section-title">{{ 'sell.otherSellersTitle' | t }}</h3>
+        <div class="listings-grid">
+          <ui-listing-card
+            *ngFor="let item of otherListings; trackBy: trackById"
+            [item]="item"
+            [isOwn]="isOwnListing(item)"
+            (onClickCard)="goToListing($event)"
+            (onBuyNow)="buyNowOther($event)"
+            (onContactSeller)="contactSellerOther($event)"
+          ></ui-listing-card>
+        </div>
+      </div>
+
+      <ui-error-state *ngIf="errorMsg" [message]="errorMsg" [retryable]="!!currentId" (retry)="currentId && startLoad(currentId)"></ui-error-state>
+      <ui-empty
+        *ngIf="notFound"
+        [fullPage]="true"
+        [message]="'listing.notFoundTitle' | t"
+        [description]="'listing.notFoundBody' | t"
+        [actionText]="'listing.notFoundAction' | t"
+        (onAction)="goSearch()"
+      ></ui-empty>
+    </main>

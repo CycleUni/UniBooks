@@ -1,0 +1,1138 @@
+/*
+ * UniBooks — global styles and design tokens (frontend-ssd §4.3)
+ * Engineering agents must not add new brand colors or fonts beyond the
+ * tokens below without design sign-off; small structural tokens (shadow,
+ * radius) for elevation/spacing may be added here as needed.
+ */
+
+:root {
+  /* Colors: the vocabulary is "used books, kraft paper, library" */
+  --ink:        #1F2933; /* body text and headings (near-black ink, not pure black) */
+  --ink-soft:   #4A555F; /* de-emphasized ink: still body-legible (7.6:1 on paper),
+                            one step down from --ink, above --muted. Used for
+                            secondary controls (tag buttons, quiet links) that
+                            must not read as disabled the way --muted does. */
+  --paper:      #FFFFFF; /* main background */
+  --paper-warm: #F7F5F0; /* section background (very light paper tone, used sparingly) */
+
+  /* Two border weights, not one. --line is decorative only (hairline rules
+     between rows/steps); at 1.48:1 on --paper it is deliberately barely
+     there. Anything that marks an *interactive* boundary — input fields,
+     buttons, cards you can click — must use --line-strong, which clears
+     WCAG 1.4.11's 3:1 minimum for non-text UI (3.4:1 on --paper,
+     3.1:1 on --paper-warm). Using --line for those made the whole
+     line-driven layout effectively invisible. */
+  --line:        #D9D4CB;
+  --line-strong: #948A76;
+  
+  /* Raised surface for floating elements (dropdowns, modals) to stand out from the page ground.
+     In light mode, it remains paper-colored with a standard line border.
+     In dark mode, it elevates the surface lightness and border contrast. */
+  --surface-raised:        #FFFFFF;
+  --surface-raised-border: #D9D4CB;
+
+  /* The card face: the ground of anything that reads as a card sitting *on*
+     the page (listing cards, tables, admin panels, the checkout summary) as
+     opposed to floating above it. Separate from --paper because the two only
+     coincide in light mode; see the dark palette for why they must not be the
+     same value there. */
+  --surface-card: #FFFFFF;
+
+  --accent:      #1E5C46; /* primary action color (deep green: links, primary buttons, prices) */
+  --accent-ink:  #14402F; /* darkened hover state */
+  --accent-soft: #E7F0EA; /* accent-tinted ground: selected chips, hover fills */
+  --flag:        #A34A2A; /* warnings and the "N people waiting" badge (brick red, these two uses only) */
+  --flag-light:  #FFF0EB;
+  --flag-border: #FFD6CC;
+  --sponsor:     #8C6B3F; /* gold/kraft tone for sponsor tags */
+  --muted:       #647079; /* secondary text */
+
+  /* Secondary brand color. The palette had exactly one hue (--accent green)
+     doing every job, which read as "library catalog" rather than "students
+     handing textbooks on". This warm kraft/book-board amber is the counter-
+     weight: step numerals, hero rules, "just listed" marks.
+     3.4:1 on --paper — large text and graphics only, never body copy. */
+  --brand-warm:      #C8763F;
+  --brand-warm-soft: #FBF0E4;
+
+  /* Structural tokens (not part of the color/font vocabulary above):
+     subtle elevation and corner-rounding for cover images and cards. */
+  --shadow-card: 0 1px 3px rgba(31, 41, 51, 0.10);
+  /* Raised state for --shadow-card. This was referenced by book-tile and the
+     hero cover stack long before it existed, so their hover elevation was
+     silently falling back to the resting shadow and animating nothing. */
+  --shadow-card-lg: 0 2px 4px rgba(31, 41, 51, 0.06), 0 12px 24px -8px rgba(31, 41, 51, 0.18);
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-control: 6px;
+  --radius-lg: 8px; /* large surfaces only: promo banners, modals */
+
+  /* Semantic status tokens (not brand colors): a warm warning tint in the
+     same hue family as --flag, used for alert/warning boxes and "no stock"
+     states instead of ad hoc hex values. */
+  --warn-bg:  #FBEFE4; /* warm tint derived from --paper-warm/--flag */
+  --warn-ink: #7A3A1F; /* darkened --flag-family ink for warning text */
+  /* --danger/--success were referenced in feature styles without ever being
+     declared, so those rules silently did nothing. Both clear AA on --paper
+     (6.5:1 and 5.0:1). */
+  --danger:       #B3261E;
+  --danger-light: #FBEAE8;
+  --success:      #2E7D57;
+  --success-light: #EBF5F0;
+  --info-bg:      #EFF6FF;
+  --info-ink:     #1D4ED8;
+  --info-border:  #BFDBFE;
+  --special-bg:   #F3E8FF;
+  --special-ink:  #7E22CE;
+  /* Deliberately a burnt amber rather than the bright #F59E0B this used to
+     be: at 2.15:1 on --paper that one failed WCAG 1.4.11's 3:1 floor for
+     non-text UI, and the star row is the only thing telling you what rating
+     you picked. 5.0:1 on --paper, 4.6:1 on --paper-warm. */
+  --star:         #B45309;
+
+  /* Spacing scale (8px base). Use these instead of ad hoc px values for
+     section/card padding and gaps so vertical rhythm reads as one system
+     rather than each page inventing its own spacing by feel. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Type scale. Everything should pick from this list rather than a bespoke
+     size, so the hierarchy (hero > heading > card title > body > caption)
+     stays legible and consistent across the whole app. --text-hero is the
+     one fluid step: it is shared rather than re-clamped per page, because
+     per-page clamps drifted into hard breakpoint overrides that collapsed
+     the hero down to heading size on mobile. */
+  --text-hero: clamp(28px, 6.2vw, 52px);
+  --text-3xl: 32px;  /* page-level H1 outside of hero contexts */
+  --text-2xl: 24px;
+  --text-xl:  20px;  /* .section-heading */
+  --text-lg:  18px;  /* card/tile titles */
+  --text-md:  16px;  /* prominent text, big buttons */
+  --text-base: 14px; /* body */
+  --text-sm:  13px;  /* secondary/meta text */
+  --text-xs:  12px;  /* captions, badges */
+
+  /* Component-level theme hooks. Components use emulated encapsulation, so a
+     `:root[data-theme="dark"] .foo` rule written inside a component gets the
+     `_ngcontent` attribute stamped onto *every* compound in the chain —
+     including `:root`, which never carries it — and silently never matches.
+     Any value that must differ per theme therefore has to be resolved here,
+     as a token the component reads. Primary buttons need this: light mode is
+     "deep fill + light label", but on dark --accent is the lighter green and
+     --paper the near-black ground, so reusing the same recipe inverts the
+     button into a pale surface that reads as secondary or disabled. */
+  --btn-primary-bg:       var(--accent);
+  --btn-primary-ink:      var(--paper);
+  --btn-primary-bg-hover: var(--accent-ink);
+
+  /* Labels drawn *on top of* a filled --accent/--flag/--success surface
+     (avatars, badges, pagination's current page, the reconnecting pill).
+     Those all hard-coded `color: white`, which is only correct in light
+     mode: the dark palette lightens each of those fills to sit on a near-
+     black ground, so white-on-fill collapses to 3.31:1 / 3.28:1 / 2.60:1 —
+     the same trap --btn-primary-* above exists to prevent. The label has to
+     flip with the theme, so it resolves here rather than in the component. */
+  --on-accent:  #FFFFFF; /* 7.9:1 on --accent */
+  --on-flag:    #FFFFFF; /* 5.9:1 on --flag */
+  --on-success: #FFFFFF; /* 5.0:1 on --success */
+
+  /* Minimum hit area for anything tappable (iOS 44pt / Android 48dp).
+     Controls may look smaller than this via transparent padding, but the
+     box that receives the tap must not be. */
+  --tap-min: 44px;
+
+  /* Two transition durations, not five. The app had 0.1s / 0.15s / 0.2s /
+     0.3s / .2s scattered across 41 declarations with nothing deciding which
+     applied where, so a listing card and a book tile — which sit side by side
+     in the same grid — lifted at 0.1s and 0.15s and visibly raced each other.
+     --motion-fast is for a control acknowledging a pointer (hover tint, focus
+     border, a checkmark popping in); --motion-base is for anything that moves
+     or resizes a box (card lift, drawer, caret flip). Both are durations only:
+     easing stays at the call site, since ease-in-out on a checkmark and ease
+     on a slide are genuinely different intents. */
+  --motion-fast: 0.15s;
+  --motion-base: 0.2s;
+}
+
+/* Dark palette: follows OS/browser preference by default. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink:        #EDE8DE; /* warm off-white text */
+    --ink-soft:   #C4BDB0;
+    --paper:      #181716; /* deep warm charcoal ground (not pure black) */
+    --paper-warm: #201F1B; /* slightly lighter charcoal for section backgrounds */
+    --line:        #3B382E; /* subtle warm-toned border */
+    --line-strong: #706A5A; /* 3.3:1 on --paper and 3.1:1 on --paper-warm */
+    --surface-raised:        #292723;
+    --surface-raised-border: #4A4640;
+    /* A card cannot be --paper here. The page ground *is* --paper, so a card
+       painted with it differs from the page by exactly 1.00:1, leaving the
+       shadow to do the separating — and the shadow is black on near-black:
+       its outermost rgba(0, 0, 0, 0.6) over #181716 composites to #0A0909,
+       1.12:1. Elevation in a dark UI has to be carried by a lighter surface,
+       not a darker shadow. #262421 is 1.16:1 above the page by WCAG contrast
+       and 2.06:1 by relative luminance, across the card's whole area rather
+       than a 24px gradient at its edge. Every on-card token stays at AA
+       (--accent, the tightest, is 4.67:1 here and 4.50:1 on --surface-raised).
+       Staying below --surface-raised is deliberate — dropdowns and modals
+       still have somewhere to sit above a card.
+
+       The three grounds (--paper, --surface-card, --surface-raised) and the
+       raised border were cool blue-greys (#17181A / #242629 / #26282B /
+       #46484D, blue channel highest), which read as blue next to the warm
+       --paper-warm and --line. They are now warm neutrals at hue ~36-40°, the
+       same family as the rest of the palette, at the same lightness steps, so
+       the separation between page, card and window is unchanged. */
+    --surface-card:          #262421;
+    --accent:      #4B9C7B; /* brighter green for contrast on a dark ground */
+    --accent-ink:  #7FC4A6; /* lighter emphasis variant of accent on dark */
+    --accent-soft: #1E2B25;
+    --flag:        #C97A54; /* brighter terracotta/brick for contrast on a dark ground */
+    --flag-light:  #2E211A;
+    --flag-border: #4A3226;
+    --sponsor:     #C49A6C; /* lighter gold/kraft tone for sponsor tags */
+    --muted:       #9B9488;
+
+    --brand-warm:      #E09A63;
+    --brand-warm-soft: #2B2119;
+
+    --warn-bg:  #2E2419; /* dark warm-brown tint, same hue family as light --warn-bg */
+    --warn-ink: #E8B98C; /* light warm tone, readable on --warn-bg above */
+    --danger:       #E8776F;
+    --danger-light: #2E1C1A;
+    --success:      #5FB08C;
+    --success-light: #1E2D26;
+  --info-bg:      #172554;
+  --info-ink:     #93C5FD;
+  --info-border:  #1E3A8A;
+    --special-bg:   #3B0764;
+    --special-ink:  #D8B4FE;
+    --star:         #FBBF24;
+
+    --btn-primary-bg:       #2F7A5C;
+    --btn-primary-ink:      #F2F7F4;
+    /* Hover darkens here too. It used to *lighten* to #3E9070, which both
+       dropped the label to 3.57:1 and inverted the gesture — light mode's hover
+       goes darker (7.9:1 -> 11.6:1), so the two themes said opposite things
+       with the same interaction. Now 4.8:1 -> 6.6:1. */
+    --btn-primary-bg-hover: #256349;
+
+    /* See --on-* in :root. The dark palette's fills are the *lighter*
+       variants sitting on a near-black ground, so the readable label is dark
+       ink, not white: 5.4:1 / 5.4:1 / 6.8:1 respectively. */
+    --on-accent:  #181716;
+    --on-flag:    #181716;
+    --on-success: #181716;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 24px -12px rgba(0, 0, 0, 0.6);
+    --shadow-card-lg: 0 2px 4px rgba(0, 0, 0, 0.5), 0 16px 32px -10px rgba(0, 0, 0, 0.7);
+  }
+}
+
+/* Dark palette hook for a future explicit theme toggle (not built yet). */
+:root[data-theme="dark"] {
+  --ink:        #EDE8DE;
+  --ink-soft:   #C4BDB0;
+  --paper:      #181716;
+  --paper-warm: #201F1B;
+  --line:        #3B382E;
+  --line-strong: #706A5A;
+  --surface-raised:        #292723;
+  --surface-raised-border: #4A4640;
+  /* See the same token in the prefers-color-scheme block above. */
+  --surface-card:          #262421;
+  --accent:      #4B9C7B;
+  --accent-ink:  #7FC4A6;
+  --accent-soft: #1E2B25;
+  --flag:        #C97A54;
+  --flag-light:  #2E211A;
+  --flag-border: #4A3226;
+  --sponsor:     #C49A6C;
+  --muted:       #9B9488;
+
+  --brand-warm:      #E09A63;
+  --brand-warm-soft: #2B2119;
+
+  --warn-bg:  #2E2419;
+  --warn-ink: #E8B98C;
+  --danger:       #E8776F;
+  --danger-light: #2E1C1A;
+  --success:      #5FB08C;
+  --success-light: #1E2D26;
+  --info-bg:      #172554;
+  --info-ink:     #93C5FD;
+  --info-border:  #1E3A8A;
+    --special-bg:   #3B0764;
+    --special-ink:  #D8B4FE;
+    --star:         #FBBF24;
+
+  --btn-primary-bg:       #2F7A5C;
+  --btn-primary-ink:      #F2F7F4;
+  /* Hover darkens here too. It used to *lighten* to #3E9070, which both
+     dropped the label to 3.57:1 and inverted the gesture — light mode's hover
+     goes darker (7.9:1 -> 11.6:1), so the two themes said opposite things
+     with the same interaction. Now 4.8:1 -> 6.6:1. */
+  --btn-primary-bg-hover: #256349;
+
+  /* See --on-* in :root. The dark palette's fills are the *lighter*
+     variants sitting on a near-black ground, so the readable label is dark
+     ink, not white: 5.4:1 / 5.4:1 / 6.8:1 respectively. */
+  --on-accent:  #181716;
+  --on-flag:    #181716;
+  --on-success: #181716;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 24px -12px rgba(0, 0, 0, 0.6);
+  --shadow-card-lg: 0 2px 4px rgba(0, 0, 0, 0.5), 0 16px 32px -10px rgba(0, 0, 0, 0.7);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  /* Body text and UI use Noto Sans TC (400/500/700) with system font fallbacks */
+  font-family:
+    'Noto Sans TC',
+    -apple-system, 'PingFang TC', 'Microsoft JhengHei',
+    system-ui, sans-serif;
+  /* Numbers (prices, ISBNs) align with tabular-nums */
+  font-variant-numeric: tabular-nums;
+  /* Prevent horizontal overflow on mobile */
+  overflow-x: hidden;
+}
+
+/*
+ * Keyboard focus, globally. Several shared controls (input, select,
+ * search-bar, dropdown) set `outline: none` and signalled focus only by
+ * swapping a border color — between --ink and --accent that is a 1.9:1
+ * change on a 1.5px line, i.e. invisible. :focus-visible keeps mouse users
+ * from seeing rings while guaranteeing keyboard users always do, so it is
+ * defined once here rather than per component. Uses :where() to stay at
+ * zero specificity: any component rule still wins if it needs to.
+ */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  /* Deliberately no border-radius here. The outline already follows whatever
+     radius the element itself has; setting one imposes a shape, so an element
+     with square corners visibly morphs the moment it takes keyboard focus. */
+}
+
+/* Opt-out for fields that signal focus with their own border/underline instead
+   of a ring. NOT `outline: none` — the transparent outline is what forced-colors
+   mode recolours, so removing it would leave High Contrast users with no focus
+   indicator at all. */
+.focus-no-ring:focus-visible {
+  outline: 2px solid transparent;
+}
+
+/* Raised surface shared by the auth box and the sell form. It used to say the
+   shadow was what separated the card from the page in dark mode; it was not.
+   Both were --paper, i.e. the same colour, and the shadow between them
+   composites to 1.12:1 — the card and the page were one flat plane. The
+   separation now comes from --surface-card being a lighter surface than the
+   page ground, which is how a dark UI expresses elevation; the shadow is a
+   supporting cue, not the mechanism. Component rules keep their own padding /
+   max-width. */
+.surface-card {
+  background-color: var(--surface-card);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow-card-lg);
+}
+
+/*
+ * Respect the OS "reduce motion" setting. The app animates skeleton pulses
+ * continuously and translates/rotates tiles on hover; for users who ask for
+ * reduced motion these are exactly the effects that need to stop.
+ *
+ * Two things this block does NOT do, both of which have to be handled at the
+ * call site:
+ *   - `scroll-behavior: auto` only overrides the CSS property. A behavior
+ *     passed to scrollTo/scrollBy/scrollIntoView is a script argument and
+ *     wins over it, so JS-driven scrolling must read the preference itself —
+ *     see core/reduced-motion.ts.
+ *   - collapsing animation-duration to 0.01ms erases an animation entirely.
+ *     Where the animation *is* the message (the pulse marking which order you
+ *     just came back to), the component has to opt out of this rule and hold
+ *     a static state instead of playing nothing.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* `*` doesn't match view-transition pseudo-elements. The router skips the
+     transition for this preference already (core/view-transitions.ts); this
+     covers a preference switched on mid-transition. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/*
+ * Tap feedback. No grey flash box on tap (every pressable thing here has its
+ * own :active or focus style), and no double-tap-to-zoom wait on controls, so
+ * a tap responds at once. Buttons sink slightly while pressed, like native
+ * ones; iOS only applies :active because main.ts registers a touchstart
+ * listener.
+ */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+a,
+button,
+input,
+select,
+textarea,
+label,
+summary,
+[role="button"] {
+  touch-action: manipulation;
+}
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/*
+ * Page transitions. core/view-transitions.ts sets data-nav-transition on
+ * <html> to pick one; the header and bottom tab bar carry their own
+ * view-transition-name (layout.component.css), so only the page between
+ * them moves.
+ *
+ * On phones, forward/back slide like a navigation stack: the new page covers
+ * the old from the right, and the old one drifts a little the other way.
+ * Tab switches and desktop get a short crossfade instead.
+ * mix-blend-mode is reset because the UA's plus-lighter blend, meant for
+ * crossfades, would brighten the overlap of two opaque sliding pages.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.18s;
+}
+@media (max-width: 900px) {
+  html[data-nav-transition="forward"]::view-transition-old(root),
+  html[data-nav-transition="forward"]::view-transition-new(root),
+  html[data-nav-transition="back"]::view-transition-old(root),
+  html[data-nav-transition="back"]::view-transition-new(root) {
+    mix-blend-mode: normal;
+    animation-duration: 0.32s;
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation-fill-mode: both;
+  }
+  html[data-nav-transition="forward"]::view-transition-old(root) {
+    animation-name: page-drift-left;
+  }
+  html[data-nav-transition="forward"]::view-transition-new(root) {
+    animation-name: page-enter-right;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  }
+  html[data-nav-transition="back"]::view-transition-old(root) {
+    animation-name: page-leave-right;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+    z-index: 1;
+  }
+  html[data-nav-transition="back"]::view-transition-new(root) {
+    animation-name: page-drift-back;
+  }
+}
+@keyframes page-enter-right { from { transform: translateX(100%); } }
+@keyframes page-leave-right { to { transform: translateX(100%); } }
+@keyframes page-drift-left { to { transform: translateX(-25%); } }
+@keyframes page-drift-back { from { transform: translateX(-25%); } }
+
+/*
+ * The single content column. Full-bleed bands (hero, footer) put their
+ * background on the outer element and this class on the inner one; ordinary
+ * sections use it directly. Previously bands and sections computed their
+ * gutters differently (a padded band with a max-width:1120 child yields a
+ * 1120px column; a border-box max-width:1120 section with padding yields
+ * 1088px), so hero and footer text sat 16px outside every other section's
+ * left edge. One class, one column.
+ */
+.container {
+  width: 100%;
+  max-width: 1152px; /* 1120px column + 2 × 16px gutter */
+  margin-inline: auto;
+  padding-inline: var(--space-4);
+}
+
+/*
+ * There are exactly three legal content widths, and a page picks one; it does
+ * not invent a number. Seven features had re-declared `.container` inside
+ * their own component styles — five as content columns at 1120 / 1000 / 960 /
+ * 800 / 600, and two (sign-in, order-success) as centring wrappers that were
+ * not columns at all — and because a component rule carries an _ngcontent
+ * attribute it outranks the global rule above and silently replaced it. The
+ * result was that the header logo and the page content shared a left edge on
+ * home, missed by 16px on search and by 96px on a book page, so the column
+ * visibly stepped sideways on every navigation. The widths below are
+ * modifiers, never redeclarations, so "narrower" has to be chosen out loud.
+ *
+ *   default   1120px — browse surfaces: a grid several cards wide (home,
+ *                      search, the account dashboard, admin). Also what the
+ *                      header and footer bands produce, so this is the width
+ *                      the page's left edge is measured against.
+ *   --narrow   960px — one subject plus its supporting media column: a book,
+ *                      a listing, a seller. Wide enough for a 200px cover and
+ *                      a three-card grid underneath, narrow enough that the
+ *                      description does not run to a 1120px measure.
+ *   --form     720px — one task, one form (checkout, sell, sign-in). Keeps a
+ *                      full-width input near a readable measure instead of
+ *                      stretching it across the page.
+ *
+ * Vertical rhythm is deliberately not set here: each page keeps its own block
+ * margin under its own class, so this stays a horizontal concern only.
+ */
+.container--narrow { max-width: 992px; } /* 960px column + 2 × 16px gutter */
+.container--form   { max-width: 752px; } /* 720px column + 2 × 16px gutter */
+
+/*
+ * Serif exception for book titles (the interface's only serif usage):
+ * book detail titles render in Noto Serif TC 700; the class is reserved here.
+ */
+.book-title-serif {
+  font-family: 'Noto Serif TC', serif;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/*
+ * Shared section-heading treatment: used for section titles across pages
+ * (recently added, listings, categories, search results, etc.) so they
+ * read as one system instead of each page inventing its own ad hoc
+ * bold-text-plus-full-width-underline style. Not for book titles or
+ * modal/dialog titles, which are intentionally different.
+ */
+.section-heading {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 var(--space-5);
+}
+.section-heading::after {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 3px;
+  margin-top: 10px;
+  background: var(--accent);
+}
+
+/*
+ * A section's heading with its controls on the right: the primary action,
+ * and view controls like a sort that are not filters (filters stay beside
+ * the search, in .admin-filters). One copy for account and admin pages; it
+ * wraps the controls under the heading when the row runs out of room.
+ */
+.section-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-bottom: var(--space-5);
+}
+.section-head-row > .section-heading {
+  margin-bottom: 0;
+}
+.section-head-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+/*
+ * Visually hidden below the mobile breakpoint, but still announced.
+ *
+ * For controls that collapse to an icon on narrow screens: hiding the label
+ * with display:none strips it from the accessibility tree as well, leaving an
+ * unlabelled button. This keeps the name for screen readers while the icon
+ * carries the meaning visually.
+ */
+@media (max-width: 768px) {
+  .sr-only-mobile {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/*
+ * Stamp tag: the small serif label that hangs half-off the corner of a book
+ * cover — the price on a discovery tile, the waiting-count on the hero stack.
+ * Both were hand-rolled copies of the same eight declarations and had already
+ * drifted apart on border color; the caller now only supplies the offsets and
+ * the ink color, so the shape can never diverge again.
+ */
+.stamp-tag {
+  position: absolute;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-xs);
+  padding: var(--space-1) var(--space-2);
+  font-family: 'Noto Serif TC', serif;
+  font-weight: 700;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Unjacketed-book placeholder: the ruled cloth-binding fill standing in for a
+ * cover that is missing or failed to load, so a book without artwork reads as
+ * deliberately unjacketed rather than as a broken image.
+ */
+.book-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-4) var(--space-3);
+  text-align: center;
+  background-color: var(--paper-warm);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 7px,
+    rgba(148, 138, 118, 0.16) 7px 8px
+  );
+  font-family: 'Noto Serif TC', serif;
+  color: var(--ink-soft);
+  /* container-type lets the type scale below respond to the box it is in
+     rather than the viewport: the same markup has to read at 32px in a
+     waitlist row, ~240px in a tile, and ~300px on the book page. */
+  container-type: inline-size;
+  overflow: hidden;
+}
+/* The stamped board label: title between two hairlines, the way an
+   unjacketed hardback carries it. Showing an initial or two instead read as a
+   chemistry symbol and told the reader nothing about the book. */
+.book-placeholder .bp-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-weight: 700;
+  font-size: clamp(11px, 9cqi, 20px);
+  line-height: 1.35;
+  padding-block: clamp(4px, 3cqi, 10px);
+  border-block: 1px solid var(--line-strong);
+  max-width: 100%;
+}
+.book-placeholder .bp-author {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: clamp(9px, 6cqi, 13px);
+  line-height: 1.4;
+  color: var(--muted);
+  max-width: 100%;
+}
+.book-placeholder .bp-isbn {
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: clamp(8px, 4.5cqi, 12px);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Below roughly 50px of usable width (such as 64px mobile listing rows,
+   60px sell previews, and 32px waitlist thumbnails) there is no room for
+   legible words at all, so the ruled board stands alone rather than showing
+   clipped fragments or chimney-wrapped text. Desktop listing rows (88px box,
+   ~62px usable width) and checkout (80px box, ~54px usable width) keep the
+   stamped title. */
+@container (max-width: 50px) {
+  .book-placeholder .bp-title,
+  .book-placeholder .bp-author,
+  .book-placeholder .bp-isbn { display: none; }
+}
+/* 120px of usable width, i.e. roughly a 145px tile once padding is taken
+   off — below that the author and ISBN lines wrap to shreds. A phone tile
+   sits at ~142px of content box and keeps both. */
+@container (max-width: 120px) {
+  .book-placeholder .bp-author,
+  .book-placeholder .bp-isbn { display: none; }
+}
+
+/*
+ * The quiet "nothing here yet" line — a plain muted sentence, as opposed to
+ * the dashed .empty-state box below. Home and the recent-listings component
+ * each had their own copy of this under different names.
+ */
+.empty-note {
+  color: var(--muted);
+  font-size: var(--text-base);
+  text-align: center;
+  padding: var(--space-5);
+  margin: 0;
+}
+
+/* Secondary text beside a value, e.g. "· 商品已刪除". Two pages declared
+   this same rule locally; it is shared now that several more use it. */
+.text-muted {
+  color: var(--muted);
+}
+
+/*
+ * Shared empty-state utility: consolidates the dashed-border placeholder box
+ * used for "nothing here yet" states (search no-results, account listings,
+ * account subscriptions, etc.) so those pages can migrate to one class
+ * instead of each hand-rolling the same border/background/padding.
+ */
+.empty-state {
+  border: 1px dashed var(--line-strong);
+  background: var(--paper-warm);
+  padding: var(--space-7);
+  text-align: center;
+  color: var(--muted);
+}
+
+/*
+ * 共用的書卡網格系統 (Discover Grid)
+ * Auto-fill rather than a fixed 4 columns. At 1120px, 'repeat(4, 1fr)'
+ * produced covers too small to read a spine title on a desktop screen, and
+ * any book count that isn't a multiple of 4 left visible holes in the grid.
+ * Sizing by a 180px minimum instead lets the column count follow the space available.
+ */
+.discover-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-6) var(--space-5);
+  align-items: start;
+  container-type: inline-size;
+}
+
+@media (max-width: 640px) {
+  .discover-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--space-5) var(--space-3);
+  }
+}
+
+/* The oversized first tile only reads as deliberate hierarchy when there
+   are enough siblings for it to tower over. Two conditions gate it: enough
+   books and enough columns. Spanning 2 of 3 columns is not emphasis, it is 
+   one book eating two thirds of the row and pushing the rest down. 
+   At 800px the grid holds four 180px tracks, so the feature covers half the row. */
+@container (min-width: 800px) {
+  .discover-grid.has-feature > *:first-child {
+    grid-column: span 2;
+    grid-row: span 2;
+  }
+}
+
+/*
+ * 書卡與廣告卡共用的 hover 效果
+ */
+.hover-card {
+  transition: transform var(--motion-base) ease, box-shadow var(--motion-base) ease;
+}
+/* Hover lift only where a pointer can actually hover: touch browsers keep
+   :hover on whatever was last tapped, which left the card raised after the
+   finger lifted. Touch gets a press instead (below). */
+@media (hover: hover) {
+  .hover-card:hover {
+    transform: translateY(-2px);
+  }
+  .hover-card.hover-card-surface:hover {
+    box-shadow: var(--shadow-card-lg);
+  }
+  .hover-card:hover .hover-card-cover {
+    box-shadow: var(--shadow-card-lg);
+    transform: rotate(-0.5deg);
+  }
+}
+@media (hover: none) {
+  .hover-card:active {
+    transform: scale(0.98);
+    transition-duration: 0.08s;
+  }
+}
+
+/*
+ * 書卡與廣告卡共用的第三行說明文字
+ */
+.card-subtext {
+  display: block;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+/*
+ * 共用的標籤樣式 (書況、廣告自訂標籤)
+ */
+.tile-conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.cond-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  background-color: var(--paper-warm);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/*
+ * 後台共用的表格容器
+ */
+.table-container {
+  background: var(--surface-card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-x: auto;
+  box-shadow: var(--shadow-card);
+}
+
+/*
+ * 後台共用的篩選列容器，解決搜尋輸入框與下拉選單基線對齊問題
+ */
+.admin-filters {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.admin-filters ui-search-bar {
+  flex: 1;
+  min-width: 240px;
+}
+.admin-filters ui-dropdown .dropdown-wrapper {
+  margin-bottom: 0;
+}
+
+/*
+ * 後台共用的表格
+ */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: var(--text-base);
+  /* The wrapper scrolls horizontally, so the table is allowed to be wider
+     than it. Without a floor, `table-layout: auto` hands the width to
+     whichever column holds the longest unbreakable run — an email like
+     demo_tw_bulkseller36@test.com took 243px of 544 — and squeezes the rest.
+     Chinese has no spaces to break on, so a column crushed that far wraps one
+     character per line: 地區 became 台/灣 and 學校 became 國/立/臺/灣/大/學,
+     stretching the row to 141px tall. */
+  min-width: 720px;
+}
+.admin-table th,
+.admin-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  /* Long addresses and URLs break mid-token rather than forcing the column
+     wider, which is what starved the neighbouring columns. */
+  overflow-wrap: anywhere;
+}
+/* Short label columns — region, verified, active — read as one word or not at
+   all. Nothing is gained by wrapping them and a lot is lost. */
+.admin-table td.nowrap,
+.admin-table th.nowrap {
+  white-space: nowrap;
+}
+.admin-table th {
+  background: var(--paper-warm);
+  font-weight: 600;
+  color: var(--muted);
+}
+.admin-table tr:last-child td {
+  border-bottom: none;
+}
+
+/*
+ * 後台表格：列可點擊樣式
+ */
+.admin-table-clickable tbody tr {
+  cursor: pointer;
+}
+.admin-table-clickable tbody tr:hover {
+  background: var(--paper-warm);
+}
+
+/*
+ * 後台表格：多選欄。整格都是 label，點擊範圍至少 --tap-min；
+ * 列本身可點擊時，td 要攔下 click，勾選才不會打開該列。
+ */
+.admin-table th.pick,
+.admin-table td.pick {
+  width: 1%;
+  padding: 0;
+  cursor: default;
+}
+.admin-table .pick-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  cursor: pointer;
+}
+/* Drawn from tokens like ui-checkbox, not the browser's own box, which
+   stays white on the dark theme. */
+.admin-table .pick-box input {
+  appearance: none;
+  -webkit-appearance: none;
+  display: grid;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  background-color: var(--paper);
+  cursor: pointer;
+}
+.admin-table .pick-box input::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background-color: var(--btn-primary-ink);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transform: scale(0);
+  transition: transform var(--motion-fast) ease-in-out;
+}
+.admin-table .pick-box input:checked,
+.admin-table .pick-box input:indeterminate {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+.admin-table .pick-box input:checked::before {
+  transform: scale(1);
+}
+/* Part of the page ticked: a dash, as "select all" boxes show it. */
+.admin-table .pick-box input:indeterminate::before {
+  height: 2px;
+  clip-path: none;
+  transform: scale(1);
+}
+.admin-table .pick-box input:disabled {
+  background-color: var(--paper-warm);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+.admin-table .pick-box input:disabled:checked,
+.admin-table .pick-box input:disabled:indeterminate {
+  background-color: var(--muted);
+  border-color: var(--muted);
+}
+.admin-table tr.picked td {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.back-link { display: inline-block; margin-bottom: 16px; color: var(--muted); text-decoration: none; font-size: var(--text-base); }
+.back-link:hover { color: var(--accent); }
+
+/* Admin shared styles from Work 2 and 3 */
+
+/* Unified Modal Layout (Shared by admin ads and account) */
+.app-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.app-modal { background: var(--surface-raised); border: 1px solid var(--surface-raised-border); padding: 0; border-radius: 8px; display: flex; flex-direction: column; max-height: 95vh; box-shadow: var(--shadow-card-lg); }
+.app-modal-title { padding: 24px 24px 0; margin: 0; flex-shrink: 0; }
+.app-modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+.app-modal-actions { padding: 0 24px 24px; margin-top: 0 !important; flex-shrink: 0; display: flex; justify-content: flex-end; gap: 12px; }
+
+.admin-badge { padding: 4px 8px; border-radius: 4px; font-size: var(--text-xs); font-weight: 600; }
+.admin-badge-success { background: var(--success-light); color: var(--success); }
+.admin-badge-error { background: var(--danger-light); color: var(--danger); }
+
+/* --line-strong, not --line: this is an input field, i.e. an interactive
+   boundary (see the token comment at the top of this file). */
+.admin-form-control { width: 100%; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 4px; box-sizing: border-box; background: var(--paper); color: var(--ink); }
+
+.admin-status-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: var(--text-xs); background: var(--paper-warm); color: var(--muted); }
+.admin-status-badge.locked { margin-left: 4px; background: var(--danger-light); color: var(--danger); }
+.admin-status-badge.active, .admin-status-badge.ok { background: var(--info-bg); color: var(--info-ink); }
+.admin-status-badge.warn { background: var(--warn-bg); color: var(--warn-ink); }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .admin-status-badge.active,
+  :root:not([data-theme="light"]) .admin-status-badge.ok {
+    background: var(--info-border);
+    color: var(--info-ink);
+  }
+}
+:root[data-theme="dark"] .admin-status-badge.active,
+:root[data-theme="dark"] .admin-status-badge.ok {
+  background: var(--info-border);
+  color: var(--info-ink);
+}
+
+/*
+ * Shared form group and inline messages
+ */
+.form-group {
+  margin-bottom: var(--space-4, 16px);
+}
+.form-group label {
+  display: block;
+  margin-bottom: var(--space-2, 8px);
+  font-size: var(--text-sm, 14px);
+  font-weight: 500;
+}
+.inline-msg {
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border-radius: var(--radius-sm, 4px);
+  margin: var(--space-3, 12px) 0;
+  font-size: var(--text-sm, 14px);
+  background-color: var(--success-light);
+  color: var(--success);
+}
+.inline-msg.error {
+  background-color: var(--danger-light);
+  color: var(--danger);
+}
+.inline-msg.ok {
+  background-color: var(--success-light);
+  color: var(--success);
+}
+
+/* Utility Classes */
+.w-full { width: 100%; }
+.flex-1 { flex: 1; }
+.mt-1 { margin-top: var(--space-1); }
+.mt-2 { margin-top: var(--space-2); }
+.mt-3 { margin-top: var(--space-3); }
+.mt-4 { margin-top: var(--space-4); }
+.mt-5 { margin-top: var(--space-5); }
+.mt-6 { margin-top: var(--space-6); }
+.mt-7 { margin-top: var(--space-7); }
+.mt-8 { margin-top: var(--space-8); }
+.mb-1 { margin-bottom: var(--space-1); }
+.mb-2 { margin-bottom: var(--space-2); }
+.mb-3 { margin-bottom: var(--space-3); }
+.mb-4 { margin-bottom: var(--space-4); }
+.mb-5 { margin-bottom: var(--space-5); }
+.mb-6 { margin-bottom: var(--space-6); }
+.mb-7 { margin-bottom: var(--space-7); }
+.mb-8 { margin-bottom: var(--space-8); }
+.mr-2 { margin-right: var(--space-2); }
+.mr-3 { margin-right: var(--space-3); }
+
+/* On/off setting switch (Notifications, Settings). A native checkbox with
+   role="switch", so keyboard, focus and screen readers behave as they do for
+   any form control; only its look changes. Markup:
+   <label class="switch"><input type="checkbox" role="switch">
+   <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></label>
+
+   While the change is being made (a save, or the browser's permission prompt)
+   add `is-busy` to the label and `[disabled]` to the input: the thumb spins
+   instead of the whole switch going grey, so it reads as "working on it" and
+   not as "unavailable". A switch that is disabled for good (no is-busy) keeps
+   the dimmed look. */
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: var(--tap-min);
+  cursor: pointer;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+.switch input:disabled {
+  cursor: progress;
+}
+.switch-track {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--line-strong);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  box-sizing: border-box;
+  transition: background-color 0.15s ease;
+}
+.switch-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--paper);
+  transition: transform 0.15s ease;
+}
+.switch input:checked + .switch-track {
+  background: var(--accent);
+}
+.switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(18px);
+}
+.switch input:disabled + .switch-track {
+  opacity: 0.6;
+}
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.switch.is-busy input:disabled + .switch-track {
+  opacity: 1;
+}
+.switch.is-busy .switch-thumb {
+  position: relative;
+}
+.switch.is-busy .switch-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  box-sizing: border-box;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: switch-spin 0.8s linear infinite;
+}
+@keyframes switch-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .switch-track, .switch-thumb { transition: none; }
+  /* Slower, not stopped: a frozen ring would not say anything is happening. */
+  .switch.is-busy .switch-thumb::after { animation-duration: 2.4s; }
+}

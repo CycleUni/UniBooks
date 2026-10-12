@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <div id="btn1"></div>
+  <button onclick="changeLang('en')">English</button>
+  <button onclick="changeLang('zh-TW')">Chinese</button>
+
+  <script>
+    function changeLang(lang) {
+      const oldScript = document.getElementById('google-jssdk');
+      if (oldScript) { oldScript.remove(); }
+      delete window.google;
+      document.getElementById('btn1').innerHTML = '';
+
+      const script = document.createElement('script');
+      script.id = 'google-jssdk';
+      script.src = `https://accounts.google.com/gsi/client?hl=${lang}`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        google.accounts.id.initialize({ client_id: 'YOUR_CLIENT_ID', callback: function(){} });
+        google.accounts.id.renderButton(document.getElementById('btn1'), { theme: 'outline', size: 'large', width: '100%' });
+      };
+      document.head.appendChild(script);
+    }
+    changeLang('en');
+  </script>
+</body>
+</html>
