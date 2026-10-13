@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { newHexId } from './uuid';
 
 /**
  * Stored images (listing photos, chat images, ad images): the types we
@@ -64,7 +65,7 @@ export function validatedContentLength(raw: unknown, max = MAX_IMAGE_BYTES): num
 
 /** A fresh server-chosen object name: `<32 hex>.<ext>`. */
 export function newObjectName(ext: ImageExt): string {
-  return `${crypto.randomUUID().replaceAll('-', '')}.${ext}`;
+  return `${newHexId()}.${ext}`;
 }
 
 /**

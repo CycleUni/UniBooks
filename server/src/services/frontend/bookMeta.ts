@@ -14,6 +14,8 @@
  * /api/v1/books/).
  */
 
+import { UUID_RE } from '../../lib/uuid';
+
 export const SITE_NAME = 'UniBooks';
 
 /** Past this, a crawler gets the untouched page rather than waiting longer.
@@ -95,15 +97,13 @@ export function regionFrom(param: unknown): string | null {
   return typeof param === 'string' && /^[a-z]{2}$/.test(param) ? param : null;
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** isbn wins over id, matching the book page itself. Anything malformed is
  *  left to the SPA rather than forwarded to the API. Book ids are UUIDs. */
 export function bookIdentity(url: URL): BookIdentity | null {
   const isbn = url.searchParams.get('isbn');
   if (isbn) return /^\d{10}(\d{3})?$|^\d{9}[\dX]$/i.test(isbn) ? { kind: 'isbn', value: isbn.toUpperCase() } : null;
   const id = url.searchParams.get('id');
-  if (id) return UUID.test(id) ? { kind: 'id', value: id.toLowerCase() } : null;
+  if (id) return UUID_RE.test(id) ? { kind: 'id', value: id.toLowerCase() } : null;
   return null;
 }
 

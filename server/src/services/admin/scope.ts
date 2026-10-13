@@ -4,6 +4,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { AppEnv, AuthUser } from '../../env';
 import { createDb, staffManagedRegions, type Database } from '../../db';
 import { apiError } from '../../lib/http';
+import { UUID_RE } from '../../lib/uuid';
 
 /**
  * Region scoping: the `managed_regions` filters every admin view applies.
@@ -60,8 +61,6 @@ export function intId(raw: string | undefined): number {
   if (!Number.isSafeInteger(n)) notFound();
   return n;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Parse a UUID path id; anything else 404s. */
 export function uuidId(raw: string | undefined): string {

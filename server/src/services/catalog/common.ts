@@ -61,7 +61,3 @@ export function describeSource(engine: Engine | null, cacheHit: boolean): string
   const label = engine === 'googlebooks' ? 'google books' : engine === 'isbnnet' ? 'ISBNnet' : 'Open Library API';
   return cacheHit ? `${label} cache` : label;
 }
-
-export function nowIso(): string {
-  return new Date().toISOString();
-}

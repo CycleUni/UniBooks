@@ -1,6 +1,8 @@
 import type { Env } from '../../env';
 import { apiError } from '../../lib/http';
 import { InvalidTokenError, signToken, verifyToken } from '../../lib/jwt';
+import { newHexId } from '../../lib/uuid';
+import { nowIso } from '../../lib/time';
 
 /**
  * The refresh-token whitelist, one refresh_tokens row per jti.
@@ -32,8 +34,6 @@ interface TokenRow {
   rotated_tokens: string | null;
 }
 
-const nowIso = () => new Date().toISOString();
-
 async function strict<T>(op: () => Promise<T>): Promise<T> {
   try {
     return await op();
@@ -52,12 +52,8 @@ async function safe<T>(op: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-function newJti(): string {
-  return crypto.randomUUID().replace(/-/g, '');
-}
-
 async function mintPair(env: Env, userId: string, family: string | null): Promise<{ jti: string; family: string; pair: TokenPair }> {
-  const jti = newJti();
+  const jti = newHexId();
   const familyId = family ?? jti;
   const [access, refresh] = await Promise.all([
     signToken('access', { user_id: userId }, env.JWT_SIGNING_KEY),

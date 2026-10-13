@@ -7,6 +7,7 @@ import { resolveLanguage } from './i18n';
 import { localizedName, type Row } from './regionData';
 import { cancelEmailChangeStatement } from './oneTimeTokens';
 import { revokeAllTokensForUser } from './tokens';
+import { newHexId } from '../../lib/uuid';
 
 /** "First Last" when either part is Latin, else "LastFirst". */
 export function displayName(firstName: string | null | undefined, lastName: string | null | undefined): string {
@@ -178,7 +179,7 @@ export function nameColumns(firstName: string, lastName: string) {
  */
 export async function deleteAccount(env: Env, userId: string): Promise<void> {
   const now = new Date().toISOString();
-  const hex = crypto.randomUUID().replace(/-/g, '');
+  const hex = newHexId();
   const stmts = [
     // Other modules' tables.
     env.DB.prepare("UPDATE listings SET status = 'removed', updated_at = ? WHERE seller_id = ? AND status != 'removed'").bind(now, userId),

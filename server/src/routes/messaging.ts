@@ -15,6 +15,7 @@ import {
 } from '../services/messaging/conversations';
 import { chatImagePrefix } from '../services/messaging/images';
 import { issueUpload, storeUpload } from '../lib/upload';
+import { UUID_LOOSE_RE } from '../lib/uuid';
 
 /**
  * /api/v1/messaging/
@@ -26,7 +27,6 @@ import { issueUpload, storeUpload } from '../lib/upload';
 /** Everything here needs a signed-in user; the upload PUT below does not. */
 const authed = new Hono<AppEnv>();
 
-const UUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 const UPLOAD_RATE = '100/hour';
 const MESSAGING_BASE = '/api/v1/messaging/';
 
@@ -68,7 +68,7 @@ authed.post('/conversations/', async (c) => {
 
   // Must be verified in the target region: the listing's, wherever it is.
   const target =
-    listingId && UUID.test(listingId)
+    listingId && UUID_LOOSE_RE.test(listingId)
       ? await c.env.DB.prepare('SELECT region_code FROM listings WHERE id = ?').bind(listingId).first<{ region_code: string }>()
       : null;
   const region = await requireRegion(c);
@@ -78,7 +78,7 @@ authed.post('/conversations/', async (c) => {
   }
 
   if (!listingId) apiError(400, 'msg.errListingRequired');
-  if (!UUID.test(listingId)) apiError(404, 'msg.errListingNotFound');
+  if (!UUID_LOOSE_RE.test(listingId)) apiError(404, 'msg.errListingNotFound');
 
   const listing = await c.env.DB.prepare(
     `SELECT l.id, l.seller_id, l.status, l.region_code, b.title AS book_title, b.isbn13 AS book_isbn
@@ -134,7 +134,7 @@ authed.post('/conversations/', async (c) => {
 authed.delete('/conversations/:id/delete/', async (c) => {
   const user = c.get('user')!;
   const id = c.req.param('id');
-  if (!UUID.test(id)) return notFound(c);
+  if (!UUID_LOOSE_RE.test(id)) return notFound(c);
   const region = await requireRegion(c);
   const conv = await getConversation(c.env, id);
   if (!conv || conv.region_code !== region.code) return notFound(c);
@@ -151,7 +151,7 @@ authed.delete('/conversations/:id/delete/', async (c) => {
 authed.post('/conversations/:id/read/', async (c) => {
   const user = c.get('user')!;
   const id = c.req.param('id');
-  if (!UUID.test(id)) return notFound(c);
+  if (!UUID_LOOSE_RE.test(id)) return notFound(c);
   const conv = await getConversation(c.env, id);
   if (!conv) return notFound(c);
   if (!isParticipant(conv, user.id)) apiError(403, 'msg.errNotParticipant');
@@ -170,7 +170,7 @@ authed.get('/chat-token/', async (c) => {
   const user = c.get('user')!;
   const conversationId = c.req.query('conversation_id');
   if (!conversationId) apiError(400, 'msg.errConversationRequired');
-  if (!UUID.test(conversationId)) return notFound(c);
+  if (!UUID_LOOSE_RE.test(conversationId)) return notFound(c);
   const conv = await getConversation(c.env, conversationId);
   if (!conv) return notFound(c);
   if (!isParticipant(conv, user.id)) apiError(403, 'msg.errNotParticipant');
@@ -199,7 +199,7 @@ async function uploadableConversation(c: Context<AppEnv>, raw: unknown): Promise
   const user = c.get('user')!;
   const conversationId = typeof raw === 'string' ? raw : '';
   if (!conversationId) apiError(400, 'msg.errConversationRequired');
-  const conv = UUID.test(conversationId) ? await getConversation(c.env, conversationId) : null;
+  const conv = UUID_LOOSE_RE.test(conversationId) ? await getConversation(c.env, conversationId) : null;
   if (!conv) apiError(404, 'msg.errConversationNotFound');
   if (!isParticipant(conv, user.id)) apiError(403, 'msg.errNotParticipant');
   // A deleted listing's chat stays readable but takes no new messages.

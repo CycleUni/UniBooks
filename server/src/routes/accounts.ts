@@ -26,6 +26,8 @@ import {
   serializePublicUser,
   serializeUser,
 } from '../services/accounts/users';
+import { UUID_RE } from '../lib/uuid';
+import { nowIso } from '../lib/time';
 
 /**
  * /api/v1/auth/*
@@ -51,8 +53,6 @@ const RATES = {
 const PUSH_TOKEN_MAX_LENGTH = 512;
 const NAME_MAX_LENGTH = 150;
 const LISTING_STATUSES = ['active', 'reserved', 'sold', 'removed'] as const;
-
-const nowIso = () => new Date().toISOString();
 
 /** The signed-in user's full row (authMiddleware has already checked it is active). */
 async function currentUser(c: C): Promise<User> {
@@ -995,8 +995,6 @@ accountRoutes.put('/me/site-region/', authMiddleware(), async (c) => {
   await c.env.DB.prepare('UPDATE users SET site_region = ? WHERE id = ? AND site_region != ?').bind(code, userId, code).run();
   return c.body(null, 204);
 });
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 accountRoutes.get('/users/:id/', optionalAuthMiddleware(), rateLimit('public_profile', RATES.publicProfile), async (c) => {
   const id = c.req.param('id');

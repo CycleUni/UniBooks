@@ -7,6 +7,7 @@ import { apiError, fieldErrors, pagination, readJson, validate } from '../lib/ht
 import { requireRegion, isVerifiedIn } from '../lib/region';
 import { managedRegionCodes } from '../services/messaging/staffScope';
 import { getConversation, isParticipant } from '../services/messaging/conversations';
+import { UUID_LOOSE_RE } from '../lib/uuid';
 
 /**
  * /api/v1/moderation/: listing reports and chat
@@ -16,7 +17,6 @@ import { getConversation, isParticipant } from '../services/messaging/conversati
 export const moderationRoutes = new Hono<AppEnv>();
 moderationRoutes.use('*', authMiddleware());
 
-const UUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 const MAX_DETAIL = 5000;
 const MAX_FLAGGED = 200;
 
@@ -123,14 +123,14 @@ moderationRoutes.post('/', async (c) => {
 
   // Must be verified in the listing's region when it exists, else the request's.
   const target =
-    listingId && UUID.test(listingId)
+    listingId && UUID_LOOSE_RE.test(listingId)
       ? await c.env.DB.prepare('SELECT region_code FROM listings WHERE id = ?').bind(listingId).first<{ region_code: string }>()
       : null;
   const region = await requireRegion(c);
   const verifyIn = target?.region_code ?? region.code;
   if (!(await isVerifiedIn(c.env, user.id, verifyIn))) apiError(403, 'acct.errUnverifiedInRegion', { region: verifyIn });
 
-  if (!listingId || !UUID.test(listingId)) notFound();
+  if (!listingId || !UUID_LOOSE_RE.test(listingId)) notFound();
   const listing = await c.env.DB.prepare(
     `SELECT l.id, l.seller_id, l.region_code, b.title AS book_title
        FROM listings l LEFT JOIN books b ON b.id = l.book_id
@@ -272,7 +272,7 @@ moderationRoutes.post('/chat-reports/', async (c) => {
   const user = c.get('user')!;
   const body = await readJson(c.req);
   const conversationId = typeof body.conversation === 'string' ? body.conversation : '';
-  if (!conversationId || !UUID.test(conversationId)) apiError(400, 'invalid.conversationRequired');
+  if (!conversationId || !UUID_LOOSE_RE.test(conversationId)) apiError(400, 'invalid.conversationRequired');
 
   const region = await requireRegion(c);
   const pending = await c.env.DB.prepare(
@@ -341,7 +341,7 @@ moderationRoutes.get('/chat-reports/all/', requireStaff(), async (c) => {
 
 /** A chat report the current staff member may see, or 404. */
 async function scopedChatReport(c: Context<AppEnv>, id: string): Promise<ChatReportRow> {
-  if (!UUID.test(id)) notFound();
+  if (!UUID_LOOSE_RE.test(id)) notFound();
   const scope = scopeClause('cr.region_code', await managedRegionCodes(c.env, c.get('user')!));
   const row = await c.env.DB.prepare(`${CHAT_REPORT_SELECT} WHERE cr.id = ?${scope.sql}`)
     .bind(id, ...scope.args)
@@ -372,7 +372,7 @@ moderationRoutes.patch('/chat-reports/:id/action/', requireStaff(), async (c) =>
 moderationRoutes.patch('/:id/', requireStaff(), async (c) => {
   const user = c.get('user')!;
   const id = c.req.param('id');
-  if (!UUID.test(id)) notFound();
+  if (!UUID_LOOSE_RE.test(id)) notFound();
   const scope = scopeClause('r.region_code', await managedRegionCodes(c.env, user));
   const report = await c.env.DB.prepare(`${REPORT_SELECT} WHERE r.id = ?${scope.sql}`)
     .bind(id, ...scope.args)

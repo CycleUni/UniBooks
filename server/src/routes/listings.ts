@@ -10,7 +10,7 @@ import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { validateBookIsbn } from '../services/catalog/isbn';
-import { nowIso } from '../services/catalog/common';
+import { nowIso } from '../lib/time';
 import { resolveLanguage, schoolFilterId, schoolFilterScope } from '../services/listings/places';
 import { parsePhotos, serializeListings } from '../services/listings/serialize';
 import { validateListingFields, type FieldErrors } from '../services/listings/validate';
@@ -19,11 +19,11 @@ import { permanentKeyPrefix, PhotoError, acceptListingPhotos, listingsHoldingPho
 import { storageKeyFromUrl } from '../lib/media';
 import { issueUpload, storeUpload } from '../lib/upload';
 import { cancelOpenOrdersForListing } from '../services/orders/cancel';
+import { UUID_PATTERN } from '../lib/uuid';
 
 export const listingRoutes = new Hono<AppEnv>();
 
 const RATES = { search: '60/min', listing_create: '10/hour', upload: '100/hour' } as const;
-const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 
 const origin = (c: Context<AppEnv>) => new URL(c.req.url).origin;
 const notFound = (c: Context<AppEnv>) => c.body(null, 404);
@@ -266,7 +266,7 @@ listingRoutes.delete('/uploads/', authMiddleware(), async (c) => {
 
 // ------------------------------------------------------------------ detail --
 
-listingRoutes.get(`/:id{${UUID}}/`, optionalAuthMiddleware(), async (c) => {
+listingRoutes.get(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c) => {
   const listing = await loadListing(c, c.req.param('id'));
   if (!listing) return notFound(c);
   const region = await requireRegion(c);
@@ -277,7 +277,7 @@ listingRoutes.get(`/:id{${UUID}}/`, optionalAuthMiddleware(), async (c) => {
   return c.json(out);
 });
 
-listingRoutes.patch(`/:id{${UUID}}/`, optionalAuthMiddleware(), async (c) => {
+listingRoutes.patch(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c) => {
   const userId = c.get('userId');
   const listing = await loadListing(c, c.req.param('id'));
   if (!listing || !userId || listing.sellerId !== userId) return notFound(c);
@@ -375,7 +375,7 @@ listingRoutes.patch(`/:id{${UUID}}/`, optionalAuthMiddleware(), async (c) => {
   return c.json(out);
 });
 
-listingRoutes.delete(`/:id{${UUID}}/`, optionalAuthMiddleware(), async (c) => {
+listingRoutes.delete(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c) => {
   const userId = c.get('userId');
   const listing = await loadListing(c, c.req.param('id'));
   if (!listing || !userId || listing.sellerId !== userId) return notFound(c);

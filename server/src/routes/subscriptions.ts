@@ -11,14 +11,14 @@ import { requireRegion } from '../lib/region';
 import { authMiddleware } from '../middleware/auth';
 import { cleanAndValidateIsbn, validateBookIsbn } from '../services/catalog/isbn';
 import { checkRate } from '../middleware/rateLimit';
-import { cleanCoverUrl, cleanPublisher, nowIso } from '../services/catalog/common';
+import { cleanCoverUrl, cleanPublisher } from '../services/catalog/common';
 import { getGoogleBooksByIsbn } from '../services/catalog/lookups';
+import { UUID_RE } from '../lib/uuid';
+import { nowIso } from '../lib/time';
 
 export const subscriptionRoutes = new Hono<AppEnv>();
 
 subscriptionRoutes.use('*', authMiddleware());
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Subscriptions with new_listings_count = active listings created after subscribing. */
 async function serialize(env: Env, subs: Subscription[]): Promise<Record<string, unknown>[]> {

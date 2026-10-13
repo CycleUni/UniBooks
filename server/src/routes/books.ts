@@ -10,7 +10,7 @@ import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { cleanAndValidateIsbn, validateBookIsbn } from '../services/catalog/isbn';
-import { cleanCoverUrl, cleanPublisher, describeSource, nowIso } from '../services/catalog/common';
+import { cleanCoverUrl, cleanPublisher, describeSource } from '../services/catalog/common';
 import {
   ISBN_FALLBACK_ORDER,
   ISBN_LOOKUPS,
@@ -23,10 +23,11 @@ import {
 import { resolveLanguage, schoolFilterId } from '../services/listings/places';
 import { serializeBook, serializeListings } from '../services/listings/serialize';
 import { pageFor } from '../services/listings/lifecycle';
+import { UUID_RE } from '../lib/uuid';
+import { nowIso } from '../lib/time';
 
 export const bookRoutes = new Hono<AppEnv>();
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
 
 // ------------------------------------------------------------------ detail --

@@ -13,6 +13,7 @@ import { lockKeyFor } from '../services/orders/transitions';
 import { orderLock } from '../services/orders/lock';
 import { deliverNotices } from '../services/orders/notify';
 import { checkRate } from '../middleware/rateLimit';
+import { UUID_LOOSE_RE, normUuid } from '../lib/uuid';
 
 /**
  * /api/v1/orders:
@@ -28,15 +29,8 @@ export const orderRoutes = new Hono<AppEnv>();
 
 orderRoutes.use('*', authMiddleware());
 
-const UUID_RE = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 const notFound = (c: Context<AppEnv>) => c.json({ detail: 'Not found.' }, 404);
 const methodNotAllowed = (c: Context<AppEnv>) => c.json({ detail: `Method "${c.req.method}" not allowed.` }, 405);
-
-/** UUIDs are stored hyphenated and lower-case; accept the unhyphenated form too. */
-function normUuid(v: string): string {
-  const h = v.toLowerCase().replace(/-/g, '');
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
 
 /** Answer 400 with a single (un-listed) field error: {"order": "code"}. */
 function plainFieldError(c: Context<AppEnv>, field: string, code: string) {
@@ -122,7 +116,7 @@ orderRoutes.post('/reviews/', async (c) => {
 
   // Must be verified in the order's region, when the order exists.
   const rawOrder = data.order;
-  const orderId = typeof rawOrder === 'string' && UUID_RE.test(rawOrder) ? normUuid(rawOrder) : null;
+  const orderId = typeof rawOrder === 'string' && UUID_LOOSE_RE.test(rawOrder) ? normUuid(rawOrder) : null;
   const [order] = orderId ? await db.select().from(orders).where(eq(orders.id, orderId)).limit(1) : [];
   if (order) await assertVerifiedIn(c, order.regionCode);
 
@@ -211,7 +205,7 @@ orderRoutes.post('/', async (c) => {
 
   const raw = data.listing;
   if (raw === undefined || raw === null || raw === '') fieldErrors({ listing: ['common.errValidation'] });
-  const listingId = typeof raw === 'string' && UUID_RE.test(raw) ? normUuid(raw) : null;
+  const listingId = typeof raw === 'string' && UUID_LOOSE_RE.test(raw) ? normUuid(raw) : null;
   const [listing] = listingId
     ? await db
         .select({
@@ -291,7 +285,7 @@ orderRoutes.post('/', async (c) => {
 
 /** The viewer's order in the request's region. */
 async function findVisibleOrder(c: Context<AppEnv>, rawId: string) {
-  if (!UUID_RE.test(rawId)) return null;
+  if (!UUID_LOOSE_RE.test(rawId)) return null;
   const region = await getRegion(c);
   if (!region) return null;
   const userId = c.get('userId')!;
