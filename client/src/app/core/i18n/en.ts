@@ -589,7 +589,6 @@ export const en: Record<string, string> = {
   'order.errSellerOnly': 'Only the seller can do this.',
   'order.errBuyerOnly': 'Only the buyer can do this.',
   'order.errRatingRange': 'Pick a rating from 1 to 5 stars.',
-  'order.errReviewNotYours': 'You can only review orders you were part of.',
   'order.errNoShowNeedsCancelled': 'A no-show can only be reported on a cancelled order.',
   'order.errReviewNeedsCompleted': 'You can review an order once it is completed.',
   'order.errAlreadyReviewed': 'You have already reviewed this order.',

@@ -113,16 +113,18 @@ orderRoutes.post('/reviews/', async (c) => {
   const data = await readJson(c.req);
   const db = createDb(c.env.DB);
 
-  // Must be verified in the order's region, when the order exists.
+  // Existence and ownership first, so a stranger cannot probe which order ids exist (or which
+  // regions they sit in): anything that is not the caller's own order is a plain 404.
   const rawOrder = data.order;
   const orderId = typeof rawOrder === 'string' && UUID_LOOSE_RE.test(rawOrder) ? normUuid(rawOrder) : null;
   const [order] = orderId ? await db.select().from(orders).where(eq(orders.id, orderId)).limit(1) : [];
+  const provided = rawOrder !== undefined && rawOrder !== null && rawOrder !== '';
+  if (provided && (!order || (user.id !== order.buyerId && user.id !== order.sellerId))) return notFound(c);
   if (order) await assertVerifiedIn(c, order.regionCode);
 
   // Field validation, then cross-field checks.
   const errors: Record<string, string[]> = {};
-  if (rawOrder === undefined || rawOrder === null || rawOrder === '') errors.order = ['common.errValidation'];
-  else if (!order) errors.order = ['order.errReviewNotYours'];
+  if (!provided) errors.order = ['common.errValidation'];
   const isNoShow = parseBool(data.is_no_show);
   if (isNoShow === undefined) errors.is_no_show = ['common.errValidation'];
   let comment = '';
@@ -138,7 +140,6 @@ orderRoutes.post('/reviews/', async (c) => {
   else if (rating === null || rating === undefined || rating < 1 || rating > 5) fieldErrors({ rating: ['order.errRatingRange'] });
 
   // Who may review, and when.
-  if (user.id !== order!.buyerId && user.id !== order!.sellerId) return plainFieldError(c, 'order', 'order.errReviewNotYours');
   if (isNoShow && order!.status !== 'cancelled') return plainFieldError(c, 'order', 'order.errNoShowNeedsCancelled');
   // Only a cancel made after the agreed meetup time had
   // passed (services/orders/transitions.ts) can be followed by a no-show

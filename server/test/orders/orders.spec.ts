@@ -157,6 +157,12 @@ describe.skipIf(!schemaReady)('orders API', () => {
     expect(await listingStatus(l.id)).toBe('sold');
 
     // Reviews: one per party; no-show only on a qualifying cancel.
+    // A stranger (even an unverified one) and an unknown id look the same: 404.
+    const stranger = await makeUser('stranger', false);
+    res = await post('reviews/', stranger.token, { order: order.id, rating: 5 });
+    expect(res.status).toBe(404);
+    res = await post('reviews/', stranger.token, { order: crypto.randomUUID(), rating: 5 });
+    expect(res.status).toBe(404);
     res = await post('reviews/', buyer.token, { order: order.id, rating: 9 });
     expect(res.status).toBe(400);
     res = await post('reviews/', buyer.token, { order: order.id, is_no_show: true });

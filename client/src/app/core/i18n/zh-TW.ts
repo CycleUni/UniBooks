@@ -588,7 +588,6 @@ export const zhTW: Record<string, string> = {
   'order.errSellerOnly': '這個步驟只有賣家能操作。',
   'order.errBuyerOnly': '這個步驟只有買家能操作。',
   'order.errRatingRange': '請給 1 到 5 顆星的評分。',
-  'order.errReviewNotYours': '只能評價自己參與的訂單。',
   'order.errNoShowNeedsCancelled': '只有已取消的訂單才能回報對方未到。',
   'order.errReviewNeedsCompleted': '訂單完成後才能評價。',
   'order.errAlreadyReviewed': '你已經評價過這筆訂單了。',

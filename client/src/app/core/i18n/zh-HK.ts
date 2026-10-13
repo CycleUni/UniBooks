@@ -588,7 +588,6 @@ export const zhHK: Record<string, string> = {
   'order.errSellerOnly': '這個步驟只有賣家能操作。',
   'order.errBuyerOnly': '這個步驟只有買家能操作。',
   'order.errRatingRange': '請給 1 至 5 粒星的評分。',
-  'order.errReviewNotYours': '只可以評價自己有份嘅訂單。',
   'order.errNoShowNeedsCancelled': '要訂單取消咗先可以報對方冇出現。',
   'order.errReviewNeedsCompleted': '訂單完成咗先可以評價。',
   'order.errAlreadyReviewed': '你已經評價過呢張訂單喇。',
