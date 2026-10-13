@@ -8,6 +8,7 @@ import type { Env } from '../../env';
 import type { Region } from '../../db';
 import { cleanPublisher, type Engine, cleanCoverUrl } from './common';
 import { isbnForms } from './isbn';
+import type { RateLimiter } from '../../durable-objects/RateLimiter';
 
 export interface BookRecord {
   title: string;
@@ -131,7 +132,29 @@ function googleUrl(env: Env, q: string, extra: Record<string, string> = {}): str
   return u.toString();
 }
 
+/**
+ * One budget for every Google Books call this Worker makes, across all
+ * users and isolates (a single RateLimiter instance): per-user limits alone
+ * let many accounts together spend the API key's daily quota. Over budget,
+ * a call answers as Google would when throttling (429), so callers back off
+ * and fall back to the other sources. GOOGLE_BOOKS_PER_MINUTE overrides it.
+ */
+const DEFAULT_GOOGLE_PER_MINUTE = 60;
+
+async function withinGoogleBudget(env: Env): Promise<boolean> {
+  if (env.ENVIRONMENT === 'test') return true;
+  const limit = Number(env.GOOGLE_BOOKS_PER_MINUTE) || DEFAULT_GOOGLE_PER_MINUTE;
+  try {
+    const ns = env.RATE_LIMITER as DurableObjectNamespace<RateLimiter>;
+    return (await ns.get(ns.idFromName('google-books:global')).hit(limit, 60)).allowed;
+  } catch (e) {
+    console.warn('[catalog] Google budget check failed; allowing the call', e);
+    return true;
+  }
+}
+
 async function googleFetch(env: Env, q: string, extra?: Record<string, string>): Promise<Response> {
+  if (!(await withinGoogleBudget(env))) return new Response(null, { status: 429 });
   return fetch(googleUrl(env, q, extra), {
     headers: { 'User-Agent': USER_AGENT },
     signal: AbortSignal.timeout(EXTERNAL_API_TIMEOUT_MS),

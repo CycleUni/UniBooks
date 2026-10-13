@@ -18,6 +18,8 @@ DEFAULT_FROM_EMAIL=no-reply@example.com
 
 # Book lookups.
 GOOGLE_BOOKS_API_KEY=
+# Google Books calls per minute across the whole Worker (default 60); may also go in wrangler.jsonc vars.
+# GOOGLE_BOOKS_PER_MINUTE=60
 # Used only when the ISBNNET service binding is not running locally.
 ISBNNET_RESOLVER_URL=
 ISBNNET_RESOLVER_SECRET=

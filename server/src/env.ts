@@ -42,6 +42,8 @@ export interface Env {
   JWT_SIGNING_KEY: string;
   CHAT_JWT_SECRET: string;
   GOOGLE_BOOKS_API_KEY?: string;
+  /** Google Books calls allowed per minute across the whole Worker (default 60). */
+  GOOGLE_BOOKS_PER_MINUTE?: string;
   MAILJET_API_KEY?: string;
   MAILJET_SECRET_KEY?: string;
   /** '1' = Mailjet SandboxMode: validate messages without delivering them. */
