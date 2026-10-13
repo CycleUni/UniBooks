@@ -8,6 +8,7 @@ import { requireRegion, isVerifiedIn } from '../lib/region';
 import { managedRegionCodes } from '../services/messaging/staffScope';
 import { getConversation, isParticipant } from '../services/messaging/conversations';
 import { UUID_LOOSE_RE } from '../lib/uuid';
+import { notFound } from '../services/admin/scope';
 
 /**
  * /api/v1/moderation/: listing reports and chat
@@ -19,10 +20,6 @@ moderationRoutes.use('*', authMiddleware());
 
 const MAX_DETAIL = 5000;
 const MAX_FLAGGED = 200;
-
-function notFound(): never {
-  throw new HTTPException(404, { res: Response.json({ detail: 'Not found.' }, { status: 404 }), message: 'not found' });
-}
 
 function invalidPage(): never {
   throw new HTTPException(404, { res: Response.json({ detail: 'Invalid page.' }, { status: 404 }), message: 'invalid page' });

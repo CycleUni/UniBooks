@@ -105,3 +105,6 @@ export async function storeUpload(
   if (!stored) apiError(409, 'upload.errTokenUsed');
   return c.json({ photo_url: publicUrl(c.env, origin(c), claims.target_key) });
 }
+
+/** Rate limit for asking to upload a file. */
+export const UPLOAD_RATE = '100/hour';

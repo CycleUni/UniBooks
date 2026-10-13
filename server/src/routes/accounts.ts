@@ -28,6 +28,7 @@ import {
 } from '../services/accounts/users';
 import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
+import { isUniqueViolation } from '../lib/db';
 
 /**
  * /api/v1/auth/*
@@ -77,10 +78,6 @@ async function sendLinkEmail(c: C, kind: AccountLinkKind, userId: string, to: st
   } catch (e) {
     console.error(`[accounts] could not queue ${kind} email for user ${userId}`, e);
   }
-}
-
-function isUniqueViolation(e: unknown): boolean {
-  return /UNIQUE/i.test(String(e instanceof Error ? e.message : e));
 }
 
 function accountDisabled(user: { isActive: number; isBanned: number; deletedAt: string | null }): boolean {

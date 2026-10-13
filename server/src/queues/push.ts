@@ -1,5 +1,6 @@
 import type { Env } from '../env';
 import { siteOrigin } from '../lib/origin';
+import { formatMeetupTime } from '../lib/time';
 import type { PushMessage } from './types';
 import { getConversation } from '../services/messaging/conversations';
 import { loadPerson, type Person } from '../services/messaging/people';
@@ -131,26 +132,6 @@ async function regionInfo(env: Env, code: string | null | undefined) {
     .first<{ code: string; default_language: string; timezone: string }>();
 }
 
-function formatMeetupTime(iso: string, timeZone: string | undefined): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  try {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timeZone || 'UTC',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(d);
-    const p = (t: string) => parts.find((x) => x.type === t)?.value ?? '';
-    return `${p('year')}-${p('month')}-${p('day')} ${p('hour')}:${p('minute')}`;
-  } catch {
-    return iso;
-  }
-}
-
 const ORDER_STATUS_EVENT: Record<string, string> = {
   pending: 'meetup_requested',
   accepted: 'seller_approved',
@@ -253,7 +234,7 @@ export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPu
         title: pushT(lang, 'push.meetupReminder.title'),
         body: pushT(lang, 'push.meetupReminder.body', {
           title: msg.book_title,
-          time: formatMeetupTime(msg.meetup_time, region?.timezone),
+          time: formatMeetupTime(msg.meetup_time, region?.timezone || 'UTC'),
         }),
         link: `${frontend}/account/orders`,
       };

@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import type { AppEnv, Env } from '../../env';
 import { createDb, schools, cities, categories, type Region } from '../../db';
 import { parseJson, stringList } from '../../lib/json';
+import { normalizeCode } from '../admin/schoolCodes';
 import { pickLanguage, requestedLanguage } from '../accounts/i18n';
 import { pickTranslation } from '../accounts/regionData';
 
@@ -23,10 +24,6 @@ export interface PlaceScope {
   schoolId: number | null;
   /** The chosen school's city (id + code), when it has one. */
   city: { id: number; code: string | null } | null;
-}
-
-function normalizeCode(value: string): string {
-  return value.replace(/\s+/g, '').toUpperCase();
 }
 
 /** The school a `?school=` names, searched only inside the region: code first, then exact name. */

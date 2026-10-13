@@ -1,4 +1,6 @@
 import type { Env } from '../env';
+import { escapeHtml } from '../lib/html';
+import { formatMeetupTime } from '../lib/time';
 import { siteOrigin } from '../lib/origin';
 import type { AccountLinkKind, EmailMessage } from './types';
 import { emailLanguageFor, t } from '../services/accounts/i18n';
@@ -28,15 +30,6 @@ type Line = string | { link: string } | { text: string; link: string };
 
 const SYSTEM_PREVIEW_PREFIX = '[SYSTEM:';
 const CHAT_EMAIL_PREVIEW_MAX_CHARS = 120;
-
-export function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 /** One line, no control characters: for display names and subjects. */
 function oneLine(value: unknown): string {
@@ -199,30 +192,6 @@ async function waitlist(env: Env, msg: Extract<EmailMessage, { type: 'waitlist_n
   const requestPage = `${base}/account/subscriptions`;
   lines.push('', t(lang, 'email.waitlist.logIn'), '', t(lang, 'email.waitlist.stop'), { link: requestPage });
   return render(user.email, displayName(user.first_name, user.last_name), t(lang, 'email.waitlist.subject'), lines);
-}
-
-/** "YYYY-MM-DD HH:mm" in `timeZone` . */
-export function formatMeetupTime(iso: string, timeZone: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  try {
-    const parts = Object.fromEntries(
-      new Intl.DateTimeFormat('en-CA', {
-        timeZone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-      })
-        .formatToParts(date)
-        .map((p) => [p.type, p.value]),
-    );
-    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
-  } catch {
-    return date.toISOString().slice(0, 16).replace('T', ' ');
-  }
 }
 
 async function meetupReminder(env: Env, msg: Extract<EmailMessage, { type: 'meetup_reminder' }>): Promise<RenderedEmail | null> {

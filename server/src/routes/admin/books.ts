@@ -20,6 +20,7 @@ import {
 } from '../../services/catalog/lookups';
 import { serializeBook } from '../../services/listings/serialize';
 import { bookSearch } from './listings';
+import { isUniqueViolation } from '../../lib/db';
 
 /**
  * Correcting a book's catalogue record,
@@ -241,11 +242,6 @@ function parseUpdates(data: Record<string, unknown>): BookUpdates {
     }
   }
   return updates;
-}
-
-function isUniqueViolation(e: unknown): boolean {
-  const msg = String((e as { message?: string })?.message ?? e) + String((e as { cause?: unknown })?.cause ?? '');
-  return /UNIQUE constraint failed/i.test(msg);
 }
 
 bookRoutes.patch('/books/:id/', async (c) => {

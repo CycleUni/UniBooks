@@ -2,6 +2,7 @@ import { and, desc, eq, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { Env } from '../../env';
 import { createDb, orders, users, listings, books, reviews, conversations, regionVerifications, schools } from '../../db';
+import { displayName } from '../accounts/users';
 
 /**
  * The viewer's orders (as
@@ -86,14 +87,6 @@ function runSelect(env: Env, viewerId: string, where: SQL, limit: number, offset
     .orderBy(desc(orders.createdAt))
     .limit(limit)
     .offset(offset);
-}
-
-/** "First Last" when either part has Latin letters, else LastFirst. */
-export function displayName(first: string | null | undefined, last: string | null | undefined): string {
-  const f = first ?? '';
-  const l = last ?? '';
-  if (f && l) return /[A-Za-z]/.test(l) || /[A-Za-z]/.test(f) ? `${f} ${l}` : `${l}${f}`;
-  return `${l}${f}`.trim();
 }
 
 /** The translation of `field` for `lang` (exact tag, then its base language), else `fallback`. */

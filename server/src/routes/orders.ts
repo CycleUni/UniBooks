@@ -5,7 +5,7 @@ import type { AppEnv } from '../env';
 import { createDb, orders, listings, books, conversations, reviews, users } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { getRegion, assertVerifiedIn } from '../lib/region';
-import { fieldErrors, pagination, readJson } from '../lib/http';
+import { fieldErrors, notFound, pagination, readJson } from '../lib/http';
 import { listOrders, getOrderFor } from '../services/orders/serialize';
 import { resolveLanguage } from '../services/accounts/i18n';
 import type { LockedResult } from '../services/orders/transitions';
@@ -29,7 +29,6 @@ export const orderRoutes = new Hono<AppEnv>();
 
 orderRoutes.use('*', authMiddleware());
 
-const notFound = (c: Context<AppEnv>) => c.json({ detail: 'Not found.' }, 404);
 const methodNotAllowed = (c: Context<AppEnv>) => c.json({ detail: `Method "${c.req.method}" not allowed.` }, 405);
 
 /** Answer 400 with a single (un-listed) field error: {"order": "code"}. */

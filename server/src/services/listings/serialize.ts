@@ -9,30 +9,10 @@ import { inList } from '../../lib/sql';
 import type { Env } from '../../env';
 import { createDb, users, schools, orders, reviews, books, type Book, type Listing } from '../../db';
 import { cleanPublisher } from '../catalog/common';
+import { displayName, publicAvatarUrl } from '../accounts/users';
 import { categorySlugsById, localizedSchoolName } from './places';
 
 type Row = Record<string, unknown>;
-
-/** "First Last" with Latin letters, else LastFirst. */
-export function displayName(user: Row | undefined): string {
-  if (!user) return '';
-  const first = typeof user.firstName === 'string' ? user.firstName : null;
-  const last = typeof user.lastName === 'string' ? user.lastName : null;
-  if (first !== null || last !== null) {
-    const f = first ?? '';
-    const l = last ?? '';
-    if (f && l) return /[A-Za-z]/.test(l) || /[A-Za-z]/.test(f) ? `${f} ${l}` : `${l}${f}`;
-    return `${l}${f}`.trim();
-  }
-  return typeof user.name === 'string' ? user.name : '';
-}
-
-/** The avatar URL, '' when the owner hid it. */
-export function publicAvatarUrl(user: Row | undefined): string {
-  if (!user) return '';
-  if (user.showAvatar !== undefined && !user.showAvatar) return '';
-  return typeof user.avatarUrl === 'string' ? user.avatarUrl : '';
-}
 
 export function serializeBook(book: Book): Record<string, unknown> {
   return {
@@ -117,7 +97,7 @@ export async function serializeListings(
         showAvatar: users.showAvatar,
       })
       .from(users)
-      .where(inList(users.id, sellerIds)) as Promise<Row[]>,
+      .where(inList(users.id, sellerIds)),
     schoolIds.length ? (db.select().from(schools).where(inList(schools.id, schoolIds)) as Promise<Row[]>) : Promise.resolve([] as Row[]),
     bookIds.length ? db.select().from(books).where(inList(books.id, bookIds)) : Promise.resolve([] as Book[]),
     categorySlugsById(env, categoryIds),
@@ -136,8 +116,8 @@ export async function serializeListings(
     const photos = parsePhotos(l.photos);
     const out: Record<string, unknown> = {
       id: l.id,
-      seller_name: displayName(seller),
-      seller_avatar_url: publicAvatarUrl(seller),
+      seller_name: displayName(seller?.firstName, seller?.lastName),
+      seller_avatar_url: seller ? publicAvatarUrl(seller) : '',
       school_name: school ? localizedSchoolName(school, opts.lang ?? null) : '',
       seller_school_id: l.schoolId,
       book_title: book?.title ?? '',

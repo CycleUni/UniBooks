@@ -21,10 +21,11 @@ import { issueUpload, storeUpload } from '../lib/upload';
 import { cancelOpenOrdersForListing } from '../services/orders/cancel';
 import { UUID_PATTERN } from '../lib/uuid';
 import { parsePhotos } from '../lib/json';
+import { UPLOAD_RATE } from '../lib/upload';
 
 export const listingRoutes = new Hono<AppEnv>();
 
-const RATES = { search: '60/min', listing_create: '10/hour', upload: '100/hour' } as const;
+const RATES = { search: '60/min', listing_create: '10/hour', upload: UPLOAD_RATE } as const;
 
 const origin = (c: Context<AppEnv>) => new URL(c.req.url).origin;
 const notFound = (c: Context<AppEnv>) => c.body(null, 404);

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:workers';
-import { buildEmail, chatEmailPreview, formatMeetupTime } from '../../src/queues/email';
+import { buildEmail, chatEmailPreview } from '../../src/queues/email';
+import { formatMeetupTime } from '../../src/lib/time';
 import { passwordProblems } from '../../src/services/accounts/passwords';
 import { displayName } from '../../src/services/accounts/users';
 import { emailLanguageFor, normalizeLanguage, pickLanguage } from '../../src/services/accounts/i18n';

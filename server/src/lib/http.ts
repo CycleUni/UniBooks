@@ -1,3 +1,4 @@
+import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { z } from 'zod';
@@ -99,4 +100,9 @@ export function pagination(url: string, opts: { pageSize?: number; maxPageSize?:
       };
     },
   };
+}
+
+/** 404 for a missing object, returned: {"detail": "Not found."}. */
+export function notFound(c: Context): Response {
+  return c.json({ detail: 'Not found.' }, 404);
 }

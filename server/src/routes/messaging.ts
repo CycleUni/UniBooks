@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../env';
 import { authMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
-import { apiError, pagination, readJson } from '../lib/http';
+import { apiError, notFound, pagination, readJson } from '../lib/http';
 import { requireRegion, isVerifiedIn } from '../lib/region';
 import { mintChatToken, mintHubToken } from '../services/chatTokens';
 import {
@@ -14,7 +14,7 @@ import {
   type ConversationRow,
 } from '../services/messaging/conversations';
 import { chatImagePrefix } from '../services/messaging/images';
-import { issueUpload, storeUpload } from '../lib/upload';
+import { UPLOAD_RATE, issueUpload, storeUpload } from '../lib/upload';
 import { UUID_LOOSE_RE } from '../lib/uuid';
 
 /**
@@ -27,10 +27,7 @@ import { UUID_LOOSE_RE } from '../lib/uuid';
 /** Everything here needs a signed-in user; the upload PUT below does not. */
 const authed = new Hono<AppEnv>();
 
-const UPLOAD_RATE = '100/hour';
 const MESSAGING_BASE = '/api/v1/messaging/';
-
-const notFound = (c: Context<AppEnv>) => c.json({ detail: 'Not found.' }, 404);
 
 authed.use('*', authMiddleware());
 

@@ -14,6 +14,7 @@
  * /api/v1/books/).
  */
 
+import { escapeHtml } from '../../lib/html';
 import { UUID_RE } from '../../lib/uuid';
 
 export const SITE_NAME = 'UniBooks';
@@ -200,10 +201,6 @@ export function metaFor(book: BookFacts, origin: string, region: string, site: S
     image: coverImageUrl(origin, book.cover_url),
     alternates,
   };
-}
-
-export function escapeHtml(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll("'", '&#39;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
 /** Tags appended to <head>. <title> and the description already exist in
