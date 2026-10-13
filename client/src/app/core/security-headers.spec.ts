@@ -124,10 +124,17 @@ describe('public/_headers', () => {
       expect(directive('connect-src')).toContain("'self'");
     });
 
-    it('lets Sentry post error reports', () => {
+    it("lets Sentry post error reports to this project's ingest host only", () => {
       const setEnv = fs.readFileSync(path.join(process.cwd(), 'scripts/set-env.js'), 'utf-8');
-      expect(setEnv).toContain("const SENTRY_INGEST = 'https://*.ingest.us.sentry.io';");
+      expect(setEnv).toContain('const SENTRY_INGEST = originOf(process.env.NG_APP_SENTRY_DSN);');
       expect(setEnv).toMatch(/const connect = \[[^\]]*SENTRY_INGEST\]/);
+      expect(setEnv).not.toContain('*.ingest.us.sentry.io');
+    });
+
+    it('allows Google Analytics by its gtag path, not the whole Tag Manager host', () => {
+      const setEnv = fs.readFileSync(path.join(process.cwd(), 'scripts/set-env.js'), 'utf-8');
+      expect(setEnv).toContain('https://www.googletagmanager.com/gtag/ ');
+      expect(directive('script-src')).not.toMatch(/https:\/\/www\.googletagmanager\.com(\s|$)/);
     });
 
     it('does not let a wildcard reach script-src', () => {

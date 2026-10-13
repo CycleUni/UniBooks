@@ -159,8 +159,10 @@ const IMPORT_LIST_SOURCE = 'https://raw.githubusercontent.com/CycleUni/';
 // service, which is not a page connection).
 const FIREBASE_REGISTRATION = ['https://fcmregistrations.googleapis.com', 'https://firebaseinstallations.googleapis.com'];
 
-// Sentry error reports and replays are POSTed to the project's ingest host.
-const SENTRY_INGEST = 'https://*.ingest.us.sentry.io';
+// Sentry error reports and replays are POSTed to the project's ingest host,
+// named exactly (from the DSN): a wildcard would let injected code report to
+// any Sentry project, an attacker's included.
+const SENTRY_INGEST = originOf(process.env.NG_APP_SENTRY_DSN);
 
 // Google Analytics 4: gtag.js (script-src googletagmanager.com) sends its hits
 // to these hosts, by fetch/sendBeacon and as image pixels — Google's own CSP
@@ -180,7 +182,9 @@ function buildCsp({ backendOrigin, mediaOrigin }) {
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    "script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://www.googletagmanager.com https://static.cloudflareinsights.com",
+    // gtag.js by path: the bare host would also serve gtm.js for any
+    // container id, a known way around a CSP that allows it.
+    "script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://www.googletagmanager.com/gtag/ https://static.cloudflareinsights.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style",
     "font-src 'self' https://fonts.gstatic.com data:",
     `img-src ${[...new Set(img.filter(Boolean))].join(' ')}`,
