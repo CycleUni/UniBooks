@@ -76,6 +76,19 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
       EdgeChat method names → room names, uploads unified (POST <base>/uploads/ → PUT <base>/uploads/file/;
       multipart direct + presign endpoints removed; DELETE listings/uploads/?url=), legacy comments reworded.
 
+- [x] Review round 3 (design/security/DRY), all fixed and committed:
+      H activation needs the registration password; listing takedowns (report, admin status, account deletion)
+      cancel open orders first; per-account login limit counts failures only; chat body capped by bytes read;
+      cover limit on cache miss + timeouts; Mailjet timeout + redelivery dedupe; waitlist job bounded in SQL;
+      R2 conditional writes; FCM retry/timeouts; uploads unified (lib/upload, lib/media, upload.* codes);
+      DRY groups 2-5 (uuid/time/json/html/db/scope/i18n helpers); post-handover cancel seller-only;
+      cancel_reason/meetup tightened; photos kept until commit, dropped photos deleted; search query
+      normalisation + ISBN checksum + Google 403 back-off; sitemap edge cache; report rate limit/dedupe;
+      admin audit, scope-first checks, bulk validation, book source lock, stats in SQL; CSP pins.
+      Decided: no-show reports stay two-way. Open (low): sockets live until token expiry after a ban,
+      UserHub lastReadAt growth, ad-impression cost, explicit ref-cache invalidation, Turnstile for
+      login lockout, global Google Books budget.
+
 ## Architecture decisions (after agy consult, 2026-10-13)
 - Stay Angular CSR SPA + prerendered region shells + edge meta injection (agy agrees).
 - Keep REST contract (Hono RPC would rewrite every Angular service; not worth it now).
