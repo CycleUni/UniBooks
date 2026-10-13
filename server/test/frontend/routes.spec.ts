@@ -4,8 +4,8 @@ import { invalidateRegionCache } from '../../src/lib/region';
 
 /**
  * routes/frontend.ts wired into the Worker: /api/cover and /<region>/book,
- * served next to the Angular build (env.ASSETS = the built Angular app,
- * so `npm run build:fe` must have run). Only an active region's lowercase
+ * served next to the app (env.ASSETS = test/fixtures/assets, a stand-in for
+ * the Angular build). Only an active region's lowercase
  * code is the Worker's; every other /<x>/book is the static app's answer.
  */
 const ORIGIN = 'http://unibooks.test';
