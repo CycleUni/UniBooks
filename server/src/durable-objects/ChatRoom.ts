@@ -40,6 +40,8 @@ const MIN_RECONNECT_INTERVAL_MS = 1_000;
 
 /** Close code for a socket whose token has expired; the app reconnects with a fresh one. */
 export const TOKEN_EXPIRED_CLOSE_CODE = 4001;
+/** Close code when the account behind a socket was disabled or deleted. */
+export const ACCOUNT_DISABLED_CLOSE_CODE = 4003;
 
 type Validation = { ok: true } | { ok: false; status: number; code?: string; message: string };
 
@@ -99,6 +101,27 @@ export class ChatRoom extends DurableObject<Env> {
     const { id, timestamp } = this.storeAndBroadcast(senderId, content, 'text', null, null);
     await this.afterMessage(roomId, senderId, content, timestamp, 'text');
     return !!id;
+  }
+
+  /**
+   * Close every socket this user holds in the room (their account was
+   * disabled or deleted): their token would otherwise keep the socket open
+   * until it expires. Called from services/messaging/disconnect.ts; never
+   * reachable over HTTP. Returns how many sockets were closed.
+   */
+  async disconnectUser(userId: string): Promise<number> {
+    let closed = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      const state = ws.deserializeAttachment() as ConnectionState | undefined;
+      if (state?.userId !== userId) continue;
+      try {
+        ws.close(ACCOUNT_DISABLED_CLOSE_CODE, 'Account disabled');
+        closed++;
+      } catch {
+        /* already closing */
+      }
+    }
+    return closed;
   }
 
   // ─── HTTP (from routes/chat.ts) ─────────────────────────────────────────

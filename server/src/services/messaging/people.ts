@@ -20,6 +20,8 @@ export interface Person {
   deleted: boolean;
   /** Role 'staff' or 'admin'. */
   isStaff: boolean;
+  /** Role 'admin': every region. */
+  isSuperuser: boolean;
   notifyPush: boolean;
   notifyNewMessageEmail: boolean;
   emailLanguage: string;
@@ -54,6 +56,7 @@ export function toPerson(row: Row): Person {
     isBanned: flag(row.is_banned, false),
     deleted: !!row.deleted_at,
     isStaff: row.role === 'staff' || row.role === 'admin',
+    isSuperuser: row.role === 'admin',
     notifyPush: flag(row.notify_push, true),
     notifyNewMessageEmail: flag(row.notify_new_message_email, true),
     emailLanguage: str(row.email_language) || 'auto',

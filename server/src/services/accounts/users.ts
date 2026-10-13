@@ -9,6 +9,7 @@ import { cancelEmailChangeStatement } from './oneTimeTokens';
 import { revokeAllTokensForUser } from './tokens';
 import { newHexId } from '../../lib/uuid';
 import { cancelOpenOrdersForUser } from '../orders/cancel';
+import { disconnectUser } from '../messaging/disconnect';
 
 /** "First Last" when either part is Latin, else "LastFirst". */
 export function displayName(firstName: string | null | undefined, lastName: string | null | undefined): string {
@@ -201,4 +202,5 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
   ];
   await env.DB.batch(stmts);
   await revokeAllTokensForUser(env, userId);
+  await disconnectUser(env, userId);
 }

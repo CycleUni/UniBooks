@@ -36,6 +36,8 @@ const MIN_RECONNECT_INTERVAL_MS = 1_000;
 
 /** Close code for an expired token (same as ChatRoom); the app reconnects with a new one. */
 const TOKEN_EXPIRED_CLOSE_CODE = 4001;
+/** Close code when the hub's account was disabled or deleted (same as ChatRoom). */
+const ACCOUNT_DISABLED_CLOSE_CODE = 4003;
 /** Upper bound on a socket's life when its token carried no expiry. */
 const HUB_MAX_SOCKET_MS = 24 * 60 * 60 * 1000;
 
@@ -276,6 +278,20 @@ export class UserHub extends DurableObject<Env> {
   private async scheduleExpiry(at: number): Promise<void> {
     const current = await this.ctx.storage.getAlarm();
     if (current === null || at < current) await this.ctx.storage.setAlarm(at);
+  }
+
+  /** Close every socket on this hub (its user was disabled or deleted); RPC only. */
+  async disconnectAll(): Promise<number> {
+    let closed = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.close(ACCOUNT_DISABLED_CLOSE_CODE, 'Account disabled');
+        closed++;
+      } catch {
+        /* already closing */
+      }
+    }
+    return closed;
   }
 
   async alarm(): Promise<void> {

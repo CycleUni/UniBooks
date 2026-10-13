@@ -3,6 +3,7 @@ import { inList } from '../../lib/sql';
 import type { Context } from 'hono';
 import { and, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../../env';
+import { disconnectUser } from '../../services/messaging/disconnect';
 import { createDb, regionVerifications, regions, schools, staffManagedRegions, users, type Database, type User } from '../../db';
 import { apiError, pagination, readJson } from '../../lib/http';
 import { getRegion } from '../../lib/region';
@@ -283,6 +284,7 @@ userRoutes.patch('/users/:id/', async (c) => {
 
   if (newIsActive !== undefined) {
     await db.update(users).set({ isActive: newIsActive, updatedAt: now }).where(eq(users.id, instance.id));
+    if (!newIsActive) await disconnectUser(c.env, instance.id);
   }
   if (schoolUpdate) {
     const { row } = await ensureVerification(db, instance.id, schoolUpdate.regionCode, now);

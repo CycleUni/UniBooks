@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../env';
+import { managedRegionCodes } from '../services/messaging/staffScope';
 import { readCapped } from '../lib/body';
 import { CHAT_APP_ID, chatRoomStub } from '../lib/chat';
 import { verifyToken, InvalidTokenError, type ChatTokenPayload } from '../lib/jwt';
@@ -150,10 +151,19 @@ async function roomAccess(c: Context<AppEnv>, roomId: string): Promise<RoomAcces
   if (role === 'user') {
     if (!isParticipant(conv, claims.user_id)) return text('Forbidden: Not a participant', 403);
     if (listingDeleted(conv)) role = 'observer';
-  } else if (!isParticipant(conv, claims.user_id) && !person.isStaff) {
+  } else if (!isParticipant(conv, claims.user_id)) {
     // A non-participant observer is a moderator reading a reported chat;
-    // the token outlives a demotion, the staff check here does not.
-    return text('Forbidden: Not a participant', 403);
+    // the token outlives a demotion or a region taken away, these checks
+    // do not.
+    if (!person.isStaff) return text('Forbidden: Not a participant', 403);
+    const scope = await managedRegionCodes(c.env, {
+      id: person.id,
+      email: person.email,
+      role: person.isSuperuser ? 'admin' : 'staff',
+      isStaff: true,
+      isSuperuser: person.isSuperuser,
+    });
+    if (scope !== null && !scope.includes(conv.region_code)) return text('Forbidden: Region not managed', 403);
   }
   // The participants are the conversation's, read from D1, so a hub push
   // can only ever reach the buyer and the seller of this room.
