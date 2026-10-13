@@ -85,9 +85,11 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
       cancel_reason/meetup tightened; photos kept until commit, dropped photos deleted; search query
       normalisation + ISBN checksum + Google 403 back-off; sitemap edge cache; report rate limit/dedupe;
       admin audit, scope-first checks, bulk validation, book source lock, stats in SQL; CSP pins.
-      Decided: no-show reports stay two-way. Open (low): sockets live until token expiry after a ban,
-      UserHub lastReadAt growth, ad-impression cost, explicit ref-cache invalidation, Turnstile for
-      login lockout, global Google Books budget.
+      Decided: no-show reports stay two-way.
+- [x] Low-priority follow-ups: disabled accounts' sockets closed (4003) + observer region scope; UserHub
+      lastReadAt dropped; ad events/list on Workers rate-limit bindings + live-ad memo; invalidates(...) per
+      write route; global Google Books budget (60/min); Turnstile challenge instead of login lockout
+      (needs a real widget: TURNSTILE_SITE_KEY var + TURNSTILE_SECRET_KEY secret).
 
 ## Architecture decisions (after agy consult, 2026-10-13)
 - Stay Angular CSR SPA + prerendered region shells + edge meta injection (agy agrees).
