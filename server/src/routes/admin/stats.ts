@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import type { AppEnv } from '../../env';
 import {
   advertiserRegions,
@@ -49,7 +49,7 @@ import {
  * Every endpoint answers for exactly one region (?region=, required): an
  * order's total_amount is in its region's currency, so amounts of two
  * regions never meet in one sum. "Period" (?days=) filters on created_at.
- * Rows are fetched per region and aggregated here.
+ * Figures are counted, summed and grouped in SQL; see the queries below.
  */
 export const statsRoutes = new Hono<AppEnv>();
 
@@ -92,110 +92,118 @@ function optionalInt(c: Context<AppEnv>, name: string): number | null {
   return Number(raw);
 }
 
-const since = (iso: string | null | undefined, start: string | null) => !start || (!!iso && iso >= start);
-
 // ---------------------------------------------------------------------------
-// Row loading (one region)
+// Queries (one region)
 // ---------------------------------------------------------------------------
+// Every figure is counted, summed or grouped in SQL; only small grouped results (per book,
+// per school, per status) and the narrow row sets the time-zone bucketing needs come back.
 
-interface OrderRow {
-  id: string;
-  status: string;
-  totalAmount: number;
-  createdAt: string;
-  completedAt: string | null;
-  buyerId: string;
-  sellerId: string;
-  listingId: string | null;
-  listingRef: string | null;
-  cancelReason: string | null;
-  bookId: string | null;
-  schoolId: number | null;
-  categoryId: number | null;
-  courseName: string | null;
-  professorName: string | null;
-  listingCreatedAt: string | null;
-}
+/** `col >= start`, or no condition for all time. */
+const inWindow = (col: SQLWrapper, start: string | null): SQL | undefined => (start ? gte(col, start) : undefined);
 
-async function regionOrders(db: Database, code: string): Promise<OrderRow[]> {
-  return db
-    .select({
-      id: orders.id,
-      status: orders.status,
-      totalAmount: orders.totalAmount,
-      createdAt: orders.createdAt,
-      completedAt: orders.completedAt,
-      buyerId: orders.buyerId,
-      sellerId: orders.sellerId,
-      listingId: orders.listingId,
-      listingRef: orders.listingRef,
-      cancelReason: orders.cancelReason,
-      bookId: listings.bookId,
-      schoolId: listings.schoolId,
-      categoryId: listings.categoryId,
-      courseName: listings.courseName,
-      professorName: listings.professorName,
-      listingCreatedAt: listings.createdAt,
-    })
-    .from(orders)
-    .leftJoin(listings, eq(listings.id, orders.listingId))
-    .where(eq(orders.regionCode, code));
-}
-
-interface ListingRow {
-  id: string;
-  sellerId: string;
-  status: string;
-  price: number;
-  createdAt: string;
-  bookId: string;
-  schoolId: number | null;
-  categoryId: number | null;
-  courseName: string;
-  professorName: string;
-  condition: string;
-}
-
-async function regionListings(db: Database, code: string): Promise<ListingRow[]> {
-  return db
-    .select({
-      id: listings.id,
-      sellerId: listings.sellerId,
-      status: listings.status,
-      price: listings.price,
-      createdAt: listings.createdAt,
-      bookId: listings.bookId,
-      schoolId: listings.schoolId,
-      categoryId: listings.categoryId,
-      courseName: listings.courseName,
-      professorName: listings.professorName,
-      condition: listings.condition,
-    })
-    .from(listings)
-    .where(eq(listings.regionCode, code));
-}
-
-async function regionRequests(db: Database, code: string) {
-  return db
-    .select({
-      id: subscriptions.id,
-      userId: subscriptions.userId,
-      bookId: subscriptions.bookId,
-      notifiedAt: subscriptions.notifiedAt,
-      createdAt: subscriptions.createdAt,
-    })
-    .from(subscriptions)
-    .where(eq(subscriptions.regionCode, code));
-}
-type RequestRow = Awaited<ReturnType<typeof regionRequests>>[number];
-
-/** Users holding an active verification in the region (not deleted). */
-async function regionUsers(db: Database, code: string) {
+/** Users holding an active verification in the region (not deleted), created in the window. */
+async function regionUsers(db: Database, code: string, start: string | null = null) {
   return db
     .selectDistinct({ id: users.id, createdAt: users.createdAt })
     .from(users)
     .innerJoin(regionVerifications, eq(regionVerifications.userId, users.id))
-    .where(and(eq(regionVerifications.regionCode, code), eq(regionVerifications.isActive, 1), sql`${users.deletedAt} IS NULL`));
+    .where(
+      and(
+        eq(regionVerifications.regionCode, code),
+        eq(regionVerifications.isActive, 1),
+        sql`${users.deletedAt} IS NULL`,
+        inWindow(users.createdAt, start),
+      ),
+    );
+}
+
+/** One book's figures over the window's orders (the null group is orders whose listing is gone). */
+interface OrderGroup {
+  order_count: number;
+  completed_count: number;
+  cancelled_count: number;
+  gmv: number;
+  min_price: number | null;
+  max_price: number | null;
+}
+
+/** The region's orders in the window, grouped on the listing's book; `listingCond` narrows by the listing. */
+async function orderGroups(db: Database, code: string, start: string | null, listingCond?: SQL): Promise<Map<string | null, OrderGroup>> {
+  const completed = sql`${orders.status} = 'completed'`;
+  const rows = await db
+    .select({
+      bookId: listings.bookId,
+      orderCount: sql<number>`count(*)`,
+      completedCount: sql<number>`coalesce(sum(${completed}), 0)`,
+      cancelledCount: sql<number>`coalesce(sum(${orders.status} = 'cancelled'), 0)`,
+      gmv: sql<number>`coalesce(sum(CASE WHEN ${completed} THEN ${orders.totalAmount} END), 0)`,
+      minPrice: sql<number | null>`min(CASE WHEN ${completed} THEN ${orders.totalAmount} END)`,
+      maxPrice: sql<number | null>`max(CASE WHEN ${completed} THEN ${orders.totalAmount} END)`,
+    })
+    .from(orders)
+    .leftJoin(listings, eq(listings.id, orders.listingId))
+    .where(and(eq(orders.regionCode, code), inWindow(orders.createdAt, start), listingCond))
+    .groupBy(listings.bookId);
+  return new Map(
+    rows.map((r) => [
+      r.bookId,
+      {
+        order_count: r.orderCount,
+        completed_count: r.completedCount,
+        cancelled_count: r.cancelledCount,
+        gmv: r.gmv,
+        min_price: r.minPrice,
+        max_price: r.maxPrice,
+      },
+    ]),
+  );
+}
+
+/** Active listings per book in the region; `cond` narrows by the listing. */
+async function activeListingCounts(db: Database, code: string, cond?: SQL): Promise<Map<string, number>> {
+  const rows = await db
+    .select({ bookId: listings.bookId, n: count() })
+    .from(listings)
+    .where(and(eq(listings.regionCode, code), eq(listings.status, 'active'), cond))
+    .groupBy(listings.bookId);
+  return new Map(rows.map((r) => [r.bookId, r.n]));
+}
+
+/** Completed orders per school of the listing (window), as top-school groups. */
+async function completedBySchool(
+  db: Database,
+  code: string,
+  start: string | null,
+  extra?: SQL,
+): Promise<{ schoolId: number; n: number; gmv: number }[]> {
+  const rows = await db
+    .select({ schoolId: listings.schoolId, n: count(), gmv: sql<number>`coalesce(sum(${orders.totalAmount}), 0)` })
+    .from(orders)
+    .innerJoin(listings, eq(listings.id, orders.listingId))
+    .where(
+      and(
+        eq(orders.regionCode, code),
+        eq(orders.status, 'completed'),
+        isNotNull(listings.schoolId),
+        inWindow(orders.createdAt, start),
+        extra,
+      ),
+    )
+    .groupBy(listings.schoolId);
+  return rows.map((r) => ({ schoolId: r.schoolId as number, n: r.n, gmv: r.gmv }));
+}
+
+/** `{status: n}` for the region's orders in the window (every known status present), plus the extra statuses found. */
+async function orderStatusCounts(db: Database, code: string, start: string | null, extra?: SQL): Promise<Record<string, number>> {
+  const out: Record<string, number> = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0]));
+  const rows = await db
+    .select({ status: orders.status, n: count() })
+    .from(orders)
+    .leftJoin(listings, eq(listings.id, orders.listingId))
+    .where(and(eq(orders.regionCode, code), inWindow(orders.createdAt, start), extra))
+    .groupBy(orders.status);
+  for (const r of rows) out[r.status] = (out[r.status] ?? 0) + r.n;
+  return out;
 }
 
 async function loadBooks(db: Database, ids: Iterable<string>): Promise<Map<string, Book>> {
@@ -224,15 +232,6 @@ async function loadSchools(db: Database, ids: Iterable<number>) {
   return out;
 }
 
-function countBy<T>(rows: T[], key: (r: T) => string | number | null): Map<string | number | null, number> {
-  const m = new Map<string | number | null, number>();
-  for (const r of rows) {
-    const k = key(r);
-    m.set(k, (m.get(k) ?? 0) + 1);
-  }
-  return m;
-}
-
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const avg = (xs: number[]) => (xs.length ? sum(xs) / xs.length : null);
 
@@ -240,7 +239,14 @@ const avg = (xs: number[]) => (xs.length ? sum(xs) / xs.length : null);
 // Shared pieces
 // ---------------------------------------------------------------------------
 
-function orderSeries(buckets: SeriesBuckets, rows: OrderRow[], withGmv = true) {
+/** What the day/hour series needs of an order. */
+interface SeriesOrder {
+  status: string;
+  totalAmount: number;
+  createdAt: string;
+}
+
+function orderSeries(buckets: SeriesBuckets, rows: SeriesOrder[], withGmv = true) {
   const all = buckets.group(rows, (o) => o.createdAt);
   const done = rows.filter((o) => o.status === 'completed');
   const completed = buckets.group(done, (o) => o.createdAt);
@@ -256,24 +262,22 @@ function orderSeries(buckets: SeriesBuckets, rows: OrderRow[], withGmv = true) {
   });
 }
 
-async function topSchools(db: Database, rows: OrderRow[], lang: string | null, withGmv = true, limit = 10) {
-  const groups = new Map<number, { n: number; gmv: number }>();
-  for (const o of rows) {
-    if (o.status !== 'completed' || o.schoolId === null) continue;
-    const g = groups.get(o.schoolId) ?? { n: 0, gmv: 0 };
-    g.n++;
-    g.gmv += o.totalAmount;
-    groups.set(o.schoolId, g);
-  }
-  const top = [...groups.entries()].sort((a, b) => b[1].n - a[1].n || b[1].gmv - a[1].gmv || a[0] - b[0]).slice(0, limit);
+async function topSchools(
+  db: Database,
+  groups: { schoolId: number; n: number; gmv: number }[],
+  lang: string | null,
+  withGmv = true,
+  limit = 10,
+) {
+  const top = [...groups].sort((a, b) => b.n - a.n || b.gmv - a.gmv || a.schoolId - b.schoolId).slice(0, limit);
   const found = await loadSchools(
     db,
-    top.map(([id]) => id),
+    top.map((g) => g.schoolId),
   );
-  return top.map(([id, g]) => {
-    const s = found.get(id);
+  return top.map((g) => {
+    const s = found.get(g.schoolId);
     const item: Record<string, unknown> = {
-      id,
+      id: g.schoolId,
       code: s ? s.code : '',
       name: s ? (lang ? localized(s.translations, lang, 'name', s.name) : s.name) : '',
       completed_orders: g.n,
@@ -304,48 +308,6 @@ interface BookStats {
   active_listings: number;
 }
 
-/** Per-book transaction figures over `orders` (already scoped) and the region's active listings. */
-function bookStats(orderRows: OrderRow[], activeListings: ListingRow[]): Map<string, BookStats> {
-  const out = new Map<string, BookStats>();
-  const get = (id: string) => {
-    let s = out.get(id);
-    if (!s) {
-      s = {
-        order_count: 0,
-        completed_count: 0,
-        cancelled_count: 0,
-        gmv: 0,
-        avg_price: null,
-        min_price: null,
-        max_price: null,
-        active_listings: 0,
-      };
-      out.set(id, s);
-    }
-    return s;
-  };
-  const prices = new Map<string, number[]>();
-  for (const o of orderRows) {
-    if (!o.bookId) continue;
-    const s = get(o.bookId);
-    s.order_count++;
-    if (o.status === 'cancelled') s.cancelled_count++;
-    if (o.status === 'completed') {
-      s.completed_count++;
-      s.gmv += o.totalAmount;
-      prices.set(o.bookId, [...(prices.get(o.bookId) ?? []), o.totalAmount]);
-    }
-  }
-  for (const [id, ps] of prices) {
-    const s = get(id);
-    s.avg_price = roundInt(avg(ps));
-    s.min_price = Math.min(...ps);
-    s.max_price = Math.max(...ps);
-  }
-  for (const l of activeListings) get(l.bookId).active_listings++;
-  return out;
-}
-
 const emptyStats = (): BookStats => ({
   order_count: 0,
   completed_count: 0,
@@ -357,57 +319,82 @@ const emptyStats = (): BookStats => ({
   active_listings: 0,
 });
 
-/** Books ranked by a figure over the period's orders (grouped on the listing's book, a deleted one included). */
-function bookRanker(orderRows: OrderRow[], field: SortField): CompetitionRank {
-  const groups = new Map<string | null, { order_count: number; completed_count: number; gmv: number }>();
-  for (const o of orderRows) {
-    const g = groups.get(o.bookId) ?? { order_count: 0, completed_count: 0, gmv: 0 };
-    g.order_count++;
-    if (o.status === 'completed') {
-      g.completed_count++;
-      g.gmv += o.totalAmount;
-    }
-    groups.set(o.bookId, g);
+/** Per-book transaction figures over the grouped orders (already scoped) and the region's active listings per book. */
+function bookStats(groups: Map<string | null, OrderGroup>, activeListings: Map<string, number>): Map<string, BookStats> {
+  const out = new Map<string, BookStats>();
+  for (const [id, g] of groups) {
+    if (!id) continue;
+    out.set(id, {
+      order_count: g.order_count,
+      completed_count: g.completed_count,
+      cancelled_count: g.cancelled_count,
+      gmv: g.gmv,
+      avg_price: g.completed_count ? roundInt(g.gmv / g.completed_count) : null,
+      min_price: g.min_price,
+      max_price: g.max_price,
+      active_listings: 0,
+    });
   }
+  for (const [id, n] of activeListings) {
+    const s = out.get(id) ?? emptyStats();
+    s.active_listings = n;
+    out.set(id, s);
+  }
+  return out;
+}
+
+/** Books ranked by a figure over the period's orders (grouped on the listing's book, a deleted one included). */
+function bookRanker(groups: Map<string | null, OrderGroup>, field: SortField): CompetitionRank {
   return new CompetitionRank([...groups.values()].map((g) => g[field]));
 }
 
 const TEXT_FIELDS = { course: 'courseName', professor: 'professorName' } as const;
 const textKey = (v: string | null | undefined) => (v ?? '').trim().toLowerCase();
 
-/** Listings narrowed by ?school= ?category= ?course= ?professor=, or null. */
-function listingScope(c: Context<AppEnv>, rows: ListingRow[]): Set<string> | null {
+/**
+ * The listing condition for ?school= ?category= ?course= ?professor=, or null when none is given.
+ * Course and professor match on their trimmed, lower-cased text, so the stored spellings that
+ * match are looked up first and the query then filters on those exact values.
+ */
+async function listingScope(c: Context<AppEnv>, db: Database, code: string): Promise<SQL | null> {
+  const conds: SQL[] = [eq(listings.regionCode, code)];
   let scoped = false;
-  let out = rows;
   for (const name of ['school', 'category'] as const) {
     const raw = c.req.query(name);
     if (raw === undefined || raw === '') continue;
     scoped = true;
-    const col = name === 'school' ? 'schoolId' : 'categoryId';
+    const col = name === 'school' ? listings.schoolId : listings.categoryId;
     if (raw === 'none') {
-      out = out.filter((l) => l[col] === null);
+      conds.push(isNull(col));
       continue;
     }
     if (!/^\s*[+-]?\d+\s*$/.test(raw)) invalid();
-    const id = Number(raw);
-    out = out.filter((l) => l[col] === id);
+    conds.push(eq(col, Number(raw)));
   }
-  for (const [name, col] of Object.entries(TEXT_FIELDS)) {
+  for (const [name, field] of Object.entries(TEXT_FIELDS)) {
     const raw = c.req.query(name);
     if (!raw) continue;
     scoped = true;
-    out = out.filter((l) => textKey(l[col]) === raw);
+    const col = listings[field];
+    const stored = await db.selectDistinct({ v: col }).from(listings).where(eq(listings.regionCode, code));
+    const matching = stored.map((s) => s.v).filter((v) => textKey(v) === raw);
+    conds.push(matching.length ? inArray(col, matching) : sql`0`);
   }
-  return scoped ? new Set(out.map((l) => l.id)) : null;
+  return scoped ? and(...conds)! : null;
 }
 
-function requestSummary(reqs: RequestRow[], activeBookIds: Set<string>, start: string | null) {
-  return {
-    total: reqs.length,
-    new: reqs.filter((r) => since(r.createdAt, start)).length,
-    requested_books: new Set(reqs.map((r) => r.bookId)).size,
-    unlisted_books: new Set(reqs.filter((r) => !activeBookIds.has(r.bookId)).map((r) => r.bookId)).size,
-  };
+/** Request totals for the region: all-time figures, plus those created in the window. */
+async function requestSummary(db: Database, code: string, start: string | null) {
+  const [row] = await db
+    .select({
+      total: count(),
+      fresh: start ? sql<number>`coalesce(sum(${subscriptions.createdAt} >= ${start}), 0)` : count(),
+      requestedBooks: sql<number>`count(DISTINCT ${subscriptions.bookId})`,
+      unlistedBooks: sql<number>`count(DISTINCT CASE WHEN subscriptions.book_id NOT IN (SELECT l.book_id FROM listings l WHERE l.region_code = ${code} AND l.status = 'active') THEN subscriptions.book_id END)`,
+    })
+    .from(subscriptions)
+    .where(eq(subscriptions.regionCode, code));
+  return { total: row.total, new: row.fresh, requested_books: row.requestedBooks, unlisted_books: row.unlistedBooks };
 }
 
 interface RequestStats {
@@ -419,29 +406,33 @@ interface RequestStats {
   last_requested_at: string | null;
 }
 
-function requestStats(reqs: RequestRow[], activeListings: ListingRow[], start: string | null): Map<string, RequestStats> {
-  const out = new Map<string, RequestStats>();
-  for (const r of reqs) {
-    const s = out.get(r.bookId) ?? {
-      request_count: 0,
-      new_requests: 0,
-      notified_count: 0,
-      waiting_count: 0,
-      active_listings: 0,
-      last_requested_at: null,
-    };
-    s.request_count++;
-    if (since(r.createdAt, start)) s.new_requests++;
-    if (r.notifiedAt) s.notified_count++;
-    if (!s.last_requested_at || r.createdAt > s.last_requested_at) s.last_requested_at = r.createdAt;
-    out.set(r.bookId, s);
-  }
-  const active = countBy(activeListings, (l) => l.bookId);
-  for (const [id, s] of out) {
-    s.active_listings = active.get(id) ?? 0;
-    s.waiting_count = s.request_count - s.notified_count;
-  }
-  return out;
+/** Per requested book: how many asked, how many in the window, how many were told, and the region's active listings of it. */
+async function requestStats(db: Database, code: string, start: string | null): Promise<Map<string, RequestStats>> {
+  const rows = await db
+    .select({
+      bookId: subscriptions.bookId,
+      requests: count(),
+      fresh: start ? sql<number>`coalesce(sum(${subscriptions.createdAt} >= ${start}), 0)` : count(),
+      notified: sql<number>`coalesce(sum(${subscriptions.notifiedAt} IS NOT NULL AND ${subscriptions.notifiedAt} <> ''), 0)`,
+      last: sql<string>`max(${subscriptions.createdAt})`,
+    })
+    .from(subscriptions)
+    .where(eq(subscriptions.regionCode, code))
+    .groupBy(subscriptions.bookId);
+  const active = await activeListingCounts(db, code);
+  return new Map(
+    rows.map((r) => [
+      r.bookId,
+      {
+        request_count: r.requests,
+        new_requests: r.fresh,
+        notified_count: r.notified,
+        waiting_count: r.requests - r.notified,
+        active_listings: active.get(r.bookId) ?? 0,
+        last_requested_at: r.last,
+      },
+    ]),
+  );
 }
 
 function requestRanker(stats: Map<string, RequestStats>, unlistedOnly = false): CompetitionRank {
@@ -462,6 +453,19 @@ function bookTextMatch(b: Book, q: string): boolean {
 // Overview
 // ---------------------------------------------------------------------------
 
+/** Reports of one table: how many are open, how many are new, and the new ones per reason. */
+function reportTotals(rows: { status: string; reason: string; n: number; fresh: number }[]) {
+  const reasons = new Map<string, number>();
+  let open = 0;
+  let fresh = 0;
+  for (const r of rows) {
+    if (r.status === 'open') open += r.n;
+    fresh += r.fresh;
+    if (r.fresh > 0) reasons.set(r.reason, (reasons.get(r.reason) ?? 0) + r.fresh);
+  }
+  return { open, fresh, reasons };
+}
+
 statsRoutes.get('/stats/overview/', async (c) => {
   const db = createDb(c.env.DB);
   const region = await resolveStatsRegion(c, db);
@@ -469,60 +473,108 @@ statsRoutes.get('/stats/overview/', async (c) => {
   const lang = await resolveLanguage(c);
   const start = periodStart(region.tz, days);
   const code = region.code;
+  const freshReports = (col: SQLWrapper) => (start ? sql<number>`coalesce(sum(${col} >= ${start}), 0)` : count());
 
-  const [orderRows, listingRows, reqs, regUsers] = await Promise.all([
-    regionOrders(db, code),
-    regionListings(db, code),
-    regionRequests(db, code),
-    regionUsers(db, code),
+  const periodOrders = and(eq(orders.regionCode, code), inWindow(orders.createdAt, start));
+  const [
+    byStatus,
+    completedTotals,
+    completedTimes,
+    cancelGroups,
+    buyers,
+    schoolGroups,
+    listingStatusRows,
+    activePrices,
+    periodListings,
+    reqSummary,
+    userTotals,
+    listingReportRows,
+    chatReportRows,
+    reviewTotals,
+  ] = await Promise.all([
+    orderStatusCounts(db, code, start),
+    db
+      .select({ gmv: sql<number>`coalesce(sum(${orders.totalAmount}), 0)` })
+      .from(orders)
+      .where(and(periodOrders, eq(orders.status, 'completed'))),
+    db
+      .select({ createdAt: orders.createdAt, completedAt: orders.completedAt })
+      .from(orders)
+      .where(and(periodOrders, eq(orders.status, 'completed'), isNotNull(orders.completedAt))),
+    db
+      .select({ reason: sql<string>`coalesce(${orders.cancelReason}, '')`, count: count() })
+      .from(orders)
+      .where(and(periodOrders, eq(orders.status, 'cancelled')))
+      .groupBy(sql`coalesce(${orders.cancelReason}, '')`),
+    db
+      .select({ n: sql<number>`count(DISTINCT ${orders.buyerId})` })
+      .from(orders)
+      .where(periodOrders),
+    completedBySchool(db, code, start),
+    db.select({ status: listings.status, n: count() }).from(listings).where(eq(listings.regionCode, code)).groupBy(listings.status),
+    db
+      .select({ n: count(), total: sql<number>`coalesce(sum(${listings.price}), 0)` })
+      .from(listings)
+      .where(and(eq(listings.regionCode, code), eq(listings.status, 'active'))),
+    db
+      .select({ n: count(), sellers: sql<number>`count(DISTINCT ${listings.sellerId})` })
+      .from(listings)
+      .where(and(eq(listings.regionCode, code), inWindow(listings.createdAt, start))),
+    requestSummary(db, code, start),
+    db
+      .select({
+        total: sql<number>`count(DISTINCT ${users.id})`,
+        fresh: start
+          ? sql<number>`count(DISTINCT CASE WHEN ${users.createdAt} >= ${start} THEN ${users.id} END)`
+          : sql<number>`count(DISTINCT ${users.id})`,
+      })
+      .from(users)
+      .innerJoin(regionVerifications, eq(regionVerifications.userId, users.id))
+      .where(and(eq(regionVerifications.regionCode, code), eq(regionVerifications.isActive, 1), sql`${users.deletedAt} IS NULL`)),
+    db
+      .select({ status: reports.status, reason: reports.reason, n: count(), fresh: freshReports(reports.createdAt) })
+      .from(reports)
+      .where(eq(reports.regionCode, code))
+      .groupBy(reports.status, reports.reason),
+    db
+      .select({ status: chatReports.status, reason: chatReports.reason, n: count(), fresh: freshReports(chatReports.createdAt) })
+      .from(chatReports)
+      .innerJoin(conversations, eq(conversations.id, chatReports.conversationId))
+      .where(eq(conversations.regionCode, code))
+      .groupBy(chatReports.status, chatReports.reason),
+    db
+      .select({
+        count: count(),
+        noShows: sql<number>`coalesce(sum(${reviews.isNoShow} <> 0), 0)`,
+        rated: sql<number>`coalesce(sum(${reviews.isNoShow} = 0 AND ${reviews.rating} IS NOT NULL), 0)`,
+        ratingSum: sql<number>`coalesce(sum(CASE WHEN ${reviews.isNoShow} = 0 THEN ${reviews.rating} END), 0)`,
+      })
+      .from(reviews)
+      .innerJoin(orders, eq(orders.id, reviews.orderId))
+      .where(and(eq(orders.regionCode, code), inWindow(reviews.createdAt, start))),
   ]);
-  const periodOrders = orderRows.filter((o) => since(o.createdAt, start));
-  const periodListings = listingRows.filter((l) => since(l.createdAt, start));
 
-  const byStatus: Record<string, number> = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0]));
-  for (const o of periodOrders) byStatus[o.status] = (byStatus[o.status] ?? 0) + 1;
-  const completed = periodOrders.filter((o) => o.status === 'completed');
-  const durations = completed.filter((o) => o.completedAt).map((o) => (Date.parse(o.completedAt!) - Date.parse(o.createdAt)) / 1000);
+  const completedCount = byStatus.completed;
+  const gmv = completedTotals[0].gmv;
+  const durations = completedTimes.map((o) => (Date.parse(o.completedAt!) - Date.parse(o.createdAt)) / 1000);
   const avgDuration = avg(durations);
   const done = byStatus.completed + byStatus.cancelled;
-  const cancelReasons = [
-    ...countBy(
-      periodOrders.filter((o) => o.status === 'cancelled'),
-      (o) => o.cancelReason || '',
-    ).entries(),
-  ]
-    .map(([reason, count]) => ({ reason: String(reason), count }))
+  const cancelReasons = cancelGroups
+    .map((g) => ({ reason: String(g.reason), count: g.count }))
     .sort((a, b) => b.count - a.count || (a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0));
 
   const listingStatus: Record<string, number> = Object.fromEntries(LISTING_STATUSES.map((s) => [s, 0]));
-  for (const l of listingRows) listingStatus[l.status] = (listingStatus[l.status] ?? 0) + 1;
-  const activeListings = listingRows.filter((l) => l.status === 'active');
+  for (const r of listingStatusRows) listingStatus[r.status] = (listingStatus[r.status] ?? 0) + r.n;
 
   // Moderation
-  const listingReports = await db
-    .select({ status: reports.status, reason: reports.reason, createdAt: reports.createdAt })
-    .from(reports)
-    .where(eq(reports.regionCode, code));
-  const chatReportRows = await db
-    .select({ status: chatReports.status, reason: chatReports.reason, createdAt: chatReports.createdAt })
-    .from(chatReports)
-    .innerJoin(conversations, eq(conversations.id, chatReports.conversationId))
-    .where(eq(conversations.regionCode, code));
+  const listingReports = reportTotals(listingReportRows);
+  const chatReportTotals = reportTotals(chatReportRows);
   const reasons = new Map<string, number>();
-  for (const r of [...listingReports, ...chatReportRows]) {
-    if (since(r.createdAt, start)) reasons.set(r.reason, (reasons.get(r.reason) ?? 0) + 1);
-  }
+  for (const [reason, n] of [...listingReports.reasons, ...chatReportTotals.reasons]) reasons.set(reason, (reasons.get(reason) ?? 0) + n);
 
   // Reviews on this region's orders
-  const reviewRows = (
-    await db
-      .select({ rating: reviews.rating, isNoShow: reviews.isNoShow, createdAt: reviews.createdAt })
-      .from(reviews)
-      .innerJoin(orders, eq(orders.id, reviews.orderId))
-      .where(eq(orders.regionCode, code))
-  ).filter((r) => since(r.createdAt, start));
-  const ratings = reviewRows.filter((r) => !r.isNoShow && r.rating !== null).map((r) => r.rating as number);
-  const avgRating = avg(ratings);
+  const reviewStats = reviewTotals[0];
+  const avgRating = reviewStats.rated ? reviewStats.ratingSum / reviewStats.rated : null;
 
   // Ads shown in this region (ads DB); views / clicks recorded here during
   // the period, from Analytics Engine (0, stats_available false, when the
@@ -549,47 +601,48 @@ statsRoutes.get('/stats/overview/', async (c) => {
     .from(conversations)
     .where(eq(conversations.regionCode, code));
 
+  const newOrders = Object.values(byStatus).reduce((a, b) => a + b, 0);
   return c.json({
     region: code,
     currency: region.defaultCurrency,
     days,
     since: start,
     users: {
-      total: regUsers.length,
-      new: regUsers.filter((u) => since(u.createdAt, start)).length,
-      active_sellers: new Set(periodListings.map((l) => l.sellerId)).size,
-      active_buyers: new Set(periodOrders.map((o) => o.buyerId)).size,
+      total: userTotals[0].total,
+      new: userTotals[0].fresh,
+      active_sellers: periodListings[0].sellers,
+      active_buyers: buyers[0].n,
     },
     listings: {
-      new: periodListings.length,
+      new: periodListings[0].n,
       by_status: listingStatus,
-      avg_price: roundInt(avg(activeListings.map((l) => l.price))),
+      avg_price: roundInt(activePrices[0].n ? activePrices[0].total / activePrices[0].n : null),
     },
     orders: {
-      new: periodOrders.length,
+      new: newOrders,
       by_status: byStatus,
       completion_rate: ratio(byStatus.completed, done),
       cancel_rate: ratio(byStatus.cancelled, done),
-      gmv: sum(completed.map((o) => o.totalAmount)),
-      avg_order_value: roundInt(avg(completed.map((o) => o.totalAmount))),
+      gmv,
+      avg_order_value: roundInt(completedCount ? gmv / completedCount : null),
       avg_days_to_complete: avgDuration === null ? null : roundHalfEven(avgDuration / DAY_SECONDS, 1),
       cancel_reasons: cancelReasons,
     },
     engagement: { conversations: conversationCount },
-    requests: requestSummary(reqs, new Set(activeListings.map((l) => l.bookId)), start),
+    requests: reqSummary,
     moderation: {
-      open_listing_reports: listingReports.filter((r) => r.status === 'open').length,
-      open_chat_reports: chatReportRows.filter((r) => r.status === 'open').length,
-      new_listing_reports: listingReports.filter((r) => since(r.createdAt, start)).length,
-      new_chat_reports: chatReportRows.filter((r) => since(r.createdAt, start)).length,
+      open_listing_reports: listingReports.open,
+      open_chat_reports: chatReportTotals.open,
+      new_listing_reports: listingReports.fresh,
+      new_chat_reports: chatReportTotals.fresh,
       report_reasons: [...reasons.entries()]
         .map(([reason, count]) => ({ reason, count }))
         .sort((a, b) => b.count - a.count || (a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0)),
     },
     reviews: {
-      count: reviewRows.length,
+      count: reviewStats.count,
       avg_rating: avgRating === null ? null : roundHalfEven(avgRating, 2),
-      no_show_count: reviewRows.filter((r) => r.isNoShow).length,
+      no_show_count: reviewStats.noShows,
     },
     ads: {
       active: adRows.filter((a) => a.isActive && a.advActive && a.startDate <= now && a.endDate >= now).length,
@@ -598,7 +651,7 @@ statsRoutes.get('/stats/overview/', async (c) => {
       ctr: ratio(adClicks, adViews),
       stats_available: adTotals.available,
     },
-    top_schools: await topSchools(db, periodOrders, lang),
+    top_schools: await topSchools(db, schoolGroups, lang),
   });
 });
 
@@ -620,9 +673,9 @@ statsRoutes.get('/stats/timeseries/', async (c) => {
       .select({ createdAt: listings.createdAt })
       .from(listings)
       .where(and(eq(listings.regionCode, region.code), gte(listings.createdAt, buckets.start))),
-    regionUsers(db, region.code),
+    regionUsers(db, region.code, buckets.start),
   ]);
-  const series = orderSeries(buckets, orderRows as OrderRow[]);
+  const series = orderSeries(buckets, orderRows);
   const newUsers = buckets.group(regUsers, (u) => u.createdAt);
   const newListings = buckets.group(listingRows, (l) => l.createdAt);
   buckets.labels.forEach((label, i) => {
@@ -647,32 +700,37 @@ statsRoutes.get('/stats/books/ranking/', async (c) => {
   const q = (c.req.query('q') ?? '').trim();
   const start = periodStart(region.tz, days);
 
-  const [orderRows, listingRows] = await Promise.all([regionOrders(db, region.code), regionListings(db, region.code)]);
-  const scope = listingScope(c, listingRows);
-  let periodOrders = orderRows.filter((o) => since(o.createdAt, start));
-  if (scope) periodOrders = periodOrders.filter((o) => o.listingId !== null && scope.has(o.listingId));
-  const activeListings = listingRows.filter((l) => l.status === 'active' && (!scope || scope.has(l.id)));
-  const stats = bookStats(periodOrders, activeListings);
+  const scope = await listingScope(c, db, region.code);
+  const [groups, activeCounts] = await Promise.all([
+    orderGroups(db, region.code, start, scope ?? undefined),
+    activeListingCounts(db, region.code, scope ?? undefined),
+  ]);
+  const stats = bookStats(groups, activeCounts);
 
   let candidates: Book[];
   if (q) {
     const isbn = q.replace(/[- ]/g, '');
-    const listedHere = new Set(listingRows.map((l) => l.bookId));
     const pattern = `%${q.toLowerCase().replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
     const isbnPattern = `%${isbn.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
-    const hits = await db
+    candidates = await db
       .select()
       .from(books)
       .where(
-        sql`(lower(${books.title}) LIKE ${pattern} ESCAPE '\\' OR lower(${books.authors}) LIKE ${pattern} ESCAPE '\\' OR ${books.isbn13} LIKE ${isbnPattern} ESCAPE '\\')`,
+        and(
+          sql`(lower(${books.title}) LIKE ${pattern} ESCAPE '\\' OR lower(${books.authors}) LIKE ${pattern} ESCAPE '\\' OR ${books.isbn13} LIKE ${isbnPattern} ESCAPE '\\')`,
+          // This region's books, and any book listed here.
+          or(
+            eq(books.regionCode, region.code),
+            inArray(books.id, db.select({ id: listings.bookId }).from(listings).where(eq(listings.regionCode, region.code))),
+          ),
+        ),
       );
-    candidates = hits.filter((b) => b.regionCode === region.code || listedHere.has(b.id));
   } else {
     candidates = [
       ...(
         await loadBooks(
           db,
-          periodOrders.flatMap((o) => (o.bookId ? [o.bookId] : [])),
+          [...groups.keys()].filter((id): id is string => !!id),
         )
       ).values(),
     ];
@@ -686,7 +744,7 @@ statsRoutes.get('/stats/books/ranking/', async (c) => {
       (x.b.title < y.b.title ? -1 : x.b.title > y.b.title ? 1 : 0) ||
       (x.b.id < y.b.id ? -1 : x.b.id > y.b.id ? 1 : 0),
   );
-  const ranker = bookRanker(periodOrders, sortField);
+  const ranker = bookRanker(groups, sortField);
   const results = rows.slice(page.offset, page.offset + page.limit).map(({ b, s }) => ({
     rank: ranker.rank(s[sortField]),
     book: bookDict(b),
@@ -708,9 +766,7 @@ statsRoutes.get('/stats/books/requests/', async (c) => {
   const page = pagination(c.req.url, { allowPageSize: true, maxPageSize: 100 });
   const start = periodStart(region.tz, days);
 
-  const [reqs, listingRows] = await Promise.all([regionRequests(db, region.code), regionListings(db, region.code)]);
-  const activeListings = listingRows.filter((l) => l.status === 'active');
-  const stats = requestStats(reqs, activeListings, start);
+  const [stats, summary] = await Promise.all([requestStats(db, region.code, start), requestSummary(db, region.code, start)]);
   const bookMap = await loadBooks(db, stats.keys());
   let rows = [...stats.entries()].flatMap(([id, s]) => {
     const b = bookMap.get(id);
@@ -731,10 +787,7 @@ statsRoutes.get('/stats/books/requests/', async (c) => {
     book: bookDict(b),
     ...s,
   }));
-  return c.json({
-    ...page.wrap(results, rows.length),
-    summary: requestSummary(reqs, new Set(activeListings.map((l) => l.bookId)), start),
-  });
+  return c.json({ ...page.wrap(results, rows.length), summary });
 });
 
 // ---------------------------------------------------------------------------
@@ -758,20 +811,10 @@ statsRoutes.get('/stats/breakdown/', async (c) => {
   const pageNo = Math.max(1, optionalInt(c, 'page') || 1);
   const pageSize = Math.min(100, Math.max(1, optionalInt(c, 'page_size') || 20));
 
-  const [orderRowsAll, listingRowsAll] = await Promise.all([regionOrders(db, region.code), regionListings(db, region.code)]);
-  let listingRows = listingRowsAll;
-  let orderRows = orderRowsAll.filter((o) => since(o.createdAt, start));
-  if (school) {
-    listingRows = listingRows.filter((l) => l.schoolId === school);
-    orderRows = orderRows.filter((o) => o.schoolId === school);
-  }
-
   const textCol = by === 'course' ? 'courseName' : by === 'professor' ? 'professorName' : null;
   const fkCol = by === 'school' ? 'schoolId' : 'categoryId';
-  const keyOfListing = (l: ListingRow): string | number | null => (textCol ? textKey(l[textCol]) : l[fkCol]);
-  // An order whose listing is gone has no key; the join yields NULL,
-  // which lands in the "none" row for a foreign key.
-  const keyOfOrder = (o: OrderRow): string | number | null => (textCol ? textKey(o[textCol]) : (o[fkCol] ?? null));
+  // The grouping column: the listing's foreign key, or its raw text (folded by textKey below).
+  const groupCol = textCol ? listings[textCol] : listings[fkCol];
 
   interface Row {
     key: string | number | null;
@@ -787,27 +830,61 @@ statsRoutes.get('/stats/breakdown/', async (c) => {
     _search?: string;
   }
   const rows = new Map<string | number | null, Row>();
-  const labelCandidates = new Map<string | number | null, string[]>();
-  for (const l of listingRows) {
-    const k = keyOfListing(l);
+
+  // Listings (all-time) per group: active, created in the window, and how many in all.
+  const listingGroups = await db
+    .select({
+      key: groupCol,
+      active: sql<number>`coalesce(sum(${listings.status} = 'active'), 0)`,
+      fresh: start ? sql<number>`coalesce(sum(${listings.createdAt} >= ${start}), 0)` : count(),
+      total: count(),
+    })
+    .from(listings)
+    .where(and(eq(listings.regionCode, region.code), school ? eq(listings.schoolId, school) : undefined))
+    .groupBy(groupCol)
+    .orderBy(sql`min(${listings}.rowid)`);
+  const labelOf = new Map<string | number | null, string>();
+  let listingTotal = 0;
+  let listingsWithValue = 0;
+  for (const g of listingGroups) {
+    listingTotal += g.total;
+    if (typeof g.key === 'string' && g.key.trim() !== '') listingsWithValue += g.total;
+    const k = textCol ? textKey(g.key as string | null) : (g.key as number | null);
     if (textCol && !k) continue;
     const r = rows.get(k) ?? { key: k, label: '', active_listings: 0, new_listings: 0, orders: 0, completed: 0, gmv: 0 };
-    if (l.status === 'active') r.active_listings++;
-    if (since(l.createdAt, start)) r.new_listings++;
+    r.active_listings += g.active;
+    r.new_listings += g.fresh;
     rows.set(k, r);
-    if (textCol) labelCandidates.set(k, [...(labelCandidates.get(k) ?? []), (l[textCol] ?? '').trim()]);
+    if (textCol) {
+      // The shortest-sorting trimmed spelling names the group.
+      const spelled = ((g.key as string | null) ?? '').trim();
+      const seen = labelOf.get(k);
+      if (seen === undefined || spelled < seen) labelOf.set(k, spelled);
+    }
   }
   if (textCol) {
-    for (const [k, labels] of labelCandidates) rows.get(k)!.label = labels.sort()[0] ?? '';
+    for (const [k, label] of labelOf) rows.get(k)!.label = label;
   }
-  for (const o of orderRows) {
-    const r = rows.get(keyOfOrder(o));
+
+  // Orders in the window land on their listing's group; one whose listing is gone has no
+  // key, which the join yields as NULL and a foreign key shows as the "none" row.
+  const orderGroupsByKey = await db
+    .select({
+      key: groupCol,
+      orders: count(),
+      completed: sql<number>`coalesce(sum(${orders.status} = 'completed'), 0)`,
+      gmv: sql<number>`coalesce(sum(CASE WHEN ${orders.status} = 'completed' THEN ${orders.totalAmount} END), 0)`,
+    })
+    .from(orders)
+    .leftJoin(listings, eq(listings.id, orders.listingId))
+    .where(and(eq(orders.regionCode, region.code), inWindow(orders.createdAt, start), school ? eq(listings.schoolId, school) : undefined))
+    .groupBy(groupCol);
+  for (const g of orderGroupsByKey) {
+    const r = rows.get(textCol ? textKey(g.key as string | null) : ((g.key as number | null) ?? null));
     if (!r) continue;
-    r.orders++;
-    if (o.status === 'completed') {
-      r.completed++;
-      r.gmv += o.totalAmount;
-    }
+    r.orders += g.orders;
+    r.completed += g.completed;
+    r.gmv += g.gmv;
   }
   let list = [...rows.values()].filter((r) => r.active_listings || r.new_listings || r.orders);
 
@@ -870,8 +947,8 @@ statsRoutes.get('/stats/breakdown/', async (c) => {
 
   const summary: Record<string, number> = { groups: list.length };
   if (textCol) {
-    summary.listings = listingRows.length;
-    summary.listings_with_value = listingRows.filter((l) => (l[textCol] ?? '').trim() !== '').length;
+    summary.listings = listingTotal;
+    summary.listings_with_value = listingsWithValue;
   }
   const from = (pageNo - 1) * pageSize;
   return c.json({
@@ -904,31 +981,58 @@ statsRoutes.get('/stats/books/:id/', async (c) => {
     .limit(1);
   if (!book) notFound();
 
-  const [orderRows, listingRows, reqs] = await Promise.all([
-    regionOrders(db, region.code),
-    regionListings(db, region.code),
-    regionRequests(db, region.code),
+  const buckets = new SeriesBuckets(region.tz, days);
+  const thisBook = and(eq(orders.regionCode, region.code), eq(listings.bookId, book.id));
+  const [groups, activeCounts, reqStatsAll, byStatus, allTime, recent, bookActive, seriesOrders, schoolGroups] = await Promise.all([
+    orderGroups(db, region.code, start),
+    activeListingCounts(db, region.code),
+    requestStats(db, region.code, start),
+    orderStatusCounts(db, region.code, start, eq(listings.bookId, book.id)),
+    db
+      .select({ n: count() })
+      .from(orders)
+      .innerJoin(listings, eq(listings.id, orders.listingId))
+      .where(and(thisBook, eq(orders.status, 'completed'))),
+    db
+      .select({
+        id: orders.id,
+        status: orders.status,
+        totalAmount: orders.totalAmount,
+        createdAt: orders.createdAt,
+        schoolId: listings.schoolId,
+      })
+      .from(orders)
+      .innerJoin(listings, eq(listings.id, orders.listingId))
+      .where(thisBook)
+      .orderBy(desc(orders.createdAt), sql`${orders}.rowid`)
+      .limit(10),
+    db
+      .select({
+        id: listings.id,
+        price: listings.price,
+        condition: listings.condition,
+        createdAt: listings.createdAt,
+        schoolId: listings.schoolId,
+      })
+      .from(listings)
+      .where(and(eq(listings.regionCode, region.code), eq(listings.status, 'active'), eq(listings.bookId, book.id)))
+      .orderBy(asc(listings.price), desc(listings.createdAt), sql`${listings}.rowid`)
+      .limit(20),
+    db
+      .select({ status: orders.status, totalAmount: orders.totalAmount, createdAt: orders.createdAt })
+      .from(orders)
+      .innerJoin(listings, eq(listings.id, orders.listingId))
+      .where(and(thisBook, gte(orders.createdAt, buckets.start))),
+    completedBySchool(db, region.code, start, eq(listings.bookId, book.id)),
   ]);
-  const periodOrders = orderRows.filter((o) => since(o.createdAt, start));
-  const activeListings = listingRows.filter((l) => l.status === 'active');
-  const stats = bookStats(periodOrders, activeListings).get(book.id) ?? emptyStats();
-  const bookOrders = periodOrders.filter((o) => o.bookId === book.id);
-  const allBookOrders = orderRows.filter((o) => o.bookId === book.id);
-
-  const byStatus: Record<string, number> = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0]));
-  for (const o of bookOrders) byStatus[o.status] = (byStatus[o.status] ?? 0) + 1;
+  const stats = bookStats(groups, activeCounts).get(book.id) ?? emptyStats();
 
   const summary = {
     ...stats,
-    all_time_completed: allBookOrders.filter((o) => o.status === 'completed').length,
-    rank: bookRanker(periodOrders, 'completed_count').rank(stats.completed_count),
+    all_time_completed: allTime[0].n,
+    rank: bookRanker(groups, 'completed_count').rank(stats.completed_count),
   };
 
-  const recent = [...allBookOrders].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0)).slice(0, 10);
-  const bookActive = activeListings
-    .filter((l) => l.bookId === book.id)
-    .sort((a, b) => a.price - b.price || (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
-    .slice(0, 20);
   const schoolMap = await loadSchools(
     db,
     [...recent, ...bookActive].flatMap((x) => (x.schoolId !== null ? [x.schoolId] : [])),
@@ -938,8 +1042,7 @@ statsRoutes.get('/stats/books/:id/', async (c) => {
     return s ? (lang ? localized(s.translations, lang, 'name', s.name) : s.name) : '';
   };
 
-  const reqStats = requestStats(reqs, activeListings, start);
-  const mine = reqStats.get(book.id) ?? {
+  const mine = reqStatsAll.get(book.id) ?? {
     request_count: 0,
     new_requests: 0,
     notified_count: 0,
@@ -948,7 +1051,6 @@ statsRoutes.get('/stats/books/:id/', async (c) => {
     last_requested_at: null,
   };
   const { active_listings: _omit, ...requests } = mine;
-  const buckets = new SeriesBuckets(region.tz, days);
 
   return c.json({
     region: region.code,
@@ -956,11 +1058,11 @@ statsRoutes.get('/stats/books/:id/', async (c) => {
     days,
     book: bookDict(book, true),
     summary,
-    requests: { ...requests, rank: requestRanker(reqStats).rank(mine.request_count) },
+    requests: { ...requests, rank: requestRanker(reqStatsAll).rank(mine.request_count) },
     by_status: byStatus,
     series_unit: buckets.unit,
-    series: orderSeries(buckets, allBookOrders, false),
-    top_schools: await topSchools(db, bookOrders, lang, false),
+    series: orderSeries(buckets, seriesOrders, false),
+    top_schools: await topSchools(db, schoolGroups, lang, false),
     recent_orders: recent.map((o) => ({
       id: o.id,
       status: o.status,
@@ -1003,64 +1105,76 @@ statsRoutes.get('/stats/growth/', async (c) => {
   const start = periodStart(region.tz, days);
   const code = region.code;
 
-  const [orderRows, listingRows, reqs, convs] = await Promise.all([
-    regionOrders(db, code),
-    regionListings(db, code),
-    regionRequests(db, code),
-    db
-      .select({
-        listingId: conversations.listingId,
-        listingRef: conversations.listingRef,
-        buyerId: conversations.buyerId,
-        createdAt: conversations.createdAt,
-      })
-      .from(conversations)
-      .where(eq(conversations.regionCode, code)),
-  ]);
-  const periodListings = listingRows.filter((l) => since(l.createdAt, start));
-  const periodOrders = orderRows.filter((o) => since(o.createdAt, start));
+  const periodListingCond = and(eq(listings.regionCode, code), inWindow(listings.createdAt, start));
+  const periodOrderCond = and(eq(orders.regionCode, code), inWindow(orders.createdAt, start));
+  const windowListingIds = db.select({ id: listings.id }).from(listings).where(periodListingCond);
+  // Correlated subqueries name their tables outright: the query builder drops table qualifiers from a
+  // join-free statement, which would bind the inner columns to themselves.
+  // A chat and an order are the same pair when they name the same listing (kept by its ref once deleted) and buyer.
+  const chatOrder = (completed: boolean) =>
+    sql`EXISTS (SELECT 1 FROM orders o WHERE o.region_code = ${code} AND coalesce(o.listing_ref, o.listing_id) IS coalesce(conversations.listing_ref, conversations.listing_id) AND o.buyer_id = conversations.buyer_id AND (${completed ? 1 : 0} = 0 OR o.status = 'completed'))`;
+  const requestOrder = (completed: boolean) =>
+    sql`EXISTS (SELECT 1 FROM orders o INNER JOIN listings l ON l.id = o.listing_id WHERE o.region_code = ${code} AND o.buyer_id = subscriptions.user_id AND l.book_id = subscriptions.book_id AND o.created_at >= subscriptions.created_at AND (${completed ? 1 : 0} = 0 OR o.status = 'completed'))`;
 
-  // Liquidity: first chat / first order per listing.
-  const firstChat = new Map<string, string>();
-  for (const cv of convs) {
-    if (cv.listingId && (!firstChat.has(cv.listingId) || cv.createdAt < firstChat.get(cv.listingId)!))
-      firstChat.set(cv.listingId, cv.createdAt);
-  }
-  const firstOrder = new Map<string, string>();
-  for (const o of orderRows) {
-    if (o.listingId && (!firstOrder.has(o.listingId) || o.createdAt < firstOrder.get(o.listingId)!))
-      firstOrder.set(o.listingId, o.createdAt);
-  }
-  const sales = periodOrders.filter((o) => o.status === 'completed' && o.completedAt);
+  const [periodListings, firstChat, firstOrder, sales, buyerRows, orderSellers, listingSellers, chatTotals, requestTotals] =
+    await Promise.all([
+      db
+        .select({ id: listings.id, createdAt: listings.createdAt, sellerId: listings.sellerId, status: listings.status })
+        .from(listings)
+        .where(periodListingCond),
+      // Liquidity: first chat / first order per listing.
+      db
+        .select({ listingId: conversations.listingId, at: sql<string>`min(${conversations.createdAt})` })
+        .from(conversations)
+        .where(and(eq(conversations.regionCode, code), inArray(conversations.listingId, windowListingIds)))
+        .groupBy(conversations.listingId),
+      db
+        .select({ listingId: orders.listingId, at: sql<string>`min(${orders.createdAt})` })
+        .from(orders)
+        .where(and(eq(orders.regionCode, code), inArray(orders.listingId, windowListingIds)))
+        .groupBy(orders.listingId),
+      db
+        .select({ createdAt: orders.createdAt, completedAt: orders.completedAt, listingCreatedAt: listings.createdAt })
+        .from(orders)
+        .leftJoin(listings, eq(listings.id, orders.listingId))
+        .where(and(periodOrderCond, eq(orders.status, 'completed'), isNotNull(orders.completedAt))),
+      // People
+      db.select({ id: orders.buyerId, n: count() }).from(orders).where(periodOrderCond).groupBy(orders.buyerId),
+      db.selectDistinct({ id: orders.sellerId }).from(orders).where(periodOrderCond),
+      db.selectDistinct({ id: listings.sellerId }).from(listings).where(periodListingCond),
+      // Chats -> orders by the same buyer on the same listing.
+      db
+        .select({
+          chats: count(),
+          ordered: sql<number>`coalesce(sum(${chatOrder(false)}), 0)`,
+          completed: sql<number>`coalesce(sum(${chatOrder(true)}), 0)`,
+        })
+        .from(conversations)
+        .where(and(eq(conversations.regionCode, code), inWindow(conversations.createdAt, start))),
+      // Requests -> orders by the requester on that book, placed after the request.
+      db
+        .select({
+          requests: count(),
+          notified: sql<number>`coalesce(sum(${subscriptions.notifiedAt} IS NOT NULL AND ${subscriptions.notifiedAt} <> ''), 0)`,
+          ordered: sql<number>`coalesce(sum(${requestOrder(false)}), 0)`,
+          bought: sql<number>`coalesce(sum(${requestOrder(true)}), 0)`,
+        })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.regionCode, code), inWindow(subscriptions.createdAt, start))),
+    ]);
 
-  // People
-  const buyerCounts = countBy(periodOrders, (o) => o.buyerId);
-  const buyers = new Set([...buyerCounts.keys()] as string[]);
-  const sellers = new Set([...periodOrders.map((o) => o.sellerId), ...periodListings.map((l) => l.sellerId)]);
+  const firstChatAt = new Map(firstChat.map((r) => [r.listingId, r.at]));
+  const firstOrderAt = new Map(firstOrder.map((r) => [r.listingId, r.at]));
+  const soldListings = periodListings.filter((l) => l.status === 'sold').length;
+
+  const buyers = new Set(buyerRows.map((r) => r.id));
+  const sellers = new Set([...orderSellers.map((r) => r.id), ...listingSellers.map((r) => r.id)]);
   const both = [...buyers].filter((b) => sellers.has(b)).length;
   const union = new Set([...buyers, ...sellers]).size;
-  const repeat = [...buyerCounts.values()].filter((n) => n >= 2).length;
+  const repeat = buyerRows.filter((r) => r.n >= 2).length;
 
-  // Chats -> orders by the same buyer on the same listing.
-  const ref = (x: { listingRef: string | null; listingId: string | null }) => x.listingRef ?? x.listingId;
-  const ordered = new Set<string>();
-  const sold = new Set<string>();
-  for (const o of orderRows) {
-    const k = `${ref(o)}|${o.buyerId}`;
-    ordered.add(k);
-    if (o.status === 'completed') sold.add(k);
-  }
-  const periodChats = convs.filter((cv) => since(cv.createdAt, start));
-  const chatOrdered = periodChats.filter((cv) => ordered.has(`${ref(cv)}|${cv.buyerId}`)).length;
-  const chatSold = periodChats.filter((cv) => sold.has(`${ref(cv)}|${cv.buyerId}`)).length;
-
-  // Requests -> orders by the requester on that book, placed after the request.
-  const periodReqs = reqs.filter((r) => since(r.createdAt, start));
-  const reqOutcome = periodReqs.map((r) => {
-    const mine = orderRows.filter((o) => o.buyerId === r.userId && o.bookId === r.bookId && o.createdAt >= r.createdAt);
-    return { r, ordered: mine.length > 0, bought: mine.some((o) => o.status === 'completed') };
-  });
-  const reqOrdered = reqOutcome.filter((x) => x.ordered).length;
+  const chats = chatTotals[0];
+  const reqs = requestTotals[0];
 
   return c.json({
     region: code,
@@ -1068,12 +1182,12 @@ statsRoutes.get('/stats/growth/', async (c) => {
     since: start,
     sell_through: {
       listings: periodListings.length,
-      sold: periodListings.filter((l) => l.status === 'sold').length,
-      rate: ratio(periodListings.filter((l) => l.status === 'sold').length, periodListings.length),
+      sold: soldListings,
+      rate: ratio(soldListings, periodListings.length),
     },
     speed: {
-      listing_to_first_chat: durations(periodListings.map((l) => [l.createdAt, firstChat.get(l.id)])),
-      listing_to_first_order: durations(periodListings.map((l) => [l.createdAt, firstOrder.get(l.id)])),
+      listing_to_first_chat: durations(periodListings.map((l) => [l.createdAt, firstChatAt.get(l.id)])),
+      listing_to_first_order: durations(periodListings.map((l) => [l.createdAt, firstOrderAt.get(l.id)])),
       listing_to_sale: durations(sales.map((o) => [o.listingCreatedAt, o.completedAt])),
       order_to_completion: durations(sales.map((o) => [o.createdAt, o.completedAt])),
     },
@@ -1086,20 +1200,20 @@ statsRoutes.get('/stats/growth/', async (c) => {
       repeat_rate: ratio(repeat, buyers.size),
     },
     chat_to_order: {
-      chats: periodChats.length,
-      ordered: chatOrdered,
-      completed: chatSold,
-      order_rate: ratio(chatOrdered, periodChats.length),
-      completion_rate: ratio(chatSold, periodChats.length),
+      chats: chats.chats,
+      ordered: chats.ordered,
+      completed: chats.completed,
+      order_rate: ratio(chats.ordered, chats.chats),
+      completion_rate: ratio(chats.completed, chats.chats),
       // Every conversation here carries its creation time.
       undated: 0,
     },
     requests: {
-      requests: periodReqs.length,
-      notified: periodReqs.filter((r) => r.notifiedAt).length,
-      ordered: reqOrdered,
-      bought: reqOutcome.filter((x) => x.bought).length,
-      order_rate: ratio(reqOrdered, periodReqs.length),
+      requests: reqs.requests,
+      notified: reqs.notified,
+      ordered: reqs.ordered,
+      bought: reqs.bought,
+      order_rate: ratio(reqs.ordered, reqs.requests),
     },
   });
 });
