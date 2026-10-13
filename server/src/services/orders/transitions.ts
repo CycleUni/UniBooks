@@ -54,6 +54,9 @@ const TRANSITION_NOTICE: Record<string, string> = {
   'handed_over>cancelled>seller': 'order.notify.cancelled_by_seller',
 };
 
+/** The reasons a buyer or seller may give for a cancel; `admin_override: …` is the platform's alone. */
+const PARTICIPANT_CANCEL_REASONS = new Set(['buyer_cancelled', 'seller_cancelled', 'seller_rejected', 'seller_declined']);
+
 /** Statuses in which the seller may still change the agreed time/place. */
 const MEETUP_EDITABLE_STATUSES: string[] = ['accepted'];
 
@@ -112,10 +115,12 @@ export async function applyOrderUpdate(
     if (role === 'seller' && !isSeller) return codeError(403, 'order.errSellerOnly');
     if (role === 'buyer' && !isBuyer) return codeError(403, 'order.errBuyerOnly');
     if (role === 'either' && !isSeller && !isBuyer) return codeError(403, 'order.errNotParticipant');
-  } else if ('meetup_time' in data || 'meetup_location' in data) {
-    // Editing the meetup on its own: the seller's, and only while accepted.
+  }
+  if ('meetup_time' in data || 'meetup_location' in data) {
+    // The meetup is the seller's to set, with a move (accepting) or on its
+    // own while accepted.
     if (!isSeller) return codeError(403, 'order.errSellerOnly');
-    if (!MEETUP_EDITABLE_STATUSES.includes(oldStatus)) return codeError(400, 'order.errMeetupNotEditable');
+    if (!requested && !MEETUP_EDITABLE_STATUSES.includes(oldStatus)) return codeError(400, 'order.errMeetupNotEditable');
   }
 
   // Partial update: status, cancel_reason, meetup_time, meetup_location.
@@ -136,10 +141,14 @@ export async function applyOrderUpdate(
     }
   }
   if ('cancel_reason' in data) {
+    // Only with the cancel itself, and only a reason a participant can give:
+    // a finished order's reason (an admin's override included) is final.
     const r = data.cancel_reason;
-    if (r === null) set.cancelReason = null;
-    else if (typeof r === 'string' && r.length <= 50) set.cancelReason = r;
-    else errors.cancel_reason = ['common.errValidation'];
+    if (data.status !== 'cancelled' || (r !== null && !(typeof r === 'string' && PARTICIPANT_CANCEL_REASONS.has(r)))) {
+      errors.cancel_reason = ['common.errValidation'];
+    } else {
+      set.cancelReason = r;
+    }
   }
   let meetupTimeChanged = false;
   if ('meetup_time' in data) {

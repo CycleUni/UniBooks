@@ -202,7 +202,7 @@ describe.skipIf(!schemaReady)('orders API', () => {
     await patch(`${o.id}/`, seller.token, { status: 'accepted', meetup_time: '2099-01-01T10:00' });
     // Backing out early (even rewriting the time in the same request) does not qualify.
     let res = await patch(`${o.id}/`, buyer.token, { status: 'cancelled', meetup_time: '2000-01-01T10:00' });
-    expect(res.status).toBe(400); // a past meetup time is never accepted
+    expect(res.status).toBe(403); // the meetup is the seller's, even riding along with a move
     res = await patch(`${o.id}/`, buyer.token, { status: 'cancelled' });
     expect(res.status).toBe(200);
     expect(await listingStatus(l.id)).toBe('active');
@@ -456,6 +456,24 @@ describe.skipIf(!schemaReady)('after handover', () => {
 
     expect((await patch(`${id}/`, seller.token, { status: 'cancelled' })).status).toBe(200);
     expect(await listingStatus(l.id)).toBe('active');
+  });
+});
+
+describe.skipIf(!schemaReady)('cancel reasons', () => {
+  it('take a reason only with the cancel, and never an admin override', async () => {
+    const seller = await makeUser('seller');
+    const buyer = await makeUser('buyer');
+    const l = await makeListing(seller.id);
+    await chat(l.id, buyer.id, seller.id);
+    const { id } = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
+
+    expect((await patch(`${id}/`, buyer.token, { cancel_reason: 'buyer_cancelled' })).status).toBe(400);
+    expect((await patch(`${id}/`, buyer.token, { status: 'cancelled', cancel_reason: 'admin_override: fraud' })).status).toBe(400);
+    expect((await patch(`${id}/`, buyer.token, { status: 'cancelled', cancel_reason: 'buyer_cancelled' })).status).toBe(200);
+    // Final: a later rewrite is refused.
+    expect((await patch(`${id}/`, seller.token, { cancel_reason: 'seller_cancelled' })).status).toBe(400);
+    const [o] = await db.select({ r: orders.cancelReason }).from(orders).where(eq(orders.id, id));
+    expect(o.r).toBe('buyer_cancelled');
   });
 });
 
