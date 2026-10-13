@@ -10,6 +10,7 @@ import { managedRegionCodes } from '../services/messaging/staffScope';
 import { getConversation, isParticipant } from '../services/messaging/conversations';
 import { UUID_LOOSE_RE } from '../lib/uuid';
 import { notFound } from '../services/admin/scope';
+import { checkRate } from '../middleware/rateLimit';
 
 /**
  * /api/v1/moderation/: listing reports and chat
@@ -116,6 +117,7 @@ const reportCreateSchema = z.object({
 /** POST '' — file a listing report (signed in, verified in the listing's region). */
 moderationRoutes.post('/', async (c) => {
   const user = c.get('user')!;
+  await checkRate(c, 'report', '20/hour');
   const body = await readJson(c.req);
   const listingId = typeof body.listing === 'string' ? body.listing : '';
 
@@ -268,15 +270,17 @@ const chatReportCreateSchema = z.object({
 /** POST chat-reports/. */
 moderationRoutes.post('/chat-reports/', async (c) => {
   const user = c.get('user')!;
+  await checkRate(c, 'report', '20/hour');
   const body = await readJson(c.req);
   const conversationId = typeof body.conversation === 'string' ? body.conversation : '';
   if (!conversationId || !UUID_LOOSE_RE.test(conversationId)) apiError(400, 'invalid.conversationRequired');
 
-  const region = await requireRegion(c);
+  // Keyed on the conversation, not the request region (the row stores the conversation's region).
+  await requireRegion(c);
   const pending = await c.env.DB.prepare(
-    "SELECT 1 FROM chat_reports WHERE reporter_id = ? AND conversation_id = ? AND region_code = ? AND status = 'open' LIMIT 1",
+    "SELECT 1 FROM chat_reports WHERE reporter_id = ? AND conversation_id = ? AND status = 'open' LIMIT 1",
   )
-    .bind(user.id, conversationId, region.code)
+    .bind(user.id, conversationId)
     .first();
   if (pending) apiError(400, 'moderation.errAlreadyReported');
 

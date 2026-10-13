@@ -236,6 +236,17 @@ describe.skipIf(!ready)('moderation API', () => {
     expect(ok.status).toBe(201);
     const { id } = (await ok.json()) as { id: string };
 
+    // A second open report on the same conversation is refused, whatever region the request names.
+    await seedRegion('HK');
+    const dup = await api('/api/v1/moderation/chat-reports/', {
+      method: 'POST',
+      token: buyer.token,
+      headers: { 'X-Region': 'HK' },
+      body: JSON.stringify({ conversation: conv, reported_party: seller.id, reason: 'spam' }),
+    });
+    expect(dup.status).toBe(400);
+    expect(await dup.json()).toMatchObject({ error: { code: 'moderation.errAlreadyReported' } });
+
     // Staff with no managed regions sees nothing.
     expect((await api(`/api/v1/moderation/chat-reports/${id}/`, { token: scopedStaff.token })).status).toBe(404);
     const list = await api('/api/v1/moderation/chat-reports/all/', { token: scopedStaff.token });

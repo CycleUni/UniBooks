@@ -94,7 +94,7 @@ export function api(path: string, init: RequestInit & { token?: string } = {}) {
   const headers = new Headers(init.headers);
   if (init.token) headers.set('Authorization', `Bearer ${init.token}`);
   if (typeof init.body === 'string' && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  headers.set('X-Region', 'TW');
+  if (!headers.has('X-Region')) headers.set('X-Region', 'TW');
   const worker = (exports as unknown as { default: { fetch(r: Request): Promise<Response> } }).default;
   return worker.fetch(new Request(`http://x${path}`, { ...init, headers }));
 }
