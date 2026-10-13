@@ -36,6 +36,7 @@ import {
   tmpAdKey,
   validatedContentLength,
 } from '../../services/admin/uploads';
+import { putOnce } from '../../lib/upload';
 import { declaredType, readCapped } from '../../lib/body';
 import { signToken, verifyToken, InvalidTokenError } from '../../lib/jwt';
 import { parseJsonArray } from '../../services/admin/i18n';
@@ -381,8 +382,7 @@ adRoutes.put('/promotions/uploads/file/', async (c) => {
   const ext = sniffImage(bytes);
   if (!ext || contentTypeForExt(ext) !== claims.content_type) apiError(400, 'admin.errUnsupportedFileType');
   // One upload per token: never overwrite an object already stored.
-  if (await c.env.R2.head(claims.target_key)) apiError(403, 'listing.errPhotoNotOwned');
-  await c.env.R2.put(claims.target_key, bytes, { httpMetadata: { contentType: claims.content_type } });
+  if (!(await putOnce(c.env.R2, claims.target_key, bytes, { contentType: claims.content_type }))) apiError(403, 'listing.errPhotoNotOwned');
   return c.json({ photo_url: publicUrl(c.env, origin(c), claims.target_key) });
 });
 

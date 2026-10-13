@@ -5,6 +5,7 @@ import { checkRate } from '../middleware/rateLimit';
 import { apiError, pagination, readJson } from '../lib/http';
 import { requireRegion, isVerifiedIn } from '../lib/region';
 import { mintChatToken, mintHubToken } from '../services/chatTokens';
+import { putOnce } from '../lib/upload';
 import { declaredType, readCapped } from '../lib/body';
 import { signToken, verifyToken, InvalidTokenError } from '../lib/jwt';
 import {
@@ -269,10 +270,13 @@ const putUpload = async (c: Context<AppEnv>) => {
 
   // One upload per token: a replay must not swap the image behind a URL
   // that has already been sent in a chat.
-  if (await c.env.R2.head(claims.target_key)) apiError(409, 'msg.errUploadTokenUsed');
-  await c.env.R2.put(claims.target_key, bytes, {
-    httpMetadata: { contentType: claims.content_type, cacheControl: 'public, max-age=31536000, immutable' },
-  });
+  if (
+    !(await putOnce(c.env.R2, claims.target_key, bytes, {
+      contentType: claims.content_type,
+      cacheControl: 'public, max-age=31536000, immutable',
+    }))
+  )
+    apiError(409, 'msg.errUploadTokenUsed');
   return c.body(null, 200);
 };
 

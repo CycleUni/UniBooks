@@ -10,6 +10,7 @@ import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { signToken, verifyToken, InvalidTokenError } from '../lib/jwt';
+import { putOnce } from '../lib/upload';
 import { declaredType, readCapped } from '../lib/body';
 import { validateBookIsbn } from '../services/catalog/isbn';
 import { nowIso } from '../services/catalog/common';
@@ -285,8 +286,7 @@ listingRoutes.put('/uploads/file/', async (c) => {
     apiError(400, 'listing.errUnsupportedFileType');
   }
   // One upload per token: never overwrite an object already stored.
-  if (await c.env.R2.head(claims.target_key)) apiError(403, 'listing.errPhotoNotOwned');
-  await c.env.R2.put(claims.target_key, bytes, { httpMetadata: { contentType: claims.content_type } });
+  if (!(await putOnce(c.env.R2, claims.target_key, bytes, { contentType: claims.content_type }))) apiError(403, 'listing.errPhotoNotOwned');
   return c.json({ photo_url: publicUrlFor(c.env, origin(c), claims.target_key) });
 });
 
