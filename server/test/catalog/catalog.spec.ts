@@ -3,14 +3,8 @@ import { env } from 'cloudflare:workers';
 import { cleanAndValidateIsbn, isbnChecksumOk, isbnForms, validateBookIsbn } from '../../src/services/catalog/isbn';
 import { cleanCoverUrl, cleanPublisher, describeSource } from '../../src/services/catalog/common';
 import { engineOrder, regionSearchEngines, ISBN_FALLBACK_ORDER } from '../../src/services/catalog/lookups';
-import {
-  PhotoError,
-  acceptListingPhotos,
-  detectImageExtension,
-  publicBase,
-  storageKeyFromUrl,
-  validatedContentLength,
-} from '../../src/services/listings/photos';
+import { PhotoError, acceptListingPhotos } from '../../src/services/listings/photos';
+import { sniffImage as detectImageExtension, publicBase, storageKeyFromUrl, validatedContentLength } from '../../src/lib/media';
 
 const ORIGIN = 'http://x';
 const BASE = publicBase(env, ORIGIN);

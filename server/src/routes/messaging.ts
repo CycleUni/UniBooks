@@ -5,9 +5,6 @@ import { checkRate } from '../middleware/rateLimit';
 import { apiError, pagination, readJson } from '../lib/http';
 import { requireRegion, isVerifiedIn } from '../lib/region';
 import { mintChatToken, mintHubToken } from '../services/chatTokens';
-import { putOnce } from '../lib/upload';
-import { declaredType, readCapped } from '../lib/body';
-import { signToken, verifyToken, InvalidTokenError } from '../lib/jwt';
 import {
   getConversation,
   isParticipant,
@@ -16,14 +13,8 @@ import {
   serializeConversations,
   type ConversationRow,
 } from '../services/messaging/conversations';
-import {
-  CHAT_IMAGE_TYPES,
-  MAX_CHAT_IMAGE_BYTES,
-  chatImageKey,
-  publicUrl,
-  sniffImageType,
-  validatedContentLength,
-} from '../services/messaging/images';
+import { chatImagePrefix } from '../services/messaging/images';
+import { issueUpload, storeUpload } from '../lib/upload';
 
 /**
  * /api/v1/messaging/
@@ -37,6 +28,7 @@ const authed = new Hono<AppEnv>();
 
 const UUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 const UPLOAD_RATE = '100/hour';
+const MESSAGING_BASE = '/api/v1/messaging/';
 
 const notFound = (c: Context<AppEnv>) => c.json({ detail: 'Not found.' }, 404);
 
@@ -215,70 +207,14 @@ async function uploadableConversation(c: Context<AppEnv>, raw: unknown): Promise
   return conv;
 }
 
-/**
- * Step one of an upload: authorise one image and hand back where to PUT it —
- * uploads/file/ with a short-lived upload token that fixes the key, the type
- * and the size.
- */
+/** Step one (lib/upload.ts): only a participant may post an image into a chat. */
 authed.post('/uploads/', async (c) => {
   const user = c.get('user')!;
   await checkRate(c, 'upload', UPLOAD_RATE);
   const body = await readJson(c.req);
   await uploadableConversation(c, body.conversation_id);
-
-  const contentType = typeof body.content_type === 'string' ? body.content_type : '';
-  if (!CHAT_IMAGE_TYPES[contentType]) apiError(400, 'listing.errUnsupportedFileType');
-  const contentLength = validatedContentLength(body.content_length);
-  if (contentLength === null) apiError(400, 'msg.errFileTooLarge');
-
-  const key = chatImageKey(user.id, contentType);
-  const token = await signToken(
-    'upload',
-    { user_id: user.id, action: 'chat_image', target_key: key, content_type: contentType, max_bytes: contentLength },
-    c.env.JWT_SIGNING_KEY,
-  );
-  const uploadUrl = new URL('/api/v1/messaging/uploads/file/', c.req.url);
-  uploadUrl.searchParams.set('token', token);
-  return c.json({
-    upload_url: uploadUrl.toString(),
-    photo_url: publicUrl(c.env.R2_PUBLIC_URL, key),
-  });
+  return issueUpload(c, { action: 'chat_image', userId: user.id, keyPrefix: chatImagePrefix(user.id), base: MESSAGING_BASE }, body);
 });
-
-/**
- * Step two: the bytes. Authorised by the upload token alone, which names
- * the one key, type and size allowed. The
- * body must be that size or smaller and really be that type of image.
- */
-const putUpload = async (c: Context<AppEnv>) => {
-  let claims;
-  try {
-    claims = await verifyToken('upload', c.req.query('token') ?? '', c.env.JWT_SIGNING_KEY);
-  } catch (e) {
-    if (e instanceof InvalidTokenError) apiError(403, 'msg.errUploadTokenInvalid');
-    throw e;
-  }
-  if (claims.action !== 'chat_image' || !claims.target_key.startsWith(`chat/${claims.user_id}/`)) {
-    apiError(403, 'msg.errUploadTokenInvalid');
-  }
-  if (declaredType(c.req.raw) !== claims.content_type) apiError(400, 'listing.errUnsupportedFileType');
-
-  const bytes = await readCapped(c.req.raw, Math.min(claims.max_bytes, MAX_CHAT_IMAGE_BYTES));
-  if (bytes === null) apiError(400, 'msg.errFileTooLarge');
-  if (bytes.byteLength === 0) apiError(400, 'listing.errNoFile');
-  if (sniffImageType(bytes) !== claims.content_type) apiError(400, 'listing.errUnsupportedFileType');
-
-  // One upload per token: a replay must not swap the image behind a URL
-  // that has already been sent in a chat.
-  if (
-    !(await putOnce(c.env.R2, claims.target_key, bytes, {
-      contentType: claims.content_type,
-      cacheControl: 'public, max-age=31536000, immutable',
-    }))
-  )
-    apiError(409, 'msg.errUploadTokenUsed');
-  return c.body(null, 200);
-};
 
 /**
  * The upload PUT is mounted first, outside `authed`: the upload token is its
@@ -286,5 +222,5 @@ const putUpload = async (c: Context<AppEnv>) => {
  * and its handler answers before the auth middleware would run.
  */
 export const messagingRoutes = new Hono<AppEnv>();
-messagingRoutes.put('/uploads/file/', putUpload);
+messagingRoutes.put('/uploads/file/', (c) => storeUpload(c, { action: 'chat_image', keyPrefix: chatImagePrefix }));
 messagingRoutes.route('/', authed);

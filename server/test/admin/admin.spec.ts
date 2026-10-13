@@ -9,7 +9,8 @@ import {
   termLabel,
   zonedMidnight,
 } from '../../src/services/admin/statsTime';
-import { resolveAdImage, sniffImage, storageKeyFromUrl } from '../../src/services/admin/uploads';
+import { resolveAdImage } from '../../src/services/admin/uploads';
+import { sniffImage, storageKey as storageKeyFromUrl } from '../../src/lib/media';
 import { dedupeCode, deriveCode, isValidCode, normalizeCode } from '../../src/services/admin/schoolCodes';
 import { isSafeTargetUrl } from '../../src/routes/admin/ads';
 

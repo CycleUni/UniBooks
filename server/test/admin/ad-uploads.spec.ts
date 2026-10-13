@@ -30,7 +30,9 @@ describe('admin ad image uploads', () => {
     const key = photo_url.split('/').slice(-4).join('/');
     expect(key).toMatch(new RegExp(`^tmp/ads/${staff.id}/[0-9a-f]{32}\\.png$`));
     expect((await env.R2.get(key))?.httpMetadata?.contentType).toBe('image/png');
-    expect((await put(staff.token, PNG)).status).toBe(403); // no overwrite
+    const replay = await put(staff.token, PNG);
+    expect(replay.status).toBe(409); // no overwrite
+    expect(await replay.json()).toEqual({ error: { code: 'upload.errTokenUsed' } });
   });
 
   it('refuses a non-image type when issuing', async () => {

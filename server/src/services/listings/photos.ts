@@ -12,108 +12,16 @@
 import { sql } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { createDb, listings } from '../../db';
+import { IMAGE_CONTENT_TYPES, publicUrl, storageKeyFromUrl, type ImageExt } from '../../lib/media';
 
 export const TMP_LISTING_PREFIX = 'tmp/listings';
 export const PERMANENT_LISTING_PREFIX = 'listings';
 export const MAX_LISTING_PHOTOS = 6;
-export const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
-
-/** Declared Content-Type → extension: gif is allowed for listings. */
-export const ALLOWED_CONTENT_TYPES: Record<string, 'jpg' | 'png' | 'webp' | 'gif'> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-};
-export const CONTENT_TYPE_BY_EXT: Record<string, string> = {
-  jpg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
-  gif: 'image/gif',
-};
-
 export const tmpKeyPrefix = (userId: string) => `${TMP_LISTING_PREFIX}/${userId}/`;
 export const permanentKeyPrefix = (userId: string) => `${PERMANENT_LISTING_PREFIX}/${userId}/`;
 
 /** Server-issued object names only: <hex>.<ext>. */
 const NAME_RE = /^[0-9a-f]{32}\.(?:jpg|png|webp|gif)$/;
-
-/** The image type the bytes actually are (magic numbers), or null. */
-export function detectImageExtension(bytes: Uint8Array): 'jpg' | 'png' | 'webp' | 'gif' | null {
-  const b = bytes;
-  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg';
-  if (
-    b.length >= 8 &&
-    b[0] === 0x89 &&
-    b[1] === 0x50 &&
-    b[2] === 0x4e &&
-    b[3] === 0x47 &&
-    b[4] === 0x0d &&
-    b[5] === 0x0a &&
-    b[6] === 0x1a &&
-    b[7] === 0x0a
-  ) {
-    return 'png';
-  }
-  const ascii = (from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
-  if (b.length >= 12 && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'webp';
-  if (b.length >= 6 && (ascii(0, 6) === 'GIF87a' || ascii(0, 6) === 'GIF89a')) return 'gif';
-  return null;
-}
-
-/**
- * The client's declared upload size, or null when unusable: an integer in 1..MAX_UPLOAD_SIZE_BYTES.
- */
-export function validatedContentLength(raw: unknown): number | null {
-  if (typeof raw === 'boolean' || raw === null || raw === undefined) return null;
-  const n = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN;
-  if (!Number.isInteger(n) || n <= 0 || n > MAX_UPLOAD_SIZE_BYTES) return null;
-  return n;
-}
-
-/**
- * Where public photo URLs live: R2_PUBLIC_URL, or the Worker's own /media in
- * local development when no public bucket domain is configured.
- */
-export function publicBase(env: Env, origin: string): string {
-  return (env.R2_PUBLIC_URL || `${origin}/media`).replace(/\/+$/, '');
-}
-
-export const publicUrlFor = (env: Env, origin: string, key: string) => `${publicBase(env, origin)}/${key}`;
-
-export type KeyResult = { key: string } | { error: 'invalid' | 'host' };
-
-/**
- * The storage key behind a URL we issued, or why not. Host must be the
- * public bucket domain (any other host: 'host'); the path is decoded before
- * the checks so %2e%2e or %2f cannot slip past them.
- */
-export function storageKeyFromUrl(env: Env, origin: string, url: unknown): KeyResult {
-  if (typeof url !== 'string' || !url) return { error: 'invalid' };
-  let parsed: URL;
-  let base: URL;
-  try {
-    parsed = new URL(url);
-    base = new URL(publicBase(env, origin));
-  } catch {
-    return { error: 'invalid' };
-  }
-  if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !parsed.hostname) return { error: 'invalid' };
-  if (parsed.host.toLowerCase() !== base.host.toLowerCase()) return { error: 'host' };
-  if (parsed.search || parsed.hash || parsed.username || parsed.password) return { error: 'invalid' };
-  let path: string;
-  try {
-    path = decodeURIComponent(parsed.pathname);
-  } catch {
-    return { error: 'invalid' };
-  }
-  const basePath = base.pathname.replace(/\/+$/, '') + '/';
-  if (!path.startsWith(basePath)) return { error: 'invalid' };
-  const key = path.slice(basePath.length);
-  const parts = key.split('/');
-  if (!key || key.includes('\\') || parts.some((p) => p === '' || p === '.' || p === '..')) return { error: 'invalid' };
-  return { key };
-}
 
 export class PhotoError extends Error {
   constructor(public code: string) {
@@ -171,14 +79,14 @@ export async function acceptListingPhotos(
       if (!obj) throw new Error('missing');
       const ext = item.promote.to.split('.').pop() ?? '';
       await env.R2.put(item.promote.to, await obj.arrayBuffer(), {
-        httpMetadata: { contentType: CONTENT_TYPE_BY_EXT[ext] ?? 'application/octet-stream' },
+        httpMetadata: { contentType: IMAGE_CONTENT_TYPES[ext as ImageExt] ?? 'application/octet-stream' },
       });
       await env.R2.delete(item.promote.from);
     } catch (e) {
       console.error('[listings] failed to promote tmp photo', item.promote.from, e);
       throw new PhotoError('listing.errPhotoPromoteFailed');
     }
-    out.push(publicUrlFor(env, origin, item.promote.to));
+    out.push(publicUrl(env, origin, item.promote.to));
   }
   return out;
 }

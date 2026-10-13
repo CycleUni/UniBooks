@@ -23,22 +23,8 @@ import { apiError, fieldErrors, pagination, readJson, validate } from '../../lib
 import { likeContains, notFound, regionParam, scopeOf, intId } from '../../services/admin/scope';
 import { ADS_VERSION_KEY, bumpVersion } from '../../services/admin/adCache';
 import { adCounts, ZERO_COUNTS, type AdCounts } from '../../services/admin/adAnalytics';
-import {
-  AD_CONTENT_TYPES,
-  contentTypeForExt,
-  deleteAdImage,
-  isInternalImage,
-  MAX_UPLOAD_BYTES,
-  publicUrl,
-  resolveAdImage,
-  sniffImage,
-  TMP_AD_PREFIX,
-  tmpAdKey,
-  validatedContentLength,
-} from '../../services/admin/uploads';
-import { putOnce } from '../../lib/upload';
-import { declaredType, readCapped } from '../../lib/body';
-import { signToken, verifyToken, InvalidTokenError } from '../../lib/jwt';
+import { deleteAdImage, isInternalImage, resolveAdImage, tmpAdPrefix } from '../../services/admin/uploads';
+import { issueUpload, storeUpload } from '../../lib/upload';
 import { parseJsonArray } from '../../services/admin/i18n';
 
 /**
@@ -336,55 +322,18 @@ adRoutes.delete('/sponsors/:id/', async (c) => {
 // Ad image uploads (before promotions/:id/)
 // ---------------------------------------------------------------------------
 
-/**
- * Step one of an ad image upload: authorise one image and hand back where to
- * PUT it — uploads/file/ with a short-lived upload token that fixes the key,
- * the type and the size.
- */
+/** Step one (lib/upload.ts): staff upload under their own tmp/ads/ folder; saving an ad promotes it. */
 adRoutes.post('/promotions/uploads/', async (c) => {
-  const data = await readJson(c.req);
-  const contentType = typeof data.content_type === 'string' ? data.content_type : '';
-  const ext = AD_CONTENT_TYPES[contentType];
-  if (!ext) apiError(400, 'admin.errUnsupportedFileType');
-  const size = validatedContentLength(data.content_length);
-  if (size === null) apiError(400, 'admin.errFileTooLarge');
   const userId = c.get('user')!.id;
-  const key = tmpAdKey(userId, ext);
-  const token = await signToken(
-    'upload',
-    { user_id: userId, action: 'ad_image', target_key: key, content_type: contentType, max_bytes: size },
-    c.env.JWT_SIGNING_KEY,
+  return issueUpload(
+    c,
+    { action: 'ad_image', userId, keyPrefix: tmpAdPrefix(userId), base: '/api/v1/admin/promotions/' },
+    await readJson(c.req),
   );
-  return c.json({
-    upload_url: `${origin(c)}/api/v1/admin/promotions/uploads/file/?token=${encodeURIComponent(token)}`,
-    photo_url: publicUrl(c.env, origin(c), key),
-  });
 });
 
-/** Step two: the bytes, checked against the token and their magic bytes. */
-adRoutes.put('/promotions/uploads/file/', async (c) => {
-  let claims;
-  try {
-    claims = await verifyToken('upload', c.req.query('token') ?? '', c.env.JWT_SIGNING_KEY);
-  } catch (e) {
-    if (e instanceof InvalidTokenError) apiError(403, 'listing.errPhotoNotOwned');
-    throw e;
-  }
-  // The token is bound to the staff member who asked for it.
-  const userId = c.get('user')!.id;
-  if (claims.action !== 'ad_image' || claims.user_id !== userId || !claims.target_key.startsWith(`${TMP_AD_PREFIX}/${userId}/`)) {
-    apiError(403, 'listing.errPhotoNotOwned');
-  }
-  if (declaredType(c.req.raw) !== claims.content_type) apiError(400, 'admin.errUnsupportedFileType');
-  const bytes = await readCapped(c.req.raw, Math.min(claims.max_bytes, MAX_UPLOAD_BYTES));
-  if (bytes === null) apiError(400, 'admin.errFileTooLarge');
-  if (bytes.byteLength === 0) apiError(400, 'admin.errMissingFile');
-  const ext = sniffImage(bytes);
-  if (!ext || contentTypeForExt(ext) !== claims.content_type) apiError(400, 'admin.errUnsupportedFileType');
-  // One upload per token: never overwrite an object already stored.
-  if (!(await putOnce(c.env.R2, claims.target_key, bytes, { contentType: claims.content_type }))) apiError(403, 'listing.errPhotoNotOwned');
-  return c.json({ photo_url: publicUrl(c.env, origin(c), claims.target_key) });
-});
+/** Step two. This route is also staff-authenticated, so the token must be the caller's own. */
+adRoutes.put('/promotions/uploads/file/', (c) => storeUpload(c, { action: 'ad_image', keyPrefix: tmpAdPrefix, caller: c.get('user')!.id }));
 
 // ---------------------------------------------------------------------------
 // Ads ("promotions")

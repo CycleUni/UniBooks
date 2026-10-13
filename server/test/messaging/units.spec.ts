@@ -1,25 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { sniffImageType, validatedContentLength, isChatImageUrl, MAX_CHAT_IMAGE_BYTES } from '../../src/services/messaging/images';
+import { isChatImageUrl } from '../../src/services/messaging/images';
 import { languageFor, orderEventIn, pushT, ORDER_PUSH_EVENTS, PUSH_LANGUAGES } from '../../src/services/messaging/pushText';
 import { displayNameOf } from '../../src/services/messaging/people';
 
 describe('chat image checks', () => {
-  it('sniffs real image bytes and rejects html/svg', () => {
-    expect(sniffImageType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
-    expect(sniffImageType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe('image/png');
-    expect(sniffImageType(new TextEncoder().encode('GIF89a...'))).toBe('image/gif');
-    expect(sniffImageType(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBeNull();
-    expect(sniffImageType(new TextEncoder().encode('<html>'))).toBeNull();
-  });
-
-  it('validates content length', () => {
-    expect(validatedContentLength(100)).toBe(100);
-    expect(validatedContentLength('100')).toBe(100);
-    expect(validatedContentLength(0)).toBeNull();
-    expect(validatedContentLength(true)).toBeNull();
-    expect(validatedContentLength(MAX_CHAT_IMAGE_BYTES + 1)).toBeNull();
-  });
-
   it('only accepts chat/ uploads on the media host', () => {
     const base = 'https://media.example.com';
     expect(isChatImageUrl(`${base}/chat/u1/a.png`, base)).toBe(true);

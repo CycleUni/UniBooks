@@ -44,7 +44,8 @@ describe('auth and upload-token gates', () => {
 
   it('refuses upload PUTs without a valid upload token, or with the wrong action', async () => {
     let res = await fetchApi('/api/v1/listings/uploads/file/?token=bad', { method: 'PUT', body: 'x' });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: { code: 'upload.errTokenInvalid' } });
     const token = await signToken(
       'upload',
       { user_id: 'u1', action: 'avatar', target_key: `tmp/listings/u1/${hex}.jpg`, content_type: 'image/jpeg', max_bytes: 100 },
@@ -72,7 +73,7 @@ describe('auth and upload-token gates', () => {
     expect((await put(new Uint8Array(32).fill(0xff))).status).toBe(400); // over max_bytes
     expect((await put(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).status).toBe(200);
     expect((await env.R2.get(key))?.httpMetadata?.contentType).toBe('image/jpeg');
-    expect((await put(new Uint8Array([0xff, 0xd8, 0xff, 0xe1]))).status).toBe(403); // no overwrite
+    expect((await put(new Uint8Array([0xff, 0xd8, 0xff, 0xe1]))).status).toBe(409); // no overwrite
   });
 });
 

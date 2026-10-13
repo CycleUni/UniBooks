@@ -9,28 +9,15 @@ import { apiError, fieldErrors, readJson } from '../lib/http';
 import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
-import { signToken, verifyToken, InvalidTokenError } from '../lib/jwt';
-import { putOnce } from '../lib/upload';
-import { declaredType, readCapped } from '../lib/body';
 import { validateBookIsbn } from '../services/catalog/isbn';
 import { nowIso } from '../services/catalog/common';
 import { resolveLanguage, schoolFilterId, schoolFilterScope } from '../services/listings/places';
 import { parsePhotos, serializeListings } from '../services/listings/serialize';
 import { validateListingFields, type FieldErrors } from '../services/listings/validate';
 import { deleteListing, hasActiveOrders, pageFor } from '../services/listings/lifecycle';
-import {
-  ALLOWED_CONTENT_TYPES,
-  MAX_UPLOAD_SIZE_BYTES,
-  permanentKeyPrefix,
-  PhotoError,
-  acceptListingPhotos,
-  detectImageExtension,
-  listingsHoldingPhoto,
-  publicUrlFor,
-  storageKeyFromUrl,
-  tmpKeyPrefix,
-  validatedContentLength,
-} from '../services/listings/photos';
+import { permanentKeyPrefix, PhotoError, acceptListingPhotos, listingsHoldingPhoto, tmpKeyPrefix } from '../services/listings/photos';
+import { storageKeyFromUrl } from '../lib/media';
+import { issueUpload, storeUpload } from '../lib/upload';
 import { cancelOpenOrdersForListing } from '../services/orders/cancel';
 
 export const listingRoutes = new Hono<AppEnv>();
@@ -235,60 +222,19 @@ listingRoutes.get('/recent_books/', async (c) => {
 
 // ------------------------------------------------------------------ uploads --
 
-/**
- * Issues a same-origin upload URL: the browser PUTs the bytes to
- * uploads/file/?token=..., where the Worker checks the token, the declared
- * type and size, and the magic bytes.
- */
+/** Step one (lib/upload.ts): photos wait under the uploader's tmp/ folder until a listing is saved. */
 listingRoutes.post('/uploads/', authMiddleware(), async (c) => {
   await checkRate(c, 'upload', RATES.upload);
   const user = c.get('user')!;
-  const body = await readJson(c.req);
-  const contentType = typeof body.content_type === 'string' ? body.content_type : '';
-  const ext = ALLOWED_CONTENT_TYPES[contentType];
-  if (!ext) apiError(400, 'listing.errUnsupportedFileType');
-  const size = validatedContentLength(body.content_length);
-  if (size === null) apiError(400, 'listing.errFileTooLarge');
-
-  const key = `${tmpKeyPrefix(user.id)}${crypto.randomUUID().replaceAll('-', '')}.${ext}`;
-  const token = await signToken(
-    'upload',
-    { user_id: user.id, action: 'listing_photo', target_key: key, content_type: contentType, max_bytes: size },
-    c.env.JWT_SIGNING_KEY,
+  return issueUpload(
+    c,
+    { action: 'listing_photo', userId: user.id, keyPrefix: tmpKeyPrefix(user.id), base: '/api/v1/listings/' },
+    await readJson(c.req),
   );
-  return c.json({
-    upload_url: `${origin(c)}/api/v1/listings/uploads/file/?token=${encodeURIComponent(token)}`,
-    photo_url: publicUrlFor(c.env, origin(c), key),
-  });
 });
 
-/** The PUT target of /uploads/: stores the bytes the upload token authorised. */
-listingRoutes.put('/uploads/file/', async (c) => {
-  let claims;
-  try {
-    claims = await verifyToken('upload', c.req.query('token') ?? '', c.env.JWT_SIGNING_KEY);
-  } catch (e) {
-    if (e instanceof InvalidTokenError) apiError(401, 'auth.errNotLoggedIn');
-    throw e;
-  }
-  if (
-    claims.action !== 'listing_photo' ||
-    !claims.target_key.startsWith(tmpKeyPrefix(claims.user_id)) ||
-    !ALLOWED_CONTENT_TYPES[claims.content_type]
-  ) {
-    apiError(403, 'listing.errPhotoNotOwned');
-  }
-  if (declaredType(c.req.raw) !== claims.content_type) apiError(400, 'listing.errUnsupportedFileType');
-  const max = Math.min(Number(claims.max_bytes) || 0, MAX_UPLOAD_SIZE_BYTES);
-  const bytes = await readCapped(c.req.raw, max);
-  if (bytes === null || bytes.byteLength === 0) apiError(400, 'listing.errFileTooLarge');
-  if (detectImageExtension(bytes) !== ALLOWED_CONTENT_TYPES[claims.content_type]) {
-    apiError(400, 'listing.errUnsupportedFileType');
-  }
-  // One upload per token: never overwrite an object already stored.
-  if (!(await putOnce(c.env.R2, claims.target_key, bytes, { contentType: claims.content_type }))) apiError(403, 'listing.errPhotoNotOwned');
-  return c.json({ photo_url: publicUrlFor(c.env, origin(c), claims.target_key) });
-});
+/** Step two: the upload token is the credential. */
+listingRoutes.put('/uploads/file/', (c) => storeUpload(c, { action: 'listing_photo', keyPrefix: tmpKeyPrefix }));
 
 /**
  * Delete an upload the caller owns: their own pending tmp upload, or a
