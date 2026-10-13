@@ -109,6 +109,22 @@ describe.skipIf(!ready)('messaging API', () => {
 
     const hist = await api(`/api/chat/rooms/${conv}/messages`, { headers: { Authorization: `Bearer ${tok}` } });
     expect(((await hist.json()) as unknown[]).length).toBe(1);
+
+    // Over the cap without a Content-Length (a streamed body) is still refused.
+    const big = JSON.stringify({ content: 'x'.repeat(20 * 1024) });
+    const stream = new ReadableStream({
+      start(ctl) {
+        ctl.enqueue(new TextEncoder().encode(big));
+        ctl.close();
+      },
+    });
+    const streamed = await api(`/api/chat/rooms/${conv}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    expect(streamed.status).toBe(413);
   });
 
   it('a hub token opens only its own hub; the hub push path is not reachable', async () => {

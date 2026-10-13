@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../env';
+import { readCapped } from '../lib/body';
 import { CHAT_APP_ID, chatRoomStub } from '../lib/chat';
 import { verifyToken, InvalidTokenError, type ChatTokenPayload } from '../lib/jwt';
 import { getConversation, isParticipant, listingDeleted } from '../services/messaging/conversations';
@@ -49,7 +50,7 @@ async function accountAllowed(c: Context<AppEnv>, userId: string): Promise<boole
  * on it, so nothing the client adds to its own URL (a ?userId=, ?role=,
  * ?participantIds=) can reach the DO.
  */
-function internalRequest(req: Request, path: string, params: Record<string, string>): Request {
+function internalRequest(req: Request, path: string, params: Record<string, string>, body: BodyInit | null = null): Request {
   const url = new URL(`https://chat.internal${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   // Only what the Durable Objects need: no cookies or credentials ride along.
@@ -58,7 +59,9 @@ function internalRequest(req: Request, path: string, params: Record<string, stri
     const value = req.headers.get(name);
     if (value !== null) headers.set(name, value);
   }
-  return new Request(url.toString(), { method: req.method, headers, body: req.body });
+  // The body is never streamed through: only a caller that has read and
+  // capped it passes one on.
+  return new Request(url.toString(), { method: req.method, headers, body });
 }
 
 const FORWARDED_HEADERS = [
@@ -71,13 +74,12 @@ const FORWARDED_HEADERS = [
   'content-type',
 ];
 
-/** A chat message is at most a few KB; anything larger is refused before it is read. */
+/**
+ * A chat message is at most a few KB. The body is read with this cap
+ * (declared length or not, so a chunked upload cannot slip past it) before
+ * it is handed to the room.
+ */
 const MAX_CHAT_BODY_BYTES = 16 * 1024;
-
-function bodyTooLarge(c: Context<AppEnv>): boolean {
-  const length = Number(c.req.header('Content-Length') ?? '0');
-  return !Number.isFinite(length) || length > MAX_CHAT_BODY_BYTES;
-}
 
 // ─── Per-user hub ─────────────────────────────────────────────────────────
 
@@ -176,7 +178,11 @@ chatRoutes.get('/rooms/:roomId', async (c) => {
 });
 
 chatRoutes.on(['GET', 'POST'], '/rooms/:roomId/messages', async (c) => {
-  if (c.req.method === 'POST' && bodyTooLarge(c)) return text('Payload Too Large', 413);
+  let body: Uint8Array | null = null;
+  if (c.req.method === 'POST') {
+    body = await readCapped(c.req.raw, MAX_CHAT_BODY_BYTES);
+    if (body === null) return text('Payload Too Large', 413);
+  }
   const roomId = c.req.param('roomId');
   const access = await roomAccess(c, roomId);
   if (access instanceof Response) return access;
@@ -187,7 +193,7 @@ chatRoutes.on(['GET', 'POST'], '/rooms/:roomId/messages', async (c) => {
       if (v !== undefined) params[k] = v;
     }
   }
-  return chatRoomStub(c.env, roomId).fetch(internalRequest(c.req.raw, `/api/${CHAT_APP_ID}/${roomId}/messages`, params));
+  return chatRoomStub(c.env, roomId).fetch(internalRequest(c.req.raw, `/api/${CHAT_APP_ID}/${roomId}/messages`, params, body));
 });
 
 chatRoutes.post('/rooms/:roomId/read', async (c) => {
