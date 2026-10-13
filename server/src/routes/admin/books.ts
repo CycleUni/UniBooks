@@ -2,12 +2,12 @@ import { Hono } from 'hono';
 import { inList } from '../../lib/sql';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { and, count, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../../env';
 import { books, createDb, listings, regions, subscriptions, type Book, type Database } from '../../db';
 import { apiError, pagination, readJson } from '../../lib/http';
 import { auditInsert } from '../../services/admin/audit';
-import { notFound, regionParam, scopeOf, uuidId } from '../../services/admin/scope';
+import { notFound, regionParam, scopeOf, scopeWhere, uuidId } from '../../services/admin/scope';
 import { cleanCoverUrl, cleanPublisher } from '../../services/catalog/common';
 import { validateBookIsbn } from '../../services/catalog/isbn';
 import {
@@ -47,11 +47,6 @@ function isbnTaken(other: Pick<Book, 'id' | 'title'> | null | undefined): never 
   });
 }
 
-function scopeWhere(scope: string[] | null): SQL | undefined {
-  if (scope === null) return undefined;
-  return scope.length ? inArray(books.regionCode, scope) : sql`0`;
-}
-
 const activeListingsSql = sql<number>`(SELECT count(*) FROM ${listings} WHERE ${listings.bookId} = ${books.id} AND ${listings.status} = 'active')`;
 const requestCountSql = sql<number>`(SELECT count(*) FROM ${subscriptions} WHERE ${subscriptions.bookId} = ${books.id})`;
 
@@ -77,7 +72,7 @@ const REVIEW_FILTERS: Record<string, SQL> = {
 bookRoutes.get('/books/', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url, { allowPageSize: true, maxPageSize: 100 });
-  const conds: (SQL | undefined)[] = [scopeWhere(await scopeOf(c))];
+  const conds: (SQL | undefined)[] = [scopeWhere(books.regionCode, await scopeOf(c))];
   const q = (c.req.query('q') ?? '').trim();
   if (q) conds.push(bookSearch(q));
   const region = regionParam(c);
@@ -110,7 +105,7 @@ bookRoutes.post('/books/confirm-manual/', async (c) => {
   const changed = await db
     .update(books)
     .set({ reviewedAt: now, reviewedById: me.id })
-    .where(and(inList(books.id, ids), eq(books.source, 'manual'), isNull(books.reviewedAt), scopeWhere(await scopeOf(c))))
+    .where(and(inList(books.id, ids), eq(books.source, 'manual'), isNull(books.reviewedAt), scopeWhere(books.regionCode, await scopeOf(c))))
     .returning({ id: books.id, isbn13: books.isbn13, title: books.title });
   if (changed.length) {
     const audits = changed.map((b) =>
@@ -138,7 +133,9 @@ bookRoutes.post('/books/reopen-review/', async (c) => {
   const changed = await db
     .update(books)
     .set({ reviewedAt: null, reviewedById: null })
-    .where(and(inList(books.id, ids), eq(books.source, 'manual'), isNotNull(books.reviewedAt), scopeWhere(await scopeOf(c))))
+    .where(
+      and(inList(books.id, ids), eq(books.source, 'manual'), isNotNull(books.reviewedAt), scopeWhere(books.regionCode, await scopeOf(c))),
+    )
     .returning({ id: books.id, isbn13: books.isbn13, title: books.title });
   if (changed.length) {
     const audits = changed.map((b) =>
@@ -165,7 +162,7 @@ bookRoutes.post('/books/reopen-review/', async (c) => {
 
 async function loadBook(c: Context<AppEnv>, db: Database, id = uuidId(c.req.param('id'))) {
   const [row] = await bookWithCounts(db)
-    .where(and(eq(books.id, id), scopeWhere(await scopeOf(c))))
+    .where(and(eq(books.id, id), scopeWhere(books.regionCode, await scopeOf(c))))
     .limit(1);
   if (!row) notFound();
   return row;

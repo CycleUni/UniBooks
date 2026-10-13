@@ -11,7 +11,7 @@ import { displayName } from '../../services/accounts/users';
 import { writeAudit } from '../../services/admin/audit';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { adminSchoolFilterId } from '../../services/admin/schoolCodes';
-import { likeContains, notFound, regionParam, scopeOf, uuidId } from '../../services/admin/scope';
+import { likeContains, notFound, regionExists, regionParam, scopeOf, uuidId } from '../../services/admin/scope';
 import { schoolSearch } from './schools';
 
 /**
@@ -199,8 +199,7 @@ userRoutes.get('/users/:id/', async (c) => {
 
 /** The verification row for (user, region), created as a manual one when missing. */
 async function ensureVerification(db: Database, userId: string, regionCode: string, nowIso: string) {
-  const [region] = await db.select({ code: regions.code }).from(regions).where(eq(regions.code, regionCode)).limit(1);
-  if (!region) apiError(400, 'admin.errDatabaseIntegrity');
+  if (!(await regionExists(db, regionCode))) apiError(400, 'admin.errDatabaseIntegrity');
   const [existing] = await db
     .select()
     .from(regionVerifications)

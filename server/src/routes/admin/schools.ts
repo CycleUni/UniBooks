@@ -3,10 +3,10 @@ import type { Context } from 'hono';
 import { and, asc, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppEnv } from '../../env';
-import { cities, createDb, regionVerifications, regions, schoolRequests, schools, users, type Database, type School } from '../../db';
+import { cities, createDb, regionVerifications, schoolRequests, schools, users, type Database, type School } from '../../db';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../../lib/http';
 import { localized, parseJsonObject, resolveLanguage } from '../../services/admin/i18n';
-import { assertInScope, intId, likeContains, notFound, regionParam, scopeOf } from '../../services/admin/scope';
+import { assertInScope, intId, likeContains, notFound, regionExists, regionParam, scopeOf } from '../../services/admin/scope';
 import { dedupeCode, deriveCode, isValidCode, normalizeCode, regionCodes } from '../../services/admin/schoolCodes';
 
 /** Free-mail and public suffixes that must never mark someone as a student. */
@@ -160,11 +160,6 @@ async function cityIn(db: Database, regionCode: string, cityCode: string): Promi
     .where(and(eq(cities.regionCode, regionCode), eq(cities.code, cityCode.trim().toUpperCase())))
     .limit(1);
   return row ? row.id : null;
-}
-
-async function regionExists(db: Database, code: string): Promise<boolean> {
-  const [row] = await db.select({ code: regions.code }).from(regions).where(eq(regions.code, code)).limit(1);
-  return !!row;
 }
 
 schoolRoutes.post('/schools/', async (c) => {

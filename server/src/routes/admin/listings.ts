@@ -9,7 +9,7 @@ import { getRegion } from '../../lib/region';
 import { auditInsert, writeAudit } from '../../services/admin/audit';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { adminSchoolFilterId } from '../../services/admin/schoolCodes';
-import { likeContains, notFound, regionParam, scopeOf, uuidId } from '../../services/admin/scope';
+import { likeContains, notFound, regionParam, scopeOf, scopeWhere, uuidId } from '../../services/admin/scope';
 import { deleteListing } from '../../services/listings/lifecycle';
 import { cancelOpenOrdersForListing } from '../../services/orders/cancel';
 import { ACTIVE_ORDER_STATUSES } from '../../services/orders/transitions';
@@ -68,11 +68,6 @@ export function listingJson(row: ListingRow, lang: string | null) {
   };
 }
 
-function scopeWhere(scope: string[] | null): SQL | undefined {
-  if (scope === null) return undefined;
-  return scope.length ? inArray(listings.regionCode, scope) : sql`0`;
-}
-
 /** Title or authors contain q, or the ISBN contains it without hyphens/spaces. */
 export function bookSearch(q: string): SQL {
   const like = likeContains(q);
@@ -85,7 +80,7 @@ export function bookSearch(q: string): SQL {
 listingRoutes.get('/listings/', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url);
-  const conds: (SQL | undefined)[] = [scopeWhere(await scopeOf(c))];
+  const conds: (SQL | undefined)[] = [scopeWhere(listings.regionCode, await scopeOf(c))];
   const q = c.req.query('q');
   if (q) {
     const like = likeContains(q);
@@ -133,7 +128,7 @@ listingRoutes.get('/listings/', async (c) => {
 async function loadListing(c: Context<AppEnv>, db: Database): Promise<ListingRow> {
   const id = uuidId(c.req.param('id'));
   const [row] = await listingSelect(db)
-    .where(and(eq(listings.id, id), scopeWhere(await scopeOf(c))))
+    .where(and(eq(listings.id, id), scopeWhere(listings.regionCode, await scopeOf(c))))
     .limit(1);
   if (!row) notFound();
   return row;

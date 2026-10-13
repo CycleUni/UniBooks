@@ -9,7 +9,7 @@ import { requireSuperuser } from '../../middleware/auth';
 import { fieldErrors, pagination, readJson, validate } from '../../lib/http';
 import { invalidateRegionCache } from '../../lib/region';
 import { localized, parseJsonArray, parseJsonObject, resolveLanguage } from '../../services/admin/i18n';
-import { notFound } from '../../services/admin/scope';
+import { notFound, regionExists } from '../../services/admin/scope';
 import { seedDefaultCategories } from '../../services/admin/defaults';
 
 /**
@@ -207,8 +207,7 @@ regionRoutes.post('/regions/', async (c) => {
     fieldErrors({ default_language: ['admin.errDefaultLanguageNotSupported'] });
   }
   const db = createDb(c.env.DB);
-  const [exists] = await db.select({ code: regions.code }).from(regions).where(eq(regions.code, body.code)).limit(1);
-  if (exists) fieldErrors({ code: [INVALID] });
+  if (await regionExists(db, body.code)) fieldErrors({ code: [INVALID] });
   const [row] = await db
     .insert(regions)
     .values({

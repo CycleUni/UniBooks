@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
-import { eq } from 'drizzle-orm';
+import { eq, inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import type { AppEnv, AuthUser } from '../../env';
-import { createDb, staffManagedRegions, type Database } from '../../db';
+import { createDb, regions, staffManagedRegions, type Database } from '../../db';
 import { apiError } from '../../lib/http';
 import { UUID_RE } from '../../lib/uuid';
 
@@ -42,6 +42,18 @@ export function inScope(scope: string[] | null, regionCode: string | null | unde
 /** 403 admin.errRegionForbidden unless the user manages `regionCode`. */
 export function assertInScope(scope: string[] | null, regionCode: string | null | undefined): void {
   if (!inScope(scope, regionCode)) apiError(403, 'admin.errRegionForbidden');
+}
+
+/** WHERE fragment limiting a region-coded column to the managed regions: none for a superuser, never-true for an empty scope. */
+export function scopeWhere(column: SQLWrapper, scope: string[] | null): SQL | undefined {
+  if (scope === null) return undefined;
+  return scope.length ? inArray(column, scope) : sql`0`;
+}
+
+/** Whether a region with this code exists. */
+export async function regionExists(db: Database, code: string): Promise<boolean> {
+  const [row] = await db.select({ code: regions.code }).from(regions).where(eq(regions.code, code)).limit(1);
+  return !!row;
 }
 
 /** `?region=`, uppercased as the admin views compare it ('' when absent). */

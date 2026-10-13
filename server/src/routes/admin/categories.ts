@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { and, asc, count, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppEnv } from '../../env';
-import { categories, createDb, regions, type Category, type Database } from '../../db';
+import { categories, createDb, type Category, type Database } from '../../db';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../../lib/http';
 import { parseJsonObject } from '../../services/admin/i18n';
-import { assertInScope, intId, notFound, regionParam, scopeOf } from '../../services/admin/scope';
+import { assertInScope, intId, notFound, regionExists, regionParam, scopeOf, scopeWhere } from '../../services/admin/scope';
 
 /** Homepage college categories. */
 export const categoryRoutes = new Hono<AppEnv>();
@@ -45,16 +45,6 @@ const categoryCreate = z.object({
 });
 const categoryUpdate = z.object(categoryFields).partial();
 
-function scopeWhere(scope: string[] | null): SQL | undefined {
-  if (scope === null) return undefined;
-  return scope.length ? inArray(categories.regionCode, scope) : sql`0`;
-}
-
-async function regionExists(db: Database, code: string): Promise<boolean> {
-  const [row] = await db.select({ code: regions.code }).from(regions).where(eq(regions.code, code)).limit(1);
-  return !!row;
-}
-
 async function slugTaken(db: Database, slug: string, region: string, excludeId?: number): Promise<boolean> {
   const rows = await db
     .select({ id: categories.id })
@@ -66,7 +56,7 @@ async function slugTaken(db: Database, slug: string, region: string, excludeId?:
 categoryRoutes.get('/categories/', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url);
-  const conds: (SQL | undefined)[] = [scopeWhere(await scopeOf(c))];
+  const conds: (SQL | undefined)[] = [scopeWhere(categories.regionCode, await scopeOf(c))];
   const region = regionParam(c);
   if (region) conds.push(eq(categories.regionCode, region));
   const where = and(...conds);
@@ -231,7 +221,7 @@ async function loadCategory(c: Context<AppEnv>): Promise<Category> {
   const [row] = await createDb(c.env.DB)
     .select()
     .from(categories)
-    .where(and(eq(categories.id, id), scopeWhere(await scopeOf(c))))
+    .where(and(eq(categories.id, id), scopeWhere(categories.regionCode, await scopeOf(c))))
     .limit(1);
   if (!row) notFound();
   return row;

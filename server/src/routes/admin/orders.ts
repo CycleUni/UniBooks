@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { and, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { AppEnv } from '../../env';
 import { books, createDb, listings, orders, users, type Database } from '../../db';
 import { apiError, pagination, readJson } from '../../lib/http';
-import { likeContains, notFound, regionParam, scopeOf, uuidId } from '../../services/admin/scope';
+import { likeContains, notFound, regionParam, scopeOf, scopeWhere, uuidId } from '../../services/admin/scope';
 import { forceCancelOrder } from '../../services/orders/cancel';
 import { bookSearch, PLATFORM_CANCEL_REASON_MIN_LENGTH } from './listings';
 
@@ -44,15 +44,10 @@ export function orderJson(row: OrderRow) {
   };
 }
 
-function scopeWhere(scope: string[] | null): SQL | undefined {
-  if (scope === null) return undefined;
-  return scope.length ? inArray(orders.regionCode, scope) : sql`0`;
-}
-
 orderRoutes.get('/orders/', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url);
-  const conds: (SQL | undefined)[] = [scopeWhere(await scopeOf(c))];
+  const conds: (SQL | undefined)[] = [scopeWhere(orders.regionCode, await scopeOf(c))];
   const q = c.req.query('q');
   if (q) {
     const qClean = q.replace(/^#+/, '').trim();
@@ -86,7 +81,7 @@ orderRoutes.get('/orders/', async (c) => {
 
 async function loadOrder(c: Context<AppEnv>, db: Database, id: string): Promise<OrderRow> {
   const [row] = await orderSelect(db)
-    .where(and(eq(orders.id, id), scopeWhere(await scopeOf(c))))
+    .where(and(eq(orders.id, id), scopeWhere(orders.regionCode, await scopeOf(c))))
     .limit(1);
   if (!row) notFound();
   return row;

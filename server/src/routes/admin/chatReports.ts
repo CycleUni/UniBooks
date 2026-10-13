@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { and, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { AppEnv } from '../../env';
 import { chatReports, conversations, createDb, users, type Database } from '../../db';
 import { apiError, pagination, readJson } from '../../lib/http';
 import { writeAudit } from '../../services/admin/audit';
-import { notFound, regionParam, scopeOf, uuidId } from '../../services/admin/scope';
+import { notFound, regionParam, scopeOf, scopeWhere, uuidId } from '../../services/admin/scope';
 import { mintChatToken } from '../../services/chatTokens';
 
 /** Chat report review. */
@@ -51,15 +51,10 @@ function reportJson(row: ReportRow) {
   };
 }
 
-function scopeWhere(scope: string[] | null): SQL | undefined {
-  if (scope === null) return undefined;
-  return scope.length ? inArray(conversations.regionCode, scope) : sql`0`;
-}
-
 chatReportRoutes.get('/chat-reports/', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url);
-  const conds: (SQL | undefined)[] = [scopeWhere(await scopeOf(c))];
+  const conds: (SQL | undefined)[] = [scopeWhere(conversations.regionCode, await scopeOf(c))];
   const status = c.req.query('status');
   if (status) conds.push(sql`${chatReports.status} = ${status}`);
   const region = regionParam(c);
@@ -81,7 +76,7 @@ chatReportRoutes.get('/chat-reports/', async (c) => {
 async function loadReport(c: Context<AppEnv>, db: Database): Promise<ReportRow> {
   const id = uuidId(c.req.param('id'));
   const [row] = await reportSelect(db)
-    .where(and(eq(chatReports.id, id), scopeWhere(await scopeOf(c))))
+    .where(and(eq(chatReports.id, id), scopeWhere(conversations.regionCode, await scopeOf(c))))
     .limit(1);
   if (!row) notFound();
   return row;
