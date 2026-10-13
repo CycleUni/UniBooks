@@ -8,6 +8,7 @@
  */
 import { Hono, type Context } from 'hono';
 import { cached } from '../lib/cache';
+import { afterResponse } from '../lib/http';
 import type { AppEnv, Env } from '../env';
 import { activeRegions } from '../lib/region';
 
@@ -80,7 +81,24 @@ function xmlResponse(xml: string): Response {
   });
 }
 
-sitemapRoutes.get('/sitemap.xml', async (c) => {
+/**
+ * Serve a sitemap response from the edge cache, building it on a miss.
+ * Crawlers fetch these often and a page is a query of up to PAGE_SIZE rows;
+ * the KV-cached page boundaries alone still left one D1 query per request.
+ * Keyed by the full URL, so each hostname gets its own absolute links.
+ */
+async function edgeCached(c: Context<AppEnv>, build: () => Promise<Response>): Promise<Response> {
+  const key = new Request(new URL(c.req.url).toString(), { method: 'GET' });
+  const hit = await caches.default.match(key);
+  if (hit) return hit;
+  const res = await build();
+  if (res.ok) await afterResponse(c, caches.default.put(key, res.clone()));
+  return res;
+}
+
+sitemapRoutes.get('/sitemap.xml', (c) => edgeCached(c, () => sitemapIndex(c)));
+
+async function sitemapIndex(c: Context<AppEnv>): Promise<Response> {
   const origin = new URL(c.req.url).origin;
   const entries: string[] = [];
   const codes = [...(await activeRegions(c.env)).keys()];
@@ -95,18 +113,20 @@ sitemapRoutes.get('/sitemap.xml', async (c) => {
     }
   }
   return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="${XMLNS}">\n${entries.join('')}</sitemapindex>\n`);
-});
+}
 
-sitemapRoutes.get('/sitemap/:file', async (c) => {
-  const m = SECTION_RE.exec(c.req.param('file'));
-  if (!m) return c.json({ detail: 'Not found.' }, 404);
+sitemapRoutes.get('/sitemap/:file', (c) => edgeCached(c, () => sitemapSection(c)));
+
+async function sitemapSection(c: Context<AppEnv>): Promise<Response> {
+  const m = SECTION_RE.exec(c.req.param('file') ?? '');
+  if (!m) return Response.json({ detail: 'Not found.' }, { status: 404 });
   const kind = m[1] as Kind;
   const region = m[2];
   const page = Number(m[3]);
   const code = region.toUpperCase();
-  if (!(await activeRegions(c.env)).has(code)) return c.json({ detail: 'Not found.' }, 404);
+  if (!(await activeRegions(c.env)).has(code)) return Response.json({ detail: 'Not found.' }, { status: 404 });
   const pages = await buildPages(c.env, kind, code);
-  if (page < 1 || page > pages.length) return c.json({ detail: 'Not found.' }, 404);
+  if (page < 1 || page > pages.length) return Response.json({ detail: 'Not found.' }, { status: 404 });
   const start = page > 1 ? pages[page - 1][0] : null;
   const end = page < pages.length ? pages[page][0] : null;
 
@@ -131,4 +151,4 @@ sitemapRoutes.get('/sitemap/:file', async (c) => {
       : `${origin}/${region}/listing/${row.id}`;
   const entries = results.map((row) => `<url><loc>${escapeXml(loc(row))}</loc><lastmod>${day(row.lastmod)}</lastmod></url>\n`);
   return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="${XMLNS}">\n${entries.join('')}</urlset>\n`);
-});
+}
