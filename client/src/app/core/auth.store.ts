@@ -556,8 +556,10 @@ export class AuthStore {
     return this.user();
   }
 
-  login(email: string, password: string): Observable<any> {
-    return this.http.post<any>('/auth/token/', { email, password }).pipe(
+  /** `challenge`: a Turnstile token, when the server asked for one. */
+  login(email: string, password: string, challenge?: string): Observable<any> {
+    const body = challenge ? { email, password, cf_turnstile_response: challenge } : { email, password };
+    return this.http.post<any>('/auth/token/', body).pipe(
       tap(response => {
         if (isLoginSuccess(response)) {
           this.signInPending = true;

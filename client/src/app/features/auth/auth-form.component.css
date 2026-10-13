@@ -162,3 +162,10 @@
       white-space: nowrap;
       border: 0;
     }
+
+.challenge-box {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+  min-height: 65px;
+}

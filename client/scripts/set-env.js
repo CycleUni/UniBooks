@@ -10,7 +10,7 @@ const envDir = path.join(__dirname, '../src/environments');
 // `wrangler dev` reads. A variable already set in the environment (CI) wins.
 // Only public values are read; secrets never reach this bundle.
 // ---------------------------------------------------------------------------
-const SHARED_KEYS = ['R2_PUBLIC_URL', 'GOOGLE_CLIENT_ID'];
+const SHARED_KEYS = ['R2_PUBLIC_URL', 'GOOGLE_CLIENT_ID', 'TURNSTILE_SITE_KEY'];
 const SERVER_DIR = path.join(__dirname, '../../server');
 const PRODUCTION = process.argv.includes('--production');
 
@@ -54,7 +54,8 @@ export const environment = {
   backendUrl: '${backendUrl}',
   gaMeasurementId: '${process.env.NG_APP_GA_MEASUREMENT_ID || ''}',
   sentryDsn: '${process.env.NG_APP_SENTRY_DSN || ''}',
-  googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}'
+  googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}',
+  turnstileSiteKey: '${process.env.TURNSTILE_SITE_KEY || ''}'
 };
 `;
 
@@ -64,7 +65,8 @@ export const environment = {
   backendUrl: '${backendUrl}',
   gaMeasurementId: '${process.env.NG_APP_GA_MEASUREMENT_ID || ''}',
   sentryDsn: '${process.env.NG_APP_SENTRY_DSN || ''}',
-  googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}'
+  googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}',
+  turnstileSiteKey: '${process.env.TURNSTILE_SITE_KEY || ''}'
 };
 `;
 
@@ -184,12 +186,13 @@ function buildCsp({ backendOrigin, mediaOrigin }) {
     "form-action 'self'",
     // gtag.js by path: the bare host would also serve gtm.js for any
     // container id, a known way around a CSP that allows it.
-    "script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://www.googletagmanager.com/gtag/ https://static.cloudflareinsights.com",
+    "script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://www.googletagmanager.com/gtag/ https://static.cloudflareinsights.com https://challenges.cloudflare.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style",
     "font-src 'self' https://fonts.gstatic.com data:",
     `img-src ${[...new Set(img.filter(Boolean))].join(' ')}`,
     `connect-src ${[...new Set(connect.filter(Boolean))].join(' ')}`,
-    'frame-src https://accounts.google.com',
+    // Turnstile renders its challenge in an iframe from challenges.cloudflare.com.
+    'frame-src https://accounts.google.com https://challenges.cloudflare.com',
     "worker-src 'self' blob:",
     "manifest-src 'self'",
   ].join('; ');

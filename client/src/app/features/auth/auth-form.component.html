@@ -17,6 +17,9 @@
         <a regionLink="/forgot-password" class="forgot-password-link">{{ 'auth.forgotPassword' | t }}</a>
       </div>
 
+      <!-- Turnstile renders here when sign-in asks for a challenge. -->
+      <div #challengeBox class="challenge-box" [hidden]="!challengeRequired"></div>
+
       <ng-container *ngTemplateOutlet="messageTpl"></ng-container>
 
       <ui-button  block class="mt-4" (onClick)="onLogin()" [disabled]="isLoading">

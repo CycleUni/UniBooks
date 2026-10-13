@@ -76,7 +76,11 @@
     "R2_PUBLIC_URL": "https://assets.unibooks.app",
     "ALLOWED_IMAGE_HOSTS": "assets.unibooks.app",
     "DEFAULT_FROM_EMAIL": "services@unibooks.app",
-    "GOOGLE_CLIENT_ID": "101715747117-7076qd90bgjpvo7hca6e1rk913ke570c.apps.googleusercontent.com"
+    "GOOGLE_CLIENT_ID": "101715747117-7076qd90bgjpvo7hca6e1rk913ke570c.apps.googleusercontent.com",
+    // Cloudflare Turnstile site key (public). With it and the TURNSTILE_SECRET_KEY
+    // secret, repeated wrong passwords on one account ask for a challenge
+    // instead of locking the account. Empty: off.
+    "TURNSTILE_SITE_KEY": ""
   },
 
   "observability": { "enabled": true }

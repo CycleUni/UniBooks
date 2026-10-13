@@ -37,3 +37,9 @@ FCM_VAPID_KEY=
 CF_ACCOUNT_ID=
 CF_ANALYTICS_TOKEN=
 SENTRY_DSN=
+
+# Cloudflare Turnstile (optional): a challenge after repeated wrong passwords instead of a lockout.
+# These are Cloudflare's public test keys (always pass). Production: a real widget's keys,
+# the site key in wrangler.jsonc vars and the secret via `wrangler secret put TURNSTILE_SECRET_KEY`.
+TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA

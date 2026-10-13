@@ -7,6 +7,7 @@ import { apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { getRegion, isVerifiedIn } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { outcomeLimit, rateLimit, takeRate } from '../middleware/rateLimit';
+import { turnstileEnabled, verifyTurnstile } from '../lib/turnstile';
 import { InvalidTokenError, verifyToken } from '../lib/jwt';
 import { books, createDb, listings, type Listing, type User } from '../db';
 import { serializeListings } from '../services/listings/serialize';
@@ -38,9 +39,13 @@ export const accountRoutes = new Hono<AppEnv>();
 type C = Context<AppEnv>;
 
 // Rate limits per scope.
+/** With Turnstile configured: wrong passwords on one account, per hour, before sign-in asks for a challenge. */
+const LOGIN_CHALLENGE_AFTER_FAILURES = 5;
+
 const RATES = {
   login: '5/min',
   loginAccountFailures: '20/hour',
+
   register: '10/hour',
   verifyRequest: '3/hour',
   refresh: '10/min',
@@ -372,14 +377,24 @@ accountRoutes.post('/school-requests/', authMiddleware(), rateLimit('school-requ
 // ---------------------------------------------------------------------------
 
 accountRoutes.post('/token/', rateLimit('login', RATES.login), async (c) => {
-  const { email, password } = await readJson(c.req);
+  const { email, password, cf_turnstile_response: challenge } = await readJson(c.req);
   if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
     apiError(400, 'auth.errValidation');
   }
   // Per account too, not only per IP: a password guessed from many IPs.
   // Only wrong passwords count, so the owner's own sign-ins never use it up.
   const failures = outcomeLimit(c, 'login_account_failures', RATES.loginAccountFailures, email.trim().toLowerCase());
-  await failures.assertUnder();
+  if (turnstileEnabled(c.env)) {
+    // With Turnstile, a few failures ask for a human check instead of
+    // locking the account: a stranger's guesses can no longer keep the
+    // owner out, and a guessing script has to solve every challenge.
+    if (await failures.reached(LOGIN_CHALLENGE_AFTER_FAILURES)) {
+      if (!challenge) apiError(403, 'auth.errChallengeRequired');
+      if (!(await verifyTurnstile(c.env, challenge, c.req.header('CF-Connecting-IP')))) apiError(403, 'auth.errChallengeFailed');
+    }
+  } else {
+    await failures.assertUnder();
+  }
   const invalid = async (): Promise<never> => {
     await failures.count();
     apiError(401, 'auth.errInvalidCredentials');

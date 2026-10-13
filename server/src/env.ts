@@ -43,6 +43,10 @@ export interface Env {
   CHAT_JWT_SECRET: string;
   GOOGLE_BOOKS_API_KEY?: string;
   /** Google Books calls allowed per minute across the whole Worker (default 60). */
+  /** Cloudflare Turnstile secret; set to ask for a challenge after repeated wrong passwords. */
+  TURNSTILE_SECRET_KEY?: string;
+  /** Turnstile site key (public), shared with the client build. */
+  TURNSTILE_SITE_KEY?: string;
   GOOGLE_BOOKS_PER_MINUTE?: string;
   MAILJET_API_KEY?: string;
   MAILJET_SECRET_KEY?: string;

@@ -10,6 +10,7 @@ import { GoogleAuthService } from '../../core/services/google-auth.service';
 import { I18nService } from '../../core/i18n.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { RegionService } from '../../core/region.service';
+import { TurnstileService } from '../../core/services/turnstile.service';
 
 /** The only keys the i18n double "knows". Everything else resolves to null,
  *  standing in for a backend error code no locale declares. */
@@ -26,6 +27,7 @@ describe('AuthFormComponent', () => {
   let isAuthenticated: ReturnType<typeof signal<boolean>>;
   let queryParams: Record<string, string>;
   let currentRegionObj: ReturnType<typeof signal<any>>;
+  let mockTurnstile: any;
 
   const build = (mode: 'login' | 'register') => {
     fixture = TestBed.createComponent(AuthFormComponent);
@@ -45,6 +47,7 @@ describe('AuthFormComponent', () => {
       login: vi.fn().mockReturnValue(of({})),
       register: vi.fn().mockReturnValue(of({}))
     };
+    mockTurnstile = { enabled: true, render: vi.fn().mockResolvedValue('w1'), reset: vi.fn(), remove: vi.fn() };
     mockGoogle = { renderButton: vi.fn(), buttonReady: signal(true), opening: signal(false), signingIn: signal(false) };
     mockRouter = {
       navigate: vi.fn().mockResolvedValue(true),
@@ -61,6 +64,7 @@ describe('AuthFormComponent', () => {
       providers: [
         { provide: AuthStore, useValue: mockAuth },
         { provide: GoogleAuthService, useValue: mockGoogle },
+        { provide: TurnstileService, useValue: mockTurnstile },
         { provide: Router, useValue: mockRouter },
         { provide: RegionService, useValue: { region: () => 'tw', currentRegionObj } },
         // tOrNull mirrors the service: null for anything this double does not
@@ -358,5 +362,26 @@ describe('AuthFormComponent', () => {
 
     expect(component.email).toBe('');
     expect(component.authMessage).toBe('');
+  });
+
+  it('asks for a Turnstile challenge when sign-in requires one, then signs in with its token', async () => {
+    const challenge = { status: 403, error: { error: { code: 'auth.errChallengeRequired' } } };
+    mockAuth.login = vi.fn().mockReturnValueOnce(throwError(() => challenge)).mockReturnValue(of({}));
+    build('login');
+    component.email = 'a@example.com';
+    component.password = 'pw';
+    component.onLogin();
+    await fixture.whenStable();
+    expect(component.challengeRequired).toBe(true);
+    expect(mockTurnstile.render).toHaveBeenCalledOnce();
+
+    // Submitting again before solving it sends nothing.
+    component.onLogin();
+    expect(mockAuth.login).toHaveBeenCalledTimes(1);
+
+    const { onToken } = mockTurnstile.render.mock.calls[0][1];
+    onToken('tok-1');
+    expect(mockAuth.login).toHaveBeenLastCalledWith('a@example.com', 'pw', 'tok-1');
+    expect(mockTurnstile.reset).toHaveBeenCalledWith('w1');
   });
 });

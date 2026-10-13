@@ -1,4 +1,4 @@
-import { AfterViewInit, ChangeDetectorRef, Component, Input, OnInit, effect, inject } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, Input, OnDestroy, OnInit, ViewChild, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -13,6 +13,7 @@ import { I18nService, TPipe } from '../../core/i18n.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { aboutUrl as aboutSiteUrl } from '../../core/about-site';
 import { RegionService } from '../../core/region.service';
+import { TurnstileService } from '../../core/services/turnstile.service';
 
 /** The container Google's SDK renders its button into. A DOM id rather than a
  *  ViewChild because the SDK takes an element and writes an iframe into it —
@@ -43,7 +44,7 @@ export interface RegisterHandoff {
   templateUrl: './auth-form.component.html',
   styleUrls: ['./auth-form.component.css']
 })
-export class AuthFormComponent implements OnInit, AfterViewInit {
+export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() mode: 'login' | 'register' = 'login';
 
   email = '';
@@ -60,6 +61,12 @@ export class AuthFormComponent implements OnInit, AfterViewInit {
   authIsError = false;
   returnUrl: string | null = null;
 
+  /** Sign-in asked for a Turnstile challenge (repeated wrong passwords on this account). */
+  challengeRequired = false;
+  private challengeToken = '';
+  private challengeWidget: string | null = null;
+  @ViewChild('challengeBox') private challengeBox?: ElementRef<HTMLElement>;
+
   private auth = inject(AuthStore);
   private googleAuth = inject(GoogleAuthService);
   private router = inject(Router);
@@ -68,6 +75,7 @@ export class AuthFormComponent implements OnInit, AfterViewInit {
   private cdr = inject(ChangeDetectorRef);
   private i18n = inject(I18nService);
   private theme = inject(ThemeService);
+  private turnstile = inject(TurnstileService);
   private regionService = inject(RegionService);
 
   protected readonly MESSAGE_ID = MESSAGE_ID;
@@ -199,8 +207,20 @@ export class AuthFormComponent implements OnInit, AfterViewInit {
       return;
     }
 
+    // A challenge was asked for: wait for the visitor to solve it (the
+    // widget's callback signs in again with the token).
+    if (this.challengeRequired && !this.challengeToken) {
+      this.clientAuthError = 'auth.errChallengeRequired';
+      this.authIsError = true;
+      return;
+    }
+
     this.isLoading = true;
-    this.auth.login(this.email, this.password).subscribe({
+    const token = this.challengeToken;
+    // Single-use: whatever the answer, the next attempt needs a fresh one.
+    this.challengeToken = '';
+    if (token && this.challengeWidget) this.turnstile.reset(this.challengeWidget);
+    this.auth.login(this.email, this.password, token || undefined).subscribe({
       // No navigation here: the leave-effect above owns that, so the password
       // and Google paths cannot disagree about where a login lands.
       next: () => {
@@ -214,9 +234,39 @@ export class AuthFormComponent implements OnInit, AfterViewInit {
         this.isLoading = false;
         this.lastAuthError = err;
         this.authIsError = true;
+        const code = err?.error?.error?.code;
+        if (code === 'auth.errChallengeRequired' || code === 'auth.errChallengeFailed') this.showChallenge();
         this.cdr.markForCheck();
       }
     });
+  }
+
+  private async showChallenge(): Promise<void> {
+    if (!this.turnstile.enabled) return;
+    this.challengeRequired = true;
+    this.cdr.detectChanges();
+    if (this.challengeWidget || !this.challengeBox) return;
+    try {
+      this.challengeWidget = await this.turnstile.render(this.challengeBox.nativeElement, {
+        language: this.i18n.lang(),
+        theme: this.theme.resolved(),
+        onToken: (t) => {
+          this.challengeToken = t;
+          this.onLogin();
+        },
+        onError: () => {
+          this.challengeToken = '';
+        },
+      });
+    } catch {
+      this.clientAuthError = 'auth.errChallengeUnavailable';
+      this.authIsError = true;
+      this.cdr.markForCheck();
+    }
+  }
+
+  ngOnDestroy() {
+    if (this.challengeWidget) this.turnstile.remove(this.challengeWidget);
   }
 
   onRegister() {
