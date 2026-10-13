@@ -67,6 +67,19 @@ export function outcomeLimit(c: Context<AppEnv>, scope: string, rate: string, ke
   };
 }
 
+/**
+ * For hot public endpoints: count against a Workers rate-limiting binding
+ * when one is configured (no Durable Object call, approximate per colo),
+ * else against the Durable Object limiter. The binding's own limit applies;
+ * `rate` is the fallback's. False when over.
+ */
+export async function takePlatformRate(c: Context<AppEnv>, binding: RateLimit | undefined, scope: string, rate: string): Promise<boolean> {
+  if (c.env.ENVIRONMENT === 'test') return true;
+  if (!binding) return takeRate(c, scope, rate);
+  const key = c.get('userId') ?? c.req.header('CF-Connecting-IP') ?? 'local';
+  return (await binding.limit({ key: `${scope}:${key}` })).success;
+}
+
 /** Middleware form: `rateLimit('login', '5/min')`. */
 export const rateLimit =
   (scope: string, rate: string, keyFn?: (c: Context<AppEnv>) => string | undefined): MiddlewareHandler<AppEnv> =>

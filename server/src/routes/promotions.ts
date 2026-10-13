@@ -6,7 +6,7 @@ import { advertisers, ads, createAdsDb, createDb } from '../db';
 import { pagination } from '../lib/http';
 import { getRegion } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
-import { checkRate } from '../middleware/rateLimit';
+import { takePlatformRate } from '../middleware/rateLimit';
 import { parseJsonArray } from '../lib/json';
 import { schoolFilterId } from '../services/admin/schoolCodes';
 import { ADS_VERSION_KEY, cachedJson, versionedKey } from '../services/admin/adCache';
@@ -24,6 +24,7 @@ export const promotionRoutes = new Hono<AppEnv>();
 
 /** Rate limit for view / click events. */
 const AD_STATS_RATE = '60/min';
+const AD_LIST_RATE = '120/min';
 /** How long a public ad list stays cached; admin writes bump ads:ver so edits show at once. */
 const ACTIVE_TTL = 300;
 
@@ -36,7 +37,9 @@ function liveConds(now: string): SQL[] {
 export const AD_POSITIONS = ['home_banner'] as const;
 
 promotionRoutes.get('/active/', async (c) => {
-  await checkRate(c, 'ads_active', '120/min');
+  if (!(await takePlatformRate(c, c.env.AD_LIST_LIMIT, 'ads_active', AD_LIST_RATE))) {
+    return c.json({ error: { code: 'common.errThrottled' } }, 429);
+  }
   const region = await getRegion(c);
   const page = pagination(c.req.url, { allowPageSize: true, maxPageSize: 100 });
   if (!region) return c.json(page.wrap([], 0));
@@ -109,33 +112,47 @@ export async function clientHash(c: Context<AppEnv>, now = new Date()): Promise<
   return [...new Uint8Array(buf, 0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Whether an ad is live, and its position: kept per isolate for a minute so a page of impressions is one D1 read. */
+const LIVE_TTL_MS = 60_000;
+const LIVE_MEMO_MAX = 1000;
+const liveMemo = new Map<number, { at: number; position: string | null }>();
+
+/** The ad's position when it exists and is live, '' when it exists but is not live, null when unknown. */
+async function liveAdPosition(c: Context<AppEnv>, adId: number): Promise<string | null | ''> {
+  const memo = liveMemo.get(adId);
+  if (memo && Date.now() - memo.at < LIVE_TTL_MS) return memo.position;
+  const [row] = await createAdsDb(c.env.DB_ADS)
+    .select({
+      position: ads.position,
+      live: sql<number>`(${and(...liveConds(new Date().toISOString()))})`,
+    })
+    .from(ads)
+    .innerJoin(advertisers, eq(advertisers.id, ads.advertiserId))
+    .where(eq(ads.id, adId))
+    .limit(1);
+  const position = !row ? null : row.live ? row.position : '';
+  if (liveMemo.size >= LIVE_MEMO_MAX) liveMemo.clear();
+  liveMemo.set(adId, { at: Date.now(), position });
+  return position;
+}
+
 /**
  * One Analytics Engine data point per hit. An unknown id is 404; an ad that
- * exists but is not live (inactive, outside its run, advertiser inactive)
- * answers 204 without recording anything.
+ * exists but is not live (inactive, outside its run, advertiser inactive),
+ * or a client over the event cap, answers 204 without recording anything.
  */
 function recordEvent(event: 'view' | 'click') {
   return async (c: Context<AppEnv>) => {
-    await checkRate(c, 'ad_stats', AD_STATS_RATE);
     const raw = c.req.param('id') ?? '';
     if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) return c.json({ detail: 'Not found.' }, 404);
     const adId = Number(raw);
-    const adsDb = createAdsDb(c.env.DB_ADS);
-    const [row] = await adsDb
-      .select({
-        position: ads.position,
-        live: sql<number>`(${and(...liveConds(new Date().toISOString()))})`,
-      })
-      .from(ads)
-      .innerJoin(advertisers, eq(advertisers.id, ads.advertiserId))
-      .where(eq(ads.id, adId))
-      .limit(1);
-    if (!row) return c.body(null, 404);
-    if (!row.live) return c.body(null, 204);
+    const position = await liveAdPosition(c, adId);
+    if (position === null) return c.body(null, 404);
+    if (!position || !(await takePlatformRate(c, c.env.AD_STATS_LIMIT, 'ad_stats', AD_STATS_RATE))) return c.body(null, 204);
     const region = await getRegion(c);
     c.env.AD_EVENTS?.writeDataPoint({
       indexes: [String(adId)],
-      blobs: [event, region?.code ?? '', row.position, await clientHash(c)],
+      blobs: [event, region?.code ?? '', position, await clientHash(c)],
       doubles: [1],
     });
     return c.body(null, 204);

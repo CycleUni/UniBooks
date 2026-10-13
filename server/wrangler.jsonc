@@ -28,6 +28,14 @@
   // Ad impressions and clicks: append-only events, queried via the SQL API.
   "analytics_engine_datasets": [{ "binding": "AD_EVENTS", "dataset": "unibooks_ad_events" }],
 
+  // Per-client caps on the public ad endpoints (list; view/click events): the
+  // platform's own counters, so a hit costs no Durable Object call. namespace_id is a label chosen here
+  // (unique per account), not a provisioned resource id.
+  "ratelimits": [
+    { "name": "AD_STATS_LIMIT", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+    { "name": "AD_LIST_LIMIT", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } }
+  ],
+
   // The ISBNnet resolver Worker, called in-process instead of over the internet.
   "services": [{ "binding": "ISBNNET", "service": "isbnnet-resolver" }],
 
