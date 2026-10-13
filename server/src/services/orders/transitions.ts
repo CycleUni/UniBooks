@@ -37,7 +37,9 @@ const TRANSITION_ACTOR: Record<string, 'buyer' | 'seller' | 'either'> = {
   'accepted>handed_over': 'seller',
   'accepted>cancelled': 'either',
   'handed_over>completed': 'buyer',
-  'handed_over>cancelled': 'either',
+  // The buyer has the book by now; letting them cancel would put it back on
+  // sale. The seller (a handover marked by mistake) or an admin still can.
+  'handed_over>cancelled': 'seller',
 };
 
 /** The system notice for each move, keyed by old>new>actor role. */
@@ -49,7 +51,6 @@ const TRANSITION_NOTICE: Record<string, string> = {
   'accepted>cancelled>seller': 'order.notify.cancelled_by_seller',
   'accepted>handed_over>seller': 'order.notify.delivered',
   'handed_over>completed>buyer': 'order.notify.delivered',
-  'handed_over>cancelled>buyer': 'order.notify.cancelled_by_buyer',
   'handed_over>cancelled>seller': 'order.notify.cancelled_by_seller',
 };
 

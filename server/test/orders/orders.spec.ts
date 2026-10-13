@@ -439,6 +439,26 @@ describe.skipIf(!schemaReady)('taking a listing down settles its open orders', (
   });
 });
 
+describe.skipIf(!schemaReady)('after handover', () => {
+  it('only the seller may cancel; the buyer can only confirm receipt', async () => {
+    const seller = await makeUser('seller');
+    const buyer = await makeUser('buyer');
+    const l = await makeListing(seller.id);
+    await chat(l.id, buyer.id, seller.id);
+    const { id } = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
+    expect((await patch(`${id}/`, seller.token, { status: 'accepted' })).status).toBe(200);
+    expect((await patch(`${id}/`, seller.token, { status: 'handed_over' })).status).toBe(200);
+
+    const buyerCancel = await patch(`${id}/`, buyer.token, { status: 'cancelled' });
+    expect(buyerCancel.status).toBe(403);
+    expect(await buyerCancel.json()).toEqual({ error: { code: 'order.errSellerOnly' } });
+    expect(await listingStatus(l.id)).toBe('reserved');
+
+    expect((await patch(`${id}/`, seller.token, { status: 'cancelled' })).status).toBe(200);
+    expect(await listingStatus(l.id)).toBe('active');
+  });
+});
+
 describe('orders schema gate', () => {
   it('reports whether integration tests ran', () => {
     if (!schemaReady) console.warn('[test/orders] integration tests skipped: migration lacks orders columns');
