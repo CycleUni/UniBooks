@@ -4,6 +4,7 @@ import type { Context } from 'hono';
 import { and, asc, count, eq, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppEnv } from '../../env';
+import { invalidates } from '../../lib/cache';
 import { createDb, currencies, languages, regions, type Currency, type Region } from '../../db';
 import { requireSuperuser } from '../../middleware/auth';
 import { fieldErrors, pagination, readJson, validate } from '../../lib/http';
@@ -54,7 +55,7 @@ regionRoutes.get('/currencies/', async (c) => {
   return c.json(page.wrap(rows.map(currencyJson), n));
 });
 
-regionRoutes.post('/currencies/', async (c) => {
+regionRoutes.post('/currencies/', invalidates('ref'), async (c) => {
   const body = validate(currencyCreate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
   const [exists] = await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.code, body.code)).limit(1);
@@ -139,8 +140,8 @@ async function updateCurrency(c: Context<AppEnv>) {
   return c.json(currencyJson(row));
 }
 
-regionRoutes.patch('/currencies/:code/', updateCurrency);
-regionRoutes.put('/currencies/:code/', updateCurrency);
+regionRoutes.patch('/currencies/:code/', invalidates('ref'), updateCurrency);
+regionRoutes.put('/currencies/:code/', invalidates('ref'), updateCurrency);
 
 // ---------------------------------------------------------------------------
 // Regions
@@ -226,7 +227,7 @@ regionRoutes.get('/regions/', async (c) => {
   );
 });
 
-regionRoutes.post('/regions/', async (c) => {
+regionRoutes.post('/regions/', invalidates('ref'), async (c) => {
   const body = validate(regionCreate, await readJson(c.req), INVALID);
   await checkRefs(c, body);
   if (!body.translations || !Object.keys(body.translations).length) {
@@ -352,5 +353,5 @@ async function updateRegion(c: Context<AppEnv>) {
   return c.json(regionJson(row, await resolveLanguage(c)));
 }
 
-regionRoutes.patch('/regions/:code/', updateRegion);
-regionRoutes.put('/regions/:code/', updateRegion);
+regionRoutes.patch('/regions/:code/', invalidates('ref'), updateRegion);
+regionRoutes.put('/regions/:code/', invalidates('ref'), updateRegion);

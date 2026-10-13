@@ -3,7 +3,6 @@ import * as Sentry from '@sentry/cloudflare';
 import { sentryOptions } from './lib/sentry';
 import type { AppEnv, Env } from './env';
 import { rememberOrigin } from './lib/origin';
-import { invalidate } from './lib/cache';
 import { sameOriginGuard } from './lib/session';
 import { errorHandler } from './middleware/error';
 import { accountRoutes } from './routes/accounts';
@@ -65,18 +64,6 @@ app.route('/api/v1/subscriptions/', subscriptionRoutes);
 app.route('/api/v1/messaging/', messagingRoutes);
 app.route('/api/v1/moderation/', moderationRoutes);
 app.route('/api/v1/orders/', orderRoutes);
-// Admin writes to reference data (regions, currencies, schools, cities,
-// categories) make the cached public copies stale at once.
-app.use('/api/v1/admin/*', async (c, next) => {
-  await next();
-  if (
-    c.req.method !== 'GET' &&
-    c.res.status < 400 &&
-    /^\/api\/v1\/admin\/(regions|currencies|schools|cities|categories)\//.test(c.req.path)
-  ) {
-    c.executionCtx.waitUntil(invalidate(c.env, 'ref'));
-  }
-});
 app.route('/api/v1/admin/', adminRoutes);
 app.route('/api/v1/promotions/', promotionRoutes);
 app.route('/api/v1', sitemapRoutes); // /api/v1/sitemap.xml, /api/v1/sitemap/<kind>-<region>-<page>.xml

@@ -1,4 +1,5 @@
-import type { Env } from '../env';
+import type { MiddlewareHandler } from 'hono';
+import type { AppEnv, Env } from '../env';
 
 /**
  * Read-through cache in Workers KV for data that is the same for every
@@ -12,9 +13,15 @@ import type { Env } from '../env';
  * fine for everything cached here.
  *
  * Namespaces in use:
- *   ref      regions, currencies, schools, cities, categories (admin edits)
+ *   ref      regions, currencies, schools, categories (admin edits)
+ *   search   course facets (they follow categories)
  *   sitemap  sitemap index and pages (listing/book changes are not tracked:
  *            the TTL alone bounds staleness)
+ *
+ * A route that writes source rows says so with `invalidates(...)` next to
+ * its handler, so a new write route cannot quietly leave stale copies.
+ * Staleness after a write: other isolates may hold the old version for up
+ * to VERSION_MEMO_MS, plus KV's propagation (up to about a minute).
  */
 export type CacheNamespace = 'ref' | 'sitemap' | 'search';
 
@@ -59,4 +66,21 @@ export async function cached<T>(env: Env, ns: CacheNamespace, key: string, ttlSe
     }
   }
   return value;
+}
+
+/**
+ * Route middleware for writes to cached source rows: after a successful
+ * response, every listed namespace is invalidated.
+ */
+export function invalidates(...namespaces: CacheNamespace[]): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    await next();
+    if (c.res.status >= 400) return;
+    const work = Promise.all(namespaces.map((ns) => invalidate(c.env, ns)));
+    try {
+      c.executionCtx.waitUntil(work);
+    } catch {
+      await work;
+    }
+  };
 }

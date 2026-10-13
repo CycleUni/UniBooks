@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { and, asc, count, eq, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppEnv } from '../../env';
+import { invalidates } from '../../lib/cache';
 import { categories, createDb, type Category, type Database } from '../../db';
 import { apiError, fieldErrors, issueFields, pagination, readJson, validate } from '../../lib/http';
 import { parseJsonObject } from '../../lib/json';
@@ -79,7 +80,7 @@ categoryRoutes.get('/categories/', async (c) => {
   return c.json(page.wrap(rows.map(categoryJson), n));
 });
 
-categoryRoutes.post('/categories/', async (c) => {
+categoryRoutes.post('/categories/', invalidates('ref', 'search'), async (c) => {
   const body = validate(categoryCreate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
   // Scope first, so the region and slug checks tell staff nothing about regions they do not manage.
@@ -116,7 +117,7 @@ categoryRoutes.post('/categories/', async (c) => {
 // Bulk import (before /categories/:id/)
 // ---------------------------------------------------------------------------
 
-categoryRoutes.post('/categories/bulk/', async (c) => {
+categoryRoutes.post('/categories/bulk/', invalidates('ref', 'search'), async (c) => {
   const body = await readJson(c.req);
   const action = body.action;
   const items = body.items ?? [];
@@ -262,7 +263,7 @@ async function loadCategory(c: Context<AppEnv>): Promise<Category> {
 
 categoryRoutes.get('/categories/:id/', async (c) => c.json(categoryJson(await loadCategory(c))));
 
-categoryRoutes.patch('/categories/:id/', async (c) => {
+categoryRoutes.patch('/categories/:id/', invalidates('ref', 'search'), async (c) => {
   const instance = await loadCategory(c);
   const body = validate(categoryUpdate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
@@ -303,7 +304,7 @@ categoryRoutes.patch('/categories/:id/', async (c) => {
   return c.json(categoryJson(row));
 });
 
-categoryRoutes.delete('/categories/:id/', async (c) => {
+categoryRoutes.delete('/categories/:id/', invalidates('ref', 'search'), async (c) => {
   const instance = await loadCategory(c);
   // listings.category_id is ON DELETE SET NULL.
   const db = createDb(c.env.DB);

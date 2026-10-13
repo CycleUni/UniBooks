@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { and, asc, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppEnv } from '../../env';
+import { invalidates } from '../../lib/cache';
 import { cities, createDb, regionVerifications, schoolRequests, schools, users, type Database, type School } from '../../db';
 import { apiError, fieldErrors, issueFields, pagination, readJson, validate } from '../../lib/http';
 import { parseJsonObject } from '../../lib/json';
@@ -175,7 +176,7 @@ async function cityIn(db: Database, regionCode: string, cityCode: string): Promi
   return row ? row.id : null;
 }
 
-schoolRoutes.post('/schools/', async (c) => {
+schoolRoutes.post('/schools/', invalidates('ref'), async (c) => {
   const body = validate(schoolCreate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
   // Scope first: every later check (region, codes, domains) reads other regions' data.
@@ -226,7 +227,7 @@ schoolRoutes.post('/schools/', async (c) => {
 // Bulk import (before /schools/:id/ so "bulk" is never read as an id)
 // ---------------------------------------------------------------------------
 
-schoolRoutes.post('/schools/bulk/', async (c) => {
+schoolRoutes.post('/schools/bulk/', invalidates('ref'), async (c) => {
   const body = await readJson(c.req);
   const action = body.action;
   const items = body.items ?? [];
@@ -435,7 +436,7 @@ schoolRoutes.get('/schools/:id/', async (c) => {
   return c.json(schoolJson(row, await resolveLanguage(c)));
 });
 
-schoolRoutes.patch('/schools/:id/', async (c) => {
+schoolRoutes.patch('/schools/:id/', invalidates('ref'), async (c) => {
   const instance = await loadSchool(c, intId(c.req.param('id')));
   const body = validate(schoolUpdate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
@@ -498,7 +499,7 @@ schoolRoutes.patch('/schools/:id/', async (c) => {
   return c.json(schoolJson(row, await resolveLanguage(c)));
 });
 
-schoolRoutes.delete('/schools/:id/', async (c) => {
+schoolRoutes.delete('/schools/:id/', invalidates('ref'), async (c) => {
   const instance = await loadSchool(c, intId(c.req.param('id')));
   // A school with accounts attached cannot be removed: users would silently
   // lose their school. Admins reassign or remove the accounts first.
@@ -600,7 +601,7 @@ async function loadRequest(c: Context<AppEnv>, id: number) {
 
 schoolRoutes.get('/school-requests/:id/', async (c) => c.json(requestJson(await loadRequest(c, intId(c.req.param('id'))))));
 
-schoolRoutes.patch('/school-requests/:id/', async (c) => {
+schoolRoutes.patch('/school-requests/:id/', invalidates('ref'), async (c) => {
   const id = intId(c.req.param('id'));
   const data = await readJson(c.req);
   const keys = Object.keys(data);
