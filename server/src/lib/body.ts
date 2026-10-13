@@ -1,9 +1,9 @@
 /**
- * Read a request body, refusing (null) anything past `max` bytes without
+ * Read a request (or response) body, refusing (null) anything past `max` bytes without
  * buffering it: a declared Content-Length over the cap is refused up front,
  * and a chunked body is cut off as soon as it crosses the cap.
  */
-export async function readCapped(req: Request, max: number): Promise<Uint8Array | null> {
+export async function readCapped(req: Pick<Request, 'headers' | 'body'>, max: number): Promise<Uint8Array | null> {
   const declared = Number(req.headers.get('Content-Length') ?? '');
   if (Number.isFinite(declared) && declared > max) return null;
   if (!req.body) return new Uint8Array();

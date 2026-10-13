@@ -24,7 +24,12 @@ describe('/api/cover caching', () => {
     } as unknown as Pick<Cache, 'match' | 'put'>;
   });
 
-  async function get(src: string, fetchMock: (url: string) => Promise<Response>, extra = ''): Promise<Response> {
+  async function get(
+    src: string,
+    fetchMock: (url: string) => Promise<Response>,
+    extra = '',
+    onMiss?: () => Promise<void>,
+  ): Promise<Response> {
     const request = new Request(`https://unibooks.app/api/cover?src=${encodeURIComponent(src)}${extra}`);
     const response = await handleCover(request, {
       cache,
@@ -32,6 +37,7 @@ describe('/api/cover caching', () => {
       waitUntil: (p) => {
         pending.push(p);
       },
+      onMiss,
     });
     await Promise.all(pending);
     return response;
@@ -111,6 +117,32 @@ describe('/api/cover caching', () => {
     await get(OL, fetchMock, '&ngsw-bypass=');
     await get(OL, fetchMock, '&x=123');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs the miss hook (the rate limit) only when the edge cache misses', async () => {
+    const onMiss = vi.fn(async () => {});
+    await get(
+      OL,
+      vi.fn(async () => image()),
+      '',
+      onMiss,
+    );
+    await get(
+      OL,
+      vi.fn(async () => image()),
+      '',
+      onMiss,
+    );
+    expect(onMiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not buffer an upstream body larger than any cover', async () => {
+    const huge = new Response(new Uint8Array(6 * 1024 * 1024), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    const res = await get(
+      OL,
+      vi.fn(async () => huge),
+    );
+    expect(res.status).toBe(404);
   });
 
   it('serves a repeat request from the edge cache without going upstream', async () => {

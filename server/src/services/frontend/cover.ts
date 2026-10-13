@@ -1,3 +1,4 @@
+import { readCapped } from '../../lib/body';
 /**
  * The /api/cover proxy (src/routes/frontend.ts). Written against plain
  * Request/Response with the edge cache, fetch and waitUntil passed in, like
@@ -7,6 +8,17 @@ export interface CoverDeps {
   cache: Pick<Cache, 'match' | 'put'>;
   fetch: (url: string) => Promise<Response>;
   waitUntil: (promise: Promise<unknown>) => void;
+  /** Runs on a cache miss, before any upstream fetch (the route's rate limit): edge-cache hits stay free. */
+  onMiss?: () => Promise<void>;
+}
+
+/** Larger than any real cover; a bigger upstream body is not buffered. */
+const MAX_COVER_BYTES = 5 * 1024 * 1024;
+
+/** The upstream body, or null when it is over MAX_COVER_BYTES. */
+async function upstreamBody(res: Response): Promise<ArrayBuffer | null> {
+  const bytes = await readCapped(res, MAX_COVER_BYTES);
+  return bytes ? (bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer) : null;
 }
 
 /**
@@ -165,6 +177,7 @@ export async function handleCover(request: Request, deps: CoverDeps): Promise<Re
   if (hit) {
     return hit;
   }
+  await deps.onMiss?.();
 
   let srcUrl: URL;
   try {
@@ -211,31 +224,8 @@ export async function handleCover(request: Request, deps: CoverDeps): Promise<Re
         return upstreamResponse.status >= 500 ? upstreamError(request, deps) : missingCover(request, deps);
       }
 
-      let byteLength = -1;
-      let bodyBuffer: ArrayBuffer | null = null;
-
-      const contentLengthHeader = upstreamResponse.headers.get('content-length');
-      if (contentLengthHeader) {
-        const parsedLength = parseInt(contentLengthHeader, 10);
-        if (!isNaN(parsedLength) && parsedLength >= 0) {
-          byteLength = parsedLength;
-        }
-      }
-
-      if (byteLength < 0) {
-        bodyBuffer = await upstreamResponse.arrayBuffer();
-        byteLength = bodyBuffer.byteLength;
-      }
-
-      if (byteLength < 100) {
-        return missingCover(request, deps);
-      }
-
-      if (!bodyBuffer) {
-        bodyBuffer = await upstreamResponse.arrayBuffer();
-      }
-
-      if (bodyBuffer.byteLength < 100) {
+      const bodyBuffer = await upstreamBody(upstreamResponse);
+      if (!bodyBuffer || bodyBuffer.byteLength < 100) {
         return missingCover(request, deps);
       }
 
@@ -278,31 +268,8 @@ export async function handleCover(request: Request, deps: CoverDeps): Promise<Re
         continue;
       }
 
-      let byteLength = -1;
-      let bodyBuffer: ArrayBuffer | null = null;
-
-      const contentLengthHeader = upstreamResponse.headers.get('content-length');
-      if (contentLengthHeader) {
-        const parsedLength = parseInt(contentLengthHeader, 10);
-        if (!isNaN(parsedLength) && parsedLength >= 0) {
-          byteLength = parsedLength;
-        }
-      }
-
-      if (byteLength < 0) {
-        bodyBuffer = await upstreamResponse.arrayBuffer();
-        byteLength = bodyBuffer.byteLength;
-      }
-
-      if (byteLength >= MIN_IMAGE_BYTES) {
-        if (!bodyBuffer) {
-          bodyBuffer = await upstreamResponse.arrayBuffer();
-        }
-
-        if (bodyBuffer.byteLength < MIN_IMAGE_BYTES) {
-          continue;
-        }
-
+      const bodyBuffer = await upstreamBody(upstreamResponse);
+      if (bodyBuffer && bodyBuffer.byteLength >= MIN_IMAGE_BYTES) {
         const response = coverResponse(bodyBuffer, upstreamResponse);
         if (!response) continue;
         return cached(request, deps, response);

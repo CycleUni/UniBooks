@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { rateLimit } from '../middleware/rateLimit';
+import { checkRate } from '../middleware/rateLimit';
 import type { AppEnv } from '../env';
 import { activeRegions } from '../lib/region';
 import { handleBookPage, injectBookMeta, regionFrom, REGION_SHELL, type SiteRegions } from '../services/frontend/bookMeta';
@@ -12,13 +12,20 @@ import { handleCover } from '../services/frontend/cover';
  */
 export const frontendRoutes = new Hono<AppEnv>();
 
-/** /api/cover?src=<cover URL>: see services/frontend/cover.ts. */
-// Generous: a page shows many covers, most served from the edge cache.
-frontendRoutes.get('/api/cover', rateLimit('cover', '600/min'), (c) =>
+/** Upstream cover hosts get this long before the request counts as an upstream failure. */
+const COVER_UPSTREAM_TIMEOUT_MS = 8000;
+
+/**
+ * /api/cover?src=<cover URL>: see services/frontend/cover.ts. Rate limited
+ * only on an edge-cache miss: a page shows many covers, and a hit costs no
+ * upstream fetch, so it should not cost a Durable Object call either.
+ */
+frontendRoutes.get('/api/cover', (c) =>
   handleCover(c.req.raw, {
     cache: caches.default,
-    fetch: (url) => fetch(url),
+    fetch: (url) => fetch(url, { signal: AbortSignal.timeout(COVER_UPSTREAM_TIMEOUT_MS) }),
     waitUntil: (promise) => c.executionCtx.waitUntil(promise),
+    onMiss: () => checkRate(c, 'cover', '600/min'),
   }),
 );
 
