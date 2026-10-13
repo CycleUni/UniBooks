@@ -42,7 +42,7 @@ export async function acceptListingPhotos(
   photos: unknown,
   userId: string,
   kept: string[] = [],
-): Promise<string[]> {
+): Promise<AcceptedPhotos> {
   if (!Array.isArray(photos)) throw new PhotoError('listing.errInvalidPhotos');
   if (photos.length > MAX_LISTING_PHOTOS) throw new PhotoError('listing.errTooManyPhotos');
 
@@ -68,10 +68,10 @@ export async function acceptListingPhotos(
   }
   if (new Set(plan.map((p) => p.url)).size !== plan.length) throw new PhotoError('listing.errInvalidPhotos');
 
-  const out: string[] = [];
+  const out: AcceptedPhotos = { urls: [], tmpKeys: [], promoted: [] };
   for (const item of plan) {
     if (!item.promote) {
-      out.push(item.url);
+      out.urls.push(item.url);
       continue;
     }
     try {
@@ -81,14 +81,50 @@ export async function acceptListingPhotos(
       await env.R2.put(item.promote.to, await obj.arrayBuffer(), {
         httpMetadata: { contentType: IMAGE_CONTENT_TYPES[ext as ImageExt] ?? 'application/octet-stream' },
       });
-      await env.R2.delete(item.promote.from);
     } catch (e) {
       console.error('[listings] failed to promote tmp photo', item.promote.from, e);
       throw new PhotoError('listing.errPhotoPromoteFailed');
     }
-    out.push(publicUrl(env, origin, item.promote.to));
+    const promotedUrl = publicUrl(env, origin, item.promote.to);
+    out.urls.push(promotedUrl);
+    out.tmpKeys.push(item.promote.from);
+    out.promoted.push(promotedUrl);
   }
   return out;
+}
+
+/**
+ * The photos a listing write will store. Uploads are copied to permanent
+ * keys but their tmp/ originals are kept until the write commits, so a
+ * write that fails (an order accepted meanwhile) can simply be retried.
+ */
+export interface AcceptedPhotos {
+  urls: string[];
+  /** tmp/ originals of the promoted photos. */
+  tmpKeys: string[];
+  /** Permanent copies made for this write. */
+  promoted: string[];
+}
+
+/**
+ * After the listing write: committed, the tmp/ originals go, and so do the
+ * photos the write `dropped` from the listing (else they stay public at
+ * their URL). Not committed, the copies made for it go and the uploads stay.
+ * Storage bookkeeping only: failures are logged, never thrown.
+ */
+export async function settlePhotos(
+  env: Env,
+  origin: string,
+  sellerId: string,
+  accepted: AcceptedPhotos,
+  committed: boolean,
+  dropped: string[] = [],
+): Promise<void> {
+  if (!committed) return deleteListingPhotos(env, origin, sellerId, accepted.promoted);
+  for (const key of accepted.tmpKeys) {
+    await env.R2.delete(key).catch((e: unknown) => console.warn('[listings] failed to delete tmp photo', key, e));
+  }
+  await deleteListingPhotos(env, origin, sellerId, dropped);
 }
 
 /** Listings (id, seller) whose photos hold exactly `url`. */

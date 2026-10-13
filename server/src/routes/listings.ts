@@ -5,7 +5,7 @@ import { Hono, type Context } from 'hono';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../env';
 import { createDb, books, listings, regionVerifications, schools, type Listing } from '../db';
-import { apiError, fieldErrors, readJson } from '../lib/http';
+import { afterResponse, apiError, fieldErrors, readJson } from '../lib/http';
 import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
@@ -15,7 +15,15 @@ import { resolveLanguage, schoolFilterId, schoolFilterScope } from '../services/
 import { serializeListings } from '../services/listings/serialize';
 import { validateListingFields, type FieldErrors } from '../services/listings/validate';
 import { deleteListing, hasActiveOrders, pageFor } from '../services/listings/lifecycle';
-import { permanentKeyPrefix, PhotoError, acceptListingPhotos, listingsHoldingPhoto, tmpKeyPrefix } from '../services/listings/photos';
+import {
+  permanentKeyPrefix,
+  PhotoError,
+  acceptListingPhotos,
+  listingsHoldingPhoto,
+  settlePhotos,
+  tmpKeyPrefix,
+  type AcceptedPhotos,
+} from '../services/listings/photos';
 import { storageKeyFromUrl } from '../lib/media';
 import { issueUpload, storeUpload } from '../lib/upload';
 import { cancelOpenOrdersForListing } from '../services/orders/cancel';
@@ -77,10 +85,10 @@ listingRoutes.post('/', authMiddleware(), async (c) => {
   const body = await readJson(c.req);
 
   const { values, errors } = await validateListingFields(c.env, body, { regionCode: region.code });
-  let photos: string[] = [];
+  let accepted: AcceptedPhotos = { urls: [], tmpKeys: [], promoted: [] };
   if (!Object.keys(errors).length && Object.prototype.hasOwnProperty.call(body, 'photos')) {
     try {
-      photos = await acceptListingPhotos(c.env, origin(c), body.photos, user.id);
+      accepted = await acceptListingPhotos(c.env, origin(c), body.photos, user.id);
     } catch (e) {
       if (!(e instanceof PhotoError)) throw e;
       errors.photos = [e.code];
@@ -113,7 +121,7 @@ listingRoutes.post('/', authMiddleware(), async (c) => {
     condition: values.condition!,
     privateNote: values.privateNote ?? '',
     description: values.description ?? '',
-    photos: JSON.stringify(photos),
+    photos: JSON.stringify(accepted.urls),
     categoryId: values.categoryId ?? null,
     status: 'active',
     adminLocked: 0,
@@ -125,7 +133,13 @@ listingRoutes.post('/', authMiddleware(), async (c) => {
     createdAt: now,
     updatedAt: now,
   };
-  await createDb(c.env.DB).insert(listings).values(row);
+  try {
+    await createDb(c.env.DB).insert(listings).values(row);
+  } catch (e) {
+    await settlePhotos(c.env, origin(c), user.id, accepted, false);
+    throw e;
+  }
+  await afterResponse(c, settlePhotos(c.env, origin(c), user.id, accepted, true));
   const lang = resolveLanguage(c, region);
   const [out] = await serializeListings(c.env, [row], { viewerId: user.id, lang }, new Map([[values.book!.id, values.book!]]));
   return c.json(out, 201);
@@ -336,10 +350,10 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c
   }
 
   const { values, errors } = await validateListingFields(c.env, body, { regionCode: listing.regionCode, current: listing });
-  let photos: string[] | undefined;
+  let accepted: AcceptedPhotos | undefined;
   if (!Object.keys(errors).length && Object.prototype.hasOwnProperty.call(body, 'photos')) {
     try {
-      photos = await acceptListingPhotos(c.env, origin(c), body.photos, userId, parsePhotos(listing.photos));
+      accepted = await acceptListingPhotos(c.env, origin(c), body.photos, userId, parsePhotos(listing.photos));
     } catch (e) {
       if (!(e instanceof PhotoError)) throw e;
       (errors as FieldErrors).photos = [e.code];
@@ -357,7 +371,7 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c
   if (values.status !== undefined) update.status = values.status;
   if (values.courseName !== undefined) update.courseName = values.courseName;
   if (values.professorName !== undefined) update.professorName = values.professorName;
-  if (photos !== undefined) update.photos = JSON.stringify(photos);
+  if (accepted) update.photos = JSON.stringify(accepted.urls);
 
   // Conditional on the status read above: an order accepted meanwhile
   // (active → reserved) must not be overwritten by this edit.
@@ -369,6 +383,12 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c
     ? await db.batch([listingStmt, db.update(books).set(bookUpdate).where(eq(books.id, listing.bookId))])
     : [await listingStmt];
   const changed = (results[0] as unknown as D1Result).meta?.changes ?? 0;
+  if (accepted) {
+    const kept = new Set(accepted.urls);
+    const dropped = parsePhotos(listing.photos).filter((u) => !kept.has(u));
+    const settled = settlePhotos(c.env, origin(c), listing.sellerId, accepted, !!changed, dropped);
+    await afterResponse(c, settled);
+  }
   if (!changed) fieldErrors({ status: ['listing.errStatusNotAllowed'] });
 
   const fresh = (await loadListing(c, listing.id))!;

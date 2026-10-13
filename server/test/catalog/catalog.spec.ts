@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import { cleanAndValidateIsbn, isbnChecksumOk, isbnForms, validateBookIsbn } from '../../src/services/catalog/isbn';
 import { cleanCoverUrl, cleanPublisher, describeSource } from '../../src/services/catalog/common';
 import { engineOrder, regionSearchEngines, ISBN_FALLBACK_ORDER } from '../../src/services/catalog/lookups';
-import { PhotoError, acceptListingPhotos } from '../../src/services/listings/photos';
+import { PhotoError, acceptListingPhotos, settlePhotos } from '../../src/services/listings/photos';
 import { sniffImage as detectImageExtension, publicBase, storageKeyFromUrl, validatedContentLength } from '../../src/lib/media';
 
 const ORIGIN = 'http://x';
@@ -76,15 +76,35 @@ describe('listing photo keys', () => {
     expect(await code(acceptListingPhotos(env, ORIGIN, Array(7).fill('x'), 'u1'))).toBe('listing.errTooManyPhotos');
     // The listing's own permanent photo may be sent back unchanged.
     const kept = `${BASE}/listings/u1/${hex}.jpg`;
-    expect(await acceptListingPhotos(env, ORIGIN, [kept], 'u1', [kept])).toEqual([kept]);
+    expect((await acceptListingPhotos(env, ORIGIN, [kept], 'u1', [kept])).urls).toEqual([kept]);
   });
 
   it("promotes the caller's own tmp upload to their permanent prefix", async () => {
     const tmpKey = `tmp/listings/u1/${hex}.png`;
     await env.R2.put(tmpKey, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     const out = await acceptListingPhotos(env, ORIGIN, [`${BASE}/${tmpKey}`], 'u1');
-    expect(out).toEqual([`${BASE}/listings/u1/${hex}.png`]);
-    expect(await env.R2.head(tmpKey)).toBeNull();
+    expect(out.urls).toEqual([`${BASE}/listings/u1/${hex}.png`]);
     expect(await env.R2.head(`listings/u1/${hex}.png`)).not.toBeNull();
+    // The upload stays until the listing write commits...
+    expect(await env.R2.head(tmpKey)).not.toBeNull();
+    await settlePhotos(env, ORIGIN, 'u1', out, true);
+    expect(await env.R2.head(tmpKey)).toBeNull();
+  });
+
+  it('a write that did not commit removes the copies and keeps the upload for a retry', async () => {
+    const name = 'c'.repeat(32);
+    const tmpKey = `tmp/listings/u1/${name}.png`;
+    await env.R2.put(tmpKey, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const out = await acceptListingPhotos(env, ORIGIN, [`${BASE}/${tmpKey}`], 'u1');
+    await settlePhotos(env, ORIGIN, 'u1', out, false);
+    expect(await env.R2.head(`listings/u1/${name}.png`)).toBeNull();
+    expect(await env.R2.head(tmpKey)).not.toBeNull();
+  });
+
+  it('a committed edit deletes the photos it dropped', async () => {
+    const key = `listings/u1/${'d'.repeat(32)}.png`;
+    await env.R2.put(key, new Uint8Array([1]));
+    await settlePhotos(env, ORIGIN, 'u1', { urls: [], tmpKeys: [], promoted: [] }, true, [`${BASE}/${key}`]);
+    expect(await env.R2.head(key)).toBeNull();
   });
 });

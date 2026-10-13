@@ -106,3 +106,18 @@ export function pagination(url: string, opts: { pageSize?: number; maxPageSize?:
 export function notFound(c: Context): Response {
   return c.json({ detail: 'Not found.' }, 404);
 }
+
+/**
+ * Run `work` after the response when the runtime allows it (waitUntil), or
+ * before returning when there is no execution context (app.request in tests).
+ */
+export async function afterResponse(c: Context, work: Promise<unknown>): Promise<void> {
+  let ctx: { waitUntil(p: Promise<unknown>): void } | undefined;
+  try {
+    ctx = c.executionCtx;
+  } catch {
+    ctx = undefined;
+  }
+  if (ctx) ctx.waitUntil(work);
+  else await work;
+}
