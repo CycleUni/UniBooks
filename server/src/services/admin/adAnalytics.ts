@@ -47,6 +47,8 @@ export async function queryAdEvents(env: Env, sqlText: string): Promise<Row[] | 
         method: 'POST',
         headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}`, 'Content-Type': 'text/plain' },
         body: sqlText,
+        // An admin page waits on this; a slow API degrades to "no stats".
+        signal: AbortSignal.timeout(8000),
       },
     );
     if (!res.ok) return null;
