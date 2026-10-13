@@ -96,6 +96,25 @@ npm run db:seed:remote         # 首次部署後一次：地區、學校、分�
 `CF_ACCOUNT_ID`（廣告統計查詢用）可放在 `vars` 或 secret。
 自訂網域：在 Cloudflare 後台把 `unibooks.app` 綁到 Worker `unibooks`。
 
+### 超級使用者
+
+權限只看 `users.role`：`user`（一般）、`staff`（區域管理員，只管 `staff_managed_regions` 指定的區域）、
+`admin`（超級使用者：所有區域，以及地區、幣別、管理員設定）。後台 API 刻意不接受把人升為 `admin`，
+避免後台帳號被盜時被拿來提權，所以超級使用者只能直接改 D1：
+
+```bash
+cd server
+# 1. 先在網站上正常註冊並啟用該帳號（Email 或 Google 登入皆可）
+# 2. 設為超級使用者（本機開發把 --remote 換成 --local）
+npx wrangler d1 execute unibooks --remote --command "UPDATE users SET role = 'admin', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE email = 'you@example.com'"
+# 3. 確認
+npx wrangler d1 execute unibooks --remote --command "SELECT email, role FROM users WHERE role IN ('staff','admin')"
+```
+
+角色每次請求都從資料庫讀取，改完重新整理頁面即可，不必重新登入。之後的區域管理員（`staff`）可由超級使用者在
+後台使用者頁面設定；新增或降級超級使用者仍用上面的 SQL（降級時把 `'admin'` 改成 `'staff'` 或 `'user'`）。
+從舊 Postgres 匯入資料時，`is_superuser` / `is_staff` 會自動轉成 `admin` / `staff`（見 `docs/migrate-from-django.md`）。
+
 ## 安全設計摘要
 
 - 登入狀態只存在 HttpOnly Cookie：`__Host-ub_at`（存取權杖，15 分鐘）、`__Secure-ub_rt`（更新權杖，14 天，只送往 `/api/v1/auth/`）。頁面上的 JavaScript 讀不到任何權杖。
