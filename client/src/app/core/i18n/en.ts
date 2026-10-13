@@ -1019,6 +1019,11 @@ export const en: Record<string, string> = {
   'order.notify.admin_cancelled': 'This order has been cancelled by UniBooks.',
 
   // Verify page (registration activation + edu-email binding)
+  'verify.activateTitle': 'Activate your account',
+  'verify.activateHint': 'Enter the password you chose when you signed up to finish activating your account.',
+  'verify.activateSubmit': 'Activate account',
+  'auth.errActivationPasswordRequired': 'Enter the password you chose when you signed up.',
+  'auth.errActivationPasswordMismatch': "That isn't the password this link was created with. If you didn't sign up, or don't remember the password, sign up again to get a new link.",
   'verify.title': 'Email Verification',
   'verify.hint': "We've sent an email with a verification token. Paste it below.",
   'verify.tokenPlaceholder': 'e.g. 550e8400-e29b-41d4-a716-446655440000',

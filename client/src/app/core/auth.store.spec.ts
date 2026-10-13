@@ -779,7 +779,7 @@ describe('AuthStore cookie session', () => {
   it.each([
     ['password', (store: AuthStore) => store.login('a@b.c', 'pw'), '/auth/token/'],
     ['Google', (store: AuthStore) => store.loginWithGoogle('google-credential'), '/auth/google/'],
-    ['registration link', (store: AuthStore) => store.verifyRegistration('mail-token'), '/auth/verify-registration/'],
+    ['registration link', (store: AuthStore) => store.verifyRegistration('mail-token', 'pw'), '/auth/verify-registration/'],
   ])('never writes a token to storage on a %s sign-in', async (_how, signIn, url) => {
     const store = build();
     await router.navigateByUrl('/tw');

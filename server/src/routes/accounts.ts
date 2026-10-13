@@ -183,8 +183,17 @@ accountRoutes.post('/register/', rateLimit('register', RATES.register), async (c
   return c.json({ code: 'auth.registerSuccess' }, 201);
 });
 
-accountRoutes.post('/verify-registration/', async (c) => {
-  const { token } = await readJson(c.req);
+/**
+ * Follow an activation link. The link alone is not enough: the visitor must
+ * also type the password chosen at registration, which is checked against
+ * the hash the link carries. Anyone may register a pending address (the
+ * owner must be able to register over a squatter), so a link can come from
+ * someone else's registration; without this check, an owner who clicked a
+ * squatter's link would activate their account with the squatter's
+ * password. A wrong password leaves the link usable for another try.
+ */
+accountRoutes.post('/verify-registration/', rateLimit('activate', RATES.login), async (c) => {
+  const { token, password } = await readJson(c.req);
   if (!token) apiError(400, 'auth.errMissingToken');
   const record = await ott.read(c.env, ott.REGISTER, token);
   if (!record) apiError(400, 'auth.errInvalidToken');
@@ -192,6 +201,11 @@ accountRoutes.post('/verify-registration/', async (c) => {
   if (!user) apiError(404, 'auth.errUserNotFound');
   if (user.deletedAt) apiError(400, 'auth.errInvalidToken');
   if (user.isBanned) apiError(403, 'auth.errAccountDisabled');
+  const linkHash = record.payload.password_hash;
+  if (linkHash) {
+    if (typeof password !== 'string' || !password) apiError(400, 'auth.errActivationPasswordRequired');
+    if (!(await checkPassword(password, linkHash))) apiError(400, 'auth.errActivationPasswordMismatch');
+  }
 
   if (!(await ott.consume(c.env, record.id))) apiError(400, 'auth.errInvalidToken');
   try {

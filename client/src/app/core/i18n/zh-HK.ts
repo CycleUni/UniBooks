@@ -1021,6 +1021,11 @@ export const zhHK: Record<string, string> = {
   'order.notify.admin_cancelled': '呢張訂單已經被平台取消。',
 
   // Verify page（註冊帳戶啟用 + 教育電郵綁定）
+  'verify.activateTitle': '啟用帳戶',
+  'verify.activateHint': '請輸入你註冊嗰陣設定嘅密碼，就可以完成啟用帳戶。',
+  'verify.activateSubmit': '啟用帳戶',
+  'auth.errActivationPasswordRequired': '請輸入你註冊嗰陣設定嘅密碼。',
+  'auth.errActivationPasswordMismatch': '呢個密碼同呢條啟用連結註冊時設定嘅唔一樣。如果你冇註冊過或者唔記得密碼，請重新註冊攞過條新連結。',
   'verify.title': '電郵驗證',
   'verify.hint': '我們已發送一封附有驗證碼的電郵至你的電郵地址。請在下方貼上你的驗證 Token。',
   'verify.tokenPlaceholder': '例如：550e8400-e29b-41d4-a716-446655440000',

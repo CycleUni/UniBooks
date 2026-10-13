@@ -77,13 +77,38 @@ describe('pre-registration squatting (security)', () => {
     // Following a registration link activates with *that* link's password only.
     const row = await userRow(email);
     const token = await ott.issue(env, ott.REGISTER, String(row!.id), ott.REGISTER_TTL, { password_hash: await hashPassword(PASSWORD) });
-    expect((await call('/api/v1/auth/verify-registration/', { body: { token } })).status).toBe(200);
+    expect((await call('/api/v1/auth/verify-registration/', { body: { token, password: PASSWORD } })).status).toBe(200);
     expect((await call('/api/v1/auth/token/', { body: { email, password: 'Attacker-Pass-123!' } })).status).toBe(401);
     expect((await call('/api/v1/auth/token/', { body: { email, password: PASSWORD } })).status).toBe(200);
 
     // Once activated, the address really is taken.
     const late = await call('/api/v1/auth/register/', { body: { email, password: 'Attacker-Pass-123!' } });
     expect(late.status).toBe(400);
+  });
+});
+
+describe('activation needs the registration password (security)', () => {
+  it("refuses a squatter's link to an owner who types their own password, and keeps the link usable", async () => {
+    const email = 'prehijack@example.com';
+    await call('/api/v1/auth/register/', { body: { email, password: PASSWORD } });
+    const row = await userRow(email);
+    // The link a squatter's registration mails: it carries the squatter's password.
+    const token = await ott.issue(env, ott.REGISTER, String(row!.id), ott.REGISTER_TTL, {
+      password_hash: await hashPassword('Attacker-Pass-123!'),
+    });
+
+    const missing = await call('/api/v1/auth/verify-registration/', { body: { token } });
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toEqual({ error: { code: 'auth.errActivationPasswordRequired' } });
+
+    const owner = await call('/api/v1/auth/verify-registration/', { body: { token, password: PASSWORD } });
+    expect(owner.status).toBe(400);
+    expect(await owner.json()).toEqual({ error: { code: 'auth.errActivationPasswordMismatch' } });
+    expect(owner.headers.get('set-cookie')).toBeNull();
+    expect((await userRow(email))?.is_active).toBe(0);
+
+    // A wrong password does not burn the link.
+    expect((await call('/api/v1/auth/verify-registration/', { body: { token, password: 'Attacker-Pass-123!' } })).status).toBe(200);
   });
 });
 

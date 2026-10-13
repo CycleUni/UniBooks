@@ -627,8 +627,10 @@ export class AuthStore {
     return this.http.post<any>('/auth/verify/', { token });
   }
 
-  verifyRegistration(token: string): Observable<any> {
-    return this.http.post<any>('/auth/verify-registration/', { token }).pipe(
+  // The password chosen at registration is asked for again: the server
+  // activates only if it matches the one the link was issued for.
+  verifyRegistration(token: string, password: string): Observable<any> {
+    return this.http.post<any>('/auth/verify-registration/', { token, password }).pipe(
       tap(response => {
         if (isLoginSuccess(response)) {
           this.signInPending = true;

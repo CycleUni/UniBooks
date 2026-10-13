@@ -19,15 +19,23 @@ import { clearSensitiveParams } from '../../core/sensitive-url';
       <div class="verify-container">
         <div class="verify-box">
           <ng-container *ngIf="status === 'idle' || status === 'loading'">
-            <h2>{{ 'verify.title' | t }}</h2>
-            <p>{{ 'verify.hint' | t }}</p>
+            <h2>{{ (type === 'register' ? 'verify.activateTitle' : 'verify.title') | t }}</h2>
+            <p>{{ (type === 'register' ? 'verify.activateHint' : 'verify.hint') | t }}</p>
 
-            <div  style="margin: 24px 0; text-align: left;">
-              <ui-input [placeholder]="'verify.tokenPlaceholder' | t" [(ngModel)]="inputToken" [disabled]="status === 'loading'"></ui-input>
+            <div class="verify-fields">
+              <ui-input *ngIf="!tokenFromLink" [placeholder]="'verify.tokenPlaceholder' | t" [(ngModel)]="inputToken" [disabled]="status === 'loading'"></ui-input>
+              <ng-container *ngIf="type === 'register'">
+                <label for="activate-password">{{ 'auth.passwordLabel' | t }}</label>
+                <ui-input inputId="activate-password" type="password" name="password" autocomplete="current-password"
+                  [ariaDescribedby]="passwordError ? 'activate-password-error' : ''"
+                  [placeholder]="'auth.passwordPlaceholder' | t" [(ngModel)]="password"
+                  [disabled]="status === 'loading'" (keyup.enter)="submitVerify()"></ui-input>
+                <p *ngIf="passwordError" id="activate-password-error" class="error-msg field-error" role="alert">{{ passwordError }}</p>
+              </ng-container>
             </div>
 
-            <ui-button  block (onClick)="submitVerify()" [disabled]="!inputToken || status === 'loading'">
-              {{ (status === 'loading' ? 'verify.verifying' : 'verify.submit') | t }}
+            <ui-button  block (onClick)="submitVerify()" [disabled]="!canSubmit || status === 'loading'">
+              {{ (status === 'loading' ? 'verify.verifying' : (type === 'register' ? 'verify.activateSubmit' : 'verify.submit')) | t }}
             </ui-button>
           </ng-container>
 
@@ -78,6 +86,21 @@ import { clearSensitiveParams } from '../../core/sensitive-url';
       line-height: 1.6;
       margin: 0;
     }
+    .verify-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 24px 0;
+      text-align: left;
+    }
+    .verify-fields label {
+      font-size: var(--text-sm);
+      color: var(--ink);
+    }
+    .field-error {
+      margin: 0 !important;
+      font-size: var(--text-sm);
+    }
     .success-icon {
       margin-bottom: 16px;
     }
@@ -92,6 +115,10 @@ export class VerifyEmail implements OnInit {
   status: 'idle' | 'loading' | 'success' | 'error' = 'idle';
   errorMessage = '';
   inputToken = '';
+  /** The token arrived in the link, so the visitor is not asked to paste it. */
+  tokenFromLink = false;
+  password = '';
+  passwordError = '';
   // 'register' = new-account activation (issues a session on success);
   // 'edu' = binding a .edu.tw address to an already-logged-in account.
   type: 'register' | 'edu' = 'edu';
@@ -109,20 +136,28 @@ export class VerifyEmail implements OnInit {
       const token = params['token'];
       if (token) {
         this.inputToken = token;
+        this.tokenFromLink = true;
         clearSensitiveParams(this.router, this.route);
-        this.submitVerify();
+        // Activation waits for the registration password; a campus-email
+        // link needs nothing more and is sent right away.
+        if (this.type !== 'register') this.submitVerify();
       }
     });
   }
 
+  get canSubmit(): boolean {
+    return !!this.inputToken && (this.type !== 'register' || !!this.password);
+  }
+
   submitVerify() {
-    if (!this.inputToken) return;
+    if (!this.canSubmit) return;
 
     this.status = 'loading';
+    this.passwordError = '';
     this.cdr.detectChanges();
 
     const request$ = this.type === 'register'
-      ? this.auth.verifyRegistration(this.inputToken)
+      ? this.auth.verifyRegistration(this.inputToken, this.password)
       : this.auth.verifyEmail(this.inputToken);
 
     request$.subscribe({
@@ -134,8 +169,15 @@ export class VerifyEmail implements OnInit {
         }, 3000);
       },
       error: (err) => {
-        this.status = 'error';
         const code = err.error?.error?.code;
+        // A wrong or missing password keeps the form: the link is still good.
+        if (code === 'auth.errActivationPasswordMismatch' || code === 'auth.errActivationPasswordRequired') {
+          this.status = 'idle';
+          this.passwordError = this.i18n.t(code);
+          this.cdr.detectChanges();
+          return;
+        }
+        this.status = 'error';
         this.errorMessage = code ? this.i18n.t(code) : this.i18n.t('verify.errUnknown');
         this.cdr.detectChanges();
       }
@@ -146,6 +188,9 @@ export class VerifyEmail implements OnInit {
     this.status = 'idle';
     this.errorMessage = '';
     this.inputToken = '';
+    this.tokenFromLink = false;
+    this.password = '';
+    this.passwordError = '';
   }
 
   goNext() {

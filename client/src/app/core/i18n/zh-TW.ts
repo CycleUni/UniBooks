@@ -1021,6 +1021,11 @@ export const zhTW: Record<string, string> = {
   'order.notify.admin_cancelled': '此訂單已被平台取消。',
 
   // Verify page（註冊帳號啟用 + 教育信箱綁定）
+  'verify.activateTitle': '啟用帳號',
+  'verify.activateHint': '請輸入你註冊時設定的密碼，完成帳號啟用。',
+  'verify.activateSubmit': '啟用帳號',
+  'auth.errActivationPasswordRequired': '請輸入你註冊時設定的密碼。',
+  'auth.errActivationPasswordMismatch': '密碼與這個啟用連結註冊時設定的不同。如果你沒有註冊過或忘了密碼，請重新註冊以取得新的連結。',
   'verify.title': '信箱驗證',
   'verify.hint': '我們已發送一封帶有驗證碼的信件至你的信箱。請在下方貼上你的驗證 Token。',
   'verify.tokenPlaceholder': '例如：550e8400-e29b-41d4-a716-446655440000',
