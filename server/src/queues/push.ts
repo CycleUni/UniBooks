@@ -71,6 +71,9 @@ function pemToBinary(pem: string): Uint8Array {
   return out;
 }
 
+/** FCM and Google OAuth normally answer within a second or two. */
+const FCM_TIMEOUT_MS = 10_000;
+
 /** OAuth2 access token for FCM, cached in KV for 55 minutes. */
 export async function getFCMAccessToken(env: Env, account = serviceAccount(env)): Promise<string | null> {
   if (!account) return null;
@@ -99,6 +102,7 @@ export async function getFCMAccessToken(env: Env, account = serviceAccount(env))
   const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput));
   const res = await fetch(tokenUri, {
     method: 'POST',
+    signal: AbortSignal.timeout(FCM_TIMEOUT_MS),
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -275,14 +279,31 @@ export async function processPushMessage(msg: PushMessage, env: Env, account: Fi
   const accessToken = await getFCMAccessToken(env, account);
   if (!accessToken) return 0;
 
-  const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
+  return deliver(env, `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, accessToken, devices, push);
+}
+
+/**
+ * Send one rendered push to each device. Devices FCM reports unregistered
+ * are removed. Throws (so the queue retries) only when nothing was
+ * delivered for a reason worth retrying: a retry resends to every device.
+ */
+export async function deliver(
+  env: Env,
+  url: string,
+  accessToken: string,
+  devices: { id: number; token: string }[],
+  push: Pick<RenderedPush, 'title' | 'body' | 'link'>,
+): Promise<number> {
   let sent = 0;
+  let transient = 0;
+  let unauthorized = false;
   const gone: number[] = [];
   await Promise.all(
     devices.map(async (device) => {
       try {
         const res = await fetch(url, {
           method: 'POST',
+          signal: AbortSignal.timeout(FCM_TIMEOUT_MS),
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: {
@@ -298,14 +319,27 @@ export async function processPushMessage(msg: PushMessage, env: Env, account: Fi
         }
         const text = await res.text().catch(() => '');
         if (res.status === 404 && text.includes('UNREGISTERED')) gone.push(device.id);
-        else console.warn(`[PushWorker] FCM rejected a send with HTTP ${res.status}`);
+        else {
+          if (res.status === 401) unauthorized = true;
+          if (res.status === 429 || res.status >= 500) transient++;
+          console.warn(`[PushWorker] FCM rejected a send with HTTP ${res.status}`);
+        }
       } catch (e) {
+        transient++;
         console.error('[PushWorker] FCM send failed', e);
       }
     }),
   );
   if (gone.length) {
     await env.DB.prepare(`DELETE FROM push_devices WHERE id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(gone)).run();
+  }
+  // A rejected access token stays cached for up to 55 minutes; drop it so
+  // the retry mints a fresh one.
+  if (unauthorized && env.KV) await env.KV.delete(FCM_TOKEN_KV_KEY).catch(() => {});
+  // Retried only when nothing was delivered: a retry resends to every
+  // device, and a push already shown should not appear twice.
+  if (sent === 0 && (transient > 0 || unauthorized)) {
+    throw new Error(`FCM delivery failed for every device (${transient} transient, unauthorized: ${unauthorized})`);
   }
   return sent;
 }
