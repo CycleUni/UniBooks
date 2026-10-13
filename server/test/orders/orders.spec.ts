@@ -365,6 +365,80 @@ describe.skipIf(!schemaReady)('cron jobs', () => {
   });
 });
 
+describe.skipIf(!schemaReady)('taking a listing down settles its open orders', () => {
+  const raw = (path: string, token: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    headers.set('X-Region', 'TW');
+    if (init.body) headers.set('Content-Type', 'application/json');
+    const worker = (exports as unknown as { default: { fetch(r: Request): Promise<Response> } }).default;
+    return worker.fetch(new Request(`http://x${path}`, { ...init, headers }));
+  };
+  const orderStatus = async (id: string) => (await db.select({ s: orders.status }).from(orders).where(eq(orders.id, id)))[0]?.s;
+
+  async function acceptedOrder() {
+    const seller = await makeUser('seller');
+    const buyer = await makeUser('buyer');
+    const l = await makeListing(seller.id);
+    await chat(l.id, buyer.id, seller.id);
+    const created = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
+    expect((await patch(`${created.id}/`, seller.token, { status: 'accepted' })).status).toBe(200);
+    expect(await listingStatus(l.id)).toBe('reserved');
+    return { seller, buyer, listing: l, orderId: created.id };
+  }
+
+  async function admin() {
+    const a = await makeUser('admin');
+    await db.update(users).set({ role: 'admin' }).where(eq(users.id, a.id));
+    return a;
+  }
+
+  it('admin status change: removed needs a reason and cancels the order; reserved and sold are refused', async () => {
+    const { listing, orderId } = await acceptedOrder();
+    const staff = await admin();
+    const set = (body: unknown) =>
+      raw(`/api/v1/admin/listings/${listing.id}/`, staff.token, { method: 'PATCH', body: JSON.stringify(body) });
+
+    expect((await set({ status: 'sold' })).status).toBe(400);
+    expect((await set({ status: 'active' })).status).toBe(409);
+    const noReason = await set({ status: 'removed' });
+    expect(noReason.status).toBe(400);
+    expect(await orderStatus(orderId)).toBe('accepted');
+
+    expect((await set({ status: 'removed', reason: 'counterfeit copy' })).status).toBe(200);
+    expect(await orderStatus(orderId)).toBe('cancelled');
+    expect(await listingStatus(listing.id)).toBe('removed');
+  });
+
+  it('an actioned report cancels the open order before the takedown', async () => {
+    const { listing, orderId } = await acceptedOrder();
+    const reporter = await makeUser('reporter');
+    const staff = await admin();
+    const filed = await raw('/api/v1/moderation/', reporter.token, {
+      method: 'POST',
+      body: JSON.stringify({ listing: listing.id, reason: 'scam' }),
+    });
+    expect(filed.status).toBe(201);
+    const { id } = (await filed.json()) as { id: string };
+    const acted = await raw(`/api/v1/moderation/${id}/`, staff.token, { method: 'PATCH', body: JSON.stringify({ status: 'actioned' }) });
+    expect(acted.status).toBe(200);
+    expect(await orderStatus(orderId)).toBe('cancelled');
+    expect(await listingStatus(listing.id)).toBe('removed');
+  });
+
+  it("deleting an account cancels that user's open orders, as buyer and as seller", async () => {
+    const a = await acceptedOrder();
+    expect((await raw('/api/v1/auth/me/', a.buyer.token, { method: 'DELETE' })).status).toBe(204);
+    expect(await orderStatus(a.orderId)).toBe('cancelled');
+    expect(await listingStatus(a.listing.id)).toBe('active');
+
+    const b = await acceptedOrder();
+    expect((await raw('/api/v1/auth/me/', b.seller.token, { method: 'DELETE' })).status).toBe(204);
+    expect(await orderStatus(b.orderId)).toBe('cancelled');
+    expect(await listingStatus(b.listing.id)).toBe('removed');
+  });
+});
+
 describe('orders schema gate', () => {
   it('reports whether integration tests ran', () => {
     if (!schemaReady) console.warn('[test/orders] integration tests skipped: migration lacks orders columns');

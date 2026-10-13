@@ -8,6 +8,7 @@ import { localizedName, type Row } from './regionData';
 import { cancelEmailChangeStatement } from './oneTimeTokens';
 import { revokeAllTokensForUser } from './tokens';
 import { newHexId } from '../../lib/uuid';
+import { cancelOpenOrdersForUser } from '../orders/cancel';
 
 /** "First Last" when either part is Latin, else "LastFirst". */
 export function displayName(firstName: string | null | undefined, lastName: string | null | undefined): string {
@@ -178,6 +179,9 @@ export function nameColumns(firstName: string, lastName: string) {
  * delete would take the other party's history with it.
  */
 export async function deleteAccount(env: Env, userId: string): Promise<void> {
+  // First, through each order's lock: the other party is told and any
+  // reservation released, rather than an open order left on a gone listing.
+  await cancelOpenOrdersForUser(env, userId);
   const now = new Date().toISOString();
   const hex = newHexId();
   const stmts = [

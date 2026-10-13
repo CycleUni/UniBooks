@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import type { Env } from '../../env';
 import { apiError } from '../../lib/http';
@@ -12,7 +12,8 @@ import { deliverNotices } from './notify';
  * when a listing is removed: status -> cancelled, the
  * listing's reservation released, a system notice posted to each order's
  * conversation once the cancel has committed. Shared by the listings module
- * (seller delete) and the admin module (platform delete).
+ * (seller delete), moderation (an actioned report) and the admin module
+ * (platform delete or a status change to removed).
  *
  * Call it BEFORE deleting the listing (the order keeps its snapshot; its
  * listing_id goes NULL with the delete). Returns how many orders it cancelled.
@@ -43,6 +44,35 @@ export async function cancelOpenOrdersForListing(
       cancelReason: admin ? `admin_override: ${note}` : 'seller_cancelled',
       noticeKey: admin ? 'order.notify.admin_cancelled' : 'order.notify.cancelled_by_seller',
       audit: admin ? { reason: note } : undefined,
+    });
+    if (res.ok) {
+      cancelled++;
+      await deliverNotices(env, res.order, res.notices);
+    }
+  }
+  return cancelled;
+}
+
+/**
+ * Cancel every open order a user takes part in, when their account is
+ * deleted: as seller (their listings go too) and as buyer. Each goes through
+ * its order lock with the usual chat notice, so the other party is told and
+ * any reservation is released. Returns how many orders it cancelled.
+ */
+export async function cancelOpenOrdersForUser(env: Env, userId: string): Promise<number> {
+  const db = createDb(env.DB);
+  const open = await db
+    .select({ id: orders.id, listingId: orders.listingId, sellerId: orders.sellerId })
+    .from(orders)
+    .where(and(or(eq(orders.sellerId, userId), eq(orders.buyerId, userId)), inArray(orders.status, [...ACTIVE_ORDER_STATUSES])));
+  let cancelled = 0;
+  for (const o of open) {
+    const asSeller = o.sellerId === userId;
+    const res = await orderLock(env, lockKeyFor(o)).platformCancel({
+      orderId: o.id,
+      actorId: userId,
+      cancelReason: asSeller ? 'seller_cancelled' : 'buyer_cancelled',
+      noticeKey: asSeller ? 'order.notify.cancelled_by_seller' : 'order.notify.cancelled_by_buyer',
     });
     if (res.ok) {
       cancelled++;

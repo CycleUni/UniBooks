@@ -141,7 +141,8 @@ listingRoutes.get('/listings/:id/', async (c) => {
 
 listingRoutes.patch('/listings/:id/', async (c) => {
   const data = await readJson(c.req);
-  const allowed = new Set(['status', 'admin_locked', 'admin_lock_reason']);
+  // `reason`: required when the status change cancels open orders (as for the delete).
+  const allowed = new Set(['status', 'admin_locked', 'admin_lock_reason', 'reason']);
   if (Object.keys(data).some((k) => !allowed.has(k))) apiError(400, 'admin.errForbiddenField');
   if (!('status' in data) && !('admin_locked' in data)) apiError(400, 'admin.errInvalidField');
 
@@ -158,6 +159,26 @@ listingRoutes.patch('/listings/:id/', async (c) => {
     const s = data.status;
     if (typeof s !== 'string' || !(LISTING_STATUSES as readonly string[]).includes(s)) apiError(400, 'admin.errInvalidStatus');
     if (s !== l.status) {
+      // reserved and sold belong to the order flow: staff can take a
+      // listing down or put an unreserved one back, never fake a sale or a
+      // reservation, nor reopen a sold book for a second sale.
+      if (s === 'reserved' || s === 'sold' || (l.status === 'sold' && s !== 'removed')) apiError(400, 'admin.errInvalidStatus');
+      const [{ n: openOrders }] = await db
+        .select({ n: count() })
+        .from(orders)
+        .where(and(eq(orders.listingId, l.id), inArray(orders.status, [...ACTIVE_ORDER_STATUSES])));
+      if (openOrders && s !== 'removed') apiError(409, 'listing.errHasActiveOrders');
+      if (openOrders) {
+        // Same as the admin delete: a written reason, and the open orders
+        // cancelled (each with a notice) before the listing goes.
+        const reason = String(data.reason ?? data.admin_lock_reason ?? '').trim();
+        if (reason.length < PLATFORM_CANCEL_REASON_MIN_LENGTH) {
+          throw new HTTPException(400, {
+            res: Response.json({ error: { code: 'admin.errInvalidReason' }, open_orders: openOrders }, { status: 400 }),
+          });
+        }
+        await cancelOpenOrdersForListing(c.env, { listingId: l.id, actorId: me.id, reason: 'admin_removed', note: reason });
+      }
       newStatus = s as (typeof LISTING_STATUSES)[number];
       set.status = newStatus;
       statusChanged = true;
@@ -190,7 +211,7 @@ listingRoutes.patch('/listings/:id/', async (c) => {
   if (newLocked !== !!l.adminLocked) {
     set.adminLocked = newLocked ? 1 : 0;
     if (newLocked) {
-      set.adminLockReason = String(data.admin_lock_reason ?? '').slice(0, 255);
+      set.adminLockReason = String(data.admin_lock_reason ?? data.reason ?? '').slice(0, 255);
       set.lockedById = me.id;
       set.lockedAt = new Date().toISOString();
     } else {

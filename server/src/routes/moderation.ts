@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { cancelOpenOrdersForListing } from '../services/orders/cancel';
 import { authMiddleware, requireStaff } from '../middleware/auth';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../lib/http';
 import { requireRegion, isVerifiedIn } from '../lib/region';
@@ -377,14 +378,29 @@ moderationRoutes.patch('/:id/', requireStaff(), async (c) => {
   if (!report) notFound();
   const status = nextStatus(await readJson(c.req), report.status);
 
+  // Claim the report first, so two staff cannot action it twice.
   const res = await c.env.DB.prepare("UPDATE reports SET status = ? WHERE id = ? AND status = 'open'").bind(status, id).run();
   if (!res.meta.changes) fieldErrors({ status: ['admin.errReportAlreadyResolved'] });
+  const reopen = () => c.env.DB.prepare('UPDATE reports SET status = ? WHERE id = ?').bind('open', id).run();
 
   const now = new Date().toISOString();
   const stmts = [];
   // Actioned takes the listing down, locked like an admin removal so the
-  // seller cannot PATCH it back to active. Nothing to do if it is gone.
+  // seller cannot PATCH it back to active. Its open orders are cancelled
+  // first, each with a notice, so no buyer is left arranging a meetup on a
+  // listing taken down as a scam. Nothing to do if the listing is gone.
   if (status === 'actioned' && report.listing_id) {
+    try {
+      await cancelOpenOrdersForListing(c.env, {
+        listingId: report.listing_id,
+        actorId: user.id,
+        reason: 'admin_removed',
+        note: `report: ${report.reason}`,
+      });
+    } catch (e) {
+      await reopen().catch(() => undefined);
+      throw e;
+    }
     stmts.push(
       c.env.DB.prepare(
         `UPDATE listings SET status = 'removed', admin_locked = 1, admin_lock_reason = ?, locked_by_id = ?, locked_at = ?, updated_at = ?
@@ -399,7 +415,13 @@ moderationRoutes.patch('/:id/', requireStaff(), async (c) => {
       listing_id: status === 'actioned' ? report.listing_id : null,
     }),
   );
-  await c.env.DB.batch(stmts);
+  try {
+    await c.env.DB.batch(stmts);
+  } catch (e) {
+    // The takedown did not happen: give the report back so it can be actioned again.
+    await reopen().catch(() => undefined);
+    throw e;
+  }
 
   const fresh = await c.env.DB.prepare(`${REPORT_SELECT} WHERE r.id = ?`).bind(id).first<ReportRow>();
   return c.json(serializeReport(fresh!));

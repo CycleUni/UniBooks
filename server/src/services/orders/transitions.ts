@@ -221,7 +221,9 @@ export async function applyOrderUpdate(
       listingUpdate = db
         .update(listings)
         .set({ status: 'sold' })
-        .where(and(eq(listings.id, order.listingId), thisWrite));
+        // Only the reservation this order holds becomes a sale: a listing
+        // taken down meanwhile stays removed.
+        .where(and(eq(listings.id, order.listingId), eq(listings.status, 'reserved'), thisWrite));
     }
   }
 

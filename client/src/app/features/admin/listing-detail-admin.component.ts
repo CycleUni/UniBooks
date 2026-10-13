@@ -105,13 +105,15 @@ export class AdminListingDetailComponent implements OnInit {
     this.status = status;
   }
 
+  /** Reserved and sold come from the order flow only; staff can take a
+   *  listing down or put an unsold one back (the server enforces the same). */
   get statusOptions() {
-    return [
-      { value: 'active', label: this.i18n.t('admin.listingStatus.active') },
-      { value: 'reserved', label: this.i18n.t('admin.listingStatus.reserved') },
-      { value: 'sold', label: this.i18n.t('admin.listingStatus.sold') },
-      { value: 'removed', label: this.i18n.t('admin.listingStatus.removed') },
-    ];
+    const current = this.listing?.status ?? this.status;
+    const values = new Set<string>([current, 'removed']);
+    if (current !== 'sold') values.add('active');
+    return ['active', 'reserved', 'sold', 'removed']
+      .filter((v) => values.has(v))
+      .map((v) => ({ value: v, label: this.i18n.t(`admin.listingStatus.${v}`) }));
   }
 
   ngOnInit() {
