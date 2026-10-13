@@ -13,6 +13,9 @@ import type { EmailMessage, PushMessage } from '../queues/types';
 // while its user is away.
 const EMAIL_NOTIFIED_KEY = 'emailNotifiedRooms';
 
+/** Retired per-room read times; deleted on the next mark-read. */
+const LEGACY_LAST_READ_KEY = 'lastReadAt';
+
 // Body of a /push call from ChatRoom.
 export interface PushPayload {
   room_id: string;
@@ -82,8 +85,7 @@ export class UserHub extends DurableObject<Env> {
       // Send a snapshot right after accept so the client can resync the badge
       // without waiting for the next room_update
       const unread = (await this.ctx.storage.get<string[]>('unread')) || [];
-      const lastReadAt = (await this.ctx.storage.get<Record<string, number>>('lastReadAt')) || {};
-      server.send(JSON.stringify({ type: 'snapshot', unread, lastReadAt, count: unread.length }));
+      server.send(JSON.stringify({ type: 'snapshot', unread, count: unread.length }));
 
       return new Response(null, { status: 101, webSocket: client, headers: responseHeaders });
     }
@@ -110,9 +112,8 @@ export class UserHub extends DurableObject<Env> {
     // Reconnect-time sync snapshot
     if (request.method === 'GET' && url.pathname.endsWith('/snapshot')) {
       const unread = (await this.ctx.storage.get<string[]>('unread')) || [];
-      const lastReadAt = (await this.ctx.storage.get<Record<string, number>>('lastReadAt')) || {};
       await this.ctx.storage.put('count', unread.length);
-      return Response.json({ unread, lastReadAt, count: unread.length });
+      return Response.json({ unread, count: unread.length });
     }
 
     // Mark a single room read for this user. POST body: { room_id }
@@ -147,20 +148,12 @@ export class UserHub extends DurableObject<Env> {
   private async markRead(roomId: string): Promise<void> {
     await this.clearEmailNotified(roomId);
 
+    // Only the unread set is kept: a per-room read time grew with every room
+    // ever opened and no client read it. Older hubs drop theirs here.
+    if ((await this.ctx.storage.get(LEGACY_LAST_READ_KEY)) !== undefined) await this.ctx.storage.delete(LEGACY_LAST_READ_KEY);
     const unread = new Set((await this.ctx.storage.get<string[]>('unread')) || []);
-    if (!unread.delete(roomId)) {
-      await this.ctx.storage.put('lastReadAt', {
-        ...((await this.ctx.storage.get<Record<string, number>>('lastReadAt')) || {}),
-        [roomId]: Date.now(),
-      });
-      return;
-    }
-    const lastReadAt = {
-      ...((await this.ctx.storage.get<Record<string, number>>('lastReadAt')) || {}),
-      [roomId]: Date.now(),
-    };
+    if (!unread.delete(roomId)) return;
     await this.ctx.storage.put('unread', [...unread]);
-    await this.ctx.storage.put('lastReadAt', lastReadAt);
     await this.ctx.storage.put('count', unread.size);
     const msg = JSON.stringify({ type: 'unread_count', count: unread.size, unread: [...unread] });
     for (const ws of this.liveSockets()) {

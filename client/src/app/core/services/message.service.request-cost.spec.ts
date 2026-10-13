@@ -61,7 +61,7 @@ describe('MessageService request cost', () => {
 
     it('takes the unread snapshot from the socket instead of fetching it', () => {
       latest().onopen?.();
-      latest().onmessage?.({ data: JSON.stringify({ type: 'snapshot', unread: ['r1', 'r2'], lastReadAt: {}, count: 2 }) });
+      latest().onmessage?.({ data: JSON.stringify({ type: 'snapshot', unread: ['r1', 'r2'], count: 2 }) });
 
       expect(http.get).not.toHaveBeenCalled();
       expect(service.unreadCount$.value).toBe(2);

@@ -37,7 +37,7 @@ describe('MessageService hub reconnect', () => {
       get: vi.fn((url: string) =>
         url.includes('/messaging/hub-token/')
           ? of({ token: 'fresh-token' })
-          : of({ unread: [], lastReadAt: {}, count: 0 })
+          : of({ unread: [], count: 0 })
       ),
       post: vi.fn(() => of(undefined)),
     };
@@ -77,7 +77,7 @@ describe('MessageService hub reconnect', () => {
     http.get.mockImplementation((url: string) =>
       url.includes('/messaging/hub-token/')
         ? throwError(() => new HttpErrorResponse({ status: 0, statusText: 'Unknown Error' }))
-        : of({ unread: [], lastReadAt: {}, count: 0 })
+        : of({ unread: [], count: 0 })
     );
 
     dropTheConnection();
@@ -88,7 +88,7 @@ describe('MessageService hub reconnect', () => {
 
   const tokenResponse = (respond: (url: string) => unknown) =>
     http.get.mockImplementation((url: string) =>
-      url.includes('/messaging/hub-token/') ? respond(url) : of({ unread: [], lastReadAt: {}, count: 0 })
+      url.includes('/messaging/hub-token/') ? respond(url) : of({ unread: [], count: 0 })
     );
 
   it.each([401, 403])('stops reconnecting once the session is gone (hub-token %i)', (status) => {

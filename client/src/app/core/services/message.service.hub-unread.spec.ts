@@ -25,7 +25,7 @@ describe('MessageService hub room_update unread state', () => {
     TestBed.configureTestingModule({
       providers: [
         MessageService,
-        { provide: HttpClient, useValue: { get: vi.fn(() => of({ unread: [], lastReadAt: {}, count: 0 })), post: vi.fn() } },
+        { provide: HttpClient, useValue: { get: vi.fn(() => of({ unread: [], count: 0 })), post: vi.fn() } },
       ],
     });
     service = TestBed.inject(MessageService);
