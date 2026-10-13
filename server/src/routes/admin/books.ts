@@ -251,6 +251,8 @@ bookRoutes.patch('/books/:id/', async (c) => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) invalidField();
   const data = raw as Record<string, unknown>;
   const updates = parseUpdates(data);
+  // A book awaiting review leaves 'manual' only through confirm-manual, never by relabelling its source.
+  if (book.source === 'manual' && book.reviewedAt === null && updates.source !== undefined && updates.source !== 'manual') invalidField();
   const isbn = updates.isbn13;
   const merge = data.merge === true;
   const me = c.get('user')!;

@@ -186,3 +186,36 @@ describe('bulk import validation', () => {
     expect(await (await bulk('categories', many)).json()).toMatchObject({ error: { code: 'admin.errTooManyItems' } });
   });
 });
+
+describe('book source while pending review', () => {
+  const seedBook = async (reviewed: boolean) => {
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO books (id, region_code, title, source, reviewed_at, created_at) VALUES (?, 'TW', 'Pending Book', 'manual', ?, ?)",
+    )
+      .bind(id, reviewed ? new Date().toISOString() : null, new Date().toISOString())
+      .run();
+    return id;
+  };
+
+  it('refuses to move a pending book off manual; confirm-manual still works', async () => {
+    const id = await seedBook(false);
+    const res = await call(`/api/v1/admin/books/${id}/`, { token: root.token, method: 'PATCH', body: { source: 'google_api' } });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: { code: 'admin.errInvalidField' } });
+    // Same value and other fields stay editable.
+    const ok = await call(`/api/v1/admin/books/${id}/`, {
+      token: root.token,
+      method: 'PATCH',
+      body: { source: 'manual', title: 'Renamed' },
+    });
+    expect(ok.status).toBe(200);
+    expect((await call(`/api/v1/admin/books/${id}/confirm-manual/`, { token: root.token, body: {} })).status).toBe(200);
+  });
+
+  it('lets a confirmed book change source', async () => {
+    const id = await seedBook(true);
+    const res = await call(`/api/v1/admin/books/${id}/`, { token: root.token, method: 'PATCH', body: { source: 'google_api' } });
+    expect(res.status).toBe(200);
+  });
+});
