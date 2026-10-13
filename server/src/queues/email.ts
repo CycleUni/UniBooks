@@ -287,6 +287,7 @@ async function sendViaMailjet(env: Env, email: RenderedEmail): Promise<void> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(MAILJET_TIMEOUT_MS),
   });
   if (!response.ok) {
     // Status only: the body may echo the address (PII).
@@ -306,10 +307,42 @@ export async function processEmailMessage(msg: EmailMessage, env: Env): Promise<
   await sendViaMailjet(env, email);
 }
 
+/** Mailjet normally answers in well under a second; past this the send is retried. */
+const MAILJET_TIMEOUT_MS = 10_000;
+
+/**
+ * Queue delivery is at-least-once: a message whose send succeeded can still
+ * come back (the consumer stopped before acking). Its id is recorded once
+ * sent, and a redelivery with a recorded id is acked without sending again.
+ */
+const SENT_KEY = (id: string) => `email:sent:${id}`;
+const SENT_TTL_SECONDS = 24 * 60 * 60;
+
+async function alreadySent(env: Env, id: string): Promise<boolean> {
+  try {
+    return (await env.KV.get(SENT_KEY(id))) !== null;
+  } catch {
+    return false; // Bookkeeping only: a KV failure never blocks a send.
+  }
+}
+
+async function markSent(env: Env, id: string): Promise<void> {
+  try {
+    await env.KV.put(SENT_KEY(id), '1', { expirationTtl: SENT_TTL_SECONDS });
+  } catch (e) {
+    console.warn('[email] could not record a sent message', e);
+  }
+}
+
 export async function handleEmailQueue(batch: MessageBatch<EmailMessage>, env: Env): Promise<void> {
   for (const message of batch.messages) {
     try {
+      if (message.attempts > 1 && (await alreadySent(env, message.id))) {
+        message.ack();
+        continue;
+      }
       await processEmailMessage(message.body, env);
+      await markSent(env, message.id);
       message.ack();
     } catch (error) {
       // Neither the payload (tokens, message text) nor the address is logged.
