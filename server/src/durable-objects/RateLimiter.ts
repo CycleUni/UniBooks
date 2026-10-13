@@ -22,6 +22,16 @@ export class RateLimiter extends DurableObject {
     return { allowed: true, retryAfter: 0 };
   }
 
+  /** Whether the key is at its limit, without counting this call (retryAfter, or 0 when not limited). */
+  async peek(limit: number, windowSeconds: number): Promise<number> {
+    const now = Date.now();
+    const windowMs = windowSeconds * 1000;
+    const windowStart = now - (now % windowMs);
+    const stored = await this.ctx.storage.get<{ start: number; count: number }>('w');
+    if (!stored || stored.start !== windowStart || stored.count < limit) return 0;
+    return Math.ceil((windowStart + windowMs - now) / 1000);
+  }
+
   async alarm() {
     await this.ctx.storage.deleteAll();
   }

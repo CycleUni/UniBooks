@@ -6,7 +6,7 @@ import type { AppEnv } from '../env';
 import { apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { getRegion, isVerifiedIn } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
-import { checkRate, rateLimit } from '../middleware/rateLimit';
+import { outcomeLimit, rateLimit, takeRate } from '../middleware/rateLimit';
 import { InvalidTokenError, verifyToken } from '../lib/jwt';
 import { books, createDb, listings, type Listing, type User } from '../db';
 import { serializeListings } from '../services/listings/serialize';
@@ -37,6 +37,7 @@ type C = Context<AppEnv>;
 // Rate limits per scope.
 const RATES = {
   login: '5/min',
+  loginAccountFailures: '20/hour',
   register: '10/hour',
   verifyRequest: '3/hour',
   refresh: '10/min',
@@ -379,12 +380,18 @@ accountRoutes.post('/token/', rateLimit('login', RATES.login), async (c) => {
     apiError(400, 'auth.errValidation');
   }
   // Per account too, not only per IP: a password guessed from many IPs.
-  await checkRate(c, 'login_account', '20/hour', email.trim().toLowerCase());
+  // Only wrong passwords count, so the owner's own sign-ins never use it up.
+  const failures = outcomeLimit(c, 'login_account_failures', RATES.loginAccountFailures, email.trim().toLowerCase());
+  await failures.assertUnder();
+  const invalid = async (): Promise<never> => {
+    await failures.count();
+    apiError(401, 'auth.errInvalidCredentials');
+  };
   const user = await getUserByEmail(c.env, email);
   if (!user) {
     // Same bcrypt cost as a real account, so timing does not reveal which addresses exist.
     await dummyPasswordCheck(password);
-    apiError(401, 'auth.errInvalidCredentials');
+    return invalid();
   }
   if (!user.passwordHash && (await ott.isPendingRegistration(c.env, user))) {
     // Registered, not yet activated: the password lives on the mailed link.
@@ -393,9 +400,9 @@ accountRoutes.post('/token/', rateLimit('login', RATES.login), async (c) => {
     for (const hash of await ott.pendingRegistrationHashes(c.env, user.id)) {
       if (await checkPassword(password, hash)) apiError(403, 'auth.errAccountDisabled');
     }
-    apiError(401, 'auth.errInvalidCredentials');
+    return invalid();
   }
-  if (!(await checkPassword(password, user.passwordHash))) apiError(401, 'auth.errInvalidCredentials');
+  if (!(await checkPassword(password, user.passwordHash))) return invalid();
   if (accountDisabled(user)) apiError(403, 'auth.errAccountDisabled');
 
   setSession(c, await issueTokens(c.env, user.id));
@@ -593,8 +600,12 @@ accountRoutes.post('/password/reset/request/', rateLimit('password-reset-request
   const sent = { code: 'acct.passwordResetSent' };
   // Per address as well as per caller, so one mailbox cannot be flooded
   // from many addresses. Checked for every address, known or not, so the
-  // limit says nothing about which ones exist.
-  await checkRate(c, 'password-reset-request-email', RATES.passwordResetRequest, `email:${email.toLowerCase()}`);
+  // limit says nothing about which ones exist. Over the limit, the request
+  // gets the usual answer and no email: a stranger hammering someone's
+  // address never shows that person an error.
+  if (!(await takeRate(c, 'password-reset-request-email', RATES.passwordResetRequest, `email:${email.toLowerCase()}`))) {
+    return c.json(sent);
+  }
 
   const user = await getUserByEmail(c.env, email);
   // The same answer whatever happens: no way to probe which addresses exist.
