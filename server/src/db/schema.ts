@@ -419,7 +419,8 @@ export const listings = sqliteTable(
     index('listings_region_status_course_idx').on(table.regionCode, table.status, table.courseName),
     index('listings_region_status_id_idx').on(table.regionCode, table.status, table.id),
     index('listings_seller_id_idx').on(table.sellerId),
-    index('listings_book_id_idx').on(table.bookId),
+    // Book pages and the waitlist job: a book's listings by status and age.
+    index('listings_book_status_created_idx').on(table.bookId, table.status, table.createdAt),
   ],
 );
 

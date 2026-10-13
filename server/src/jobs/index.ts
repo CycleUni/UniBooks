@@ -52,33 +52,47 @@ export async function runWaitlistNotify(env: Env) {
   const now = new Date().toISOString();
 
   // Due: the book has an active listing created after the subscription
-  // started, and after the last time it was notified (or never).
-  const latestActive = sql<
-    string | null
-  >`(SELECT MAX(l.created_at) FROM listings l WHERE l.book_id = ${subscriptions.bookId} AND l.status = 'active')`;
-  const due = await db
-    .select({
-      id: subscriptions.id,
-      userId: subscriptions.userId,
-      regionCode: subscriptions.regionCode,
-      email: users.email,
-      title: books.title,
-      isbn13: books.isbn13,
-    })
+  // started and after the last time it was notified (or never). One EXISTS
+  // probe per subscription, on listings (book_id, status, created_at).
+  const dueWhere = and(
+    sql`EXISTS (SELECT 1 FROM listings l WHERE l.book_id = ${subscriptions.bookId} AND l.status = 'active'
+      AND l.created_at > MAX(${subscriptions.createdAt}, COALESCE(${subscriptions.notifiedAt}, ${subscriptions.createdAt})))`,
+    // Nobody to mail: left due, they would hold batch slots forever.
+    eq(users.isActive, 1),
+    isNull(users.deletedAt),
+    sql`${users.email} <> ''`,
+  );
+
+  // The users to mail this run, longest-waiting first; one more than the
+  // batch, only to tell whether anyone is left for the next run. Only their
+  // subscriptions are read, so a run's cost does not grow with the backlog.
+  const userRows = await db
+    .select({ userId: subscriptions.userId })
     .from(subscriptions)
-    .innerJoin(books, eq(books.id, subscriptions.bookId))
     .innerJoin(users, eq(users.id, subscriptions.userId))
-    .where(
-      and(
-        sql`${latestActive} > ${subscriptions.createdAt}`,
-        sql`(${subscriptions.notifiedAt} IS NULL OR ${latestActive} > ${subscriptions.notifiedAt})`,
-        // Nobody to mail: left due, they would hold batch slots forever.
-        eq(users.isActive, 1),
-        isNull(users.deletedAt),
-        sql`${users.email} <> ''`,
-      ),
-    )
-    .orderBy(asc(subscriptions.createdAt));
+    .where(dueWhere)
+    .groupBy(subscriptions.userId)
+    .orderBy(sql`MIN(${subscriptions.createdAt})`)
+    .limit(MAX_NOTIFY_USERS_PER_RUN + 1);
+  const userIds = userRows.slice(0, MAX_NOTIFY_USERS_PER_RUN).map((r) => r.userId);
+  const moreRemain = userRows.length > MAX_NOTIFY_USERS_PER_RUN;
+
+  const due = userIds.length
+    ? await db
+        .select({
+          id: subscriptions.id,
+          userId: subscriptions.userId,
+          regionCode: subscriptions.regionCode,
+          email: users.email,
+          title: books.title,
+          isbn13: books.isbn13,
+        })
+        .from(subscriptions)
+        .innerJoin(books, eq(books.id, subscriptions.bookId))
+        .innerJoin(users, eq(users.id, subscriptions.userId))
+        .where(and(dueWhere, sql`${subscriptions.userId} IN (SELECT value FROM json_each(${JSON.stringify(userIds)}))`))
+        .orderBy(asc(subscriptions.createdAt))
+    : [];
 
   // One email per user, however many of their books are due.
   const byUser = new Map<string, typeof due>();
@@ -87,8 +101,7 @@ export async function runWaitlistNotify(env: Env) {
     if (list) list.push(s);
     else byUser.set(s.userId, [s]);
   }
-  const batch = [...byUser.values()].slice(0, MAX_NOTIFY_USERS_PER_RUN);
-  const remainingUsers = byUser.size - batch.length;
+  const batch = [...byUser.values()];
 
   let notifiedUsers = 0;
   let notifiedSubscriptions = 0;
@@ -131,7 +144,7 @@ export async function runWaitlistNotify(env: Env) {
     notifiedSubscriptions += subs.length;
   }
 
-  const result = { notified_users: notifiedUsers, notified_subscriptions: notifiedSubscriptions, remaining_users: remainingUsers };
+  const result = { notified_users: notifiedUsers, notified_subscriptions: notifiedSubscriptions, more_remain: moreRemain };
   console.log('[WaitlistNotify]', JSON.stringify(result));
   return result;
 }
