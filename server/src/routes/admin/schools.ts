@@ -166,6 +166,8 @@ async function cityIn(db: Database, regionCode: string, cityCode: string): Promi
 schoolRoutes.post('/schools/', async (c) => {
   const body = validate(schoolCreate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
+  // Scope first: every later check (region, codes, domains) reads other regions' data.
+  assertInScope(await scopeOf(c), body.region);
   if (!(await regionExists(db, body.region))) fieldErrors({ region: [INVALID] });
 
   let code = normalizeCode(body.code);
@@ -179,8 +181,6 @@ schoolRoutes.post('/schools/', async (c) => {
   }
   const [dup] = await db.select({ id: schools.id }).from(schools).where(eq(schools.emailDomain, body.email_domain)).limit(1);
   if (dup) fieldErrors({ email_domain: [INVALID] });
-
-  assertInScope(await scopeOf(c), body.region);
 
   if (!code) code = dedupeCode(deriveCode(body.email_domain), taken);
   const [created] = await db
@@ -245,13 +245,13 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
     cityId: number | null;
   };
   const planned: Planned[] = [];
-  const forbidden: unknown[] = [];
+  const forbidden: { index: number }[] = [];
   const badCodes: string[] = [];
   const clashing: string[] = [];
   const badCities: string[] = [];
   let validCount = 0;
 
-  for (const raw of items) {
+  for (const [index, raw] of items.entries()) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
     const item = raw as Record<string, unknown>;
     const domain = normalizeEmailDomain(item.email_domain) ?? '';
@@ -261,7 +261,8 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
     const targetRegion = item.region ? String(item.region) : currentRegion;
     const existing = existingByDomain.get(domain);
     if (targetRegion !== currentRegion || (existing && existing.regionCode !== currentRegion)) {
-      forbidden.push(item);
+      // By position only: naming the domain would say whether it exists in a region the caller may not manage.
+      forbidden.push({ index });
       continue;
     }
     const cityGiven = 'city' in item;
@@ -415,6 +416,8 @@ schoolRoutes.patch('/schools/:id/', async (c) => {
   const body = validate(schoolUpdate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
   const region = body.region ?? instance.regionCode;
+  // perform_update: the school's (new or current) region must be managed, checked before any lookup.
+  assertInScope(await scopeOf(c), region);
   if (body.region !== undefined && !(await regionExists(db, body.region))) fieldErrors({ region: [INVALID] });
 
   const set: Partial<School> = {};
@@ -450,9 +453,6 @@ schoolRoutes.patch('/schools/:id/', async (c) => {
   if (body.name !== undefined) set.name = body.name;
   if (body.translations !== undefined) set.translations = JSON.stringify(body.translations);
   if (body.region !== undefined) set.regionCode = body.region;
-
-  // perform_update: the school's (new or current) region must be managed.
-  assertInScope(await scopeOf(c), region);
 
   if (Object.keys(set).length) {
     await db.batch([

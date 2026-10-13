@@ -3,10 +3,12 @@ import { env } from 'cloudflare:workers';
 import { call, seedReference, staff } from '../ads/helpers';
 
 let root: { id: string; token: string };
+let twManager: { id: string; token: string };
 
 beforeAll(async () => {
   await seedReference();
   root = await staff('ref-root@example.com', { superuser: true });
+  twManager = await staff('ref-tw@example.com', { regions: ['TW'] });
 });
 
 /** The audit rows of one kind (newest last), details parsed. */
@@ -90,5 +92,40 @@ describe('reference-data writes leave an audit trail', () => {
     await call('/api/v1/admin/regions/JP/', { token: root.token, method: 'PATCH', body: { name: 'Nippon' } });
     const [ru] = await audits('admin.region_updated', 'JP');
     expect(ru.meta.changes).toEqual({ name: { before: 'Japan', after: 'Nippon' } });
+  });
+});
+
+describe('scope is checked before anything reveals another region', () => {
+  it('create answers 403 for a region the staff do not manage, whatever already exists there', async () => {
+    // hku.hk exists in HK: a uniqueness check first would answer 400 instead.
+    const school = await call('/api/v1/admin/schools/', {
+      token: twManager.token,
+      body: { name: 'Probe', email_domain: 'hku.hk', region: 'HK' },
+    });
+    expect(school.status).toBe(403);
+
+    await call('/api/v1/admin/categories/', { token: root.token, body: { slug: 'hk-only', title: 'HK', region: 'HK' } });
+    const cat = await call('/api/v1/admin/categories/', {
+      token: twManager.token,
+      body: { slug: 'hk-only', title: 'Probe', region: 'HK' },
+    });
+    expect(cat.status).toBe(403);
+  });
+
+  it('bulk reports out-of-scope items by index, not by name', async () => {
+    const res = await call('/api/v1/admin/schools/bulk/?region=TW', {
+      token: twManager.token,
+      body: {
+        action: 'preview',
+        items: [
+          { email_domain: 'hku.hk', name: 'Exists elsewhere' },
+          { email_domain: 'fresh-scope.edu.tw', name: 'Fresh' },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { forbidden: unknown[]; new: unknown[] };
+    expect(body.forbidden).toEqual([{ index: 0 }]);
+    expect(body.new).toHaveLength(1);
   });
 });

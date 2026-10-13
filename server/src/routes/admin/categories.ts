@@ -75,9 +75,10 @@ categoryRoutes.get('/categories/', async (c) => {
 categoryRoutes.post('/categories/', async (c) => {
   const body = validate(categoryCreate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
+  // Scope first, so the region and slug checks tell staff nothing about regions they do not manage.
+  assertInScope(await scopeOf(c), body.region);
   if (!(await regionExists(db, body.region))) fieldErrors({ region: [INVALID] });
   if (await slugTaken(db, body.slug, body.region)) fieldErrors({ non_field_errors: [INVALID] });
-  assertInScope(await scopeOf(c), body.region);
   const [row] = await db
     .insert(categories)
     .values({
@@ -125,13 +126,13 @@ categoryRoutes.post('/categories/bulk/', async (c) => {
   const newItems: unknown[] = [];
   const modified: unknown[] = [];
   const unchanged: unknown[] = [];
-  const forbidden: unknown[] = [];
+  const forbidden: { index: number }[] = [];
   const writes: Parameters<Database['batch']>[0][number][] = [];
   const created: string[] = [];
   const modifiedChanges: { category_id: number; slug: string; changes: Record<string, { before: unknown; after: unknown }> }[] = [];
   let validCount = 0;
 
-  for (const raw of items) {
+  for (const [index, raw] of items.entries()) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
     const item = raw as Record<string, unknown>;
     const slug = item.slug;
@@ -141,7 +142,8 @@ categoryRoutes.post('/categories/bulk/', async (c) => {
     const targetRegion = item.region ? String(item.region) : currentRegion;
     const existing = existingHere.get(slug);
     if (targetRegion !== currentRegion || (slugsElsewhere.has(slug) && !existing)) {
-      forbidden.push(item);
+      // By position only: naming the slug would say whether it exists in a region the caller may not manage.
+      forbidden.push({ index });
       continue;
     }
 
@@ -262,12 +264,12 @@ categoryRoutes.patch('/categories/:id/', async (c) => {
   const body = validate(categoryUpdate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
   const region = body.region ?? instance.regionCode;
+  assertInScope(await scopeOf(c), region);
   if (body.region !== undefined && !(await regionExists(db, body.region))) fieldErrors({ region: [INVALID] });
   const slug = body.slug ?? instance.slug;
   if ((body.slug !== undefined || body.region !== undefined) && (await slugTaken(db, slug, region, instance.id))) {
     fieldErrors({ non_field_errors: [INVALID] });
   }
-  assertInScope(await scopeOf(c), region);
 
   const set: Partial<Category> = {};
   if (body.slug !== undefined) set.slug = body.slug;
