@@ -3,6 +3,7 @@
  */
 import { Hono } from 'hono';
 import { cached } from '../lib/cache';
+import { validateBookIsbn } from '../services/catalog/isbn';
 import type { AppEnv, Env } from '../env';
 import { requireRegion } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
@@ -141,7 +142,10 @@ searchRoutes.get('/books/', optionalAuthMiddleware(), async (c) => {
   let results: Item[] = [];
   const browseBranch = !!category || (!query && (!!course || listingFiltered));
   const queryStripped = query.trim();
-  const isIsbn = /^\d+$/.test(queryStripped) && (queryStripped.length === 10 || queryStripped.length === 13);
+  // A real ISBN (check digit and, for 13 digits, the Bookland prefix): a
+  // random 10/13-digit number is searched as text, not run through every
+  // ISBN source.
+  const isIsbn = /^\d+$/.test(queryStripped) && validateBookIsbn(queryStripped) !== null;
 
   if (browseBranch) {
     const browse = async (place: Frag) => {

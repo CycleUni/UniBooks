@@ -73,6 +73,18 @@ async function markGoogleRateLimited(env: Env): Promise<void> {
   await cacheSet(env, GOOGLE_RATE_LIMIT_KEY, String(Date.now() + GOOGLE_RATE_LIMIT_TTL_MS), 60);
 }
 
+/**
+ * Google answers 429 when throttled and 403 once the daily quota is spent:
+ * both mean "stop asking for a while", or every later search keeps paying a
+ * round trip that cannot succeed.
+ */
+const googleThrottled = (res: Response) => res.status === 429 || res.status === 403;
+
+/** One cache entry (and one upstream call) per query, whatever its case and spacing. */
+export function normalizeQuery(query: string): string {
+  return query.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 async function sha1(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -142,7 +154,7 @@ function googleCover(info: GoogleVolumeInfo): string {
 /** A plain search for `isbn` whose volume carries that exact ISBN (Google's isbn: operator misses some). */
 async function googleVolumeWithIsbn(env: Env, isbn: string): Promise<GoogleVolumeInfo | null> {
   const res = await googleFetch(env, isbn, { maxResults: '40' });
-  if (res.status === 429) {
+  if (googleThrottled(res)) {
     await markGoogleRateLimited(env);
     throw new GoogleBooksRateLimited(`429 for plain isbn=${isbn}`);
   }
@@ -168,7 +180,7 @@ export async function getGoogleBooksByIsbn(env: Env, isbn: string, meta?: Lookup
   }
   try {
     const res = await googleFetch(env, `isbn:${isbn}`);
-    if (res.status === 429) {
+    if (googleThrottled(res)) {
       await markGoogleRateLimited(env);
       if (meta) meta.status = 'rate_limited';
       throw new GoogleBooksRateLimited(`429 for isbn=${isbn}`);
@@ -207,7 +219,8 @@ export async function getGoogleBooksByIsbn(env: Env, isbn: string, meta?: Lookup
   }
 }
 
-export async function searchGoogleBooks(env: Env, query: string, meta?: LookupMeta): Promise<BookRecord[]> {
+export async function searchGoogleBooks(env: Env, rawQuery: string, meta?: LookupMeta): Promise<BookRecord[]> {
+  const query = normalizeQuery(rawQuery);
   const key = `gb:q:${await sha1(query)}`;
   const cached = await cachedOr<BookRecord[]>(env, key, meta, []);
   if (cached.hit) return cached.value;
@@ -217,7 +230,7 @@ export async function searchGoogleBooks(env: Env, query: string, meta?: LookupMe
   }
   try {
     const res = await googleFetch(env, query);
-    if (res.status === 429) {
+    if (googleThrottled(res)) {
       await markGoogleRateLimited(env);
       if (meta) meta.status = 'rate_limited';
       throw new GoogleBooksRateLimited('429 for query');
@@ -305,7 +318,8 @@ export async function getOpenLibraryBookByIsbn(env: Env, isbn: string, meta?: Lo
   }
 }
 
-export async function searchOpenLibraryBooks(env: Env, query: string, meta?: LookupMeta): Promise<BookRecord[]> {
+export async function searchOpenLibraryBooks(env: Env, rawQuery: string, meta?: LookupMeta): Promise<BookRecord[]> {
+  const query = normalizeQuery(rawQuery);
   const key = `ol:q:${await sha1(query)}`;
   const cached = await cachedOr<BookRecord[]>(env, key, meta, []);
   if (cached.hit) return cached.value;
