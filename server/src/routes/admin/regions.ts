@@ -11,6 +11,7 @@ import { invalidateRegionCache } from '../../lib/region';
 import { parseJsonArray, parseJsonObject } from '../../lib/json';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { notFound, regionExists } from '../../services/admin/scope';
+import { writeAudit, changedFields } from '../../services/admin/audit';
 import { seedDefaultCategories } from '../../services/admin/defaults';
 
 /**
@@ -68,6 +69,23 @@ regionRoutes.post('/currencies/', async (c) => {
       isActive: body.is_active === false ? 0 : 1,
     })
     .returning();
+  await writeAudit(
+    db,
+    {
+      actorId: c.get('user')!.id,
+      kind: 'admin.currency_created',
+      meta: {
+        code: row.code,
+        symbol: row.symbol,
+        decimal_places: row.decimalPlaces,
+        symbol_position: row.symbolPosition,
+        is_active: !!row.isActive,
+      },
+      targetType: 'currency',
+      targetId: row.code,
+    },
+    c,
+  );
   invalidateRegionCache();
   return c.json(currencyJson(row), 201);
 });
@@ -105,6 +123,17 @@ async function updateCurrency(c: Context<AppEnv>) {
   let row = instance;
   if (Object.keys(set).length) {
     [row] = await db.update(currencies).set(set).where(eq(currencies.code, instance.code)).returning();
+    await writeAudit(
+      db,
+      {
+        actorId: c.get('user')!.id,
+        kind: 'admin.currency_updated',
+        meta: { code: instance.code, changes: changedFields(instance, set) },
+        targetType: 'currency',
+        targetId: instance.code,
+      },
+      c,
+    );
     invalidateRegionCache();
   }
   return c.json(currencyJson(row));
@@ -228,6 +257,23 @@ regionRoutes.post('/regions/', async (c) => {
     .returning();
   // A new region starts with the default colleges, not an empty category rail.
   await seedDefaultCategories(db, row.code);
+  await writeAudit(
+    db,
+    {
+      actorId: c.get('user')!.id,
+      kind: 'admin.region_created',
+      meta: {
+        code: row.code,
+        name: row.name,
+        currency: row.defaultCurrency,
+        default_language: row.defaultLanguage,
+        is_active: !!row.isActive,
+      },
+      targetType: 'region',
+      targetId: row.code,
+    },
+    c,
+  );
   invalidateRegionCache();
   return c.json(regionJson(row, await resolveLanguage(c)), 201);
 });
@@ -290,6 +336,17 @@ async function updateRegion(c: Context<AppEnv>) {
         fieldErrors({ is_active: ['admin.errCannotDisableLastRegion'] });
       }
     }
+    await writeAudit(
+      db,
+      {
+        actorId: c.get('user')!.id,
+        kind: 'admin.region_updated',
+        meta: { code: instance.code, changes: changedFields(instance, set) },
+        targetType: 'region',
+        targetId: instance.code,
+      },
+      c,
+    );
     invalidateRegionCache();
   }
   return c.json(regionJson(row, await resolveLanguage(c)));

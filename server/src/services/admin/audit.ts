@@ -14,6 +14,16 @@ export interface AuditArgs {
   targetId: string | number;
 }
 
+/** `{field: {before, after}}` for each key of `set` whose value differs from the same key of `before`. */
+export function changedFields(before: object, set: object): Record<string, { before: unknown; after: unknown }> {
+  const out: Record<string, { before: unknown; after: unknown }> = {};
+  const old = before as Record<string, unknown>;
+  for (const [k, v] of Object.entries(set)) {
+    if (JSON.stringify(old[k] ?? null) !== JSON.stringify(v ?? null)) out[k] = { before: old[k] ?? null, after: v ?? null };
+  }
+  return out;
+}
+
 /** The insert, un-awaited, so callers can put it in a db.batch([...]). */
 export function auditInsert(db: Database, a: AuditArgs, c?: Context<AppEnv>) {
   return db.insert(auditEvents).values({

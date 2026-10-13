@@ -6,6 +6,7 @@ import type { AppEnv } from '../../env';
 import { categories, createDb, type Category, type Database } from '../../db';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../../lib/http';
 import { parseJsonObject } from '../../lib/json';
+import { auditInsert, changedFields, writeAudit } from '../../services/admin/audit';
 import { assertInScope, intId, notFound, regionExists, regionParam, scopeOf, scopeWhere } from '../../services/admin/scope';
 
 /** Homepage college categories. */
@@ -89,6 +90,17 @@ categoryRoutes.post('/categories/', async (c) => {
       isActive: body.is_active === false ? 0 : 1,
     })
     .returning();
+  await writeAudit(
+    db,
+    {
+      actorId: c.get('user')!.id,
+      kind: 'admin.category_created',
+      meta: { category_id: row.id, region: row.regionCode, slug: row.slug, title: row.title },
+      targetType: 'category',
+      targetId: row.id,
+    },
+    c,
+  );
   return c.json(categoryJson(row), 201);
 });
 
@@ -115,6 +127,8 @@ categoryRoutes.post('/categories/bulk/', async (c) => {
   const unchanged: unknown[] = [];
   const forbidden: unknown[] = [];
   const writes: Parameters<Database['batch']>[0][number][] = [];
+  const created: string[] = [];
+  const modifiedChanges: { category_id: number; slug: string; changes: Record<string, { before: unknown; after: unknown }> }[] = [];
   let validCount = 0;
 
   for (const raw of items) {
@@ -157,6 +171,7 @@ categoryRoutes.post('/categories/bulk/', async (c) => {
     if (!existing) {
       newItems.push(item);
       if (action === 'apply') {
+        created.push(slug);
         writes.push(
           db.insert(categories).values({
             regionCode: currentRegion,
@@ -183,17 +198,30 @@ categoryRoutes.post('/categories/bulk/', async (c) => {
     }
     modified.push({ old: categoryJson(existing), new: item });
     if (action === 'apply') {
-      writes.push(
-        db
-          .update(categories)
-          .set({ title, description, sortOrder, isActive: isActive ? 1 : 0, translations: JSON.stringify(translations) })
-          .where(eq(categories.id, existing.id)),
-      );
+      const set = { title, description, sortOrder, isActive: isActive ? 1 : 0, translations: JSON.stringify(translations) };
+      modifiedChanges.push({ category_id: existing.id, slug, changes: changedFields(existing, set) });
+      writes.push(db.update(categories).set(set).where(eq(categories.id, existing.id)));
     }
   }
 
   if (validCount > 0 && forbidden.length === validCount) apiError(403, 'admin.errAllRegionsForbidden');
-  if (writes.length) await db.batch(writes as [(typeof writes)[0], ...typeof writes]);
+  if (writes.length) {
+    // One audit row summarises the import, in the same batch as the writes.
+    writes.push(
+      auditInsert(
+        db,
+        {
+          actorId: c.get('user')!.id,
+          kind: 'admin.categories_bulk_applied',
+          meta: { region: currentRegion, created, modified: modifiedChanges },
+          targetType: 'region',
+          targetId: currentRegion,
+        },
+        c,
+      ),
+    );
+    await db.batch(writes as [(typeof writes)[0], ...typeof writes]);
+  }
   return c.json({ new: newItems, modified, unchanged, forbidden });
 });
 
@@ -251,7 +279,21 @@ categoryRoutes.patch('/categories/:id/', async (c) => {
   if (body.region !== undefined) set.regionCode = body.region;
   let row = instance;
   if (Object.keys(set).length) {
-    [row] = await db.update(categories).set(set).where(eq(categories.id, instance.id)).returning();
+    const [updated] = await db.batch([
+      db.update(categories).set(set).where(eq(categories.id, instance.id)).returning(),
+      auditInsert(
+        db,
+        {
+          actorId: c.get('user')!.id,
+          kind: 'admin.category_updated',
+          meta: { category_id: instance.id, changes: changedFields(instance, set) },
+          targetType: 'category',
+          targetId: instance.id,
+        },
+        c,
+      ),
+    ]);
+    row = updated[0];
   }
   return c.json(categoryJson(row));
 });
@@ -259,6 +301,20 @@ categoryRoutes.patch('/categories/:id/', async (c) => {
 categoryRoutes.delete('/categories/:id/', async (c) => {
   const instance = await loadCategory(c);
   // listings.category_id is ON DELETE SET NULL.
-  await createDb(c.env.DB).delete(categories).where(eq(categories.id, instance.id));
+  const db = createDb(c.env.DB);
+  await db.batch([
+    db.delete(categories).where(eq(categories.id, instance.id)),
+    auditInsert(
+      db,
+      {
+        actorId: c.get('user')!.id,
+        kind: 'admin.category_deleted',
+        meta: { category_id: instance.id, region: instance.regionCode, slug: instance.slug, title: instance.title },
+        targetType: 'category',
+        targetId: instance.id,
+      },
+      c,
+    ),
+  ]);
   return c.body(null, 204);
 });

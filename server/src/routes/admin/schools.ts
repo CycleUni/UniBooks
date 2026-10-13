@@ -46,7 +46,7 @@ export function normalizeEmailDomain(raw: unknown): string | null {
   if (NON_CAMPUS_DOMAINS.has(d)) return null;
   return d;
 }
-import { writeAudit } from '../../services/admin/audit';
+import { auditInsert, changedFields, writeAudit } from '../../services/admin/audit';
 
 /** Schools and school requests. */
 export const schoolRoutes = new Hono<AppEnv>();
@@ -195,6 +195,17 @@ schoolRoutes.post('/schools/', async (c) => {
       createdAt: new Date().toISOString(),
     })
     .returning({ id: schools.id });
+  await writeAudit(
+    db,
+    {
+      actorId: c.get('user')!.id,
+      kind: 'admin.school_created',
+      meta: { school_id: created.id, region: body.region, code, name: body.name, email_domain: body.email_domain },
+      targetType: 'school',
+      targetId: created.id,
+    },
+    c,
+  );
   const row = await loadSchool(c, created.id);
   return c.json(schoolJson(row, await resolveLanguage(c)), 201);
 });
@@ -299,6 +310,7 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
   const writes: Parameters<Database['batch']>[0][number][] = [];
   const now = new Date().toISOString();
   const lang = null;
+  const modifiedChanges: { school_id: number; email_domain: string; changes: Record<string, { before: unknown; after: unknown }> }[] = [];
 
   for (const { item, existing, code, cityGiven, cityId } of planned) {
     const domain = String(item.email_domain);
@@ -339,12 +351,9 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
       new: item,
     });
     if (action === 'apply') {
-      writes.push(
-        db
-          .update(schools)
-          .set({ name, translations: JSON.stringify(newTranslations), code: newCode, cityId: newCityId })
-          .where(eq(schools.id, existing.id)),
-      );
+      const set = { name, translations: JSON.stringify(newTranslations), code: newCode, cityId: newCityId };
+      modifiedChanges.push({ school_id: existing.id, email_domain: domain, changes: changedFields(existing, set) });
+      writes.push(db.update(schools).set(set).where(eq(schools.id, existing.id)));
     }
   }
 
@@ -352,7 +361,24 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
 
   if (writes.length) {
     // Codes were settled for the whole batch above; write it in one go so a
-    // failure cannot leave half the file applied.
+    // failure cannot leave half the file applied. One audit row summarises the import.
+    writes.push(
+      auditInsert(
+        db,
+        {
+          actorId: c.get('user')!.id,
+          kind: 'admin.schools_bulk_applied',
+          meta: {
+            region: currentRegion,
+            created: (newItems as { email_domain: string; code: string }[]).map((i) => ({ email_domain: i.email_domain, code: i.code })),
+            modified: modifiedChanges,
+          },
+          targetType: 'region',
+          targetId: currentRegion,
+        },
+        c,
+      ),
+    );
     await db.batch(writes as [(typeof writes)[0], ...typeof writes]);
   }
   // Echo user_count for the "old" rows.
@@ -428,7 +454,22 @@ schoolRoutes.patch('/schools/:id/', async (c) => {
   // perform_update: the school's (new or current) region must be managed.
   assertInScope(await scopeOf(c), region);
 
-  if (Object.keys(set).length) await db.update(schools).set(set).where(eq(schools.id, instance.id));
+  if (Object.keys(set).length) {
+    await db.batch([
+      db.update(schools).set(set).where(eq(schools.id, instance.id)),
+      auditInsert(
+        db,
+        {
+          actorId: c.get('user')!.id,
+          kind: 'admin.school_updated',
+          meta: { school_id: instance.id, changes: changedFields(instance, set) },
+          targetType: 'school',
+          targetId: instance.id,
+        },
+        c,
+      ),
+    ]);
+  }
   const [row] = await schoolSelect(db).where(eq(schools.id, instance.id)).limit(1);
   return c.json(schoolJson(row, await resolveLanguage(c)));
 });
@@ -439,7 +480,26 @@ schoolRoutes.delete('/schools/:id/', async (c) => {
   // lose their school. Admins reassign or remove the accounts first.
   if (instance.userCount) apiError(400, 'admin.errDeleteFailed', { count: instance.userCount });
   const db = createDb(c.env.DB);
-  await db.delete(schools).where(eq(schools.id, instance.id));
+  await db.batch([
+    db.delete(schools).where(eq(schools.id, instance.id)),
+    auditInsert(
+      db,
+      {
+        actorId: c.get('user')!.id,
+        kind: 'admin.school_deleted',
+        meta: {
+          school_id: instance.id,
+          region: instance.regionCode,
+          code: instance.code,
+          name: instance.name,
+          email_domain: instance.emailDomain,
+        },
+        targetType: 'school',
+        targetId: instance.id,
+      },
+      c,
+    ),
+  ]);
   return c.body(null, 204);
 });
 
