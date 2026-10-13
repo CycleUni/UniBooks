@@ -93,10 +93,6 @@ export function formatInboxTime(dateString: string | null | undefined, lang: 'en
 // "ok [SYSTEM:order.notify.seller_approved]" typed by the other party drew an
 // official "seller approved" card.
 const MEETUP_CARD_TOKENS = [
-  '[MEETUP_REQUEST]',
-  '[MEETUP_ACCEPT]',
-  '[MEETUP_DECLINE]',
-  '[MEETUP_CANCEL]',
   '[SYSTEM:order.notify.meetup_requested]',
   '[SYSTEM:order.notify.meetup_accepted]',
   '[SYSTEM:order.notify.meetup_declined]',
@@ -112,7 +108,6 @@ const MEETUP_CARD_TOKENS = [
 const MEETUP_DETAILS_TOKENS = [
   '[SYSTEM:order.notify.seller_approved]',
   '[SYSTEM:order.notify.meetup_accepted]',
-  '[MEETUP_ACCEPT]',
   '[SYSTEM:order.notify.meetup_updated]',
 ] as const;
 
@@ -145,8 +140,5 @@ export function systemMessageKey(body: string): string | null {
 /** Strip the control-message markers, leaving just the human-readable text. */
 export function cleanMeetupBody(body: string): string {
   if (!body) return '';
-  return body
-    .replace(/\[SYSTEM:[^\]]+\]/g, '')
-    .replace(/\[MEETUP_(REQUEST|ACCEPT|DECLINE|CANCEL)\]/g, '')
-    .trim();
+  return body.replace(/\[SYSTEM:[^\]]+\]/g, '').trim();
 }

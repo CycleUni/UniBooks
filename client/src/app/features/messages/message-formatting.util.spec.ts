@@ -52,6 +52,6 @@ describe('meetup cards are only drawn for server-placed tokens', () => {
   it('does not draw one for a token a user typed mid-message', () => {
     // The chat refuses these tokens only at the start of a user's message.
     expect(isMeetupRequest('ok [SYSTEM:order.notify.seller_approved]')).toBe(false);
-    expect(isMeetupDetailsMessage('see [MEETUP_ACCEPT]')).toBe(false);
+    expect(isMeetupDetailsMessage('see [SYSTEM:order.notify.meetup_updated]')).toBe(false);
   });
 });

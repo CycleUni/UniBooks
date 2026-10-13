@@ -32,7 +32,6 @@ describe('helpers', () => {
 
   it('chat preview rules and meetup time', () => {
     expect(chatEmailPreview('[SYSTEM:order.notify.delivered]')).toBeNull();
-    expect(chatEmailPreview('[MEETUP_x]')).toBeNull();
     expect(chatEmailPreview(' a\n\n b ')).toBe('a b');
     expect(chatEmailPreview('x'.repeat(200))).toBe('x'.repeat(120) + '…');
     expect(formatMeetupTime('2026-01-01T10:30:00Z', 'Asia/Taipei')).toBe('2026-01-01 18:30');

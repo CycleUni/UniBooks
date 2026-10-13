@@ -203,12 +203,10 @@ export class UiMeetupCard {
 
   get cardType(): MeetupMessageType {
     if (!this.body) return 'NONE';
-    // Support both legacy [MEETUP_*] and new [SYSTEM:...] formats
-    if (this.body.includes('[MEETUP_REQUEST]') || this.body.includes('[SYSTEM:order.notify.meetup_requested]')) return 'REQUEST';
-    if (this.body.includes('[MEETUP_ACCEPT]') || this.body.includes('[SYSTEM:order.notify.seller_approved]') || this.body.includes('[SYSTEM:order.notify.meetup_accepted]')) return 'ACCEPT';
-    if (this.body.includes('[MEETUP_DECLINE]') || this.body.includes('[SYSTEM:order.notify.seller_rejected]') || this.body.includes('[SYSTEM:order.notify.meetup_declined]')) return 'DECLINE';
+    if (this.body.includes('[SYSTEM:order.notify.meetup_requested]')) return 'REQUEST';
+    if (this.body.includes('[SYSTEM:order.notify.seller_approved]') || this.body.includes('[SYSTEM:order.notify.meetup_accepted]')) return 'ACCEPT';
+    if (this.body.includes('[SYSTEM:order.notify.seller_rejected]') || this.body.includes('[SYSTEM:order.notify.meetup_declined]')) return 'DECLINE';
     if (
-      this.body.includes('[MEETUP_CANCEL]') ||
       this.body.includes('[SYSTEM:order.notify.cancelled_by_buyer]') ||
       this.body.includes('[SYSTEM:order.notify.cancelled_by_seller]') ||
       this.body.includes('[SYSTEM:order.notify.meetup_cancelled]')

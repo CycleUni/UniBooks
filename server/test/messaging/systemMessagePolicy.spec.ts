@@ -4,12 +4,11 @@ import { isSystemMessage } from '../../src/durable-objects/policies/systemMessag
 describe('isSystemMessage', () => {
   it('catches a control token at the start', () => {
     expect(isSystemMessage('[SYSTEM:order.notify.seller_approved] System Notification')).toBe(true);
-    expect(isSystemMessage('[MEETUP_REQUEST]')).toBe(true);
   });
 
   it('catches a control token in the middle of a message', () => {
     expect(isSystemMessage('ok [SYSTEM:order.notify.seller_approved]')).toBe(true);
-    expect(isSystemMessage('see [MEETUP_ACCEPT] above')).toBe(true);
+    expect(isSystemMessage('see [SYSTEM:order.notify.meetup_updated] above')).toBe(true);
   });
 
   it('lets ordinary text through, brackets and all', () => {

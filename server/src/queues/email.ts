@@ -26,7 +26,7 @@ export interface RenderedEmail {
 /** Plain-text lines; a line that is exactly a URL becomes a link in the HTML part. */
 type Line = string | { link: string } | { text: string; link: string };
 
-const SYSTEM_PREVIEW_PREFIXES = ['[SYSTEM:', '[MEETUP_'];
+const SYSTEM_PREVIEW_PREFIX = '[SYSTEM:';
 const CHAT_EMAIL_PREVIEW_MAX_CHARS = 120;
 
 export function escapeHtml(value: unknown): string {
@@ -102,7 +102,7 @@ async function languageFor(env: Env, user: UserRow, region: string | null | unde
 /** The quotable part of a message, or null. */
 export function chatEmailPreview(preview: string | null | undefined): string | null {
   let text = (preview ?? '').trim();
-  if (!text || SYSTEM_PREVIEW_PREFIXES.some((p) => text.startsWith(p))) return null;
+  if (!text || text.startsWith(SYSTEM_PREVIEW_PREFIX)) return null;
   text = text.split(/\s+/).join(' ');
   if (text.length > CHAT_EMAIL_PREVIEW_MAX_CHARS) text = text.slice(0, CHAT_EMAIL_PREVIEW_MAX_CHARS).trimEnd() + '…';
   return text;

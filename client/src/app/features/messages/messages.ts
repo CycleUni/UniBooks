@@ -1117,8 +1117,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
 
   private isMeetupRequestMsg(msg: any): boolean {
     if (!msg || !msg.body) return false;
-    const isSystemMeetupRequest = msg.body.startsWith('[SYSTEM:') && msg.body.includes('order.notify.meetup_requested');
-    return isSystemMeetupRequest || msg.body === '[MEETUP_REQUEST]';
+    return msg.body.startsWith('[SYSTEM:') && msg.body.includes('order.notify.meetup_requested');
   }
 
   isPendingApproval(msg: any): boolean {
