@@ -35,13 +35,18 @@ export function fieldErrors(fields: Record<string, string[]>): never {
 export function validate<T extends z.ZodType>(schema: T, data: unknown, fallbackCode = 'common.errValidation'): z.output<T> {
   const result = schema.safeParse(data);
   if (result.success) return result.data;
+  fieldErrors(issueFields(result.error, fallbackCode));
+}
+
+/** Zod issues as {"field": ["code"]}: i18n-key messages pass through, anything else becomes the fallback. */
+export function issueFields(error: z.ZodError, fallbackCode = 'common.errValidation'): Record<string, string[]> {
   const fields: Record<string, string[]> = {};
-  for (const issue of result.error.issues) {
+  for (const issue of error.issues) {
     const key = issue.path.length ? issue.path.map(String).join('.') : 'non_field_errors';
     const message = /^[a-z][A-Za-z0-9]*\.[A-Za-z0-9_.]+$/.test(issue.message) ? issue.message : fallbackCode;
     (fields[key] ??= []).push(message);
   }
-  fieldErrors(fields);
+  return fields;
 }
 
 /** Read a JSON body; an absent or malformed body is an empty object. */

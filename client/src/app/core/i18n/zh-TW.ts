@@ -976,6 +976,7 @@ export const zhTW: Record<string, string> = {
   'admin.errGeneric': '發生錯誤，請稍後再試。',
   'admin.confirmToggleAdmin': '確定要對 {email} 執行「{action}」嗎？',
   'admin.errLabelTooLong': '單一標籤長度不可超過 {max} 個字。',
+  'admin.errTooManyItems': '單次匯入的項目過多（最多 500 筆），請拆分檔案後分批匯入。',
   'admin.errTooManyLabels': '最多只能有 {max} 個標籤。',
   'admin.chatNotConfigured': '聊天伺服器設定缺失（缺少 CHAT_JWT_SECRET）。請聯絡系統管理員設定此環境變數。',
   'admin.listingStatus.active': '上架中',

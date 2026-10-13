@@ -4,7 +4,7 @@ import { and, asc, count, eq, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppEnv } from '../../env';
 import { categories, createDb, type Category, type Database } from '../../db';
-import { apiError, fieldErrors, pagination, readJson, validate } from '../../lib/http';
+import { apiError, fieldErrors, issueFields, pagination, readJson, validate } from '../../lib/http';
 import { parseJsonObject } from '../../lib/json';
 import { auditInsert, changedFields, writeAudit } from '../../services/admin/audit';
 import { assertInScope, intId, notFound, regionExists, regionParam, scopeOf, scopeWhere } from '../../services/admin/scope';
@@ -45,6 +45,13 @@ const categoryCreate = z.object({
   translations: categoryFields.translations.optional(),
 });
 const categoryUpdate = z.object(categoryFields).partial();
+
+/** Most items one bulk import may carry. */
+const BULK_MAX_ITEMS = 500;
+/** A bulk item is a single-create body whose region (uppercased, as `?region=` is) may be left out. */
+const categoryBulkItem = categoryCreate.extend({
+  region: categoryFields.region.transform((v) => v.trim().toUpperCase()).optional(),
+});
 
 async function slugTaken(db: Database, slug: string, region: string, excludeId?: number): Promise<boolean> {
   const rows = await db
@@ -110,18 +117,40 @@ categoryRoutes.post('/categories/', async (c) => {
 // ---------------------------------------------------------------------------
 
 categoryRoutes.post('/categories/bulk/', async (c) => {
-  const data = await readJson(c.req);
-  const action = data.action;
-  const items = data.items ?? [];
+  const body = await readJson(c.req);
+  const action = body.action;
+  const items = body.items ?? [];
   if (!Array.isArray(items)) apiError(400, INVALID);
+  if (items.length > BULK_MAX_ITEMS) apiError(400, 'admin.errTooManyItems', { max: BULK_MAX_ITEMS });
   const currentRegion = regionParam(c);
   if (!currentRegion) apiError(400, 'admin.errMissingRegion');
   assertInScope(await scopeOf(c), currentRegion);
 
+  // Every item passes the single-create rules, and a slug may appear once per file.
+  type Parsed = { index: number; item: Record<string, unknown>; data: z.output<typeof categoryBulkItem> };
+  const parsed: Parsed[] = [];
+  const itemErrors: { index: number; errors: Record<string, string[]> }[] = [];
+  const seenSlugs = new Set<string>();
+  for (const [index, raw] of items.entries()) {
+    const result = categoryBulkItem.safeParse(raw);
+    if (!result.success) {
+      itemErrors.push({ index, errors: issueFields(result.error, INVALID) });
+      continue;
+    }
+    if (seenSlugs.has(result.data.slug)) {
+      itemErrors.push({ index, errors: { slug: [INVALID] } });
+      continue;
+    }
+    seenSlugs.add(result.data.slug);
+    parsed.push({ index, item: raw as Record<string, unknown>, data: result.data });
+  }
+  if (itemErrors.length) apiError(400, INVALID, { items: itemErrors });
+
   const db = createDb(c.env.DB);
-  const all = await db.select().from(categories);
-  const existingHere = new Map(all.filter((x) => x.regionCode === currentRegion).map((x) => [x.slug, x]));
-  const slugsElsewhere = new Set(all.filter((x) => x.regionCode !== currentRegion).map((x) => x.slug));
+  // Slugs are unique per region, as in single create: the same slug in another region is a different category.
+  const existingHere = new Map(
+    (await db.select().from(categories).where(eq(categories.regionCode, currentRegion))).map((x) => [x.slug, x]),
+  );
 
   const newItems: unknown[] = [];
   const modified: unknown[] = [];
@@ -130,45 +159,19 @@ categoryRoutes.post('/categories/bulk/', async (c) => {
   const writes: Parameters<Database['batch']>[0][number][] = [];
   const created: string[] = [];
   const modifiedChanges: { category_id: number; slug: string; changes: Record<string, { before: unknown; after: unknown }> }[] = [];
-  let validCount = 0;
 
-  for (const [index, raw] of items.entries()) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
-    const item = raw as Record<string, unknown>;
-    const slug = item.slug;
-    if (!slug) continue;
-    validCount++;
-    if (typeof slug !== 'string' || slug.length > 50 || !SLUG_RE.test(slug)) apiError(400, INVALID);
-    const targetRegion = item.region ? String(item.region) : currentRegion;
-    const existing = existingHere.get(slug);
-    if (targetRegion !== currentRegion || (slugsElsewhere.has(slug) && !existing)) {
-      // By position only: naming the slug would say whether it exists in a region the caller may not manage.
+  for (const { index, item, data } of parsed) {
+    const slug = data.slug;
+    if ((data.region ?? currentRegion) !== currentRegion) {
       forbidden.push({ index });
       continue;
     }
-
-    const str = (v: unknown, fallback: string, max: number) => {
-      if (v === undefined) return fallback;
-      if (typeof v !== 'string' || v.length > max) apiError(400, INVALID);
-      return v;
-    };
-    const title = str(item.title, existing?.title ?? '', 100);
-    const description = str(item.description, existing?.description ?? '', 255);
-    let sortOrder = existing?.sortOrder ?? 0;
-    if (item.sort_order !== undefined) {
-      if (typeof item.sort_order !== 'number' || !Number.isInteger(item.sort_order) || item.sort_order < 0) apiError(400, INVALID);
-      sortOrder = item.sort_order;
-    }
-    let isActive = existing ? !!existing.isActive : true;
-    if (item.is_active !== undefined) {
-      if (typeof item.is_active !== 'boolean') apiError(400, INVALID);
-      isActive = item.is_active;
-    }
-    let translations: Record<string, unknown> = existing ? parseJsonObject(existing.translations) : {};
-    if (item.translations !== undefined) {
-      if (!item.translations || typeof item.translations !== 'object' || Array.isArray(item.translations)) apiError(400, INVALID);
-      translations = item.translations as Record<string, unknown>;
-    }
+    const existing = existingHere.get(slug);
+    const title = data.title;
+    const description = data.description ?? existing?.description ?? '';
+    const sortOrder = data.sort_order ?? existing?.sortOrder ?? 0;
+    const isActive = data.is_active ?? (existing ? !!existing.isActive : true);
+    const translations: Record<string, unknown> = data.translations ?? (existing ? parseJsonObject(existing.translations) : {});
 
     if (!existing) {
       newItems.push(item);
@@ -206,7 +209,7 @@ categoryRoutes.post('/categories/bulk/', async (c) => {
     }
   }
 
-  if (validCount > 0 && forbidden.length === validCount) apiError(403, 'admin.errAllRegionsForbidden');
+  if (parsed.length > 0 && forbidden.length === parsed.length) apiError(403, 'admin.errAllRegionsForbidden');
   if (writes.length) {
     // One audit row summarises the import, in the same batch as the writes.
     writes.push(

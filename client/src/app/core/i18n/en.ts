@@ -974,6 +974,7 @@ export const en: Record<string, string> = {
   'admin.errGeneric': 'Something went wrong. Please try again later.',
   'admin.confirmToggleAdmin': '{action} for {email}?',
   'admin.errLabelTooLong': 'Each label can be at most {max} characters.',
+  'admin.errTooManyItems': 'Too many items in one import (at most 500). Split the file and import it in parts.',
   'admin.errTooManyLabels': 'At most {max} labels.',
   'admin.chatNotConfigured': 'Chat server is not configured (missing CHAT_JWT_SECRET). Please contact the system administrator to set this environment variable.',
   'admin.listingStatus.active': 'Active',

@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-o
 import { z } from 'zod';
 import type { AppEnv } from '../../env';
 import { cities, createDb, regionVerifications, schoolRequests, schools, users, type Database, type School } from '../../db';
-import { apiError, fieldErrors, pagination, readJson, validate } from '../../lib/http';
+import { apiError, fieldErrors, issueFields, pagination, readJson, validate } from '../../lib/http';
 import { parseJsonObject } from '../../lib/json';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { assertInScope, intId, likeContains, notFound, regionExists, regionParam, scopeOf } from '../../services/admin/scope';
@@ -154,6 +154,18 @@ const schoolCreate = z.object({
 });
 const schoolUpdate = schoolCreate.partial();
 
+/** Most items one bulk import may carry. */
+const BULK_MAX_ITEMS = 500;
+/** A bulk item is a single-create body whose region (uppercased, as `?region=` is) and code may be left out or null. */
+const schoolBulkItem = schoolCreate.extend({
+  region: z
+    .string({ message: INVALID })
+    .min(1, INVALID)
+    .transform((v) => v.trim().toUpperCase())
+    .optional(),
+  code: z.string({ message: INVALID }).nullable().optional(),
+});
+
 async function cityIn(db: Database, regionCode: string, cityCode: string): Promise<number | null> {
   const [row] = await db
     .select({ id: cities.id })
@@ -215,13 +227,38 @@ schoolRoutes.post('/schools/', async (c) => {
 // ---------------------------------------------------------------------------
 
 schoolRoutes.post('/schools/bulk/', async (c) => {
-  const data = await readJson(c.req);
-  const action = data.action;
-  const items = data.items ?? [];
+  const body = await readJson(c.req);
+  const action = body.action;
+  const items = body.items ?? [];
   if (!Array.isArray(items)) apiError(400, INVALID);
+  if (items.length > BULK_MAX_ITEMS) apiError(400, 'admin.errTooManyItems', { max: BULK_MAX_ITEMS });
   const currentRegion = regionParam(c);
   if (!currentRegion) apiError(400, 'admin.errMissingRegion');
   assertInScope(await scopeOf(c), currentRegion);
+
+  // Every item passes the single-create rules, and a domain may appear once per file
+  // (the unique index would otherwise fail the whole batch with a 500).
+  type Parsed = { index: number; item: Record<string, unknown>; data: z.output<typeof schoolBulkItem> };
+  const parsed: Parsed[] = [];
+  const itemErrors: { index: number; errors: Record<string, string[]> }[] = [];
+  const seenDomains = new Set<string>();
+  for (const [index, raw] of items.entries()) {
+    const result = schoolBulkItem.safeParse(raw);
+    if (!result.success) {
+      itemErrors.push({ index, errors: issueFields(result.error, INVALID) });
+      continue;
+    }
+    const domain = result.data.email_domain;
+    if (seenDomains.has(domain)) {
+      itemErrors.push({ index, errors: { email_domain: [INVALID] } });
+      continue;
+    }
+    seenDomains.add(domain);
+    const item = raw as Record<string, unknown>;
+    item.email_domain = domain;
+    parsed.push({ index, item, data: result.data });
+  }
+  if (itemErrors.length) apiError(400, INVALID, { items: itemErrors });
 
   const db = createDb(c.env.DB);
   const allSchools = await db.select().from(schools);
@@ -229,19 +266,15 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
   const regionSchools = allSchools.filter((s) => s.regionCode === currentRegion);
   const taken = new Set(regionSchools.map((s) => s.code));
   const codeOwner = new Map(regionSchools.map((s) => [s.code, s.emailDomain]));
-  const reserved = new Set(
-    items
-      .filter((i): i is Record<string, unknown> => !!i && typeof i === 'object' && !!(i as Record<string, unknown>).code)
-      .map((i) => normalizeCode(i.code)),
-  );
+  const reserved = new Set(parsed.filter((p) => p.data.code).map((p) => normalizeCode(p.data.code)));
   const regionCities = new Map((await db.select().from(cities).where(eq(cities.regionCode, currentRegion))).map((ct) => [ct.code, ct]));
   const cityCodes = new Map((await db.select({ id: cities.id, code: cities.code }).from(cities)).map((ct) => [ct.id, ct.code]));
 
   type Planned = {
     item: Record<string, unknown>;
+    data: Parsed['data'];
     existing: School | undefined;
     code: string | null;
-    cityGiven: boolean;
     cityId: number | null;
   };
   const planned: Planned[] = [];
@@ -249,26 +282,19 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
   const badCodes: string[] = [];
   const clashing: string[] = [];
   const badCities: string[] = [];
-  let validCount = 0;
 
-  for (const [index, raw] of items.entries()) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
-    const item = raw as Record<string, unknown>;
-    const domain = normalizeEmailDomain(item.email_domain) ?? '';
-    if (!domain) continue;
-    item.email_domain = domain;
-    validCount++;
-    const targetRegion = item.region ? String(item.region) : currentRegion;
+  for (const { index, item, data } of parsed) {
+    const domain = data.email_domain;
+    const targetRegion = data.region ?? currentRegion;
     const existing = existingByDomain.get(domain);
     if (targetRegion !== currentRegion || (existing && existing.regionCode !== currentRegion)) {
       // By position only: naming the domain would say whether it exists in a region the caller may not manage.
       forbidden.push({ index });
       continue;
     }
-    const cityGiven = 'city' in item;
     let cityId: number | null = null;
-    if (cityGiven && item.city) {
-      const city = regionCities.get(String(item.city).trim().toUpperCase());
+    if (data.city) {
+      const city = regionCities.get(data.city.trim().toUpperCase());
       if (!city) {
         badCities.push(domain);
         continue;
@@ -276,8 +302,8 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
       cityId = city.id;
     }
     let code: string | null = null;
-    if (item.code) {
-      code = normalizeCode(item.code);
+    if (data.code) {
+      code = normalizeCode(data.code);
       if (!isValidCode(code)) {
         badCodes.push(domain);
         continue;
@@ -298,7 +324,7 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
       taken.add(code);
       codeOwner.set(code, domain);
     }
-    planned.push({ item, existing, code, cityGiven, cityId });
+    planned.push({ item, data, existing, code, cityId });
   }
 
   if (badCities.length) apiError(400, 'admin.errSchoolCityUnknown', { domains: badCities });
@@ -313,9 +339,8 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
   const lang = null;
   const modifiedChanges: { school_id: number; email_domain: string; changes: Record<string, { before: unknown; after: unknown }> }[] = [];
 
-  for (const { item, existing, code, cityGiven, cityId } of planned) {
-    const domain = String(item.email_domain);
-    const translations = item.translations && typeof item.translations === 'object' ? item.translations : undefined;
+  for (const { item, data, existing, code, cityId } of planned) {
+    const domain = data.email_domain;
     if (!existing) {
       newItems.push({ ...item, code });
       if (action === 'apply') {
@@ -323,9 +348,9 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
           db.insert(schools).values({
             regionCode: currentRegion,
             code: code!,
-            name: typeof item.name === 'string' ? item.name : '',
+            name: data.name,
             emailDomain: domain,
-            translations: JSON.stringify(translations ?? {}),
+            translations: JSON.stringify(data.translations ?? {}),
             cityId,
             createdAt: now,
           }),
@@ -333,13 +358,12 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
       }
       continue;
     }
-    const name = typeof item.name === 'string' ? item.name : existing.name;
     const oldTranslations = parseJsonObject(existing.translations);
-    const newTranslations = 'translations' in item ? (translations ?? {}) : oldTranslations;
+    const newTranslations = data.translations ?? oldTranslations;
     const newCode = code ?? existing.code;
-    const newCityId = cityGiven ? cityId : existing.cityId;
+    const newCityId = data.city !== undefined ? cityId : existing.cityId;
     const changed =
-      existing.name !== name ||
+      existing.name !== data.name ||
       JSON.stringify(sortKeys(oldTranslations)) !== JSON.stringify(sortKeys(newTranslations)) ||
       existing.code !== newCode ||
       existing.cityId !== newCityId;
@@ -352,13 +376,13 @@ schoolRoutes.post('/schools/bulk/', async (c) => {
       new: item,
     });
     if (action === 'apply') {
-      const set = { name, translations: JSON.stringify(newTranslations), code: newCode, cityId: newCityId };
+      const set = { name: data.name, translations: JSON.stringify(newTranslations), code: newCode, cityId: newCityId };
       modifiedChanges.push({ school_id: existing.id, email_domain: domain, changes: changedFields(existing, set) });
       writes.push(db.update(schools).set(set).where(eq(schools.id, existing.id)));
     }
   }
 
-  if (validCount > 0 && forbidden.length === validCount) apiError(403, 'admin.errAllRegionsForbidden');
+  if (parsed.length > 0 && forbidden.length === parsed.length) apiError(403, 'admin.errAllRegionsForbidden');
 
   if (writes.length) {
     // Codes were settled for the whole batch above; write it in one go so a

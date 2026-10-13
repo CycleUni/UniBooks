@@ -129,3 +129,60 @@ describe('scope is checked before anything reveals another region', () => {
     expect(body.new).toHaveLength(1);
   });
 });
+
+describe('bulk import validation', () => {
+  const bulk = (path: string, items: unknown) =>
+    call(`/api/v1/admin/${path}/bulk/?region=TW`, { token: root.token, body: { action: 'preview', items } });
+
+  it('schools: caps the file, validates each item, and refuses repeated domains', async () => {
+    const many = Array.from({ length: 501 }, (_, i) => ({ email_domain: `m${i}.edu.tw`, name: 'M' }));
+    const big = await bulk('schools', many);
+    expect(big.status).toBe(400);
+    expect(await big.json()).toMatchObject({ error: { code: 'admin.errTooManyItems', max: 500 } });
+
+    const bad = await bulk('schools', [
+      { email_domain: 'ok-one.edu.tw', name: 'x'.repeat(256) },
+      { email_domain: 'gmail.com', name: 'Free mail' },
+      { email_domain: 'ok-two.edu.tw', name: 'Fine', translations: ['nope'] },
+      'not an object',
+    ]);
+    expect(bad.status).toBe(400);
+    const { error } = (await bad.json()) as { error: { items: { index: number; errors: Record<string, string[]> }[] } };
+    expect(error.items.map((i) => i.index)).toEqual([0, 1, 2, 3]);
+    expect(error.items[0].errors).toEqual({ name: ['admin.errInvalidField'] });
+
+    const dup = await bulk('schools', [
+      { email_domain: 'twice.edu.tw', name: 'One' },
+      { email_domain: '@TWICE.edu.tw', name: 'Two' },
+    ]);
+    expect(dup.status).toBe(400);
+    expect(await dup.json()).toMatchObject({ error: { items: [{ index: 1, errors: { email_domain: ['admin.errInvalidField'] } }] } });
+  });
+
+  it('schools: a lowercase item region matches the current region', async () => {
+    const res = await bulk('schools', [{ email_domain: 'lower-region.edu.tw', name: 'Lower', region: 'tw' }]);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { new: unknown[]; forbidden: unknown[] };
+    expect(body.new).toHaveLength(1);
+    expect(body.forbidden).toEqual([]);
+  });
+
+  it('categories: validates items, refuses repeated slugs, and allows a slug that exists in another region', async () => {
+    await call('/api/v1/admin/categories/', { token: root.token, body: { slug: 'shared-slug', title: 'HK', region: 'HK' } });
+    const ok = await bulk('categories', [{ slug: 'shared-slug', title: 'TW copy' }]);
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ new: [{ slug: 'shared-slug' }], forbidden: [] });
+
+    const bad = await bulk('categories', [
+      { slug: 'bad slug!', title: 'x' },
+      { slug: 'a', title: 'A' },
+      { slug: 'a', title: 'A2' },
+    ]);
+    expect(bad.status).toBe(400);
+    const { error } = (await bad.json()) as { error: { items: { index: number }[] } };
+    expect(error.items.map((i) => i.index)).toEqual([0, 2]);
+
+    const many = Array.from({ length: 501 }, (_, i) => ({ slug: `s${i}`, title: 'S' }));
+    expect(await (await bulk('categories', many)).json()).toMatchObject({ error: { code: 'admin.errTooManyItems' } });
+  });
+});
