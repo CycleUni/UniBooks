@@ -32,39 +32,59 @@ export function normalizeLanguage(raw: string | null | undefined, regionDefault?
   return lang;
 }
 
+/** The language a request asks for: ?lang= wins, then the first Accept-Language tag ('' when neither is given). */
+export function requestedLanguage(c: Context<AppEnv>): string {
+  const lang = (c.req.query('lang') ?? '').trim();
+  if (lang) return lang;
+  return (c.req.header('Accept-Language') ?? '').split(',')[0].split(';')[0].trim();
+}
+
+/**
+ * Settle a requested language against a region: none requested gives the region's default; otherwise the tag is normalized
+ * and anything the region does not offer becomes its default. With no region (`defaultLanguage` null) the tag is only normalized.
+ */
+export function pickLanguage(requested: string, defaultLanguage: string | null, supported: string[] | null): string {
+  if (!requested) return defaultLanguage ?? DEFAULT_LANGUAGE;
+  const normalized = normalizeLanguage(requested, defaultLanguage);
+  if (defaultLanguage !== null && supported && !supported.includes(normalized)) return defaultLanguage;
+  return normalized;
+}
+
 /**
  * The request's language: ?lang= wins, then the first
  * Accept-Language tag, then the region's default; anything the region does
  * not offer becomes the region's default.
  */
 export async function resolveLanguage(c: Context<AppEnv>): Promise<string> {
-  let lang = (c.req.query('lang') ?? '').trim();
-  if (!lang) {
-    const accept = c.req.header('Accept-Language') ?? '';
-    lang = accept.split(',')[0].split(';')[0].trim();
-  }
   const region = await getRegion(c);
   const details = region ? await regionDetails(c.env, region.code) : null;
-  if (!lang) return details?.defaultLanguage ?? DEFAULT_LANGUAGE;
-  const normalized = normalizeLanguage(lang, details?.defaultLanguage);
-  if (details && !details.languages.includes(normalized)) return details.defaultLanguage;
-  return normalized;
+  return pickLanguage(requestedLanguage(c), details?.defaultLanguage ?? null, details?.languages ?? null);
 }
 
 /**
- * The language chosen for emails,
- * else the language last used on the site, else the region's default.
+ * The user's chosen language (unless 'auto'), else the language last used on the site, else the region's default, taking the
+ * first that is in `allowed`; `fallback` when none is.
  */
-export function emailLanguageFor(
+export function pickUserLanguage<L extends string>(
   user: { emailLanguage?: string | null; siteLanguage?: string | null },
-  regionDefaultLanguage?: string | null,
-): string {
+  regionDefaultLanguage: string | null | undefined,
+  allowed: readonly L[],
+  fallback: L,
+): L {
   for (const candidate of [
     user.emailLanguage === EMAIL_LANGUAGE_AUTO ? null : user.emailLanguage,
     user.siteLanguage,
     regionDefaultLanguage,
   ]) {
-    if (candidate && EMAIL_LANGUAGES.includes(candidate)) return candidate;
+    if (candidate && (allowed as readonly string[]).includes(candidate)) return candidate as L;
   }
-  return DEFAULT_LANGUAGE;
+  return fallback;
+}
+
+/** The language emails to this user are written in. */
+export function emailLanguageFor(
+  user: { emailLanguage?: string | null; siteLanguage?: string | null },
+  regionDefaultLanguage?: string | null,
+): string {
+  return pickUserLanguage(user, regionDefaultLanguage, EMAIL_LANGUAGES, DEFAULT_LANGUAGE);
 }

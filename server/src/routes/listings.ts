@@ -12,7 +12,7 @@ import { checkRate } from '../middleware/rateLimit';
 import { validateBookIsbn } from '../services/catalog/isbn';
 import { nowIso } from '../lib/time';
 import { resolveLanguage, schoolFilterId, schoolFilterScope } from '../services/listings/places';
-import { parsePhotos, serializeListings } from '../services/listings/serialize';
+import { serializeListings } from '../services/listings/serialize';
 import { validateListingFields, type FieldErrors } from '../services/listings/validate';
 import { deleteListing, hasActiveOrders, pageFor } from '../services/listings/lifecycle';
 import { permanentKeyPrefix, PhotoError, acceptListingPhotos, listingsHoldingPhoto, tmpKeyPrefix } from '../services/listings/photos';
@@ -20,6 +20,7 @@ import { storageKeyFromUrl } from '../lib/media';
 import { issueUpload, storeUpload } from '../lib/upload';
 import { cancelOpenOrdersForListing } from '../services/orders/cancel';
 import { UUID_PATTERN } from '../lib/uuid';
+import { parsePhotos } from '../lib/json';
 
 export const listingRoutes = new Hono<AppEnv>();
 

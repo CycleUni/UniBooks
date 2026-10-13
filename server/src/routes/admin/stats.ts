@@ -26,7 +26,8 @@ import {
   type Region,
 } from '../../db';
 import { apiError, pagination } from '../../lib/http';
-import { localized, parseJsonObject, resolveLanguage } from '../../services/admin/i18n';
+import { parseJsonObject } from '../../lib/json';
+import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { notFound, scopeOf, uuidId } from '../../services/admin/scope';
 import { regionAdTotals } from '../../services/admin/adAnalytics';
 import {

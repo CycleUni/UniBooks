@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import { buildEmail, chatEmailPreview, formatMeetupTime } from '../../src/queues/email';
 import { passwordProblems } from '../../src/services/accounts/passwords';
 import { displayName } from '../../src/services/accounts/users';
-import { emailLanguageFor, normalizeLanguage } from '../../src/services/accounts/i18n';
+import { emailLanguageFor, normalizeLanguage, pickLanguage } from '../../src/services/accounts/i18n';
 import { call, createUser, seedReference } from './helpers';
 
 const BASE = 'https://unibooks.app'; // lib/origin.ts default (no origin recorded in tests)
@@ -28,6 +28,13 @@ describe('helpers', () => {
     expect(emailLanguageFor({ emailLanguage: 'auto', siteLanguage: 'zh-HK' }, 'zh-TW')).toBe('zh-HK');
     expect(emailLanguageFor({ emailLanguage: 'en', siteLanguage: 'zh-HK' }, 'zh-TW')).toBe('en');
     expect(emailLanguageFor({ emailLanguage: 'auto', siteLanguage: '' }, 'zh-TW')).toBe('zh-TW');
+  });
+
+  it('requested languages settle against the region', () => {
+    expect(pickLanguage('', 'zh-TW', ['zh-TW', 'en'])).toBe('zh-TW');
+    expect(pickLanguage('en-US', 'zh-TW', ['zh-TW', 'en'])).toBe('en');
+    expect(pickLanguage('fr', 'zh-TW', ['zh-TW', 'en'])).toBe('zh-TW');
+    expect(pickLanguage('fr', null, null)).toBe('fr');
   });
 
   it('chat preview rules and meetup time', () => {

@@ -8,7 +8,8 @@ import { createDb, currencies, languages, regions, type Currency, type Region } 
 import { requireSuperuser } from '../../middleware/auth';
 import { fieldErrors, pagination, readJson, validate } from '../../lib/http';
 import { invalidateRegionCache } from '../../lib/region';
-import { localized, parseJsonArray, parseJsonObject, resolveLanguage } from '../../services/admin/i18n';
+import { parseJsonArray, parseJsonObject } from '../../lib/json';
+import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { notFound, regionExists } from '../../services/admin/scope';
 import { seedDefaultCategories } from '../../services/admin/defaults';
 

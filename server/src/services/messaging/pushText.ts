@@ -1,6 +1,7 @@
 /**
  * Push notification wording, in the recipient's language.
  */
+import { pickUserLanguage } from '../accounts/i18n';
 
 export type PushLang = 'en' | 'zh-TW' | 'zh-HK';
 export const PUSH_LANGUAGES: readonly PushLang[] = ['en', 'zh-TW', 'zh-HK'];
@@ -81,10 +82,7 @@ export function pushT(lang: PushLang, key: string, params: Record<string, string
  * language they last used the site in, else the region's default, else en.
  */
 export function languageFor(user: { emailLanguage: string; siteLanguage: string }, regionDefaultLanguage?: string | null): PushLang {
-  for (const candidate of [user.emailLanguage === 'auto' ? null : user.emailLanguage, user.siteLanguage, regionDefaultLanguage]) {
-    if (candidate && (PUSH_LANGUAGES as readonly string[]).includes(candidate)) return candidate as PushLang;
-  }
-  return 'en';
+  return pickUserLanguage(user, regionDefaultLanguage, PUSH_LANGUAGES, 'en');
 }
 
 /**

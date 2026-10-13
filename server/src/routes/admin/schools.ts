@@ -5,7 +5,8 @@ import { z } from 'zod';
 import type { AppEnv } from '../../env';
 import { cities, createDb, regionVerifications, schoolRequests, schools, users, type Database, type School } from '../../db';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../../lib/http';
-import { localized, parseJsonObject, resolveLanguage } from '../../services/admin/i18n';
+import { parseJsonObject } from '../../lib/json';
+import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { assertInScope, intId, likeContains, notFound, regionExists, regionParam, scopeOf } from '../../services/admin/scope';
 import { dedupeCode, deriveCode, isValidCode, normalizeCode, regionCodes } from '../../services/admin/schoolCodes';
 

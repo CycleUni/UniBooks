@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../../env';
 import { categories, createDb, type Category, type Database } from '../../db';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../../lib/http';
-import { parseJsonObject } from '../../services/admin/i18n';
+import { parseJsonObject } from '../../lib/json';
 import { assertInScope, intId, notFound, regionExists, regionParam, scopeOf, scopeWhere } from '../../services/admin/scope';
 
 /** Homepage college categories. */

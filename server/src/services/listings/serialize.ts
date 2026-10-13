@@ -4,6 +4,7 @@
  * categories and the sellers' reputation are each read once per page.
  */
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { parsePhotos } from '../../lib/json';
 import { inList } from '../../lib/sql';
 import type { Env } from '../../env';
 import { createDb, users, schools, orders, reviews, books, type Book, type Listing } from '../../db';
@@ -11,16 +12,6 @@ import { cleanPublisher } from '../catalog/common';
 import { categorySlugsById, localizedSchoolName } from './places';
 
 type Row = Record<string, unknown>;
-
-export function parsePhotos(value: string | null | undefined): string[] {
-  if (!value) return [];
-  try {
-    const v = JSON.parse(value);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
-  } catch {
-    return [];
-  }
-}
 
 /** "First Last" with Latin letters, else LastFirst. */
 export function displayName(user: Row | undefined): string {

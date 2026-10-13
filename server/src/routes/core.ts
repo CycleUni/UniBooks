@@ -9,8 +9,9 @@ import { schema } from '../db';
 import { activeRegions, requireRegion } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { resolveLanguage } from '../services/accounts/i18n';
-import { activeRegionDetails, localizedName, parseJson, pickTranslation, type Row } from '../services/accounts/regionData';
+import { activeRegionDetails, localizedName, pickTranslation, type Row } from '../services/accounts/regionData';
 import { resolveSchool } from '../services/listings/places';
+import { parseJson } from '../lib/json';
 
 /**
  * /api/v1/core/*: health check, regions, geo region and home metadata

@@ -1,5 +1,6 @@
 import type { Env } from '../../env';
 import { loadPeople, schoolNamesIn } from './people';
+import { parsePhotos } from '../../lib/json';
 
 /**
  * Inbox-preview placeholder for an image message. An i18n key rather than
@@ -174,15 +175,4 @@ export async function serializeConversations(
       order_meetup_location: order ? (order.meetup_location ?? '') : '',
     };
   });
-}
-
-function parsePhotos(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === 'string');
-  if (typeof raw !== 'string' || !raw) return [];
-  try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
-  } catch {
-    return [];
-  }
 }

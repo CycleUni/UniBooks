@@ -1,4 +1,5 @@
 import type { Env } from '../../env';
+import { parseJson, stringList } from '../../lib/json';
 
 /**
  * Read-only views of the reference tables other modules own (regions,
@@ -10,41 +11,16 @@ import type { Env } from '../../env';
 
 export type Row = Record<string, unknown>;
 
-export function parseJson<T>(value: unknown, fallback: T): T {
-  if (value === null || value === undefined || value === '') return fallback;
-  if (typeof value !== 'string') return value as T;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-/** A JSON list column, or a single bare value, or a comma-separated string, as a list of strings. */
-export function stringList(value: unknown): string[] {
-  if (value === null || value === undefined || value === '') return [];
-  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string' && !!v);
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed.startsWith('[')) return stringList(parseJson<unknown>(trimmed, []));
-    return trimmed
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
-
-/** Exact tag, then same base language. */
+/** The translation dict for `lang` (exact tag, then same base language), or {}. Takes a JSON string or the parsed object. */
 export function pickTranslation(translations: unknown, lang: string | null | undefined): Record<string, string> {
   const t = parseJson<unknown>(translations, {});
   if (!t || typeof t !== 'object' || Array.isArray(t) || !lang) return {};
   const map = t as Record<string, unknown>;
   const exact = map[lang];
-  if (exact && typeof exact === 'object') return exact as Record<string, string>;
+  if (exact && typeof exact === 'object' && !Array.isArray(exact)) return exact as Record<string, string>;
   const base = lang.split('-')[0];
   for (const [key, value] of Object.entries(map)) {
-    if (key.split('-')[0] === base && value && typeof value === 'object') return value as Record<string, string>;
+    if (key.split('-')[0] === base && value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, string>;
   }
   return {};
 }

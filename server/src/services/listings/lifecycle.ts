@@ -4,7 +4,7 @@
 import { HTTPException } from 'hono/http-exception';
 import type { Env } from '../../env';
 import { pagination } from '../../lib/http';
-import { parsePhotos } from './serialize';
+import { parsePhotos } from '../../lib/json';
 import { deleteListingPhotos } from './photos';
 
 /** Order statuses that still need their listing. */

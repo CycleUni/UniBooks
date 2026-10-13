@@ -9,6 +9,9 @@ import type { Context } from 'hono';
 import { eq } from 'drizzle-orm';
 import type { AppEnv, Env } from '../../env';
 import { createDb, schools, cities, categories, type Region } from '../../db';
+import { parseJson, stringList } from '../../lib/json';
+import { pickLanguage, requestedLanguage } from '../accounts/i18n';
+import { pickTranslation } from '../accounts/regionData';
 
 type Row = Record<string, unknown>;
 
@@ -55,36 +58,9 @@ export async function schoolFilterId(env: Env, region: Region | null, value: str
   return (await schoolFilterScope(env, region, value)).schoolId;
 }
 
-/** ?lang= → Accept-Language → the region's default language. */
+/** ?lang= → Accept-Language → the region's default language; a language the region does not offer becomes its default. */
 export function resolveLanguage(c: Context<AppEnv>, region: Region | null): string {
-  const q = (c.req.query('lang') ?? '').trim();
-  if (q) return q;
-  const accept = (c.req.header('Accept-Language') ?? '').split(',')[0].split(';')[0].trim();
-  if (accept) return accept;
-  return region?.defaultLanguage ?? 'en';
-}
-
-function parseJson(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
-}
-
-/** The translation dict for `lang` (exact tag, then its base language), or {}. */
-export function pickTranslation(translations: unknown, lang: string): Record<string, unknown> {
-  const t = parseJson(translations);
-  if (!t || typeof t !== 'object' || Array.isArray(t) || !lang) return {};
-  const map = t as Record<string, unknown>;
-  const exact = map[lang];
-  if (exact && typeof exact === 'object') return exact as Record<string, unknown>;
-  const base = lang.split('-')[0];
-  for (const [key, value] of Object.entries(map)) {
-    if (key.split('-')[0] === base && value && typeof value === 'object') return value as Record<string, unknown>;
-  }
-  return {};
+  return pickLanguage(requestedLanguage(c), region?.defaultLanguage ?? null, region ? stringList(region.languages) : null);
 }
 
 export function localizedSchoolName(school: Row, lang: string | null): string {
@@ -132,7 +108,7 @@ export async function categoryIdsMatchingText(env: Env, regionCode: string, q: s
   const out: number[] = [];
   for (const c of await regionCategories(env, regionCode)) {
     const titles = [c.row.title, c.row.name];
-    const t = parseJson(c.row.translations);
+    const t = parseJson<unknown>(c.row.translations, null);
     if (t && typeof t === 'object') {
       for (const v of Object.values(t as Record<string, unknown>)) {
         if (v && typeof v === 'object') titles.push((v as Row).title, (v as Row).name);

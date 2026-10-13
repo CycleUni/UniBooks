@@ -25,7 +25,7 @@ import { ADS_VERSION_KEY, bumpVersion } from '../../services/admin/adCache';
 import { adCounts, ZERO_COUNTS, type AdCounts } from '../../services/admin/adAnalytics';
 import { deleteAdImage, isInternalImage, resolveAdImage, tmpAdPrefix } from '../../services/admin/uploads';
 import { issueUpload, storeUpload } from '../../lib/upload';
-import { parseJsonArray } from '../../services/admin/i18n';
+import { parseJsonArray } from '../../lib/json';
 
 /**
  * Ads admin, exposed as sponsors/ and promotions/ (named to dodge ad

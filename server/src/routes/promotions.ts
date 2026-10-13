@@ -7,7 +7,7 @@ import { pagination } from '../lib/http';
 import { getRegion } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
-import { parseJsonArray } from '../services/admin/i18n';
+import { parseJsonArray } from '../lib/json';
 import { schoolFilterId } from '../services/admin/schoolCodes';
 import { ADS_VERSION_KEY, cachedJson, versionedKey } from '../services/admin/adCache';
 import { isSafeTargetUrl } from './admin/ads';
