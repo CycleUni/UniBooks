@@ -8,7 +8,7 @@ import { SignJWT, jwtVerify } from 'jose';
  * opened the whole API as an access token.
  *
  * Keys: access/refresh/upload use JWT_SIGNING_KEY; chat/hub use
- * EDGE_CHAT_JWT_SECRET. Both are required — there is no fallback from one to
+ * CHAT_JWT_SECRET. Both are required — there is no fallback from one to
  * the other.
  */
 export type TokenType = 'access' | 'refresh' | 'chat' | 'hub' | 'upload';

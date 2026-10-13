@@ -151,7 +151,7 @@ export class SchoolRequestFormComponent {
       },
       error: (err) => {
         this.sending = false;
-        // DRF's throttle answers in English prose ({"detail": "..."}), which
+        // A throttle answers in English prose ({"detail": "..."}), which
         // parseApiError cannot look up, so the 429 gets its own sentence.
         this.errorMessage = err?.status === 429
           ? this.i18n.t('acct.schoolRequestThrottled')

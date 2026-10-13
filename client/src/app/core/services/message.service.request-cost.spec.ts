@@ -3,8 +3,9 @@ import { HttpClient } from '@angular/common/http';
 import { of } from 'rxjs';
 import { MessageService } from './message.service';
 
-// Every REST call to CFEdgeChat is a billed Worker request (and its CORS
-// preflight another), so these pin down the paths that used to multiply them:
+const wsOrigin = location.origin.replace(/^http/, 'ws');
+
+// Every REST call to the chat server is a billed Worker request, so these pin down the paths that used to multiply them:
 // a REST snapshot on every hub connect, a REST mark-read per live message, and
 // reconnects that never gave up or waited for the visitor.
 describe('MessageService request cost', () => {
@@ -35,7 +36,7 @@ describe('MessageService request cost', () => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
     (globalThis as any).WebSocket = FakeWebSocket;
     http = {
-      get: vi.fn(() => of({ token: 'fresh-token', edge_chat_url: 'https://edge.example' })),
+      get: vi.fn(() => of({ token: 'fresh-token' })),
       post: vi.fn(() => of(undefined)),
     };
     TestBed.configureTestingModule({
@@ -56,7 +57,7 @@ describe('MessageService request cost', () => {
   };
 
   describe('hub', () => {
-    beforeEach(() => service.connectHub('token', '42', 'https://edge.example'));
+    beforeEach(() => service.connectHub('token', '42'));
 
     it('takes the unread snapshot from the socket instead of fetching it', () => {
       latest().onopen?.();
@@ -92,20 +93,20 @@ describe('MessageService request cost', () => {
   });
 
   describe('room', () => {
-    beforeEach(() => service.connectEdgeChat('room-1', 'room-token', '42', 'https://edge.example'));
+    beforeEach(() => service.connectRoom('room-1', 'room-token', '42'));
 
-    it('opens the room socket at edge_chat_url with the room token as subprotocol', () => {
-      expect(latest().url).toBe('wss://edge.example/api/chat/rooms/room-1');
+    it('opens the room socket on this origin with the room token as subprotocol', () => {
+      expect(latest().url).toBe(`${wsOrigin}/api/chat/rooms/room-1`);
       expect(latest().protocols).toEqual(['room-token']);
     });
 
     it('reads history from the room\'s messages endpoint with the room token', () => {
-      service.getEdgeMessages('room-1', 'room-token', 'https://edge.example').subscribe();
-      service.getEdgeMessagePage('room-1', 'room-token', 'https://edge.example', 20, 123).subscribe();
+      service.getRoomMessages('room-1', 'room-token').subscribe();
+      service.getRoomMessagePage('room-1', 'room-token', 20, 123).subscribe();
 
-      expect(http.get.mock.calls[0][0]).toBe('https://edge.example/api/chat/rooms/room-1/messages');
+      expect(http.get.mock.calls[0][0]).toBe(`${location.origin}/api/chat/rooms/room-1/messages`);
       expect(http.get.mock.calls[0][1].headers.Authorization).toBe('Bearer room-token');
-      expect(http.get.mock.calls[1][0]).toBe('https://edge.example/api/chat/rooms/room-1/messages');
+      expect(http.get.mock.calls[1][0]).toBe(`${location.origin}/api/chat/rooms/room-1/messages`);
       expect(http.get.mock.calls[1][1].params.toString()).toBe('paginated=1&limit=20&before=123');
     });
 
@@ -144,7 +145,7 @@ describe('MessageService request cost', () => {
       service.markRoomRead();
       vi.advanceTimersByTime(1_500);
       expect(http.post).toHaveBeenCalledTimes(1);
-      expect(http.post.mock.calls[0][0]).toBe('https://edge.example/api/chat/rooms/room-1/read');
+      expect(http.post.mock.calls[0][0]).toBe(`${location.origin}/api/chat/rooms/room-1/read`);
       // The room token in the header names the reader; nothing in the URL does.
       expect(http.post.mock.calls[0][2]).toEqual({ headers: { Authorization: 'Bearer room-token', 'ngsw-bypass': 'true' } });
     });

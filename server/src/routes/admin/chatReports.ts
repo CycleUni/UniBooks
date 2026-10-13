@@ -7,7 +7,7 @@ import { chatReports, conversations, createDb, users, type Database } from '../.
 import { apiError, pagination, readJson } from '../../lib/http';
 import { writeAudit } from '../../services/admin/audit';
 import { notFound, regionParam, scopeOf, uuidId } from '../../services/admin/scope';
-import { chatBaseUrl, mintChatToken } from '../../services/chatTokens';
+import { mintChatToken } from '../../services/chatTokens';
 
 /** Chat report review. */
 export const chatReportRoutes = new Hono<AppEnv>();
@@ -119,7 +119,7 @@ chatReportRoutes.patch('/chat-reports/:id/', async (c) => {
  */
 chatReportRoutes.get('/chat-reports/:id/chat-token/', async (c) => {
   const row = await loadReport(c, createDb(c.env.DB));
-  if (!c.env.EDGE_CHAT_JWT_SECRET) apiError(503, 'admin.chatNotConfigured');
+  if (!c.env.CHAT_JWT_SECRET) apiError(503, 'admin.chatNotConfigured');
   const roomId = String(row.r.conversationId);
   const token = await mintChatToken(c.env, {
     userId: c.get('user')!.id,
@@ -127,5 +127,5 @@ chatReportRoutes.get('/chat-reports/:id/chat-token/', async (c) => {
     participantIds: [row.buyerId, row.sellerId],
     role: 'observer',
   });
-  return c.json({ token, edge_chat_url: chatBaseUrl(c.req.url), room_id: roomId });
+  return c.json({ token, room_id: roomId });
 });

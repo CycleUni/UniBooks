@@ -42,13 +42,13 @@ describe('Messages pending chats', () => {
     messageService = {
       getConversations: vi.fn(() => of(conversations)),
       startConversation: vi.fn(() => of({ id: 'conv-new', listing_id: 'listing-1', other_party: 'Seller' })),
-      getChatToken: vi.fn(() => of({ token: 'header.eyJ1c2VyX2lkIjoiMSJ9.sig', edge_chat_url: 'https://edge.example' })),
-      getEdgeMessagePage: vi.fn(() => of({ messages: [], has_more: false })),
+      getChatToken: vi.fn(() => of({ token: 'header.eyJ1c2VyX2lkIjoiMSJ9.sig' })),
+      getRoomMessagePage: vi.fn(() => of({ messages: [], has_more: false })),
       deleteConversation: vi.fn(() => of({ status: 'hidden' })),
-      sendEdgeMessage: vi.fn(() => true),
+      sendRoomMessage: vi.fn(() => true),
       markRoomRead: vi.fn(),
-      connectEdgeChat: vi.fn(),
-      disconnectEdgeChat: vi.fn(),
+      connectRoom: vi.fn(),
+      disconnectRoom: vi.fn(),
       roomUpdates$: EMPTY,
       roomTokenRefreshed$: EMPTY,
       conversationUnreadState$: new BehaviorSubject(new Map()),
@@ -191,10 +191,10 @@ describe('Messages pending chats', () => {
     }));
     // Shown straight away, sent when the new room's socket is up.
     expect(component.messages.map(m => m.body)).toEqual(['Is this still available?']);
-    expect(messageService.sendEdgeMessage).not.toHaveBeenCalled();
+    expect(messageService.sendRoomMessage).not.toHaveBeenCalled();
 
     connectionState.next('connected');
-    expect(messageService.sendEdgeMessage).toHaveBeenCalledWith('Is this still available?', 'text', undefined);
+    expect(messageService.sendRoomMessage).toHaveBeenCalledWith('Is this still available?', 'text', undefined);
   });
 
   it('leaves nothing on the server when the unsent chat is deleted', async () => {
@@ -220,7 +220,7 @@ describe('Messages pending chats', () => {
   it('shows placeholders while a conversation’s history loads', () => {
     setup({}, [{ id: 'conv-A', listing_id: 'other' }]);
     const history = new Subject<any>();
-    messageService.getEdgeMessagePage.mockReturnValue(history);
+    messageService.getRoomMessagePage.mockReturnValue(history);
 
     component.openChat(component.chats[0]);
     expect(component.loadingHistory).toBe(true);

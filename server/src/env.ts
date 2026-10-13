@@ -36,7 +36,7 @@ export interface Env {
 
   // Secrets (`wrangler secret put`)
   JWT_SIGNING_KEY: string;
-  EDGE_CHAT_JWT_SECRET: string;
+  CHAT_JWT_SECRET: string;
   GOOGLE_BOOKS_API_KEY?: string;
   MAILJET_API_KEY?: string;
   MAILJET_SECRET_KEY?: string;

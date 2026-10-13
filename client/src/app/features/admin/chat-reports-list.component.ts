@@ -246,9 +246,9 @@ export class AdminChatReportsListComponent implements OnInit {
       this.cdr.markForCheck();
     };
     this.adminService.getChatReportToken(reportId).subscribe({
-      next: ({ token, edge_chat_url, room_id }) => {
+      next: ({ token, room_id }) => {
         if (!current()) return;
-        const url = chatRoomMessagesUrl(edge_chat_url, room_id);
+        const url = chatRoomMessagesUrl(room_id);
         this.http.get<any[]>(url, { headers: { Authorization: `Bearer ${token}`, 'ngsw-bypass': 'true' } }).subscribe({
           next: (msgs) => {
             if (!current()) return;

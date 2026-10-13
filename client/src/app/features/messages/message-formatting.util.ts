@@ -5,14 +5,14 @@
  * Inbox-preview placeholder for an image message.
  *
  * Carries an i18n key instead of literal text because this preview is
- * persisted server-side (Django's `conversation.latest_message_body`) and
+ * persisted server-side (the conversation's `latest_message_body`) and
  * shown to *both* participants — who may be reading in different languages.
  * Resolving it at write time would bake one language into the database.
  * `formatSystemMessageForPreview` resolves it per viewer, using the same
  * `[SYSTEM:<i18nKey>]` convention the backend already uses for order
  * notifications.
  *
- * Must stay in sync with CFEdgeChat's IMAGE_PREVIEW_TOKEN (src/ChatRoom.ts),
+ * Must stay in sync with the server's IMAGE_PREVIEW_TOKEN (server/src/services/messaging/conversations.ts),
  * which is what actually writes it for messages sent by the other party.
  */
 export const IMAGE_PREVIEW_TOKEN = '[SYSTEM:msg.imagePlaceholder]';
@@ -89,7 +89,7 @@ export function formatInboxTime(dateString: string | null | undefined, lang: 'en
 
 // The control tokens a meetup card is drawn for. Matched at the start of the
 // body only: that is where the server puts them, and the only position the
-// chat refuses from a user (CFEdgeChat's isSystemMessage). Matched anywhere,
+// chat refuses from a user (the server's isSystemMessage). Matched anywhere,
 // "ok [SYSTEM:order.notify.seller_approved]" typed by the other party drew an
 // official "seller approved" card.
 const MEETUP_CARD_TOKENS = [

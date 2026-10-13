@@ -255,7 +255,7 @@ export class CheckoutComponent implements OnInit {
         } else if (errStr.includes('checkout.errListingUnavailable')) {
           this.errorKey = 'checkout.errListingUnavailable';
         } else {
-          // If it's a standard DRF error object, try to extract the first string
+          // If it's a field-error object, try to extract the first string
           let msg = 'checkout.orderFailed';
           let foundBackendMsg = false;
           if (err.error && typeof err.error === 'object') {

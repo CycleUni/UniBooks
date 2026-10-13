@@ -11,7 +11,7 @@ import { I18nService } from '../../core/i18n.service';
 import { RegionService } from '../../core/region.service';
 
 // Regression test for: switching conversations quickly can display the
-// wrong conversation's messages, because getChatToken()/getEdgeMessages()
+// wrong conversation's messages, because getChatToken()/getRoomMessages()
 // responses can resolve out of order. This test forces that exact ordering
 // deterministically (no real timers/network needed) by controlling each
 // request's resolution with a Subject, so it reproduces the bug reliably
@@ -21,9 +21,9 @@ describe('Messages.selectChat — out-of-order response race', () => {
   let fixture: ComponentFixture<Messages>;
   let component: Messages;
 
-  let tokenSubjects: Record<string, Subject<{ token: string; edge_chat_url: string }>>;
+  let tokenSubjects: Record<string, Subject<{ token: string }>>;
   let historySubjects: Record<string, Subject<any[]>>;
-  let connectEdgeChat: ReturnType<typeof vi.fn>;
+  let connectRoom: ReturnType<typeof vi.fn>;
 
   const fakeJwt = (userId: string) =>
     `header.${btoa(JSON.stringify({ user_id: userId }))}.sig`;
@@ -31,21 +31,21 @@ describe('Messages.selectChat — out-of-order response race', () => {
   beforeEach(() => {
     tokenSubjects = { A: new Subject(), B: new Subject() };
     historySubjects = { A: new Subject(), B: new Subject() };
-    connectEdgeChat = vi.fn();
+    connectRoom = vi.fn();
 
     const mockMessageService: Partial<Record<keyof MessageService, unknown>> = {
       getChatToken: vi.fn((id: string) => tokenSubjects[id].asObservable()),
-      getEdgeMessages: vi.fn((id: string) => historySubjects[id].asObservable()),
+      getRoomMessages: vi.fn((id: string) => historySubjects[id].asObservable()),
       // Same per-conversation subjects, wrapped in the paginated envelope the
       // component actually consumes, so these tests keep driving the race
       // through `historySubjects[id].next([...])` as before.
-      getEdgeMessagePage: vi.fn((id: string) =>
+      getRoomMessagePage: vi.fn((id: string) =>
         historySubjects[id].asObservable().pipe(map(messages => ({ messages, has_more: false })))
       ),
-      markConversationReadCF: vi.fn(() => of(undefined)),
+      postRoomRead: vi.fn(() => of(undefined)),
       markRoomRead: vi.fn(),
-      connectEdgeChat,
-      disconnectEdgeChat: vi.fn(),
+      connectRoom,
+      disconnectRoom: vi.fn(),
       // Unused by selectChat(), but referenced elsewhere in the component.
       roomUpdates$: EMPTY,
       roomTokenRefreshed$: EMPTY,
@@ -78,7 +78,7 @@ describe('Messages.selectChat — out-of-order response race', () => {
     // hub-connection subscription graph.
   });
 
-  it('ignores a stale getChatToken/getEdgeMessages response for a conversation the user has since left', () => {
+  it('ignores a stale getChatToken/getRoomMessages response for a conversation the user has since left', () => {
     const chatA = { id: 'A' };
     const chatB = { id: 'B' };
 
@@ -89,22 +89,21 @@ describe('Messages.selectChat — out-of-order response race', () => {
 
     // B (the currently open chat) resolves first — realistic, since it's
     // the most recent request and nothing pathological is required of it.
-    tokenSubjects['B'].next({ token: fakeJwt('u_b'), edge_chat_url: 'https://edge-b.example' });
+    tokenSubjects['B'].next({ token: fakeJwt('u_b') });
     tokenSubjects['B'].complete();
     historySubjects['B'].next([{ id: 'm_b1', content: 'hello from B', user_id: 'u_other', timestamp: 2000 }]);
     historySubjects['B'].complete();
 
     expect(component.chatToken).toBe(fakeJwt('u_b'));
-    expect(component.edgeChatUrl).toBe('https://edge-b.example');
     expect(component.messages.map(m => m.body)).toEqual(['hello from B']);
-    expect(connectEdgeChat).toHaveBeenCalledTimes(1);
-    expect(connectEdgeChat).toHaveBeenLastCalledWith('B', fakeJwt('u_b'), 'u_b', 'https://edge-b.example');
+    expect(connectRoom).toHaveBeenCalledTimes(1);
+    expect(connectRoom).toHaveBeenLastCalledWith('B', fakeJwt('u_b'), 'u_b');
 
     // A's slower, now-stale requests finally resolve. Without the
     // `activeChat?.id !== chat.id` guard, this next() call would overwrite
-    // chatToken/edgeChatUrl/messages with A's data and re-open the socket
+    // chatToken/messages with A's data and re-open the socket
     // against room A — even though B is what's on screen.
-    tokenSubjects['A'].next({ token: fakeJwt('u_a'), edge_chat_url: 'https://edge-a.example' });
+    tokenSubjects['A'].next({ token: fakeJwt('u_a') });
     tokenSubjects['A'].complete();
     historySubjects['A'].next([{ id: 'm_a1', content: 'hello from A', user_id: 'u_other', timestamp: 1000 }]);
     historySubjects['A'].complete();
@@ -112,26 +111,25 @@ describe('Messages.selectChat — out-of-order response race', () => {
     // State must still reflect B, the conversation actually on screen.
     expect(component.activeChat).toBe(chatB);
     expect(component.chatToken).toBe(fakeJwt('u_b'));
-    expect(component.edgeChatUrl).toBe('https://edge-b.example');
     expect(component.messages.map(m => m.body)).toEqual(['hello from B']);
 
     // Must not have reconnected the socket to the stale room A.
-    expect(connectEdgeChat).toHaveBeenCalledTimes(1);
-    expect(connectEdgeChat).not.toHaveBeenCalledWith('A', expect.anything(), expect.anything(), expect.anything());
+    expect(connectRoom).toHaveBeenCalledTimes(1);
+    expect(connectRoom).not.toHaveBeenCalledWith('A', expect.anything(), expect.anything(), expect.anything());
   });
 
   it('still applies the response when it is not stale (single chat, normal case)', () => {
     const chatA = { id: 'A' };
     component.selectChat(chatA);
 
-    tokenSubjects['A'].next({ token: fakeJwt('u_a'), edge_chat_url: 'https://edge-a.example' });
+    tokenSubjects['A'].next({ token: fakeJwt('u_a') });
     tokenSubjects['A'].complete();
     historySubjects['A'].next([{ id: 'm_a1', content: 'hello from A', user_id: 'u_other', timestamp: 1000 }]);
     historySubjects['A'].complete();
 
     expect(component.chatToken).toBe(fakeJwt('u_a'));
     expect(component.messages.map(m => m.body)).toEqual(['hello from A']);
-    expect(connectEdgeChat).toHaveBeenCalledWith('A', fakeJwt('u_a'), 'u_a', 'https://edge-a.example');
+    expect(connectRoom).toHaveBeenCalledWith('A', fakeJwt('u_a'), 'u_a');
   });
 
   // An empty pane or inbox after a failed fetch would read as "no messages"
@@ -140,7 +138,7 @@ describe('Messages.selectChat — out-of-order response race', () => {
     it('says the history failed, instead of showing an empty chat, and retries', () => {
       const chatA = { id: 'A' };
       component.selectChat(chatA);
-      tokenSubjects['A'].next({ token: fakeJwt('u_a'), edge_chat_url: 'https://edge-a.example' });
+      tokenSubjects['A'].next({ token: fakeJwt('u_a') });
       historySubjects['A'].error(new Error('offline'));
 
       expect(component.historyFailed).toBe(true);
@@ -158,7 +156,7 @@ describe('Messages.selectChat — out-of-order response race', () => {
 
     it('does not carry a failed history over to the next chat opened', () => {
       component.selectChat({ id: 'A' });
-      tokenSubjects['A'].next({ token: fakeJwt('u_a'), edge_chat_url: 'https://edge-a.example' });
+      tokenSubjects['A'].next({ token: fakeJwt('u_a') });
       historySubjects['A'].error(new Error('offline'));
       expect(component.historyFailed).toBe(true);
 

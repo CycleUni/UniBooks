@@ -42,15 +42,15 @@ describe('auth and upload-token gates', () => {
     }
   });
 
-  it('refuses direct PUTs without a valid upload token, or with the wrong action', async () => {
-    let res = await fetchApi('/api/v1/listings/uploads/direct/?token=bad', { method: 'PUT', body: 'x' });
+  it('refuses upload PUTs without a valid upload token, or with the wrong action', async () => {
+    let res = await fetchApi('/api/v1/listings/uploads/file/?token=bad', { method: 'PUT', body: 'x' });
     expect(res.status).toBe(401);
     const token = await signToken(
       'upload',
       { user_id: 'u1', action: 'avatar', target_key: `tmp/listings/u1/${hex}.jpg`, content_type: 'image/jpeg', max_bytes: 100 },
       env.JWT_SIGNING_KEY,
     );
-    res = await fetchApi(`/api/v1/listings/uploads/direct/?token=${token}`, {
+    res = await fetchApi(`/api/v1/listings/uploads/file/?token=${token}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'image/jpeg' },
       body: new Uint8Array([0xff, 0xd8, 0xff]),
@@ -66,7 +66,7 @@ describe('auth and upload-token gates', () => {
       env.JWT_SIGNING_KEY,
     );
     const put = (body: Uint8Array, type = 'image/jpeg') =>
-      fetchApi(`/api/v1/listings/uploads/direct/?token=${token}`, { method: 'PUT', headers: { 'Content-Type': type }, body });
+      fetchApi(`/api/v1/listings/uploads/file/?token=${token}`, { method: 'PUT', headers: { 'Content-Type': type }, body });
     expect((await put(new TextEncoder().encode('<html></html>'))).status).toBe(400); // not a JPEG
     expect((await put(new Uint8Array([0xff, 0xd8, 0xff]), 'text/html')).status).toBe(400); // wrong type
     expect((await put(new Uint8Array(32).fill(0xff))).status).toBe(400); // over max_bytes

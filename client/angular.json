@@ -7,7 +7,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "unibooks-fe": {
+    "unibooks": {
       "projectType": "application",
       "schematics": {},
       "root": "",
@@ -127,10 +127,10 @@
           },
           "configurations": {
             "production": {
-              "buildTarget": "unibooks-fe:build:production"
+              "buildTarget": "unibooks:build:production"
             },
             "development": {
-              "buildTarget": "unibooks-fe:build:development"
+              "buildTarget": "unibooks:build:development"
             }
           },
           "defaultConfiguration": "development"

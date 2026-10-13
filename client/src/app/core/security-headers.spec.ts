@@ -168,7 +168,7 @@ describe('public/_headers', () => {
       // <link media="print" onload="this.media='all'"> — an inline handler
       // added after index.html, so only the build config can prevent it.
       const angular = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'angular.json'), 'utf-8'));
-      const configs = angular.projects['unibooks-fe'].architect.build.configurations;
+      const configs = angular.projects['unibooks'].architect.build.configurations;
       for (const name of ['production', 'smoke']) {
         expect(configs[name].optimization?.styles?.inlineCritical).toBe(false);
       }

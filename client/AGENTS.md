@@ -1,4 +1,4 @@
-# UniBooks-FE 開發守則（給 AI Agent 與人類協作者）
+# UniBooks client 開發守則（給 AI Agent 與人類協作者）
 
 本檔是寫給 AI coding agent 的常駐守則，人類協作者同樣適用。以下規則都是專案**已經在遵守**的慣例，
 原本散落在程式碼註解裡，這裡集中寫下，讓新產生的程式碼一開始就符合。每條規則後面標註對應的
@@ -65,8 +65,8 @@
 
 ## 6. 錯誤訊息（NS09）
 
-後端的錯誤格式是 `{"error": {"code": "<i18n key>"}}`，DRF 驗證錯誤則是
-`{"field": ["<i18n key>"]}`。只有 DRF 內建的錯誤會帶 `detail`，那是**未翻譯的英文句子**。
+後端的錯誤格式是 `{"error": {"code": "<i18n key>"}}`，欄位驗證錯誤則是
+`{"field": ["<i18n key>"]}`（`server/src/lib/http.ts`）。若回應帶有 `detail`，那是**未翻譯的英文句子**。
 
 - 顯示 API 錯誤一律用 `core/api-error.util.ts`：
   - `parseApiError(err, this.i18n, 'fallback.key')`：直接得到可以顯示的句子。
@@ -93,12 +93,13 @@
   或 `npm --prefix ../server run dev` 搭配這裡的 `npm start`
   （`proxy.conf.json` 只有一條 `/api` → :8787，`ws: true`、`changeOrigin: false`，聊天室 WebSocket 也走這條）。
 - 不要在 `src/app` 寫死任何 API 或聊天室的絕對網址；API 一律走 `environment.backendUrl`
-  （預設 `/api/v1`），聊天室網址一律用 `core/chat-urls.ts` 由後端回傳的 `edge_chat_url` 組出。
+  （預設 `/api/v1`），聊天室網址一律用 `core/chat-urls.ts` 以本頁 origin 組出。
+- 圖片上傳（刊登照片、聊天圖片、廣告圖）一律走 `core/upload.ts` 的兩段式：`POST <base>/uploads/` 拿 `{upload_url, photo_url}`，再 PUT 檔案到 `upload_url`。
 - 與後端共用的公開值（`R2_PUBLIC_URL`、`GOOGLE_CLIENT_ID`）只有一個來源：`../server/wrangler.jsonc`
   的 `vars`（本地再疊 `../server/.dev.vars`），由 `scripts/set-env.js` 讀取，不要在前端另寫一份。
   只有前端用的值放 `production.env`（只放會進到公開 bundle 或 header 的值，不放機密）；
   CSP 由 `scripts/set-env.js --production --headers` 寫進 `dist` 裡的 `_headers`。
-- 這個資料夾沒有 Pages Functions，也沒有 `wrangler.toml`；伺服器端邏輯都在 `../server`。
+- 這個資料夾只有前端；伺服器端邏輯（API、聊天室、`/<region>/book`、`/api/cover`）都在 `../server`，部署設定是 `../server/wrangler.jsonc`。
 
 ## 9. 登入狀態（Session）
 

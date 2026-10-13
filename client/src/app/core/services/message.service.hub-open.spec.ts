@@ -3,11 +3,13 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { MessageService } from './message.service';
 
+const wsOrigin = location.origin.replace(/^http/, 'ws');
+
 /**
  * Opening the hub for a signed-in visitor. Distinct from reconnecting a hub
  * that dropped (message.service.hub-reconnect.spec.ts): here no socket has
  * ever opened, so nothing else would try again. A visitor without a hub looks
- * away to CFEdgeChat, which emails them about messages while they are on the
+ * away to the chat server, which emails them about messages while they are on the
  * site.
  */
 describe('MessageService opening the hub', () => {
@@ -30,7 +32,7 @@ describe('MessageService opening the hub', () => {
   }
 
   const hubToken = (uid: string) => `h.${btoa(JSON.stringify({ user_id: uid }))}.s`;
-  const ok = (uid = '42') => () => of({ token: hubToken(uid), edge_chat_url: 'https://edge.example' });
+  const ok = (uid = '42') => () => of({ token: hubToken(uid) });
   const failing = (status: number) => () => throwError(() => new HttpErrorResponse({ status }));
 
   beforeEach(() => {
@@ -57,24 +59,17 @@ describe('MessageService opening the hub', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it('fetches a hub token and connects to the hub at edge_chat_url', () => {
+  it('fetches a hub token and connects to the hub on this origin', () => {
     tokenResponses = [ok('42')];
 
     service.openHub();
 
     expect(sockets).toHaveLength(1);
     // The token names the user (and is the subprotocol); the path does not.
-    expect(sockets[0].url).toBe('wss://edge.example/api/chat/hub');
+    expect(sockets[0].url).toBe(`${wsOrigin}/api/chat/hub`);
     expect(sockets[0].protocols).toEqual([hubToken('42')]);
   });
 
-  it('builds a plain ws: hub URL for a local http origin', () => {
-    tokenResponses = [() => of({ token: hubToken('42'), edge_chat_url: 'http://localhost:4200' })];
-
-    service.openHub();
-
-    expect(sockets[0].url).toBe('ws://localhost:4200/api/chat/hub');
-  });
 
   it('asks again after a transient failure and connects, rather than giving up', () => {
     // An error with no handler would be rethrown on a timer by RxJS and fail
@@ -153,7 +148,7 @@ describe('MessageService opening the hub', () => {
     service.openHub();
     vi.advanceTimersByTime(3000);          // the retry goes out and waits
     service.closeHub();
-    pending.next({ token: hubToken('42'), edge_chat_url: 'https://edge.example' });
+    pending.next({ token: hubToken('42') });
     vi.advanceTimersByTime(120_000);
     service.retryHubIfOwed();
 

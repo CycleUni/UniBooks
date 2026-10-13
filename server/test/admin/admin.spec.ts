@@ -133,8 +133,10 @@ describe('admin routing', () => {
       expect(res.status, path).toBe(401);
       expect(await res.json()).toEqual({ error: { code: 'auth.errNotLoggedIn' } });
     }
-    const upload = await fetchApi('/api/v1/admin/promotions/uploads/direct/', { method: 'POST' });
+    const upload = await fetchApi('/api/v1/admin/promotions/uploads/', { method: 'POST' });
     expect(upload.status).toBe(401);
+    const put = await fetchApi('/api/v1/admin/promotions/uploads/file/?token=x', { method: 'PUT', body: 'x' });
+    expect(put.status).toBe(401);
   });
 
   it('404s a non-numeric ad id on the public counters', async () => {

@@ -32,8 +32,12 @@ import {
   publicUrl,
   resolveAdImage,
   sniffImage,
+  TMP_AD_PREFIX,
   tmpAdKey,
+  validatedContentLength,
 } from '../../services/admin/uploads';
+import { declaredType, readCapped } from '../../lib/body';
+import { signToken, verifyToken, InvalidTokenError } from '../../lib/jwt';
 import { parseJsonArray } from '../../services/admin/i18n';
 
 /**
@@ -332,37 +336,54 @@ adRoutes.delete('/sponsors/:id/', async (c) => {
 // ---------------------------------------------------------------------------
 
 /**
- * Answers `{"mode": "direct"}`. The Worker writes R2 itself, so it always
- * takes the direct path: the app then POSTs the file to uploads/direct/,
- * authenticated like every other admin call, and the server sniffs it.
+ * Step one of an ad image upload: authorise one image and hand back where to
+ * PUT it — uploads/file/ with a short-lived upload token that fixes the key,
+ * the type and the size.
  */
-adRoutes.post('/promotions/uploads/presign/', async (c) => {
+adRoutes.post('/promotions/uploads/', async (c) => {
   const data = await readJson(c.req);
   const contentType = typeof data.content_type === 'string' ? data.content_type : '';
-  if (!AD_CONTENT_TYPES[contentType]) apiError(400, 'admin.errUnsupportedFileType');
-  return c.json({ mode: 'direct' });
+  const ext = AD_CONTENT_TYPES[contentType];
+  if (!ext) apiError(400, 'admin.errUnsupportedFileType');
+  const size = validatedContentLength(data.content_length);
+  if (size === null) apiError(400, 'admin.errFileTooLarge');
+  const userId = c.get('user')!.id;
+  const key = tmpAdKey(userId, ext);
+  const token = await signToken(
+    'upload',
+    { user_id: userId, action: 'ad_image', target_key: key, content_type: contentType, max_bytes: size },
+    c.env.JWT_SIGNING_KEY,
+  );
+  return c.json({
+    upload_url: `${origin(c)}/api/v1/admin/promotions/uploads/file/?token=${encodeURIComponent(token)}`,
+    photo_url: publicUrl(c.env, origin(c), key),
+  });
 });
 
-adRoutes.post('/promotions/uploads/direct/', async (c) => {
-  const declared = Number(c.req.header('Content-Length') ?? '0');
-  // Multipart overhead on top of the 5 MB file is small; refuse anything
-  // that cannot possibly fit before reading it.
-  if (declared > MAX_UPLOAD_BYTES + 64 * 1024) apiError(400, 'admin.errFileTooLarge');
-  let form: FormData;
+/** Step two: the bytes, checked against the token and their magic bytes. */
+adRoutes.put('/promotions/uploads/file/', async (c) => {
+  let claims;
   try {
-    form = await c.req.formData();
-  } catch {
-    apiError(400, 'admin.errMissingFile');
+    claims = await verifyToken('upload', c.req.query('token') ?? '', c.env.JWT_SIGNING_KEY);
+  } catch (e) {
+    if (e instanceof InvalidTokenError) apiError(403, 'listing.errPhotoNotOwned');
+    throw e;
   }
-  const file = form.get('file');
-  if (!file || typeof file === 'string') apiError(400, 'admin.errMissingFile');
-  if (file.size > MAX_UPLOAD_BYTES) apiError(400, 'admin.errFileTooLarge');
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  // The token is bound to the staff member who asked for it.
+  const userId = c.get('user')!.id;
+  if (claims.action !== 'ad_image' || claims.user_id !== userId || !claims.target_key.startsWith(`${TMP_AD_PREFIX}/${userId}/`)) {
+    apiError(403, 'listing.errPhotoNotOwned');
+  }
+  if (declaredType(c.req.raw) !== claims.content_type) apiError(400, 'admin.errUnsupportedFileType');
+  const bytes = await readCapped(c.req.raw, Math.min(claims.max_bytes, MAX_UPLOAD_BYTES));
+  if (bytes === null) apiError(400, 'admin.errFileTooLarge');
+  if (bytes.byteLength === 0) apiError(400, 'admin.errMissingFile');
   const ext = sniffImage(bytes);
-  if (!ext) apiError(400, 'admin.errUnsupportedFileType');
-  const key = tmpAdKey(c.get('user')!.id, ext);
-  await c.env.R2.put(key, bytes, { httpMetadata: { contentType: contentTypeForExt(ext) } });
-  return c.json({ mode: 'direct', photo_url: publicUrl(c.env, origin(c), key) });
+  if (!ext || contentTypeForExt(ext) !== claims.content_type) apiError(400, 'admin.errUnsupportedFileType');
+  // One upload per token: never overwrite an object already stored.
+  if (await c.env.R2.head(claims.target_key)) apiError(403, 'listing.errPhotoNotOwned');
+  await c.env.R2.put(claims.target_key, bytes, { httpMetadata: { contentType: claims.content_type } });
+  return c.json({ photo_url: publicUrl(c.env, origin(c), claims.target_key) });
 });
 
 // ---------------------------------------------------------------------------

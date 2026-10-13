@@ -9,7 +9,7 @@ ALLOWED_IMAGE_HOSTS=localhost
 
 # Required (each at least 32 characters).
 JWT_SIGNING_KEY=change-me-dev-only-at-least-32-characters-long
-EDGE_CHAT_JWT_SECRET=change-me-dev-only-chat-secret-32-characters
+CHAT_JWT_SECRET=change-me-dev-only-chat-secret-32-characters
 
 # Email via Mailjet (optional locally; without keys emails are logged and skipped).
 MAILJET_API_KEY=

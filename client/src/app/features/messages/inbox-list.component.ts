@@ -211,7 +211,7 @@ export class MessagesInboxList {
 
   /**
    * When the conversation last had activity. `updated_at` is the time of the
-   * newest message: Django moves it when it mirrors a message into
+   * newest message: the API moves it when it mirrors a message into
    * `latest_message_body`, and the Messages page moves it locally for
    * messages sent or received while it is open.
    */

@@ -25,37 +25,37 @@ describe('MessageService room reconnect', () => {
   });
 
   it('reuses a room token with time left', () => {
-    const connect = vi.spyOn(service, 'connectEdgeChat').mockImplementation(() => {});
+    const connect = vi.spyOn(service, 'connectRoom').mockImplementation(() => {});
     const mint = vi.spyOn(service, 'getChatToken');
     const token = tokenExpiringIn(3600);
 
-    (service as any).reconnectRoom('room-1', token, '7', 'https://chat.example');
+    (service as any).reconnectRoom('room-1', token, '7');
 
     expect(mint).not.toHaveBeenCalled();
-    expect(connect).toHaveBeenCalledWith('room-1', token, '7', 'https://chat.example');
+    expect(connect).toHaveBeenCalledWith('room-1', token, '7');
   });
 
   it('mints a fresh room token for an expired one and hands it on', () => {
     // The room closes a socket whose token expired; reconnecting with the
     // same token could only be refused again, every attempt.
-    const connect = vi.spyOn(service, 'connectEdgeChat').mockImplementation(() => {});
-    vi.spyOn(service, 'getChatToken').mockReturnValue(of({ token: 'fresh', edge_chat_url: 'https://chat.example' }));
+    const connect = vi.spyOn(service, 'connectRoom').mockImplementation(() => {});
+    vi.spyOn(service, 'getChatToken').mockReturnValue(of({ token: 'fresh' }));
     (service as any).currentRoomId = 'room-1';
     const refreshed: string[] = [];
     service.roomTokenRefreshed$.subscribe(e => refreshed.push(e.token));
 
-    (service as any).reconnectRoom('room-1', tokenExpiringIn(-10), '7', 'https://chat.example');
+    (service as any).reconnectRoom('room-1', tokenExpiringIn(-10), '7');
 
-    expect(connect).toHaveBeenCalledWith('room-1', 'fresh', '7', 'https://chat.example');
+    expect(connect).toHaveBeenCalledWith('room-1', 'fresh', '7');
     expect(refreshed).toEqual(['fresh']);
   });
 
   it('drops a fresh token for a conversation the user has left', () => {
-    const connect = vi.spyOn(service, 'connectEdgeChat').mockImplementation(() => {});
-    vi.spyOn(service, 'getChatToken').mockReturnValue(of({ token: 'fresh', edge_chat_url: '' }));
+    const connect = vi.spyOn(service, 'connectRoom').mockImplementation(() => {});
+    vi.spyOn(service, 'getChatToken').mockReturnValue(of({ token: 'fresh' }));
     (service as any).currentRoomId = 'room-2';
 
-    (service as any).reconnectRoom('room-1', tokenExpiringIn(-10), '7', 'https://chat.example');
+    (service as any).reconnectRoom('room-1', tokenExpiringIn(-10), '7');
 
     expect(connect).not.toHaveBeenCalled();
   });

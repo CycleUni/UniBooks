@@ -5,8 +5,8 @@ import { CHAT_APP_ID } from '../lib/chat';
 /**
  * Mint a room token. Shared by the messaging module (participants) and the
  * admin module (moderators reading a reported chat, role 'observer').
- * `edge_chat_url` is the origin the request came in on: chat is served by
- * this same Worker, so the app connects back to wherever it loaded from.
+ * Chat is served by this same Worker under /api/chat, so the app connects
+ * back to the origin it loaded from; no chat URL is handed out.
  */
 export async function mintChatToken(
   env: Env,
@@ -21,15 +21,10 @@ export async function mintChatToken(
       participant_ids: args.participantIds,
       role: args.role,
     },
-    env.EDGE_CHAT_JWT_SECRET,
+    env.CHAT_JWT_SECRET,
   );
 }
 
 export async function mintHubToken(env: Env, userId: string): Promise<string> {
-  return signToken('hub', { user_id: userId }, env.EDGE_CHAT_JWT_SECRET);
-}
-
-/** The chat base URL handed to the app: this request's own origin. */
-export function chatBaseUrl(requestUrl: string): string {
-  return new URL(requestUrl).origin;
+  return signToken('hub', { user_id: userId }, env.CHAT_JWT_SECRET);
 }

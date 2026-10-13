@@ -78,7 +78,7 @@ describe('Admin pages on a failed load', () => {
   // Expanding a chat report fetches its conversation; a failure used to be a
   // toast and nothing in the row, and a late answer could land under another.
   describe('chat report messages', () => {
-    const token = { token: 't', edge_chat_url: 'https://edge', room_id: 'r' };
+    const token = { token: 't', room_id: 'r' };
     let c: AdminChatReportsListComponent;
     let getChatReportToken: ReturnType<typeof vi.fn>;
     let get: ReturnType<typeof vi.fn>;
@@ -92,12 +92,12 @@ describe('Admin pages on a failed load', () => {
       (c as any).http = { get };
     });
 
-    it('reads the reported room from edge_chat_url with the report\'s token', () => {
+    it('reads the reported room history with the report\'s token', () => {
       c.toggleExpand(report('a'));
       get.mockReturnValueOnce(of([]));
       c.loadMessages('a');
       expect(get).toHaveBeenCalledWith(
-        'https://edge/api/chat/rooms/r/messages',
+        `${location.origin}/api/chat/rooms/r/messages`,
         { headers: { Authorization: 'Bearer t', 'ngsw-bypass': 'true' } },
       );
     });

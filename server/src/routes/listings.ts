@@ -10,6 +10,7 @@ import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { signToken, verifyToken, InvalidTokenError } from '../lib/jwt';
+import { declaredType, readCapped } from '../lib/body';
 import { validateBookIsbn } from '../services/catalog/isbn';
 import { nowIso } from '../services/catalog/common';
 import { resolveLanguage, schoolFilterId, schoolFilterScope } from '../services/listings/places';
@@ -18,7 +19,6 @@ import { validateListingFields, type FieldErrors } from '../services/listings/va
 import { deleteListing, hasActiveOrders, pageFor } from '../services/listings/lifecycle';
 import {
   ALLOWED_CONTENT_TYPES,
-  CONTENT_TYPE_BY_EXT,
   MAX_UPLOAD_SIZE_BYTES,
   permanentKeyPrefix,
   PhotoError,
@@ -235,9 +235,9 @@ listingRoutes.get('/recent_books/', async (c) => {
 // ------------------------------------------------------------------ uploads --
 
 /**
- * Issues a same-origin upload URL: the browser
- * PUTs the bytes to /api/v1/listings/uploads/direct/?token=..., where the
- * Worker checks the token, the declared type and size, and the magic bytes.
+ * Issues a same-origin upload URL: the browser PUTs the bytes to
+ * uploads/file/?token=..., where the Worker checks the token, the declared
+ * type and size, and the magic bytes.
  */
 listingRoutes.post('/uploads/', authMiddleware(), async (c) => {
   await checkRate(c, 'upload', RATES.upload);
@@ -256,41 +256,13 @@ listingRoutes.post('/uploads/', authMiddleware(), async (c) => {
     c.env.JWT_SIGNING_KEY,
   );
   return c.json({
-    mode: 'presigned_put',
-    upload_url: `${origin(c)}/api/v1/listings/uploads/direct/?token=${encodeURIComponent(token)}`,
+    upload_url: `${origin(c)}/api/v1/listings/uploads/file/?token=${encodeURIComponent(token)}`,
     photo_url: publicUrlFor(c.env, origin(c), key),
   });
 });
 
-/** Read a request body, refusing to buffer more than `max` bytes. */
-async function readLimited(req: Request, max: number): Promise<Uint8Array | null> {
-  const declared = Number(req.headers.get('Content-Length') ?? '');
-  if (Number.isFinite(declared) && declared > max) return null;
-  if (!req.body) return new Uint8Array();
-  const reader = req.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > max) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  const out = new Uint8Array(total);
-  let at = 0;
-  for (const ch of chunks) {
-    out.set(ch, at);
-    at += ch.byteLength;
-  }
-  return out;
-}
-
 /** The PUT target of /uploads/: stores the bytes the upload token authorised. */
-listingRoutes.put('/uploads/direct/', async (c) => {
+listingRoutes.put('/uploads/file/', async (c) => {
   let claims;
   try {
     claims = await verifyToken('upload', c.req.query('token') ?? '', c.env.JWT_SIGNING_KEY);
@@ -305,10 +277,9 @@ listingRoutes.put('/uploads/direct/', async (c) => {
   ) {
     apiError(403, 'listing.errPhotoNotOwned');
   }
-  const declaredType = (c.req.header('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
-  if (declaredType !== claims.content_type) apiError(400, 'listing.errUnsupportedFileType');
+  if (declaredType(c.req.raw) !== claims.content_type) apiError(400, 'listing.errUnsupportedFileType');
   const max = Math.min(Number(claims.max_bytes) || 0, MAX_UPLOAD_SIZE_BYTES);
-  const bytes = await readLimited(c.req.raw, max);
+  const bytes = await readCapped(c.req.raw, max);
   if (bytes === null || bytes.byteLength === 0) apiError(400, 'listing.errFileTooLarge');
   if (detectImageExtension(bytes) !== ALLOWED_CONTENT_TYPES[claims.content_type]) {
     apiError(400, 'listing.errUnsupportedFileType');
@@ -319,34 +290,11 @@ listingRoutes.put('/uploads/direct/', async (c) => {
   return c.json({ photo_url: publicUrlFor(c.env, origin(c), claims.target_key) });
 });
 
-/** Multipart fallback (mode "direct"): the file proxied through the Worker. */
-listingRoutes.post('/uploads/direct/', authMiddleware(), async (c) => {
-  await checkRate(c, 'upload', RATES.upload);
-  const user = c.get('user')!;
-  const declared = Number(c.req.header('Content-Length') ?? '');
-  if (Number.isFinite(declared) && declared > MAX_UPLOAD_SIZE_BYTES + 64 * 1024) apiError(400, 'listing.errFileTooLarge');
-  let file: unknown;
-  try {
-    file = (await c.req.formData()).get('file');
-  } catch {
-    file = null;
-  }
-  if (!file || typeof file === 'string') apiError(400, 'listing.errNoFile');
-  const blob = file as Blob;
-  if (blob.size > MAX_UPLOAD_SIZE_BYTES) apiError(400, 'listing.errFileTooLarge');
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  const ext = detectImageExtension(bytes);
-  if (!ext) apiError(400, 'listing.errUnsupportedFileType');
-  const key = `${tmpKeyPrefix(user.id)}${crypto.randomUUID().replaceAll('-', '')}.${ext}`;
-  await c.env.R2.put(key, bytes, { httpMetadata: { contentType: CONTENT_TYPE_BY_EXT[ext] } });
-  return c.json({ url: publicUrlFor(c.env, origin(c), key) });
-});
-
 /**
  * Delete an upload the caller owns: their own pending tmp upload, or a
  * permanent photo every listing showing which is theirs. Fail closed.
  */
-listingRoutes.delete('/uploads/delete/', authMiddleware(), async (c) => {
+listingRoutes.delete('/uploads/', authMiddleware(), async (c) => {
   await checkRate(c, 'upload', RATES.upload);
   const user = c.get('user')!;
   let url: unknown = c.req.query('url');

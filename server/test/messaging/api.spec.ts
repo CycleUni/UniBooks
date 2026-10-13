@@ -61,8 +61,8 @@ describe.skipIf(!ready)('messaging API', () => {
 
     const ok = await api(`/api/v1/messaging/chat-token/?conversation_id=${conv}`, { token: buyer.token });
     expect(ok.status).toBe(200);
-    const body = (await ok.json()) as { token: string; edge_chat_url: string };
-    expect(body.edge_chat_url).toBe('http://x');
+    const body = (await ok.json()) as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(['token']);
 
     expect((await api(`/api/v1/messaging/chat-token/?conversation_id=${conv}`, { token: stranger.token })).status).toBe(403);
     expect((await api('/api/v1/messaging/chat-token/', { token: buyer.token })).status).toBe(400);
@@ -113,7 +113,7 @@ describe.skipIf(!ready)('messaging API', () => {
 
   it('a hub token opens only its own hub; the hub push path is not reachable', async () => {
     const a = await seedUser();
-    const hub = await signToken('hub', { user_id: a.id }, env.EDGE_CHAT_JWT_SECRET);
+    const hub = await signToken('hub', { user_id: a.id }, env.CHAT_JWT_SECRET);
     const own = await api(`/api/chat/hub/snapshot`, { headers: { Authorization: `Bearer ${hub}` } });
     expect(own.status).toBe(200);
     expect((await api(`/api/chat/hub/snapshot`)).status).toBe(401);
@@ -129,11 +129,13 @@ describe.skipIf(!ready)('messaging API', () => {
     expect((await req(stranger.token, { conversation_id: conv, content_type: 'image/png', content_length: 10 })).status).toBe(403);
     expect((await req(buyer.token, { conversation_id: conv, content_type: 'image/svg+xml', content_length: 10 })).status).toBe(400);
 
-    const form = new FormData();
-    form.set('conversation_id', conv);
-    form.set('file', new File(['<html></html>'], 'x.png', { type: 'image/png' }));
-    const direct = await api('/api/v1/messaging/uploads/direct/', { method: 'POST', token: buyer.token, body: form });
-    expect(direct.status).toBe(400);
+    const issued = await req(buyer.token, { conversation_id: conv, content_type: 'image/png', content_length: 64 });
+    expect(issued.status).toBe(200);
+    const { upload_url } = (await issued.json()) as { upload_url: string };
+    const path = new URL(upload_url).pathname + new URL(upload_url).search;
+    expect(path).toMatch(/^\/api\/v1\/messaging\/uploads\/file\/\?token=/);
+    const html = await api(path, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: '<html></html>' });
+    expect(html.status).toBe(400);
   });
 });
 

@@ -5,7 +5,7 @@ import { MessageService } from './message.service';
 
 // A hub token is valid for two hours. Reconnecting with the cached copy of it
 // therefore stops working on any tab left open longer than that: every retry
-// 401s, the hub stays down, and CFEdgeChat — which decides who is "away" by
+// 401s, the hub stays down, and the chat server — which decides who is "away" by
 // whether their hub has a socket — starts emailing the user about messages
 // arriving in the page they are currently looking at.
 describe('MessageService hub reconnect', () => {
@@ -36,7 +36,7 @@ describe('MessageService hub reconnect', () => {
       // the only two calls this test's paths make.
       get: vi.fn((url: string) =>
         url.includes('/messaging/hub-token/')
-          ? of({ token: 'fresh-token', edge_chat_url: 'https://edge.example' })
+          ? of({ token: 'fresh-token' })
           : of({ unread: [], lastReadAt: {}, count: 0 })
       ),
       post: vi.fn(() => of(undefined)),
@@ -46,7 +46,7 @@ describe('MessageService hub reconnect', () => {
       providers: [MessageService, { provide: HttpClient, useValue: http }],
     });
     service = TestBed.inject(MessageService);
-    service.connectHub('stale-token', '42', 'https://edge.example');
+    service.connectHub('stale-token', '42');
   });
 
   afterEach(() => {
@@ -183,13 +183,13 @@ describe('MessageService hub reconnect', () => {
   it('does not reopen a hub that was disconnected while the token request was in flight', () => {
     // Sign-out calls disconnectHub; a token response arriving afterwards used
     // to open the hub again behind the layout's back.
-    const pending = new Subject<{ token: string; edge_chat_url: string }>();
+    const pending = new Subject<{ token: string }>();
     tokenResponse(() => pending);
 
     sockets[0].onclose?.();
     vi.advanceTimersByTime(1_000);
     service.disconnectHub();
-    pending.next({ token: 'fresh-token', edge_chat_url: 'https://edge.example' });
+    pending.next({ token: 'fresh-token' });
     vi.advanceTimersByTime(60_000);
 
     expect(sockets).toHaveLength(1);
@@ -200,16 +200,16 @@ describe('MessageService hub reconnect', () => {
     // connection (retry count 0) before the old reconnect's token arrives.
     // The late reconnect must neither open a second socket nor disturb the
     // fresh connection's retry count, or its next drop would wait longer.
-    const pending = new Subject<{ token: string; edge_chat_url: string }>();
+    const pending = new Subject<{ token: string }>();
     tokenResponse(() => pending);
 
     sockets[0].onclose?.();
     vi.advanceTimersByTime(1_000);
-    service.connectHub('new-login-token', '42', 'https://edge.example');
-    pending.next({ token: 'late-token', edge_chat_url: 'https://edge.example' });
+    service.connectHub('new-login-token', '42');
+    pending.next({ token: 'late-token' });
     expect(sockets).toHaveLength(2);
 
-    tokenResponse(() => of({ token: 'fresh-token', edge_chat_url: 'https://edge.example' }));
+    tokenResponse(() => of({ token: 'fresh-token' }));
     sockets[1].onclose?.();
     vi.advanceTimersByTime(1_000);
     expect(sockets).toHaveLength(3);

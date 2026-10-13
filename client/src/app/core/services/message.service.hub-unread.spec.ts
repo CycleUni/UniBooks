@@ -29,7 +29,7 @@ describe('MessageService hub room_update unread state', () => {
       ],
     });
     service = TestBed.inject(MessageService);
-    service.connectHub('token', '42', 'https://edge.example');
+    service.connectHub('token', '42');
   });
 
   const push = (payload: Record<string, unknown>) =>

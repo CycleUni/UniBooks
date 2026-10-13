@@ -4,7 +4,8 @@ import { authMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { apiError, pagination, readJson } from '../lib/http';
 import { requireRegion, isVerifiedIn } from '../lib/region';
-import { mintChatToken, mintHubToken, chatBaseUrl } from '../services/chatTokens';
+import { mintChatToken, mintHubToken } from '../services/chatTokens';
+import { declaredType, readCapped } from '../lib/body';
 import { signToken, verifyToken, InvalidTokenError } from '../lib/jwt';
 import {
   getConversation,
@@ -189,13 +190,13 @@ authed.get('/chat-token/', async (c) => {
     participantIds: [conv.buyer_id, conv.seller_id],
     role: listingDeleted(conv) ? 'observer' : 'user',
   });
-  return c.json({ token, edge_chat_url: chatBaseUrl(c.req.url) });
+  return c.json({ token });
 });
 
 authed.get('/hub-token/', async (c) => {
   const user = c.get('user')!;
   const token = await mintHubToken(c.env, user.id);
-  return c.json({ token, edge_chat_url: chatBaseUrl(c.req.url) });
+  return c.json({ token });
 });
 
 // ─── Chat image uploads ───────────────────────────────────────────────────
@@ -214,9 +215,8 @@ async function uploadableConversation(c: Context<AppEnv>, raw: unknown): Promise
 }
 
 /**
- * Step one of the app's upload: authorise one image and hand back where to
- * PUT it. The URL is this Worker's own
- * uploads/put/ with a short-lived upload token that fixes the key, the type
+ * Step one of an upload: authorise one image and hand back where to PUT it —
+ * uploads/file/ with a short-lived upload token that fixes the key, the type
  * and the size.
  */
 authed.post('/uploads/', async (c) => {
@@ -236,45 +236,17 @@ authed.post('/uploads/', async (c) => {
     { user_id: user.id, action: 'chat_image', target_key: key, content_type: contentType, max_bytes: contentLength },
     c.env.JWT_SIGNING_KEY,
   );
-  const uploadUrl = new URL('/api/v1/messaging/uploads/put/', c.req.url);
+  const uploadUrl = new URL('/api/v1/messaging/uploads/file/', c.req.url);
   uploadUrl.searchParams.set('token', token);
   return c.json({
-    mode: 'presigned_put',
     upload_url: uploadUrl.toString(),
     photo_url: publicUrl(c.env.R2_PUBLIC_URL, key),
   });
 });
 
-/** Read a request body, refusing (null) anything past `max` bytes. */
-async function readCapped(req: Request, max: number): Promise<Uint8Array | null> {
-  const declared = Number(req.headers.get('Content-Length') ?? '');
-  if (Number.isFinite(declared) && declared > max) return null;
-  if (!req.body) return new Uint8Array();
-  const reader = req.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > max) {
-      await reader.cancel().catch(() => {});
-      return null;
-    }
-    chunks.push(value);
-  }
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
-}
-
 /**
- * Step two: the bytes. Authorised by the upload token alone (it is the
- * "presigned URL"), which names the one key, type and size allowed. The
+ * Step two: the bytes. Authorised by the upload token alone, which names
+ * the one key, type and size allowed. The
  * body must be that size or smaller and really be that type of image.
  */
 const putUpload = async (c: Context<AppEnv>) => {
@@ -288,8 +260,7 @@ const putUpload = async (c: Context<AppEnv>) => {
   if (claims.action !== 'chat_image' || !claims.target_key.startsWith(`chat/${claims.user_id}/`)) {
     apiError(403, 'msg.errUploadTokenInvalid');
   }
-  const declaredType = (c.req.header('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
-  if (declaredType !== claims.content_type) apiError(400, 'listing.errUnsupportedFileType');
+  if (declaredType(c.req.raw) !== claims.content_type) apiError(400, 'listing.errUnsupportedFileType');
 
   const bytes = await readCapped(c.req.raw, Math.min(claims.max_bytes, MAX_CHAT_IMAGE_BYTES));
   if (bytes === null) apiError(400, 'msg.errFileTooLarge');
@@ -305,42 +276,11 @@ const putUpload = async (c: Context<AppEnv>) => {
   return c.body(null, 200);
 };
 
-/** POST uploads/direct/: multipart `file` + `conversation_id` → {url}. */
-authed.post('/uploads/direct/', async (c) => {
-  const user = c.get('user')!;
-  await checkRate(c, 'upload', UPLOAD_RATE);
-  const declared = Number(c.req.header('Content-Length') ?? '');
-  // Room for the multipart envelope around a maximum-size file.
-  if (Number.isFinite(declared) && declared > MAX_CHAT_IMAGE_BYTES + 64 * 1024) apiError(400, 'listing.errFileTooLarge');
-
-  let form: FormData;
-  try {
-    form = await c.req.raw.formData();
-  } catch {
-    apiError(400, 'listing.errNoFile');
-  }
-  const convField = form.get('conversation_id');
-  await uploadableConversation(c, typeof convField === 'string' ? convField : '');
-
-  const file = form.get('file');
-  if (!file || typeof file === 'string') apiError(400, 'listing.errNoFile');
-  if (file.size > MAX_CHAT_IMAGE_BYTES) apiError(400, 'listing.errFileTooLarge');
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const type = sniffImageType(bytes);
-  if (!type) apiError(400, 'listing.errUnsupportedFileType');
-
-  const key = chatImageKey(user.id, type);
-  await c.env.R2.put(key, bytes, {
-    httpMetadata: { contentType: type, cacheControl: 'public, max-age=31536000, immutable' },
-  });
-  return c.json({ url: publicUrl(c.env.R2_PUBLIC_URL, key) });
-});
-
 /**
  * The upload PUT is mounted first, outside `authed`: the upload token is its
  * credential (the app's PUT to an absolute URL may carry no access token),
  * and its handler answers before the auth middleware would run.
  */
 export const messagingRoutes = new Hono<AppEnv>();
-messagingRoutes.put('/uploads/put/', putUpload);
+messagingRoutes.put('/uploads/file/', putUpload);
 messagingRoutes.route('/', authed);

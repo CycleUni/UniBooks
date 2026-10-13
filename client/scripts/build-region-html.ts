@@ -5,7 +5,7 @@ import { DEFAULT_REGION, REGION_TO_LANG, SUPPORTED_LANGS, type Lang } from '../s
 
 
 const SITE_NAME = 'UniBooks';
-const DIST_DIR = path.join(__dirname, '../dist/unibooks-fe/browser');
+const DIST_DIR = path.join(__dirname, '../dist/unibooks/browser');
 const INDEX_HTML_PATH = path.join(DIST_DIR, 'index.html');
 const REDIRECTS_PATH = path.join(DIST_DIR, '_redirects');
 const NGSW_PATH = path.join(DIST_DIR, 'ngsw.json');
@@ -20,7 +20,7 @@ const ORGANIZATION_ID = `${SITE_ORIGIN}/#organization`;
 /**
  * The pages every region has and anyone can open, for the static sitemap.
  * Book and listing pages come and go with the data, so the backend serves
- * those (UniBooks-BE listings/sitemap.py); robots.txt names both files.
+ * those (server/src/routes/sitemap.ts); robots.txt names both files.
  * Anything behind a login, the auth flow, checkout and admin stay out.
  */
 const SITEMAP_PAGES = ['', '/search', '/sell'];

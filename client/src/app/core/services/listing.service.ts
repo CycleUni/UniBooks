@@ -1,7 +1,8 @@
 import { Injectable, inject, effect } from '@angular/core';
 import { HttpClient, HttpParams, HttpContext } from '@angular/common/http';
 import { Observable, from, throwError } from 'rxjs';
-import { shareReplay, catchError, switchMap, map } from 'rxjs/operators';
+import { shareReplay, catchError, switchMap } from 'rxjs/operators';
+import { uploadImage } from '../upload';
 import { I18nService } from '../i18n.service';
 import { SKIP_AUTH } from '../auth.interceptor';
 
@@ -91,10 +92,7 @@ export class ListingService {
     return this.http.post<any>(this.apiUrl, listingData);
   }
 
-  // Compresses client-side, then either uploads straight to R2 via a
-  // presigned POST policy (the file never touches our server), or — in
-  // local dev without real R2 credentials — falls back to the old
-  // proxy-through-Django path. See listings/views.py ListingUploadURLView.
+  // Compresses client-side, then uploads in two steps (core/upload.ts).
   uploadPhoto(file: File): Observable<{ url: string }> {
     return from(import('browser-image-compression').then(m => m.default(file, {
       maxSizeMB: 1.5,
@@ -102,33 +100,7 @@ export class ListingService {
       useWebWorker: true,
       fileType: 'image/webp',
     }))).pipe(
-      // content_length is the size of the body about to be PUT — the
-      // compressed blob, not the file the user picked. The backend signs it
-      // into the presigned URL, so R2 refuses a body of any other length;
-      // send the wrong number and the upload itself fails.
-      switchMap(compressed => this.http.post<any>(`${this.apiUrl}uploads/`, {
-        content_type: compressed.type,
-        content_length: compressed.size,
-      }).pipe(
-        switchMap(presign => {
-          if (presign.mode === 'direct') {
-            const formData = new FormData();
-            formData.append('file', compressed, file.name);
-            return this.http.post<{ url: string }>(`${this.apiUrl}uploads/direct/`, formData);
-          }
-
-          if (presign.mode === 'presigned_put') {
-            // S3/R2 PUT presigned URL: just PUT the raw file body
-            return this.http.put(presign.upload_url, compressed, {
-              headers: { 'Content-Type': compressed.type }
-            }).pipe(
-              map(() => ({ url: presign.photo_url }))
-            );
-          }
-
-          throw new Error('Unknown upload mode');
-        })
-      ))
+      switchMap(compressed => uploadImage(this.http, `${this.apiUrl}uploads/`, compressed))
     );
   }
 
@@ -145,6 +117,6 @@ export class ListingService {
   }
 
   deletePhoto(url: string): Observable<any> {
-    return this.http.delete<any>(`${this.apiUrl}uploads/delete/`, { params: { url } });
+    return this.http.delete<any>(`${this.apiUrl}uploads/`, { params: { url } });
   }
 }

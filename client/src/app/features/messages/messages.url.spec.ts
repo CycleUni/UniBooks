@@ -36,12 +36,12 @@ describe('Messages ?chat= URL sync', () => {
     roomUpdates = new Subject<RoomUpdate>();
     messageService = {
       getConversations: vi.fn(() => of(chats())),
-      getChatToken: vi.fn(() => of({ token: 'header.eyJ1c2VyX2lkIjoidXNlci0xIn0.sig', edge_chat_url: 'https://edge.example' })),
-      getEdgeMessagePage: vi.fn(() => of({ messages: [], has_more: false })),
-      markConversationReadCF: vi.fn(() => of(undefined)),
+      getChatToken: vi.fn(() => of({ token: 'header.eyJ1c2VyX2lkIjoidXNlci0xIn0.sig' })),
+      getRoomMessagePage: vi.fn(() => of({ messages: [], has_more: false })),
+      postRoomRead: vi.fn(() => of(undefined)),
       markRoomRead: vi.fn(),
-      connectEdgeChat: vi.fn(),
-      disconnectEdgeChat: vi.fn(),
+      connectRoom: vi.fn(),
+      disconnectRoom: vi.fn(),
       roomUpdates$: roomUpdates,
       roomTokenRefreshed$: EMPTY,
       conversationUnreadState$: new BehaviorSubject(new Map()),

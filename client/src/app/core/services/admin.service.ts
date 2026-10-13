@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { switchMap, map } from 'rxjs/operators';
+import { uploadImage } from '../upload';
 
 export interface Paginated<T> {
   count: number;
@@ -424,8 +424,8 @@ export class AdminService {
     return this.http.patch<AdminChatReport>(`/admin/chat-reports/${id}/`, { status });
   }
 
-  getChatReportToken(id: string): Observable<{ token: string; edge_chat_url: string; room_id: string }> {
-    return this.http.get<{ token: string; edge_chat_url: string; room_id: string }>(`/admin/chat-reports/${id}/chat-token/`);
+  getChatReportToken(id: string): Observable<{ token: string; room_id: string }> {
+    return this.http.get<{ token: string; room_id: string }>(`/admin/chat-reports/${id}/chat-token/`);
   }
 
   getSchoolRequests(opts: { page?: number; q?: string; status?: string; region?: string } = {}): Observable<Paginated<AdminSchoolRequest>> {
@@ -477,33 +477,8 @@ export class AdminService {
     return this.http.delete<void>(`/admin/promotions/${id}/`);
   }
 
+  // Ad images are uploaded as picked, uncompressed (core/upload.ts).
   uploadAdPhoto(file: File): Observable<{ url: string }> {
-    return this.http.post<any>('/admin/promotions/uploads/presign/', {
-      content_type: file.type,
-      // Signed into the presigned URL by the backend; ad images are PUT
-      // uncompressed, so this is the file's own size.
-      content_length: file.size
-    }).pipe(
-      switchMap((presign: any) => {
-        if (presign.mode === 'direct') {
-          const formData = new FormData();
-          formData.append('file', file);
-          // BE now returns { mode: 'direct', photo_url: '...' } for consistency
-          return this.http.post<{ photo_url: string }>('/admin/promotions/uploads/direct/', formData).pipe(
-            map((resp) => ({ url: resp.photo_url }))
-          );
-        }
-
-        if (presign.mode === 'presigned_put') {
-          return this.http.put(presign.upload_url, file, {
-            headers: { 'Content-Type': file.type }
-          }).pipe(
-            map(() => ({ url: presign.photo_url }))
-          );
-        }
-
-        throw new Error('Unknown upload mode');
-      })
-    );
+    return uploadImage(this.http, '/admin/promotions/uploads/', file);
   }
 }

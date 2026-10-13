@@ -190,8 +190,8 @@ export class UiRecentListings {
    * time. A cover that failed to load fired (error), which ran change
    * detection, which recreated the tile, which requested the cover again: an
    * endless request loop per open page, and the placeholder never stayed up
-   * long enough to be seen. It burned through the Pages Functions quota that
-   * /api/cover shares with CFEdgeChat.
+   * long enough to be seen. It burned through the Worker request quota that
+   * /api/cover shares with chat and the API.
    */
   private gridMemo: { books: any[]; ads: any[] | undefined; value: any[] } | null = null;
 

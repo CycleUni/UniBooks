@@ -8,7 +8,7 @@ import { I18nService } from './i18n.service';
  * with a perfectly good explanation:
  *
  *   {"error": {"code": "listing.errBookShared"}}   hand-written views
- *   {"status": ["checkout.errListingUnavailable"]} DRF serializer validation
+ *   {"status": ["checkout.errListingUnavailable"]} field validation (lib/http.ts fieldErrors)
  *
  * Codes are looked up with tOrNull, never t: the backend can return a code no
  * locale declares (or plain English prose), and t() would echo the raw key

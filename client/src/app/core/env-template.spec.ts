@@ -39,7 +39,7 @@ describe('.env.template', () => {
 
   it('lists key names without values, as its own header says', () => {
     // A value here is one a deployment inherits by copying the file without
-    // noticing — the same trap UniBooks-BE's template had.
+    // noticing — the same trap the old backend's template had.
     const withValues = [...TEMPLATE.matchAll(/^([A-Za-z_][A-Za-z0-9_]*)=(.+)$/gm)]
       .map(m => m[1]);
     expect(withValues).toEqual([]);

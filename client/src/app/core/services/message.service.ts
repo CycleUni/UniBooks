@@ -3,6 +3,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable, Subject, BehaviorSubject, Subscription, from } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
+import { uploadImage } from '../upload';
 import { environment } from '../../../environments/environment';
 import { isTransientHttpFailure } from '../http-failure';
 import { decodeJwtPayload } from '../jwt';
@@ -38,7 +39,7 @@ function isActive(): boolean {
   return visible && online;
 }
 
-export interface EdgeChatMessage {
+export interface ChatMessage {
   id: string;
   user_id: string;
   content: string;
@@ -65,7 +66,6 @@ export class MessageService {
   private currentRoomId: string | null = null;
   private currentToken: string | null = null;
   private currentUserId: string | null = null;
-  private currentEdgeChatUrl: string | null = null;
   private platformId = inject(PLATFORM_ID);
 
   private reconnectAttempts = 0;
@@ -100,7 +100,7 @@ export class MessageService {
   // so onclose can tell that apart from the connection actually dropping.
   private closingIntentionally = false;
 
-  public realTimeMessages$ = new Subject<EdgeChatMessage>();
+  public realTimeMessages$ = new Subject<ChatMessage>();
   public realTimeDeletions$ = new Subject<string>();
   public realTimeAcks$ = new Subject<{ id: string; timestamp: number }>();
   // Server-side send rejections (rate limit, message too long, ...). Applies
@@ -113,13 +113,12 @@ export class MessageService {
   public roomTokenRefreshed$ = new Subject<{ roomId: string; token: string }>();
 
   // Single per-user notification connection, independent of whichever
-  // conversation (if any) is currently open via connectEdgeChat/ws above.
+  // conversation (if any) is currently open via connectRoom/ws above.
   // Covers every conversation the user is part of, so the inbox can show
   // live previews/unread badges without opening one socket per conversation.
   private hubWs: WebSocket | null = null;
   private currentHubToken: string | null = null;
   private currentHubUserId: string | null = null;
-  private currentHubEdgeChatUrl: string | null = null;
   private hubReconnectAttempts = 0;
   private hubReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private hubStableTimer: ReturnType<typeof setTimeout> | null = null;
@@ -137,12 +136,12 @@ export class MessageService {
   private static readonly HUB_OPEN_RETRY_DELAYS_MS = [3000, 10000, 30000];
 
   public roomUpdates$ = new Subject<RoomUpdate>();
-  // Total unread conversation count from CFEdgeChat's UserHub. Kept fresh
+  // Total unread conversation count from the chat UserHub. Kept fresh
   // via hub snapshot + live `unread_count` events, not locally calculated
   // to avoid drift between this and per-conversation unread state.
   public unreadCount$ = new BehaviorSubject<number>(0);
 
-  // Per-conversation unread state from CFEdgeChat's UserHub. Keyed by
+  // Per-conversation unread state from the chat UserHub. Keyed by
   // conversation id (string). Updated from hub snapshot + live events.
   public conversationUnreadState$ = new BehaviorSubject<Map<string, boolean>>(new Map());
 
@@ -168,16 +167,16 @@ export class MessageService {
 
   // Room-scoped: the backend verifies the caller is a participant of this
   // conversation before issuing a token, and the token only works for it.
-  getChatToken(conversationId: string): Observable<{token: string, edge_chat_url: string}> {
-    return this.http.get<{token: string, edge_chat_url: string}>('/messaging/chat-token/', {
+  getChatToken(conversationId: string): Observable<{token: string}> {
+    return this.http.get<{token: string}>('/messaging/chat-token/', {
       params: { conversation_id: conversationId }
     });
   }
 
   // User-scoped, not room-scoped: proves identity for the single hub
   // connection but grants no access to any conversation's content on its own.
-  getHubToken(): Observable<{token: string, edge_chat_url: string}> {
-    return this.http.get<{token: string, edge_chat_url: string}>('/messaging/hub-token/');
+  getHubToken(): Observable<{token: string}> {
+    return this.http.get<{token: string}>('/messaging/hub-token/');
   }
 
   markConversationRead(conversationId: string): Observable<void> {
@@ -187,9 +186,9 @@ export class MessageService {
   // Mark a room read via the chat room (/api/chat). The token comes from the
   // room-scoped `getChatToken` call (the API has authorised the caller before
   // minting it), and it names the reader, so no user id travels in the URL.
-  markConversationReadCF(roomId: string, token: string, edgeChatUrl: string): Observable<void> {
+  postRoomRead(roomId: string, token: string): Observable<void> {
     return this.http.post<void>(
-      chatRoomReadUrl(edgeChatUrl, roomId),
+      chatRoomReadUrl(roomId),
       {},
       { headers: { Authorization: `Bearer ${token}`, 'ngsw-bypass': 'true' } }
     );
@@ -199,9 +198,8 @@ export class MessageService {
     return this.http.delete<{status: string}>(`/messaging/conversations/${conversationId}/delete/`);
   }
 
-  // Upload chat image: compress client-side, then upload via presigned URL to R2
-  // (falls back to proxy-through-Django in local dev without R2 credentials).
-  // Returns the public URL of the uploaded image.
+  // Upload a chat image: compress client-side, then upload in two steps
+  // (core/upload.ts). Returns the public URL of the uploaded image.
   uploadChatPhoto(file: File, conversationId: string): Observable<{ url: string }> {
     return from(import('browser-image-compression').then(m => m.default(file, {
       maxSizeMB: 0.5,
@@ -210,44 +208,19 @@ export class MessageService {
       useWebWorker: true,
       fileType: 'image/webp',
     }))).pipe(
-      // See listing.service.ts: the length is signed into the URL, so it
-      // must be the compressed blob's, not the original file's.
-      switchMap(compressed => this.http.post<any>(`/messaging/uploads/`, {
-        content_type: compressed.type,
-        content_length: compressed.size,
-        conversation_id: conversationId
-      }).pipe(
-        switchMap(presign => {
-          if (presign.mode === 'direct') {
-            const formData = new FormData();
-            formData.append('file', compressed, file.name);
-            formData.append('conversation_id', conversationId);
-            return this.http.post<{ url: string }>(`/messaging/uploads/direct/`, formData);
-          }
-
-          if (presign.mode === 'presigned_put') {
-            // R2 PUT presigned URL: just PUT the raw file body
-            return this.http.put(presign.upload_url, compressed, {
-              headers: { 'Content-Type': compressed.type }
-            }).pipe(
-              map(() => ({ url: presign.photo_url }))
-            );
-          }
-
-          throw new Error('Unknown upload mode');
-        })
-      ))
+      switchMap(compressed =>
+        uploadImage(this.http, '/messaging/uploads/', compressed, { conversation_id: conversationId })
+      )
     );
   }
-
 
   // Chat endpoints (/api/chat, see core/chat-urls.ts). The room token goes in
   // the Authorization header, not the URL, so it doesn't end up in server
   // logs, Referer headers, or browser history. `ngsw-bypass` skips the
   // Angular service worker: these are absolute URLs, so the ApiUrlInterceptor
   // (which only adds the bypass to relative API URLs) never sees them.
-  getEdgeMessages(roomId: string, token: string, edgeChatUrl: string): Observable<EdgeChatMessage[]> {
-    return this.http.get<EdgeChatMessage[]>(chatRoomMessagesUrl(edgeChatUrl, roomId), {
+  getRoomMessages(roomId: string, token: string): Observable<ChatMessage[]> {
+    return this.http.get<ChatMessage[]>(chatRoomMessagesUrl(roomId), {
       headers: { Authorization: `Bearer ${token}`, 'ngsw-bypass': 'true' }
     });
   }
@@ -262,19 +235,18 @@ export class MessageService {
    * alongside the rows — the plain endpoint returns a bare array with no way
    * to tell "no older messages" from "exactly a full page left".
    */
-  getEdgeMessagePage(
+  getRoomMessagePage(
     roomId: string,
     token: string,
-    edgeChatUrl: string,
     limit: number,
     before?: number
-  ): Observable<{ messages: EdgeChatMessage[]; has_more: boolean }> {
+  ): Observable<{ messages: ChatMessage[]; has_more: boolean }> {
     let params = new HttpParams().set('paginated', '1').set('limit', String(limit));
     if (before !== undefined) {
       params = params.set('before', String(before));
     }
-    return this.http.get<{ messages: EdgeChatMessage[]; has_more: boolean } | EdgeChatMessage[]>(
-      chatRoomMessagesUrl(edgeChatUrl, roomId),
+    return this.http.get<{ messages: ChatMessage[]; has_more: boolean } | ChatMessage[]>(
+      chatRoomMessagesUrl(roomId),
       { headers: { Authorization: `Bearer ${token}`, 'ngsw-bypass': 'true' }, params }
     ).pipe(
       // A worker predating the envelope ignores `paginated` and still returns
@@ -285,9 +257,9 @@ export class MessageService {
     );
   }
 
-  connectEdgeChat(roomId: string, token: string, userId: string, edgeChatUrl: string) {
+  connectRoom(roomId: string, token: string, userId: string) {
     if (!isPlatformBrowser(this.platformId)) return;
-    this.disconnectEdgeChat(false); // Do not clear reconnect state if we are just internally reconnecting, actually wait, if user manually calls connect, we should clear it.
+    this.disconnectRoom(false); // Do not clear reconnect state if we are just internally reconnecting, actually wait, if user manually calls connect, we should clear it.
 
     // We handle the intentional disconnect flag differently here.
     // If it's a completely new connection request, reset state.
@@ -298,12 +270,11 @@ export class MessageService {
     this.currentRoomId = roomId;
     this.currentToken = token;
     this.currentUserId = userId;
-    this.currentEdgeChatUrl = edgeChatUrl;
 
     // The WebSocket API has no way to set a custom Authorization header, so
     // the token travels as a subprotocol instead of a URL query param —
     // still browser-native, but it doesn't end up in the connect URL.
-    const wsUrl = chatRoomSocketUrl(edgeChatUrl, roomId);
+    const wsUrl = chatRoomSocketUrl(roomId);
 
     // Captured locally and checked (`this.ws !== ws`) at the top of every
     // handler below. Per-room messages carry no room_id on the wire — the
@@ -319,7 +290,7 @@ export class MessageService {
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
-      devLog(`[EdgeChat] Connected to room ${roomId}`);
+      devLog(`[chat] Connected to room ${roomId}`);
       this.clearRoomStableTimer();
       this.roomStableTimer = setTimeout(() => {
         this.roomStableTimer = null;
@@ -358,13 +329,13 @@ export class MessageService {
           this.sendErrors$.next(data.code || data.message || 'Failed to send message');
         }
       } catch (e) {
-        devError('Error parsing EdgeChat message', e);
+        devError('Error parsing chat message', e);
       }
     };
 
     ws.onclose = () => {
       if (this.ws !== ws) return;
-      devLog(`[EdgeChat] Disconnected from room ${roomId}`);
+      devLog(`[chat] Disconnected from room ${roomId}`);
       this.ws = null;
       this.clearRoomStableTimer();
       // A deliberate close (switching chats, leaving the page) isn't a send
@@ -396,7 +367,7 @@ export class MessageService {
 
     // Exponential backoff: 1s, 2s, 4s, 8s, up to max 30s
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-    devLog(`[EdgeChat] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
+    devLog(`[chat] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
     
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
@@ -405,8 +376,8 @@ export class MessageService {
         return;
       }
       this.reconnectAttempts++;
-      if (this.currentRoomId && this.currentToken && this.currentUserId && this.currentEdgeChatUrl) {
-        this.reconnectRoom(this.currentRoomId, this.currentToken, this.currentUserId, this.currentEdgeChatUrl);
+      if (this.currentRoomId && this.currentToken && this.currentUserId) {
+        this.reconnectRoom(this.currentRoomId, this.currentToken, this.currentUserId);
       }
     }, delay);
   }
@@ -414,20 +385,20 @@ export class MessageService {
   /**
    * Reconnect the open room, minting a fresh room token first when the one
    * held is about to expire or has. The room closes a socket whose token
-   * has expired (CFEdgeChat, close code 4001), and reconnecting with that
+   * has expired (close code 4001), and reconnecting with that
    * same token could only be refused, every attempt, until the user left
    * the conversation and came back. Same reuse rule as the hub's.
    */
-  private reconnectRoom(roomId: string, staleToken: string, userId: string, edgeChatUrl: string): void {
+  private reconnectRoom(roomId: string, staleToken: string, userId: string): void {
     if (tokenSecondsLeft(staleToken) > MessageService.TOKEN_REUSE_MIN_SECONDS) {
-      this.connectEdgeChat(roomId, staleToken, userId, edgeChatUrl);
+      this.connectRoom(roomId, staleToken, userId);
       return;
     }
     this.getChatToken(roomId).subscribe({
       next: (res) => {
         // The user may have opened another conversation meanwhile.
         if (this.currentRoomId !== roomId) return;
-        this.connectEdgeChat(roomId, res.token, userId, res.edge_chat_url || edgeChatUrl);
+        this.connectRoom(roomId, res.token, userId, );
         this.roomTokenRefreshed$.next({ roomId, token: res.token });
       },
       error: () => {
@@ -439,7 +410,7 @@ export class MessageService {
     });
   }
 
-  disconnectEdgeChat(intentional: boolean = true) {
+  disconnectRoom(intentional: boolean = true) {
     this.clearRoomStableTimer();
     this.clearReadTimer();
     this.readOwed = false;
@@ -460,7 +431,7 @@ export class MessageService {
       this.closingIntentionally = true;
       this.connectionState$.next('disconnected');
     } else {
-      // Called from connectEdgeChat() when switching rooms. We don't want
+      // Called from connectRoom() when switching rooms. We don't want
       // onclose to trigger sendErrors$ ("Connection lost") since this is a
       // deliberate tear-down, not a network drop. The superseded-socket guard
       // (this.ws !== ws) in onclose already makes it a no-op if a new socket
@@ -478,12 +449,12 @@ export class MessageService {
   // Returns false if the message couldn't be sent at all (socket not open),
   // so the caller can flag it as failed immediately instead of waiting on a
   // server round trip that will never come.
-  sendEdgeMessage(content: string, messageType: 'text' | 'image' = 'text', metadata?: Record<string, unknown>): boolean {
+  sendRoomMessage(content: string, messageType: 'text' | 'image' = 'text', metadata?: Record<string, unknown>): boolean {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'message', content, message_type: messageType, metadata }));
       return true;
     }
-    devError('[EdgeChat] Cannot send message, WebSocket is not open');
+    devError('[chat] Cannot send message, WebSocket is not open');
     return false;
   }
 
@@ -491,7 +462,7 @@ export class MessageService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'delete', id }));
     } else {
-      devError('[EdgeChat] Cannot delete message, WebSocket is not open');
+      devError('[chat] Cannot delete message, WebSocket is not open');
     }
   }
 
@@ -521,8 +492,8 @@ export class MessageService {
       return;
     }
     // No socket right now: fall back to the REST endpoint.
-    if (this.currentRoomId && this.currentToken && this.currentEdgeChatUrl && this.currentUserId) {
-      this.markConversationReadCF(this.currentRoomId, this.currentToken, this.currentEdgeChatUrl)
+    if (this.currentRoomId && this.currentToken && this.currentUserId) {
+      this.postRoomRead(this.currentRoomId, this.currentToken)
         .subscribe({ error: () => { } });
     }
   }
@@ -568,7 +539,7 @@ export class MessageService {
   /**
    * Open the hub for the signed-in visitor: fetch a hub token, then connect.
    *
-   * The hub is the only thing that tells CFEdgeChat the visitor is on the site;
+   * The hub is the only thing that tells the chat server the visitor is on the site;
    * with no socket on it they count as away and get emailed about new
    * messages. scheduleHubReconnect brings back a hub that *dropped*, but
    * nothing brought back one that never opened: the token request ran once,
@@ -595,7 +566,7 @@ export class MessageService {
         // Unreadable token: nothing to connect as.
         const userId = String(decodeJwtPayload(res.token)?.['user_id'] ?? '');
         if (!userId) return;
-        this.connectHub(res.token, userId, res.edge_chat_url);
+        this.connectHub(res.token, userId);
       },
       error: (err: unknown) => {
         if (!this.hubOpenWanted || !isTransientHttpFailure(err)) return;
@@ -642,7 +613,7 @@ export class MessageService {
     this.hubOpenRetryIndex = 0;
   }
 
-  connectHub(token: string, userId: string, edgeChatUrl: string) {
+  connectHub(token: string, userId: string) {
     if (!isPlatformBrowser(this.platformId)) return;
     if (this.hubWs && this.currentHubUserId === userId) return;
     this.disconnectHub();
@@ -650,24 +621,23 @@ export class MessageService {
     // socket it is tearing down. Lower it again for the one about to be
     // opened: left raised, the first time this connection dropped on its own
     // onclose would read the drop as deliberate and schedule no reconnect,
-    // leaving the hub down (and its user looking away to CFEdgeChat, which
+    // leaving the hub down (and its user looking away to the chat server, which
     // would then email them) until the next login or page load.
     this.hubClosingIntentionally = false;
 
     this.currentHubToken = token;
     this.currentHubUserId = userId;
-    this.currentHubEdgeChatUrl = edgeChatUrl;
     this.hubReconnectAttempts = 0;
 
     // The hub token names the user; the path no longer does.
-    const wsUrl = chatHubSocketUrl(edgeChatUrl);
-    // Same superseded-socket guard as connectEdgeChat — see its comment.
+    const wsUrl = chatHubSocketUrl();
+    // Same superseded-socket guard as connectRoom — see its comment.
     const hubWs = new WebSocket(wsUrl, [token]);
     this.hubWs = hubWs;
 
     hubWs.onopen = () => {
       if (this.hubWs !== hubWs) return;
-      devLog('[EdgeChat] Hub connected');
+      devLog('[chat] Hub connected');
       this.clearHubStableTimer();
       this.hubStableTimer = setTimeout(() => {
         this.hubStableTimer = null;
@@ -720,7 +690,7 @@ export class MessageService {
 
     hubWs.onclose = () => {
       if (this.hubWs !== hubWs) return;
-      devLog('[EdgeChat] Hub disconnected');
+      devLog('[chat] Hub disconnected');
       this.hubWs = null;
       this.clearHubStableTimer();
       if (!this.hubClosingIntentionally) {
@@ -740,7 +710,7 @@ export class MessageService {
     const delay = Math.min(1000 * Math.pow(2, this.hubReconnectAttempts), 30000);
     this.hubReconnectTimeout = setTimeout(() => {
       this.hubReconnectTimeout = null;
-      // Hidden tab or no network: the hub is only there to tell CFEdgeChat
+      // Hidden tab or no network: the hub is only there to tell the chat server
       // the visitor is here, and they aren't — being counted away (and
       // emailed about new messages) is right until they come back.
       if (!isActive()) {
@@ -749,26 +719,25 @@ export class MessageService {
       }
       this.hubReconnectAttempts++;
       const userId = this.currentHubUserId;
-      const edgeChatUrl = this.currentHubEdgeChatUrl;
       const staleToken = this.currentHubToken;
-      if (!userId || !edgeChatUrl || !staleToken) return;
+      if (!userId || !staleToken) return;
 
       // Mint a fresh token rather than replaying the cached one: the hub
       // token expires after two hours, so a tab left open past that could
       // never reconnect — every attempt 401s and the retry loop just keeps
       // backing off. That is not only a dead badge: with nothing connected
-      // to the hub, CFEdgeChat counts the user as away and starts emailing
+      // to the hub, the chat server counts the user as away and starts emailing
       // them about messages arriving in a page they are looking at.
       //
       // But only when it is close to expiring. Minting on every attempt
       // meant a chat outage cost a backend request per retry, on top of the
       // retry itself.
       if (tokenSecondsLeft(staleToken) > MessageService.TOKEN_REUSE_MIN_SECONDS) {
-        this.reconnectHub(staleToken, userId, edgeChatUrl);
+        this.reconnectHub(staleToken, userId);
         return;
       }
       this.getHubToken().subscribe({
-        next: (res) => this.reconnectHub(res.token, userId, res.edge_chat_url || edgeChatUrl),
+        next: (res) => this.reconnectHub(res.token, userId, ),
         error: (err: unknown) => {
           // Only a failure that says nothing about the session is worth
           // retrying with the cached token: the backend unreachable (status
@@ -782,7 +751,7 @@ export class MessageService {
           const transient = err instanceof HttpErrorResponse &&
             (err.status === 0 || err.status === 429 || err.status >= 500);
           if (!transient) return;
-          this.reconnectHub(staleToken, userId, edgeChatUrl);
+          this.reconnectHub(staleToken, userId);
         },
       });
     }, delay);
@@ -796,10 +765,10 @@ export class MessageService {
   //  - it does nothing if the hub was deliberately disconnected while the
   //    token request was in flight (sign-out clears currentHubUserId),
   //    which would otherwise reopen a hub the layout had just closed.
-  private reconnectHub(token: string, userId: string, edgeChatUrl: string) {
+  private reconnectHub(token: string, userId: string) {
     if (this.currentHubUserId !== userId) return;
     const attempts = this.hubReconnectAttempts;
-    this.connectHub(token, userId, edgeChatUrl);
+    this.connectHub(token, userId);
     this.hubReconnectAttempts = attempts;
   }
 
@@ -813,7 +782,6 @@ export class MessageService {
     this.hubReconnectAttempts = 0;
     this.currentHubToken = null;
     this.currentHubUserId = null;
-    this.currentHubEdgeChatUrl = null;
     this.hubClosingIntentionally = true;
     this.unreadCount$.next(0);
     this.conversationUnreadState$.next(new Map());

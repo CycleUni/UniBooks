@@ -57,7 +57,6 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   newMessage = '';
   showUnverifiedPrompt = false;
   chatToken = '';
-  edgeChatUrl = '';
   userId = '';
   connectionState: 'connected' | 'reconnecting' | 'disconnected' = 'disconnected';
   imeComposing = false;
@@ -179,7 +178,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
       this.cdr.markForCheck();
     });
 
-    // Unread state lives in CFEdgeChat's UserHub, not Django. Merge the hub's
+    // Unread state lives in the chat UserHub, not the API database. Merge the hub's
     // per-conversation unread map into chat objects so the template can show
     // the dot without relying on the removed `unread` serializer field.
     this.unreadStateSubscription = this.messageService.conversationUnreadState$.subscribe(state => {
@@ -264,7 +263,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
         msg.failed = true;
         this.cdr.markForCheck();
       }
-      // Refusals from the CFEdgeChat DO that the user can act on. Anything
+      // Refusals from the chat room that the user can act on. Anything
       // else has already shown itself as the failed marker on the bubble.
       if (errMsg && errMsg.includes('FORBIDDEN_SYSTEM_MESSAGE')) {
         this.toast.error(this.i18n.t('msg.errSystemMessageForbidden'));
@@ -284,7 +283,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
         this.trySend(queued.msg);
       }
 
-      if (state === 'connected' && this.activeChat && this.chatToken && this.edgeChatUrl) {
+      if (state === 'connected' && this.activeChat && this.chatToken) {
         // Already loaded via selectChat's eager fetch; don't overwrite
         if (this.messages.length > 0) {
           this.cdr.markForCheck();
@@ -361,10 +360,10 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     this.inputAreaResizeObserver?.disconnect();
     this.chatTopResizeObserver?.disconnect();
     // The hub connection is owned by the app shell (ui-layout), not this
-    // page, so it stays alive across navigation — only disconnectEdgeChat
+    // page, so it stays alive across navigation — only disconnectRoom
     // (the per-room connection for whichever chat was open) belongs here.
     this.mobileLayout.setHideBottomNav(false);
-    this.messageService.disconnectEdgeChat();
+    this.messageService.disconnectRoom();
     if (this.wsSubscription) {
       this.wsSubscription.unsubscribe();
     }
@@ -595,11 +594,11 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     // chat's socket is closed so nothing from it lands here.
     if (isPendingChat(chat)) {
       this.loadingHistory = false;
-      this.messageService.disconnectEdgeChat();
+      this.messageService.disconnectRoom();
       return;
     }
     this.loadingHistory = true;
-    // Mark read is handled via CFEdgeChat after we fetch the room token
+    // Mark read is handled by the chat room after we fetch the room token
 
     // Fetch a token scoped to this specific room every time a chat is
     // opened — the backend checks the caller is actually a participant of
@@ -614,19 +613,18 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
         if (this.activeChat?.id !== chat.id) return;
 
         this.chatToken = res.token;
-        this.edgeChatUrl = res.edge_chat_url;
         const tokenUserId = decodeJwtPayload(res.token)?.['user_id'];
         if (tokenUserId != null) this.userId = String(tokenUserId);
 
         // Not marked read here any more: the room socket marks it on open
-        // (MessageService.connectEdgeChat), with no REST call or preflight.
+        // (MessageService.connectRoom), with no REST call or preflight.
 
         // Fetch message history immediately via REST — don't wait for the
         // WebSocket connection to reach 'connected' (it may be delayed or
         // fail, leaving the message pane blank).
         this.fetchHistory(String(chat.id));
 
-        this.messageService.connectEdgeChat(chat.id, this.chatToken, this.userId, this.edgeChatUrl);
+        this.messageService.connectRoom(chat.id, this.chatToken, this.userId);
       },
       error: (err) => {
         console.error('Failed to fetch chat token', err);
@@ -680,7 +678,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     }
     // Block sending if the WebSocket is not fully open. In 'disconnected'
     // state the socket is still being established (initial connect) — sending
-    // at that moment causes sendEdgeMessage() to return false and the message
+    // at that moment causes sendRoomMessage() to return false and the message
     // is immediately marked as failed before the connection even had a chance
     // to open. 'reconnecting' is already handled, but 'disconnected' was not.
     if (this.connectionState !== 'connected') return;
@@ -765,7 +763,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   private trySend(msg: any) {
-    const sent = this.messageService.sendEdgeMessage(msg.body, msg.message_type || 'text', msg.metadata);
+    const sent = this.messageService.sendRoomMessage(msg.body, msg.message_type || 'text', msg.metadata);
     if (sent) {
       this.ga.trackSendMessage(this.activeChat?.id);
       // Resolved later by realTimeAcks$ (success) or sendErrors$ (failure).
@@ -936,7 +934,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     return [];
   }
 
-  /** Maps one raw CFEdgeChat row to the shape the template renders. */
+  /** Maps one raw chat-room row to the shape the template renders. */
   private toViewMessage(m: any) {
     const bodyText = m.content || m.body || '';
     const createdDate = m.timestamp ? new Date(m.timestamp).toISOString() : (m.created_at ? new Date(m.created_at).toISOString() : new Date().toISOString());
@@ -976,8 +974,8 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     this.loadingOlder = true;
     this.cdr.markForCheck();
 
-    this.messageService.getEdgeMessagePage(
-      chat.id, this.chatToken, this.edgeChatUrl, this.HISTORY_PAGE_SIZE, this.oldestTimestamp
+    this.messageService.getRoomMessagePage(
+      chat.id, this.chatToken, this.HISTORY_PAGE_SIZE, this.oldestTimestamp
     ).subscribe({
       next: (page) => {
         // The user may have switched conversations while this was in flight.
@@ -1041,8 +1039,8 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
    * retried by the second.
    */
   private fetchHistory(chatId: string) {
-    this.messageService.getEdgeMessagePage(
-      chatId, this.chatToken, this.edgeChatUrl, this.HISTORY_PAGE_SIZE
+    this.messageService.getRoomMessagePage(
+      chatId, this.chatToken, this.HISTORY_PAGE_SIZE
     ).subscribe({
       next: (page) => {
         if (String(this.activeChat?.id) !== chatId) return;
@@ -1051,7 +1049,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
         this.setEdgeMessages(page?.messages || []);
       },
       error: (err) => {
-        console.error('[fetchHistory] getEdgeMessagePage failed:', err);
+        console.error('[fetchHistory] getRoomMessagePage failed:', err);
         if (String(this.activeChat?.id) !== chatId) return;
         this.hasMoreHistory = false;
         this.setEdgeMessages([]);
@@ -1253,7 +1251,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
 
   /**
    * The toast for a meetup action the server refused. Only a reason the
-   * locale can render goes after "Action failed:" — `detail` is DRF's English
+   * locale can render goes after "Action failed:" — `detail` is English
    * prose, `status` is an untranslated code array, and `err.message` is
    * Angular's "Http failure response for …" — none of which a buyer can act on.
    */

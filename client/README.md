@@ -28,8 +28,8 @@ npm run build    # 正式 production 建置（讀 production.env）
 `npm start`（以及單純的 `ng serve`，`angular.json` 的 serve 已指定 `proxyConfig`）透過
 `proxy.conf.json` 把整個 `/api` 轉發到 `http://localhost:8787`，也就是 server 的 `wrangler dev`。
 只有這一條規則：`ws: true` 讓聊天室的 WebSocket（`/api/chat/...`）也走同一條，
-`changeOrigin: false` 讓 Worker 看到的 Host 仍是 `localhost:4200`——後端回傳的
-`edge_chat_url`（＝請求的 origin）與 Session cookie 才會落在開發伺服器的 origin 上。
+`changeOrigin: false` 讓 Worker 看到的 Host 仍是 `localhost:4200`——後端組出的上傳網址
+與 Session cookie 才會落在開發伺服器的 origin 上。
 另開一個終端機：
 
 ```bash
@@ -260,10 +260,12 @@ export const APP_ROUTES: Routes = [
   refresh 被拒（401/403）就在本機登出，依 `signed-out-redirect.ts` 決定要不要離開目前頁面。
 - **跨分頁同步**：`BroadcastChannel('ub-auth')` 廣播 `login`／`logout`（不支援時改用 localStorage 的
   `ub_auth_event` ping），訊息裡沒有任何 token。
-- **聊天室**（`core/chat-urls.ts`）：以 `/messaging/chat-token/`、`/messaging/hub-token/` 回傳的
-  `edge_chat_url`（本站 origin）組出 `/api/chat/hub`（WebSocket）、`/api/chat/rooms/<roomId>`（WebSocket）、
-  `/api/chat/rooms/<roomId>/messages`、`/api/chat/rooms/<roomId>/read`。房間／hub token 仍交給 JS
+- **聊天室**（`core/chat-urls.ts`）：以本頁 origin 組出 `/api/chat/hub`（WebSocket）、
+  `/api/chat/rooms/<roomId>`（WebSocket）、`/api/chat/rooms/<roomId>/messages`、`/api/chat/rooms/<roomId>/read`；
+  token 由 `/messaging/chat-token/`、`/messaging/hub-token/` 取得。房間／hub token 仍交給 JS
   （短效、只限該房間），HTTP 放 `Authorization: Bearer`，WebSocket 放在 subprotocol，不放進網址。
+- **圖片上傳**（`core/upload.ts`）：刊登照片、聊天圖片、廣告圖都是兩段式——`POST <base>/uploads/` 取得
+  `{upload_url, photo_url}`，再把（壓縮後的）檔案 PUT 到 `upload_url`（`<base>/uploads/file/?token=…`，同源）。
 - 語系切換使用 **I18nService** + **TPipe**，所有文字皆走 `{{ 'key' | t }}`，語言變更時 `TPipe` 自動重新渲染。
 
 ### 6️⃣ 測試策略
@@ -285,7 +287,7 @@ npm run e2e           # Playwright
 前端不單獨部署，是建置進 server Worker 一起上線：
 
 1. **部署**：`cd ../server && npm run deploy`（先跑 `npm run build:fe` = 本專案的
-   `npm run build`，產生 `dist/unibooks-fe/browser/`，再套用 D1 migration 並 `wrangler deploy`；
+   `npm run build`，產生 `dist/unibooks/browser/`，再套用 D1 migration 並 `wrangler deploy`；
    `wrangler.jsonc` 的 `assets.directory` 指向這個資料夾）。
 2. **建置設定**：前後端共用的公開值（`R2_PUBLIC_URL`、`GOOGLE_CLIENT_ID`）只寫在
    `../server/wrangler.jsonc` 的 `vars`，`scripts/set-env.js` 直接讀取（本地 `npm start`／`npm test`
@@ -304,7 +306,7 @@ npm run e2e           # Playwright
 
 ## 🌐 PWA 支援 (Progressive Web App)
 
-UniBooks-FE 支援 PWA，提供離線使用、安裝到桌面、推播通知等原生 App 體驗。
+UniBooks 前端支援 PWA，提供離線使用、安裝到桌面、推播通知等原生 App 體驗。
 
 ### PWA 架構
 
@@ -350,7 +352,7 @@ provideServiceWorker('ngsw-worker.js', {
 ### 建置與驗證
 
 ```bash
-npm run build          # 正式建置，產出 dist/unibooks-fe/browser/ngsw-worker.js 等
+npm run build          # 正式建置，產出 dist/unibooks/browser/ngsw-worker.js 等
 # 部署後用 Lighthouse PWA audit 驗證
 ```
 

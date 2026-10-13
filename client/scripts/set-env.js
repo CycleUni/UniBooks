@@ -88,7 +88,7 @@ if (!HEADERS_ONLY && process.env.NG_APP_ALLOWED_HOSTS) {
   try {
     let angularJson = JSON.parse(fs.readFileSync(angularJsonPath, 'utf8'));
     const hosts = process.env.NG_APP_ALLOWED_HOSTS.split(',').map(s => s.trim());
-    const buildOptions = angularJson.projects['unibooks-fe'].architect.build.options;
+    const buildOptions = angularJson.projects['unibooks'].architect.build.options;
     if (buildOptions.security) {
       buildOptions.security.allowedHosts = hosts;
       fs.writeFileSync(angularJsonPath, JSON.stringify(angularJson, null, 2), 'utf8');
@@ -212,7 +212,7 @@ function rewriteCsp(original, enforce, policy) {
 }
 
 if (HEADERS_ONLY) {
-  const headersPath = path.join(__dirname, '../dist/unibooks-fe/browser/_headers');
+  const headersPath = path.join(__dirname, '../dist/unibooks/browser/_headers');
   const mediaOrigin = originOf(process.env.R2_PUBLIC_URL);
   if (!fs.existsSync(headersPath)) {
     console.error(`[set-env] ${headersPath} not found — run after ng build`);

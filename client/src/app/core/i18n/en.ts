@@ -977,7 +977,7 @@ export const en: Record<string, string> = {
   'admin.confirmToggleAdmin': '{action} for {email}?',
   'admin.errLabelTooLong': 'Each label can be at most {max} characters.',
   'admin.errTooManyLabels': 'At most {max} labels.',
-  'admin.chatNotConfigured': 'Chat server is not configured (missing EDGE_CHAT_JWT_SECRET). Please contact the system administrator to set this environment variable.',
+  'admin.chatNotConfigured': 'Chat server is not configured (missing CHAT_JWT_SECRET). Please contact the system administrator to set this environment variable.',
   'admin.listingStatus.active': 'Active',
   'admin.listingStatus.reserved': 'Reserved',
   'admin.listingStatus.sold': 'Sold',

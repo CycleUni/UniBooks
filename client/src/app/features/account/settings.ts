@@ -109,7 +109,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (this.clientPwdMsg) return this.i18n.t(this.clientPwdMsg);
     if (!this.lastPwdError) return '';
     const err = this.lastPwdError;
-    // Changing a password now runs Django's AUTH_PASSWORD_VALIDATORS, which
+    // Changing a password now runs the server's password validators, which
     // answer {error:{code:'auth.errValidation', fields:[...]}} — the shape
     // registration already knows. Nothing here read it, so "too short",
     // "too common" and "entirely numeric" all arrived as a bare "update

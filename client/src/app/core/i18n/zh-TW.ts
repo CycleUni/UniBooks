@@ -979,7 +979,7 @@ export const zhTW: Record<string, string> = {
   'admin.confirmToggleAdmin': '確定要對 {email} 執行「{action}」嗎？',
   'admin.errLabelTooLong': '單一標籤長度不可超過 {max} 個字。',
   'admin.errTooManyLabels': '最多只能有 {max} 個標籤。',
-  'admin.chatNotConfigured': '聊天伺服器設定缺失（缺少 EDGE_CHAT_JWT_SECRET）。請聯絡系統管理員設定此環境變數。',
+  'admin.chatNotConfigured': '聊天伺服器設定缺失（缺少 CHAT_JWT_SECRET）。請聯絡系統管理員設定此環境變數。',
   'admin.listingStatus.active': '上架中',
   'admin.listingStatus.reserved': '保留中',
   'admin.listingStatus.sold': '已售出',

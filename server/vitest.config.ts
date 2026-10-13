@@ -18,7 +18,7 @@ export default defineConfig({
             TEST_ADS_MIGRATIONS: adsMigrations,
             ENVIRONMENT: 'test',
             JWT_SIGNING_KEY: 'test-jwt-signing-key-not-for-production-0001',
-            EDGE_CHAT_JWT_SECRET: 'test-edge-chat-secret-not-for-production-0002',
+            CHAT_JWT_SECRET: 'test-edge-chat-secret-not-for-production-0002',
           },
         },
       };

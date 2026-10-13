@@ -13,7 +13,7 @@
 
 | 目錄 | 內容 |
 |---|---|
-| `client/` | Angular 22 CSR SPA（PWA）。建置輸出 `client/dist/unibooks-fe/browser` 即 Worker 的靜態資產 |
+| `client/` | Angular 22 CSR SPA（PWA）。建置輸出 `client/dist/unibooks/browser` 即 Worker 的靜態資產 |
 | `server/` | Hono Worker：`src/routes`（API）、`src/durable-objects`（ChatRoom / UserHub / OrderLock / RateLimiter）、`src/queues`（Mailjet 信件、FCM 推播）、`src/jobs`（排程）、`src/db`（D1 schema 與 migration） |
 | `docs/` | 設計紀錄、[舊資料遷移指南](docs/migrate-from-django.md) |
 
@@ -79,7 +79,7 @@ npx --prefix server wrangler login
 # 一次性設定密鑰（每個各輸入一次）
 cd server
 npx wrangler secret put JWT_SIGNING_KEY          # 至少 32 字元的隨機字串
-npx wrangler secret put EDGE_CHAT_JWT_SECRET     # 另一組，至少 32 字元
+npx wrangler secret put CHAT_JWT_SECRET          # 另一組，至少 32 字元
 npx wrangler secret put MAILJET_API_KEY
 npx wrangler secret put MAILJET_SECRET_KEY
 npx wrangler secret put GOOGLE_BOOKS_API_KEY
@@ -102,7 +102,7 @@ npm run db:seed:remote         # 首次部署後一次：地區、學校、分�
 - 所有改變狀態的請求必須同源（檢查 `Sec-Fetch-Site` / `Origin`），不需要 CORS。
 - 每種 JWT 都帶 `token_type`，驗證時只接受指定類型（存取權杖、更新權杖、上傳權杖、聊天權杖互不通用）；缺少或過短的密鑰直接拒絕。
 - 每個請求都從 D1 重新讀取帳號狀態（停權、降級立即生效）。
-- 上傳一律由伺服器決定 R2 key、檢查檔案魔數與大小；刊登照片只接受本人上傳的 key。
+- 上傳一律兩段式且同源：`POST <base>/uploads/` 簽出短效上傳權杖，`PUT <base>/uploads/file/?token=` 由 Worker 寫入 R2；伺服器決定 R2 key、檢查檔案魔數與大小，刊登照片只接受本人上傳的 key。
 - 限流以 Durable Object 原子計數（登入、註冊、驗證、搜尋、上傳、下單等）。
 - 前端 CSP 由建置時產生（`client/scripts/set-env.js`），正式環境為強制模式。
 

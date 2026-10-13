@@ -21,7 +21,7 @@ describe('parseAdminError', () => {
     expect(parseAdminError(err, i18n)).toBe(en['admin.errRegionForbidden']);
   });
 
-  it('reads DRF field errors, which do not use that shape', () => {
+  it('reads field errors, which do not use that shape', () => {
     // A serializer's validate() surfaces as a flat {field: message} body. This
     // used to fall straight through to the generic message, so every region
     // validation error read "something went wrong" regardless of cause.
@@ -29,8 +29,8 @@ describe('parseAdminError', () => {
       .toBe(en['admin.errCannotDisableLastRegion']);
   });
 
-  it('reads DRF field errors delivered as arrays', () => {
-    // DRF wraps some messages in a list and passes others through bare, so
+  it('reads field errors delivered as arrays', () => {
+    // The server wraps some messages in a list and passes others through bare, so
     // both forms have to be understood — the region serializer produces one
     // of each.
     expect(parseAdminError({ error: { default_language: ['admin.errDefaultLanguageNotSupported'] } }, i18n))

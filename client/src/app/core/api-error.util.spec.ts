@@ -21,7 +21,7 @@ describe('parseApiError', () => {
       .toBe(en['auth.errEmailNotVerified']);
   });
 
-  it('reads the DRF field shape a serializer raise produces', () => {
+  it('reads the field-error shape validation produces', () => {
     // The accept-order guard raises ValidationError({'status': ...}), which
     // never passes through the {"error": {...}} contract.
     expect(parseApiError({ error: { status: ['checkout.errListingUnavailable'] } }, i18n, 'acct.updateFailed'))
@@ -52,7 +52,7 @@ describe('translateApiError', () => {
   });
 
   it('answers null so the caller can keep its own fallback', () => {
-    // The report modal still prefers DRF's `detail` prose (a throttle notice,
+    // The report modal still prefers a `detail` prose (a throttle notice,
     // say) over its generic sentence, which a fallback key would swallow.
     expect(translateApiError({ error: { detail: 'Request was throttled.' } }, i18n)).toBeNull();
     expect(translateApiError({}, i18n)).toBeNull();

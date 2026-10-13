@@ -71,6 +71,10 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
 - [x] Final review: M-1 origin KV fail-open, M-2 validated cache keys + rate limits, M-3 hub socket expiry, L-1 cookie clear on refused refresh, L-2 best-effort logout, L-4 per-request pagination links, L-5 origin flip-flop, L-6 resolver URL/redirects, L-7 chat header allowlist + 16 KB cap, L-8 Vary, L-10 docs. Left by design: L-3 (grace pair in D1 ≤60 s, purged by cleanup), L-9 (15-min access tokens).
 - [x] Verified: server tsc 0 / 211 tests / prettier / audit 0; client 1052 tests; dry-run bundle OK. Committed.
 - [x] Root CI (.github/workflows/ci.yml): server typecheck/format/test/import self-test, client test/build, wrangler dry-run bundle.
+- [x] Post-move renames: Angular project unibooks-fe → unibooks (dist/unibooks/browser), package unibooks-client,
+      EDGE_CHAT_JWT_SECRET → CHAT_JWT_SECRET, edge_chat_url dropped (client builds chat URLs from location),
+      EdgeChat method names → room names, uploads unified (POST <base>/uploads/ → PUT <base>/uploads/file/;
+      multipart direct + presign endpoints removed; DELETE listings/uploads/?url=), legacy comments reworded.
 
 ## Architecture decisions (after agy consult, 2026-10-13)
 - Stay Angular CSR SPA + prerendered region shells + edge meta injection (agy agrees).
@@ -96,4 +100,4 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
 - 2026-10-13: final verification green; MAILJET_SANDBOX removed from .dev.vars; committed.
 - 2026-10-13: tests: 41 accounts green after cookie auth; frontend route tests fail until client/ is built.
 - 2026-10-13: dev vars filled from UniBooks-Old (GOOGLE_BOOKS_API_KEY,
-  ISBNNET_RESOLVER_URL, EDGE_CHAT_JWT_SECRET). Accounts 39/39, orders 15/15 green.
+  ISBNNET_RESOLVER_URL, CHAT_JWT_SECRET). Accounts 39/39, orders 15/15 green.
