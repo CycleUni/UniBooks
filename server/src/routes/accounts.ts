@@ -39,8 +39,13 @@ export const accountRoutes = new Hono<AppEnv>();
 type C = Context<AppEnv>;
 
 // Rate limits per scope.
-/** With Turnstile configured: wrong passwords on one account, per hour, before sign-in asks for a challenge. */
-const LOGIN_CHALLENGE_AFTER_FAILURES = 5;
+/**
+ * With Turnstile configured: wrong passwords on one account, per hour,
+ * before sign-in asks for a challenge. Below the per-IP sign-in limit
+ * (RATES.login, 5/min) on purpose: at the same number, someone retrying at
+ * a normal pace hit that limit's 429 first and never saw the challenge.
+ */
+const LOGIN_CHALLENGE_AFTER_FAILURES = 3;
 
 const RATES = {
   login: '5/min',
