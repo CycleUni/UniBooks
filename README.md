@@ -78,7 +78,8 @@ npm --prefix client test -- --watch=false   # 含前後端錯誤碼 i18n 契約�
 npx --prefix server wrangler login
 # 一次性設定密鑰（每個各輸入一次）
 cd server
-npx wrangler secret put SECRET_KEY               # 主金鑰：至少 32 字元的隨機字串，各用途的簽章金鑰由它推導
+# 主金鑰：各用途的簽章金鑰由它推導。用 48 個隨機位元組直接產生並寫入，值不會顯示在畫面或留在 shell 歷史中
+openssl rand -base64 48 | npx wrangler secret put SECRET_KEY
 npx wrangler secret put MAILJET_API_KEY
 npx wrangler secret put MAILJET_SECRET_KEY
 npx wrangler secret put GOOGLE_BOOKS_API_KEY
@@ -88,6 +89,10 @@ npx wrangler secret put TURNSTILE_SECRET_KEY     # 登入人機驗證（可選�
 npm run deploy    # 建置前端 → wrangler deploy（首次自動建立資源）→ 套用遠端 D1 migration
 npm run db:seed:remote         # 首次部署後一次：地區、學校、分類
 ```
+
+主金鑰之外的密鑰請貼上各服務核發的值。輪替主金鑰時再執行一次上面的 `openssl rand … | wrangler secret put SECRET_KEY`
+即可（所有人會被登出，等同輪替 Django 的 `SECRET_KEY`）。本機開發的 `server/.dev.vars` 也可用
+`openssl rand -base64 48` 產生 `SECRET_KEY` 的值。
 
 非機密設定（R2 公開網址、寄件者、Google Client ID、預設地區）在 `server/wrangler.jsonc` 的 `vars`，
 這也是前後端共用值的唯一來源：前端建置（`client/scripts/set-env.js`）直接讀這裡的 `R2_PUBLIC_URL`、
