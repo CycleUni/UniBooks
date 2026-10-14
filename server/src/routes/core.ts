@@ -198,7 +198,14 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string, s
        ORDER BY n DESC LIMIT 7`,
     );
     const { results } = await (school ? stmt.bind(region.code, Number(school.id)) : stmt.bind(region.code)).all<Row>();
-    waitlist = results.map((r) => ({ title: r.title, count: Number(r.n), book_id: r.book_id, cover_url: r.cover_url, isbn: r.isbn13, authors: r.authors }));
+    waitlist = results.map((r) => ({
+      title: r.title,
+      count: Number(r.n),
+      book_id: r.book_id,
+      cover_url: r.cover_url,
+      isbn: r.isbn13,
+      authors: r.authors,
+    }));
   }
 
   return {
