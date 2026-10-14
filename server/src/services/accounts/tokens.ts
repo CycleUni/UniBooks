@@ -56,8 +56,8 @@ async function mintPair(env: Env, userId: string, family: string | null): Promis
   const jti = newHexId();
   const familyId = family ?? jti;
   const [access, refresh] = await Promise.all([
-    signToken('access', { user_id: userId }, env.JWT_SIGNING_KEY),
-    signToken('refresh', { user_id: userId, jti, family_id: familyId }, env.JWT_SIGNING_KEY),
+    signToken('access', { user_id: userId }, env),
+    signToken('refresh', { user_id: userId, jti, family_id: familyId }, env),
   ]);
   return { jti, family: familyId, pair: { access, refresh } };
 }
@@ -131,7 +131,7 @@ function graceTokens(row: TokenRow): TokenPair | null {
 export async function rotateRefreshToken(env: Env, raw: string): Promise<TokenPair> {
   let claims: { jti: string; user_id: string };
   try {
-    claims = await verifyToken('refresh', raw, env.JWT_SIGNING_KEY);
+    claims = await verifyToken('refresh', raw, env);
   } catch (e) {
     if (e instanceof InvalidTokenError) apiError(401, 'auth.errInvalidToken');
     throw e;

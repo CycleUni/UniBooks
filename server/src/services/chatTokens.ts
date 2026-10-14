@@ -21,10 +21,10 @@ export async function mintChatToken(
       participant_ids: args.participantIds,
       role: args.role,
     },
-    env.CHAT_JWT_SECRET,
+    env,
   );
 }
 
 export async function mintHubToken(env: Env, userId: string): Promise<string> {
-  return signToken('hub', { user_id: userId }, env.CHAT_JWT_SECRET);
+  return signToken('hub', { user_id: userId }, env);
 }

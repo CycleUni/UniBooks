@@ -100,8 +100,8 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
         NOW,
       ),
     ]);
-    sellerAuth = { Authorization: `Bearer ${await signToken('access', { user_id: SELLER }, env.JWT_SIGNING_KEY)}` };
-    buyerAuth = { Authorization: `Bearer ${await signToken('access', { user_id: BUYER }, env.JWT_SIGNING_KEY)}` };
+    sellerAuth = { Authorization: `Bearer ${await signToken('access', { user_id: SELLER }, env)}` };
+    buyerAuth = { Authorization: `Bearer ${await signToken('access', { user_id: BUYER }, env)}` };
   });
 
   afterEach(() => vi.restoreAllMocks());

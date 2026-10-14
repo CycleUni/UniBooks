@@ -557,7 +557,7 @@ accountRoutes.post('/logout/', optionalAuthMiddleware(), async (c) => {
   let jti: string | null = null;
   if (refresh) {
     try {
-      const claims = await verifyToken('refresh', refresh, c.env.JWT_SIGNING_KEY);
+      const claims = await verifyToken('refresh', refresh, c.env);
       userId ??= claims.user_id;
       if (claims.user_id === userId) jti = claims.jti;
     } catch (e) {

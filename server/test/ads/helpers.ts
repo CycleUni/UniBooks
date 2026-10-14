@@ -39,7 +39,7 @@ export async function call(path: string, init: CallInit = {}): Promise<Response>
   return app.fetch(req, { ...env, ...(init.env ?? {}) });
 }
 
-export const tokenFor = (userId: string) => signToken('access', { user_id: userId }, env.JWT_SIGNING_KEY);
+export const tokenFor = (userId: string) => signToken('access', { user_id: userId }, env);
 
 export async function staff(email: string, opts: { superuser?: boolean; regions?: string[] } = {}) {
   const id = await createUser(email, { role: opts.superuser ? 'admin' : 'staff' });

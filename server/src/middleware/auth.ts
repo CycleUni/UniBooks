@@ -15,7 +15,7 @@ import { apiError } from '../lib/http';
 async function resolveUser(c: Parameters<MiddlewareHandler<AppEnv>>[0], token: string): Promise<AuthUser | null> {
   let userId: string;
   try {
-    ({ user_id: userId } = await verifyToken('access', token, c.env.JWT_SIGNING_KEY));
+    ({ user_id: userId } = await verifyToken('access', token, c.env));
   } catch (e) {
     if (e instanceof InvalidTokenError) return null;
     throw e;

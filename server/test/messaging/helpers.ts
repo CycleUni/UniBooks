@@ -47,7 +47,7 @@ export async function seedUser(opts: { role?: 'user' | 'staff' | 'admin'; verifi
   if (opts.verifiedIn) {
     await db.insert(regionVerifications).values({ userId: id, regionCode: opts.verifiedIn, verifiedAt: now(), isActive: 1 });
   }
-  const token = await signToken('access', { user_id: id }, env.JWT_SIGNING_KEY);
+  const token = await signToken('access', { user_id: id }, env);
   return { id, token };
 }
 

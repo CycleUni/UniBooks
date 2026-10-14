@@ -49,7 +49,7 @@ describe('auth and upload-token gates', () => {
     const token = await signToken(
       'upload',
       { user_id: 'u1', action: 'avatar', target_key: `tmp/listings/u1/${hex}.jpg`, content_type: 'image/jpeg', max_bytes: 100 },
-      env.JWT_SIGNING_KEY,
+      env,
     );
     res = await fetchApi(`/api/v1/listings/uploads/file/?token=${token}`, {
       method: 'PUT',
@@ -64,7 +64,7 @@ describe('auth and upload-token gates', () => {
     const token = await signToken(
       'upload',
       { user_id: 'u9', action: 'listing_photo', target_key: key, content_type: 'image/jpeg', max_bytes: 16 },
-      env.JWT_SIGNING_KEY,
+      env,
     );
     const put = (body: Uint8Array, type = 'image/jpeg') =>
       fetchApi(`/api/v1/listings/uploads/file/?token=${token}`, { method: 'PUT', headers: { 'Content-Type': type }, body });

@@ -7,9 +7,11 @@ import { SignJWT, jwtVerify } from 'jose';
  * key passed for any other: a 14-day refresh token or a 15-minute upload URL
  * opened the whole API as an access token.
  *
- * Keys: access/refresh/upload use JWT_SIGNING_KEY; chat/hub use
- * CHAT_JWT_SECRET. Both are required — there is no fallback from one to
- * the other.
+ * Keys: one secret, SECRET_KEY (like Django's), from which HKDF-SHA256
+ * derives a separate HMAC-SHA256 key per token type. A token of one type
+ * fails the signature check as any other, on top of the token_type check,
+ * and there is only one secret to set and rotate (rotating it signs
+ * everyone out, as rotating Django's SECRET_KEY does).
  */
 export type TokenType = 'access' | 'refresh' | 'chat' | 'hub' | 'upload';
 
@@ -67,18 +69,44 @@ export const TOKEN_LIFETIMES: Record<TokenType, string> = {
 
 const MIN_SECRET_LENGTH = 32;
 
-function key(secret: string | undefined): Uint8Array {
+/** Where the master secret comes from: the Worker env (or any object carrying it). */
+export interface SecretSource {
+  SECRET_KEY?: string;
+}
+
+/** Derived keys per (secret, type), kept for the isolate's life: HKDF runs once per type. */
+const derived = new Map<string, Promise<CryptoKey>>();
+
+function key(source: SecretSource, type: TokenType): Promise<CryptoKey> {
+  const secret = source.SECRET_KEY;
   if (!secret || secret.length < MIN_SECRET_LENGTH) {
     // Fail closed: a missing or short key must never sign or accept anything.
-    throw new Error(`Signing secret missing or shorter than ${MIN_SECRET_LENGTH} characters`);
+    throw new Error(`SECRET_KEY missing or shorter than ${MIN_SECRET_LENGTH} characters`);
   }
-  return new TextEncoder().encode(secret);
+  const cacheKey = `${type}\u0000${secret}`;
+  let k = derived.get(cacheKey);
+  if (!k) {
+    const enc = new TextEncoder();
+    k = crypto.subtle
+      .importKey('raw', enc.encode(secret), 'HKDF', false, ['deriveKey'])
+      .then((master) =>
+        crypto.subtle.deriveKey(
+          { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: enc.encode(`unibooks/jwt/${type}`) },
+          master,
+          { name: 'HMAC', hash: 'SHA-256', length: 256 },
+          false,
+          ['sign', 'verify'],
+        ),
+      );
+    derived.set(cacheKey, k);
+  }
+  return k;
 }
 
 export async function signToken<T extends TokenType>(
   type: T,
   payload: PayloadFor<T>,
-  secret: string | undefined,
+  source: SecretSource,
   expiresIn: string = TOKEN_LIFETIMES[type],
 ): Promise<string> {
   return new SignJWT({ ...payload, token_type: type })
@@ -86,7 +114,7 @@ export async function signToken<T extends TokenType>(
     .setIssuedAt()
     .setJti(type === 'refresh' ? (payload as RefreshTokenPayload).jti : crypto.randomUUID())
     .setExpirationTime(expiresIn)
-    .sign(key(secret));
+    .sign(await key(source, type));
 }
 
 export class InvalidTokenError extends Error {}
@@ -95,11 +123,12 @@ export class InvalidTokenError extends Error {}
 export async function verifyToken<T extends TokenType>(
   type: T,
   token: string,
-  secret: string | undefined,
+  source: SecretSource,
 ): Promise<PayloadFor<T> & { exp: number; iat: number; jti: string }> {
+  const k = await key(source, type);
   let payload: Record<string, unknown>;
   try {
-    ({ payload } = await jwtVerify(token, key(secret), { algorithms: ['HS256'] }));
+    ({ payload } = await jwtVerify(token, k, { algorithms: ['HS256'] }));
   } catch (e) {
     throw new InvalidTokenError(e instanceof Error ? e.message : 'invalid token');
   }

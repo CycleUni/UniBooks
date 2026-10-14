@@ -90,7 +90,7 @@ async function hubUser(c: Context<AppEnv>): Promise<{ userId: string; exp: numbe
   let userId: string;
   let exp: number;
   try {
-    ({ user_id: userId, exp } = await verifyToken('hub', token, c.env.CHAT_JWT_SECRET));
+    ({ user_id: userId, exp } = await verifyToken('hub', token, c.env));
   } catch (e) {
     if (e instanceof InvalidTokenError) return text('Unauthorized: Invalid token', 401);
     throw e;
@@ -130,7 +130,7 @@ async function roomAccess(c: Context<AppEnv>, roomId: string): Promise<RoomAcces
   if (!token) return text('Unauthorized: Missing token', 401);
   let claims: ChatTokenPayload & { exp: number };
   try {
-    claims = await verifyToken('chat', token, c.env.CHAT_JWT_SECRET);
+    claims = await verifyToken('chat', token, c.env);
   } catch (e) {
     if (e instanceof InvalidTokenError) return text('Unauthorized: Invalid token', 401);
     throw e;

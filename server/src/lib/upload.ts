@@ -57,7 +57,7 @@ export async function issueUpload(
   const token = await signToken(
     'upload',
     { user_id: opts.userId, action: opts.action, target_key: key, content_type: contentType, max_bytes: size },
-    c.env.JWT_SIGNING_KEY,
+    c.env,
   );
   const uploadUrl = new URL(`${opts.base}uploads/file/`, c.req.url);
   uploadUrl.searchParams.set('token', token);
@@ -75,7 +75,7 @@ export async function storeUpload(
 ): Promise<Response> {
   let claims: UploadTokenPayload;
   try {
-    claims = await verifyToken('upload', c.req.query('token') ?? '', c.env.JWT_SIGNING_KEY);
+    claims = await verifyToken('upload', c.req.query('token') ?? '', c.env);
   } catch (e) {
     if (e instanceof InvalidTokenError) apiError(403, 'upload.errTokenInvalid');
     throw e;

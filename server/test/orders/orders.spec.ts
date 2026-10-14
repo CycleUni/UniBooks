@@ -37,7 +37,7 @@ async function makeUser(name: string, verified = true) {
   if (verified) {
     await db.insert(regionVerifications).values({ userId: id, regionCode: 'TW', isManualVerification: 1, verifiedAt: now(), isActive: 1 });
   }
-  const token = await signToken('access', { user_id: id }, env.JWT_SIGNING_KEY);
+  const token = await signToken('access', { user_id: id }, env);
   return { id, token };
 }
 

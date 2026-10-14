@@ -981,7 +981,6 @@ export const zhHK: Record<string, string> = {
   'admin.errLabelTooLong': '單一標籤長度不可超過 {max} 個字。',
   'admin.errTooManyItems': '一次匯入嘅項目太多（最多 500 項），請將檔案拆開，分幾次匯入。',
   'admin.errTooManyLabels': '最多只能有 {max} 個標籤。',
-  'admin.chatNotConfigured': '聊天伺服器設定缺失（缺少 CHAT_JWT_SECRET）。請聯絡系統管理員設定此環境變數。',
   'admin.listingStatus.active': '上架中',
   'admin.listingStatus.reserved': '保留中',
   'admin.listingStatus.sold': '已售出',

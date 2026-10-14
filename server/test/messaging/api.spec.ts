@@ -129,7 +129,7 @@ describe.skipIf(!ready)('messaging API', () => {
 
   it('a hub token opens only its own hub; the hub push path is not reachable', async () => {
     const a = await seedUser();
-    const hub = await signToken('hub', { user_id: a.id }, env.CHAT_JWT_SECRET);
+    const hub = await signToken('hub', { user_id: a.id }, env);
     const own = await api(`/api/chat/hub/snapshot`, { headers: { Authorization: `Bearer ${hub}` } });
     expect(own.status).toBe(200);
     expect((await api(`/api/chat/hub/snapshot`)).status).toBe(401);

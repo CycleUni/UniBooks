@@ -114,7 +114,6 @@ chatReportRoutes.patch('/chat-reports/:id/', async (c) => {
  */
 chatReportRoutes.get('/chat-reports/:id/chat-token/', async (c) => {
   const row = await loadReport(c, createDb(c.env.DB));
-  if (!c.env.CHAT_JWT_SECRET) apiError(503, 'admin.chatNotConfigured');
   const roomId = String(row.r.conversationId);
   const token = await mintChatToken(c.env, {
     userId: c.get('user')!.id,

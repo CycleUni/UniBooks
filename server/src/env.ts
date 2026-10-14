@@ -39,8 +39,8 @@ export interface Env {
   CF_ACCOUNT_ID?: string;
 
   // Secrets (`wrangler secret put`)
-  JWT_SIGNING_KEY: string;
-  CHAT_JWT_SECRET: string;
+  /** Master secret (32+ characters); every signing key is derived from it (lib/jwt.ts). */
+  SECRET_KEY: string;
   GOOGLE_BOOKS_API_KEY?: string;
   /** Google Books calls allowed per minute across the whole Worker (default 60). */
   /** Cloudflare Turnstile secret; set to ask for a challenge after repeated wrong passwords. */

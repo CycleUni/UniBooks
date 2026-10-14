@@ -78,8 +78,7 @@ npm --prefix client test -- --watch=false   # 含前後端錯誤碼 i18n 契約�
 npx --prefix server wrangler login
 # 一次性設定密鑰（每個各輸入一次）
 cd server
-npx wrangler secret put JWT_SIGNING_KEY          # 至少 32 字元的隨機字串
-npx wrangler secret put CHAT_JWT_SECRET          # 另一組，至少 32 字元
+npx wrangler secret put SECRET_KEY               # 主金鑰：至少 32 字元的隨機字串，各用途的簽章金鑰由它推導
 npx wrangler secret put MAILJET_API_KEY
 npx wrangler secret put MAILJET_SECRET_KEY
 npx wrangler secret put GOOGLE_BOOKS_API_KEY
@@ -120,7 +119,7 @@ npx wrangler d1 execute unibooks --remote --command "SELECT email, role FROM use
 
 - 登入狀態只存在 HttpOnly Cookie：`__Host-ub_at`（存取權杖，15 分鐘）、`__Secure-ub_rt`（更新權杖，14 天，只送往 `/api/v1/auth/`）。頁面上的 JavaScript 讀不到任何權杖。
 - 所有改變狀態的請求必須同源（檢查 `Sec-Fetch-Site` / `Origin`），不需要 CORS。
-- 每種 JWT 都帶 `token_type`，驗證時只接受指定類型（存取權杖、更新權杖、上傳權杖、聊天權杖互不通用）；缺少或過短的密鑰直接拒絕。
+- 只有一把主金鑰 `SECRET_KEY`：各種 JWT（存取、更新、上傳、聊天、hub）的 HMAC 金鑰都由它以 HKDF-SHA256 依用途分別推導，再加上 `token_type` 檢查，彼此互不通用；缺少或過短的主金鑰直接拒絕。輪替主金鑰會讓所有人登出（同 Django 的 `SECRET_KEY`）。
 - 每個請求都從 D1 重新讀取帳號狀態（停權、降級立即生效）。
 - 上傳一律兩段式且同源：`POST <base>/uploads/` 簽出短效上傳權杖，`PUT <base>/uploads/file/?token=` 由 Worker 寫入 R2；伺服器決定 R2 key、檢查檔案魔數與大小，刊登照片只接受本人上傳的 key。
 - 限流以 Durable Object 原子計數（登入、註冊、驗證、搜尋、上傳、下單等）。

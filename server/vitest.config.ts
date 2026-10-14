@@ -23,8 +23,7 @@ export default defineConfig({
             TEST_MIGRATIONS: migrations,
             TEST_ADS_MIGRATIONS: adsMigrations,
             ENVIRONMENT: 'test',
-            JWT_SIGNING_KEY: 'test-jwt-signing-key-not-for-production-0001',
-            CHAT_JWT_SECRET: 'test-chat-secret-not-for-production-0002',
+            SECRET_KEY: 'test-secret-key-not-for-production-000000001',
             // Off in tests whatever .dev.vars holds; turnstile.spec turns it on explicitly.
             TURNSTILE_SECRET_KEY: '',
             TURNSTILE_SITE_KEY: '',

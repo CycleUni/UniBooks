@@ -64,8 +64,8 @@
   "triggers": { "crons": ["0 */6 * * *", "*/30 * * * *", "0 3 * * *"] },
 
   // Non-secret configuration (production values; .dev.vars overrides locally).
-  // Secrets — set with `wrangler secret put`: JWT_SIGNING_KEY,
-  // CHAT_JWT_SECRET, MAILJET_API_KEY, MAILJET_SECRET_KEY,
+  // Secrets — set with `wrangler secret put`: SECRET_KEY,
+  // MAILJET_API_KEY, MAILJET_SECRET_KEY,
   // GOOGLE_BOOKS_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON, CF_ANALYTICS_TOKEN,
   // ISBNNET_RESOLVER_SECRET (optional), SENTRY_DSN (optional).
   // Ad statistics also need CF_ACCOUNT_ID (add it here or as a secret);
