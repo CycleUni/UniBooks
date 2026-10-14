@@ -19,6 +19,7 @@ export interface HeroCover {
   id: any;
   isbn?: string;
   title: string;
+  author?: string;
   coverUrl?: string;
   count?: number;
   isAd?: boolean;
@@ -145,6 +146,7 @@ export interface HeroCover {
                 <ui-book-cover
                   [coverUrl]="cover.coverUrl"
                   [title]="cover.title"
+                  [author]="cover.author"
                   [isbn]="cover.isbn"
                   [zoom]="3"
                 ></ui-book-cover>

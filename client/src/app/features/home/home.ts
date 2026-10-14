@@ -658,6 +658,8 @@ export class Home implements OnInit, OnDestroy {
       id: w.book_id,
       title: w.title,
       coverUrl: w.cover_url,
+      isbn: w.isbn,
+      author: w.authors,
       count: w.count
     }));
 

@@ -182,7 +182,7 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string, s
 
   // Most wanted. A ?school= that names no school here means an empty list,
   // never "every school".
-  let waitlist: { title: unknown; count: number; book_id: unknown; cover_url: unknown }[] = [];
+  let waitlist: { title: unknown; count: number; book_id: unknown; cover_url: unknown; isbn: unknown; authors: unknown }[] = [];
   const school = schoolParam ? await resolveSchool(c.env, region, schoolParam) : null;
   if (!schoolParam || school) {
     const bySchool = school
@@ -191,14 +191,14 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string, s
              AND rv.is_active = 1 AND rv.verified_at IS NOT NULL)`
       : '';
     const stmt = db.prepare(
-      `SELECT s.book_id, b.title, b.cover_url, COUNT(s.user_id) AS n
+      `SELECT s.book_id, b.title, b.cover_url, b.isbn13, b.authors, COUNT(s.user_id) AS n
        FROM subscriptions s JOIN books b ON b.id = s.book_id
        WHERE s.region_code = ? ${bySchool}
-       GROUP BY s.book_id, b.title, b.cover_url
+       GROUP BY s.book_id, b.title, b.cover_url, b.isbn13, b.authors
        ORDER BY n DESC LIMIT 7`,
     );
     const { results } = await (school ? stmt.bind(region.code, Number(school.id)) : stmt.bind(region.code)).all<Row>();
-    waitlist = results.map((r) => ({ title: r.title, count: Number(r.n), book_id: r.book_id, cover_url: r.cover_url }));
+    waitlist = results.map((r) => ({ title: r.title, count: Number(r.n), book_id: r.book_id, cover_url: r.cover_url, isbn: r.isbn13, authors: r.authors }));
   }
 
   return {
