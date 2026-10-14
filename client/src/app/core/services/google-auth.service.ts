@@ -9,6 +9,11 @@ import { whenPageSettled } from '../page-settled';
 import { environment } from '../../../environments/environment';
 
 
+/** The width Google accepts for its button (200–400 px), from the container's width. */
+export function buttonWidthFor(container: HTMLElement): number {
+  return Math.max(200, Math.min(Math.floor(container.clientWidth) || 280, 400));
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -37,6 +42,10 @@ export class GoogleAuthService {
   private openingTimer: ReturnType<typeof setTimeout> | null = null;
   private signingInToast = 0;
   private buttonElementId = '';
+  private widthObserver: ResizeObserver | null = null;
+  private observedContainer: HTMLElement | null = null;
+  private resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  private renderedWidth = 0;
   private wasAuthenticated = false;
 
   // Baked in at build time (GOOGLE_CLIENT_ID) so One Tap need not ask the
@@ -245,8 +254,9 @@ export class GoogleAuthService {
           const langCode = this.i18n.lang() === 'en' ? 'en' : 'zh-TW';
           const btnTheme = this.isDarkTheme ? 'filled_black' : 'outline';
           
-          let targetWidth = container.clientWidth || 280;
-          targetWidth = Math.max(200, Math.min(targetWidth, 400));
+          const targetWidth = buttonWidthFor(container);
+          this.renderedWidth = targetWidth;
+          this.watchWidth(container, elementId);
 
           (window as any).google.accounts.id.renderButton(
             container,
@@ -259,6 +269,36 @@ export class GoogleAuthService {
         }
       }
     });
+  }
+
+  /**
+   * Google draws the button at a fixed pixel width (200–400; it takes no
+   * percentage), measured from the container when drawn. Redraw it when the
+   * container's width changes enough to change that number: a phone rotated,
+   * a window resized, the side panel opened. Debounced, and skipped while
+   * the container is detached or hidden (width 0).
+   */
+  private watchWidth(container: HTMLElement, elementId: string) {
+    if (typeof ResizeObserver === 'undefined') return;
+    if (this.observedContainer === container) return;
+    this.widthObserver?.disconnect();
+    this.observedContainer = container;
+    this.widthObserver = new ResizeObserver(() => {
+      if (this.resizeTimer) clearTimeout(this.resizeTimer);
+      this.resizeTimer = setTimeout(() => {
+        this.resizeTimer = null;
+        if (!container.isConnected) {
+          this.widthObserver?.disconnect();
+          this.observedContainer = null;
+          return;
+        }
+        if (!container.clientWidth || buttonWidthFor(container) === this.renderedWidth) return;
+        // Never pull the button out from under a sign-in in progress.
+        if (this.opening() || this.signingIn()) return;
+        this.loadAndRenderButton(elementId);
+      }, 150);
+    });
+    this.widthObserver.observe(container);
   }
 
   private onButtonPressed() {
