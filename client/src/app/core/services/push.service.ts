@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, firstValueFrom } from 'rxjs';
 import { catchError, shareReplay } from 'rxjs/operators';
 import { throwError } from 'rxjs';
+import { importOrReload } from '../chunk-recovery';
 
 /** The Firebase web-app config the backend hands out (null until it is set up). */
 export interface FcmConfig {
@@ -122,7 +123,7 @@ export class PushService {
     try {
       const config = await this.loadConfig();
       if (!config) return;
-      const { deleteToken } = await import('firebase/messaging');
+      const { deleteToken } = await importOrReload(() => import('firebase/messaging'));
       await deleteToken(await this.messaging(config));
     } catch {
       // The token is already forgotten on the backend; Firebase expiring it
@@ -168,7 +169,7 @@ export class PushService {
 
   private async browserSupportsPush(): Promise<boolean> {
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return false;
-    const { isSupported } = await import('firebase/messaging');
+    const { isSupported } = await importOrReload(() => import('firebase/messaging'));
     return isSupported();
   }
 
@@ -184,8 +185,8 @@ export class PushService {
   }
 
   private async messaging(config: FcmConfig) {
-    const { getApp, getApps, initializeApp } = await import('firebase/app');
-    const { getMessaging } = await import('firebase/messaging');
+    const { getApp, getApps, initializeApp } = await importOrReload(() => import('firebase/app'));
+    const { getMessaging } = await importOrReload(() => import('firebase/messaging'));
     const app = getApps().length
       ? getApp()
       : initializeApp({
@@ -206,7 +207,7 @@ export class PushService {
     const registration = await navigator.serviceWorker.getRegistration();
     // No worker in `ng serve`: Angular only registers it in production builds.
     if (!registration) return null;
-    const { getToken } = await import('firebase/messaging');
+    const { getToken } = await importOrReload(() => import('firebase/messaging'));
     const token = await getToken(await this.messaging(config), {
       vapidKey: config.vapid_key,
       serviceWorkerRegistration: registration,

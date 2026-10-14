@@ -1,6 +1,7 @@
 import { Component, inject, signal, PLATFORM_ID, DestroyRef, NgZone } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { RouterOutlet, Router, NavigationEnd, NavigationError } from '@angular/router';
+import { isChunkLoadError, reloadForMissingChunk } from './core/chunk-recovery';
 import { TPipe } from './core/i18n.service';
 import { UiLayout } from './shared/ui/layout.component';
 import { UiToastHost } from './shared/ui/toast-host.component';
@@ -18,24 +19,7 @@ import { interval, fromEvent } from 'rxjs';
 export const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 export const VISIBILITY_CHECK_THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
 
-/**
- * Whether a navigation failed because a lazy route's code could not be
- * loaded: a missing chunk, or index.html served in its place. Chrome, Firefox
- * and Safari each word it differently.
- */
-export function isChunkLoadError(error: unknown): boolean {
-  const message = String((error as { message?: unknown })?.message ?? error ?? '');
-  return /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|Expected a JavaScript(-or-Wasm)? module script|Loading chunk [\w-]+ failed/i.test(message);
-}
-
-/**
- * The chunk a failed dynamic import named, where the browser says (Chrome and
- * Firefox put the URL in the message; Safari does not).
- */
-export function chunkUrlFromError(error: unknown): string | null {
-  const message = String((error as { message?: unknown })?.message ?? error ?? '');
-  return message.match(/https?:\/\/\S+?\.js\b/)?.[0] ?? null;
-}
+export { chunkUrlFromError, isChunkLoadError } from './core/chunk-recovery';
 
 /** App shell: the persistent layout (header/footer) wraps the router outlet,
  * so route changes swap only the page content instead of re-rendering the
@@ -241,22 +225,7 @@ export class App {
         filter(event => isChunkLoadError(event.error)),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(event => {
-        const key = 'unibooks.chunkReload';
-        try {
-          const last = JSON.parse(sessionStorage.getItem(key) || 'null');
-          if (last && last.url === event.url && Date.now() - last.at < 10_000) return;
-          sessionStorage.setItem(key, JSON.stringify({ url: event.url, at: Date.now() }));
-        } catch {
-          // No sessionStorage: reload anyway; the browser's own history
-          // stops a loop from being more than a nuisance.
-        }
-        const chunkUrl = chunkUrlFromError(event.error);
-        const refreshed = chunkUrl
-          ? fetch(chunkUrl, { cache: 'reload' }).then(() => undefined, () => undefined)
-          : Promise.resolve();
-        refreshed.then(() => location.assign(event.url));
-      });
+      .subscribe(event => reloadForMissingChunk(event.error, event.url));
   }
 
   private checkForUpdate(): void {

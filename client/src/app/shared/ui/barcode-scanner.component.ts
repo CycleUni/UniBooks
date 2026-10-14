@@ -1,6 +1,7 @@
 import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, OnDestroy, Output, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TPipe } from '../../core/i18n.service';
+import { importOrReload } from '../../core/chunk-recovery';
 
 /**
  * Makes sure a BarcodeDetector that reads EAN-13 exists. Android Chrome ships
@@ -18,7 +19,7 @@ export async function ensureEan13BarcodeDetector(): Promise<void> {
       // Treat a detector that can't list its formats like a missing one.
     }
   }
-  const { BarcodeDetector, prepareZXingModule } = await import('barcode-detector/ponyfill');
+  const { BarcodeDetector, prepareZXingModule } = await importOrReload(() => import('barcode-detector/ponyfill'));
   prepareZXingModule({
     overrides: {
       locateFile: (path: string, prefix: string) =>

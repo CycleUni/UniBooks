@@ -1,5 +1,6 @@
 import { Injectable, Pipe, PipeTransform, inject, signal, effect } from '@angular/core';
 import { Lang, TRANSLATIONS, SUPPORTED_LANGS, REGION_TO_LANG } from './i18n/index';
+import { importOrReload } from './chunk-recovery';
 
 const STORAGE_KEY = 'lang';
 /** Set once the visitor has answered the device-language suggestion, or picked a language by hand. */
@@ -113,13 +114,13 @@ export class I18nService {
     const promise = (async () => {
       try {
         if (lang === 'en') {
-          const m = await import('./i18n/en');
+          const m = await importOrReload(() => import('./i18n/en'));
           TRANSLATIONS['en'] = m.en;
         } else if (lang === 'zh-TW') {
-          const m = await import('./i18n/zh-TW');
+          const m = await importOrReload(() => import('./i18n/zh-TW'));
           TRANSLATIONS['zh-TW'] = m.zhTW;
         } else if (lang === 'zh-HK') {
-          const m = await import('./i18n/zh-HK');
+          const m = await importOrReload(() => import('./i18n/zh-HK'));
           TRANSLATIONS['zh-HK'] = m.zhHK;
         }
       } catch (e) {

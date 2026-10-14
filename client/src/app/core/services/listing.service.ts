@@ -5,6 +5,7 @@ import { shareReplay, catchError, switchMap } from 'rxjs/operators';
 import { uploadImage } from '../upload';
 import { I18nService } from '../i18n.service';
 import { SKIP_AUTH } from '../auth.interceptor';
+import { importOrReload } from '../chunk-recovery';
 
 @Injectable({
   providedIn: 'root'
@@ -94,7 +95,7 @@ export class ListingService {
 
   // Compresses client-side, then uploads in two steps (core/upload.ts).
   uploadPhoto(file: File): Observable<{ url: string }> {
-    return from(import('browser-image-compression').then(m => m.default(file, {
+    return from(importOrReload(() => import('browser-image-compression')).then(m => m.default(file, {
       maxSizeMB: 1.5,
       maxWidthOrHeight: 1600,
       useWebWorker: true,
