@@ -65,8 +65,12 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   challengeRequired = false;
   private challengeToken = '';
   private challengeWidget: string | null = null;
-  /** The visitor submitted and was asked for a challenge: sign in once, when it is solved. */
-  private submitWhenSolved = false;
+  /**
+   * The visitor submitted and the challenge has no token yet: the attempt
+   * is sent once, when it is solved. While true the button is disabled and
+   * reads "verifying", so repeated clicks or Enter do nothing.
+   */
+  awaitingChallenge = false;
   @ViewChild('challengeBox') private challengeBox?: ElementRef<HTMLElement>;
 
   private auth = inject(AuthStore);
@@ -200,6 +204,8 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   onLogin() {
+    // One attempt at a time: Enter in a field skips the button's [disabled].
+    if (this.isLoading || this.awaitingChallenge) return;
     this.clientAuthError = '';
     this.lastAuthError = null;
     this.lastAuthAction = 'login';
@@ -212,9 +218,8 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     // A challenge was asked for: wait for the visitor to solve it (the
     // widget's callback signs in again with the token).
     if (this.challengeRequired && !this.challengeToken) {
-      this.clientAuthError = 'auth.errChallengeRequired';
-      this.authIsError = true;
-      this.submitWhenSolved = true;
+      // The widget is still working on a fresh token: send when it has one.
+      this.awaitingChallenge = true;
       return;
     }
 
@@ -241,7 +246,7 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
         this.authIsError = true;
         const code = err?.error?.error?.code;
         if (code === 'auth.errChallengeRequired' || code === 'auth.errChallengeFailed') {
-          this.submitWhenSolved = true;
+          this.awaitingChallenge = true;
           this.showChallenge(err.error.error.site_key);
         }
         this.cdr.markForCheck();
@@ -267,13 +272,22 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
           // Only an attempt the visitor made is resent, and only once: the
           // widget can hand out a new token by itself (on expiry, or right
           // away in non-interactive mode), which must not sign in again.
-          if (this.submitWhenSolved) {
-            this.submitWhenSolved = false;
+          if (this.awaitingChallenge) {
+            this.awaitingChallenge = false;
             this.onLogin();
           }
+          this.cdr.markForCheck();
         },
         onError: () => {
+          // Failed or expired: Turnstile retries by itself; the button is
+          // usable again so the visitor is not left waiting on nothing.
           this.challengeToken = '';
+          if (this.awaitingChallenge) {
+            this.awaitingChallenge = false;
+            this.clientAuthError = 'auth.errChallengeFailed';
+            this.authIsError = true;
+          }
+          this.cdr.markForCheck();
         },
       });
     } catch {

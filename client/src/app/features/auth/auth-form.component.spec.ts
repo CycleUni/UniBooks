@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { By } from '@angular/platform-browser';
 
 import { AuthFormComponent } from './auth-form.component';
@@ -434,9 +434,25 @@ describe('AuthFormComponent', () => {
     onToken('tok-1');
 
     component.onLogin(); // no token yet: nothing sent, waiting
+    component.onLogin(); // repeated clicks / Enter while waiting change nothing
+    component.onLogin();
+    expect(component.awaitingChallenge).toBe(true);
     expect(mockAuth.login).toHaveBeenCalledTimes(2);
     onToken('tok-2');
+    expect(component.awaitingChallenge).toBe(false);
     expect(mockAuth.login).toHaveBeenCalledTimes(3);
     expect(mockAuth.login).toHaveBeenLastCalledWith('a@example.com', 'pw', 'tok-2');
+  });
+
+  it('sends one request at a time, even when Enter is pressed again while it is in flight', () => {
+    const pending = new Subject<unknown>();
+    mockAuth.login = vi.fn().mockReturnValue(pending);
+    build('login');
+    component.email = 'a@example.com';
+    component.password = 'pw';
+    component.onLogin();
+    component.onLogin();
+    component.onLogin();
+    expect(mockAuth.login).toHaveBeenCalledTimes(1);
   });
 });

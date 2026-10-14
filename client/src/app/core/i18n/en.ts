@@ -218,6 +218,7 @@ export const en: Record<string, string> = {
   'auth.googleSigningIn': 'Signing in with Google…',
   'auth.errMissingCredential': 'The Google sign-in credential is missing. Please sign in again.',
   'auth.errRegisterFailed': 'Sign-up failed. Check the details you entered.',
+  'auth.verifyingChallenge': 'Verifying…',
   'auth.errChallengeRequired': 'Too many wrong passwords for this account. Please complete the check below to sign in.',
   'auth.errChallengeFailed': "The check didn't go through. Please try it again.",
   'auth.errChallengeUnavailable': "The sign-in check couldn't load. Please check your connection and reload the page.",

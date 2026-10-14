@@ -215,6 +215,7 @@ export const zhHK: Record<string, string> = {
   'auth.googleSigningIn': '正在以 Google 登入…',
   'auth.errMissingCredential': '缺少 Google 登入憑證，請再登入一次。',
   'auth.errRegisterFailed': '註冊失敗，請檢查填寫的內容。',
+  'auth.verifyingChallenge': '驗證緊…',
   'auth.errChallengeRequired': '呢個帳戶輸錯密碼太多次，請先完成下面嘅驗證再登入。',
   'auth.errChallengeFailed': '驗證唔成功，請再試多次。',
   'auth.errChallengeUnavailable': '載入唔到登入驗證，請檢查下網絡再重新整理頁面。',

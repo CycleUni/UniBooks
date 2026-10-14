@@ -215,6 +215,7 @@ export const zhTW: Record<string, string> = {
   'auth.googleSigningIn': '正在以 Google 登入…',
   'auth.errMissingCredential': '缺少 Google 登入憑證，請再登入一次。',
   'auth.errRegisterFailed': '註冊失敗，請檢查填寫的內容。',
+  'auth.verifyingChallenge': '驗證中…',
   'auth.errChallengeRequired': '這個帳號密碼錯誤次數過多，請先完成下方的驗證再登入。',
   'auth.errChallengeFailed': '驗證沒有通過，請再試一次。',
   'auth.errChallengeUnavailable': '無法載入登入驗證，請檢查網路連線後重新整理頁面。',
