@@ -7,7 +7,7 @@
     "predev": "wrangler d1 migrations apply unibooks --local && wrangler d1 migrations apply unibooks-ads --local",
     "dev": "wrangler dev --port 8787 --test-scheduled",
     "build:fe": "npm --prefix ../client run build",
-    "start": "npm run build:fe && npm run dev",
+    "start": "npm run build:fe:local && npm run dev",
     "deploy": "npm run build:fe && wrangler deploy && wrangler d1 migrations apply unibooks --remote && wrangler d1 migrations apply unibooks-ads --remote",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -16,7 +16,8 @@
     "db:seed:remote": "wrangler d1 execute unibooks --remote --file src/db/seed.sql",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
-    "user:create": "node --experimental-strip-types scripts/create-user.ts"
+    "user:create": "node --experimental-strip-types scripts/create-user.ts",
+    "build:fe:local": "npm --prefix ../client run build:local"
   },
   "dependencies": {
     "@sentry/cloudflare": "^11.6.0",

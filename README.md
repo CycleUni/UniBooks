@@ -47,8 +47,12 @@ cp server/.dev.vars.example server/.dev.vars   # 填入本機用的密鑰（見�
 ```
 
 ```bash
-npm --prefix server run start    # 建置前端 + 套用本機 D1 migration + wrangler dev（http://localhost:8787）
+npm --prefix server run start    # 建置前端（套用 server/.dev.vars）+ 套用本機 D1 migration + wrangler dev（http://localhost:8787）
 ```
+
+本機建置（`start`、`client` 的 `build:local`）會以 `server/.dev.vars` 覆蓋共用值（例如本機用的 `GOOGLE_CLIENT_ID`），
+部署（`deploy`、`client` 的 `build`）只用 `wrangler.jsonc` 的正式值。Google 登入要能在本機使用，該 client ID 的
+「已授權的 JavaScript 來源」需包含 `http://localhost:8787`（用 `ng serve` 時再加 `http://localhost:4200`）。
 
 改前端時想要熱重載：另開終端機在 `client/` 執行 `npm start`（`ng serve` :4200，`/api` 由 `proxy.conf.json` 轉到 :8787，聊天 WebSocket 一併轉送）。
 
