@@ -330,6 +330,10 @@ export interface HeroCover {
       background-color: var(--surface-card);
       border: 1px solid var(--line-strong);
       cursor: pointer;
+      /* The card is an <a>; without these the placeholder's text inherits
+         the browser's blue underlined link style. */
+      color: inherit;
+      text-decoration: none;
       transition: transform var(--motion-base) ease, box-shadow var(--motion-base) ease;
       transform: translateX(var(--x)) rotate(var(--r));
       /* A resting card must not start the fan-out by itself. On narrower
