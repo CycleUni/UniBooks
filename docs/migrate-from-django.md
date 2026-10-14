@@ -17,7 +17,7 @@
 
 刻意不搬，以及原因：
 
-- **密碼**：新舊雜湊演算法不同，無法轉換。`password_hash` 一律為 `NULL`。使用者需用「忘記密碼」重設，或改用 Google 登入。
+- **密碼**：新站與 Django 同樣用 PBKDF2-SHA256、同一種雜湊格式，但 Workers 原生 PBKDF2 最多只接受 10 萬次迭代，舊站 Django 6.1 的雜湊遠超過這個次數，無法在 Worker 中驗證，所以不匯入。`password_hash` 一律為 `NULL`。使用者需用「忘記密碼」重設，或改用 Google 登入。
 - **Google 綁定**：`google_id` 為 `NULL`；使用者下次用 Google 登入時，會依 email 自動重新綁定。
 - **聊天訊息、訂單、評價、token（refresh / 一次性 / 推播裝置）、檢舉、訂閱、審計紀錄、廣告**：依產品決定不保留。這些 token 搬過來也無法使用。
 - `is_banned` 舊系統沒有此欄位，一律為 0；舊的 `is_active=false` 會保留。

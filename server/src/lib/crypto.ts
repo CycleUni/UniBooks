@@ -1,24 +1,81 @@
-import bcrypt from 'bcryptjs';
-
 /**
- * Hash a plaintext password using bcrypt with 12 salt rounds.
+ * Password hashing: PBKDF2-HMAC-SHA256 through Web Crypto, the hasher the
+ * Workers runtime implements natively (bcrypt or argon2 would run as
+ * JavaScript or WASM and cost a few hundred ms of CPU per sign-in). It is
+ * also Django's default hasher, stored in Django's format:
  *
- * @param password - Plaintext password to hash
- * @returns Hashed password string
+ *   pbkdf2_sha256$<iterations>$<salt>$<hash, base64>
+ *
+ * byte for byte (the salt is a random alphanumeric string, used as its
+ * UTF-8 bytes), so a Django-made hash within the iteration limit verifies.
+ * PBKDF2_ITERATIONS is the most the runtime accepts (100 000). A hash made
+ * with fewer is upgraded at the next sign-in (needsRehash), so the count can
+ * only go up without anyone resetting a password.
  */
-export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 12);
+export const PBKDF2_ITERATIONS = 100_000;
+/** Django's salt: 22 random alphanumerics (~131 bits). */
+const SALT_LENGTH = 22;
+const SALT_ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const HASH_BYTES = 32;
+const ALGORITHM = 'pbkdf2_sha256';
+
+const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+const unb64 = (text: string) => Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
+
+function randomSalt(): string {
+  // Rejection sampling keeps every character equally likely.
+  let out = '';
+  while (out.length < SALT_LENGTH) {
+    for (const byte of crypto.getRandomValues(new Uint8Array(SALT_LENGTH))) {
+      if (byte < 248 && out.length < SALT_LENGTH) out += SALT_ALPHABET[byte % SALT_ALPHABET.length];
+    }
+  }
+  return out;
 }
 
-/**
- * Verify a plaintext password against a bcrypt hash.
- *
- * @param password - Plaintext password to verify
- * @param hash - Stored bcrypt hash
- * @returns Boolean indicating whether the password matches
- */
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash);
+async function pbkdf2(password: string, salt: string, iterations: number): Promise<Uint8Array> {
+  const enc = new TextEncoder();
+  const material = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(salt), iterations },
+    material,
+    HASH_BYTES * 8,
+  );
+  return new Uint8Array(bits);
+}
+
+/** Hash a password with a fresh random salt. */
+export async function hashPassword(password: string): Promise<string> {
+  const salt = randomSalt();
+  const hash = await pbkdf2(password, salt, PBKDF2_ITERATIONS);
+  return `${ALGORITHM}$${PBKDF2_ITERATIONS}$${salt}$${b64(hash)}`;
+}
+
+function parse(stored: string): { iterations: number; salt: string; hash: Uint8Array } | null {
+  const [algorithm, rawIterations, salt, hash, ...rest] = stored.split('$');
+  const iterations = Number(rawIterations);
+  if (algorithm !== ALGORITHM || rest.length || !salt || !hash) return null;
+  if (!Number.isInteger(iterations) || iterations < 1 || iterations > PBKDF2_ITERATIONS) return null;
+  try {
+    return { iterations, salt, hash: unb64(hash) };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether `password` matches `stored`, compared in constant time. False for anything unparseable. */
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const parsed = parse(stored);
+  if (!parsed) return false;
+  const candidate = await pbkdf2(password, parsed.salt, parsed.iterations);
+  if (candidate.byteLength !== parsed.hash.byteLength) return false;
+  return crypto.subtle.timingSafeEqual(candidate, parsed.hash);
+}
+
+/** Whether a stored hash should be replaced at the next successful sign-in (older parameters). */
+export function needsRehash(stored: string): boolean {
+  const parsed = parse(stored);
+  return !parsed || parsed.iterations < PBKDF2_ITERATIONS || parsed.hash.byteLength !== HASH_BYTES;
 }
 
 /**

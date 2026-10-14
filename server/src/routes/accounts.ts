@@ -3,7 +3,7 @@ import { clearSession, refreshTokenFrom, setSession, withClearedSession } from '
 import { HTTPException } from 'hono/http-exception';
 import { and, asc, desc, eq, like, or, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../env';
-import { apiError, fieldErrors, pagination, readJson } from '../lib/http';
+import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { getRegion, isVerifiedIn } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { outcomeLimit, rateLimit, takeRate } from '../middleware/rateLimit';
@@ -14,7 +14,7 @@ import { serializeListings } from '../services/listings/serialize';
 import type { AccountLinkKind, EmailMessage } from '../queues/types';
 import * as ott from '../services/accounts/oneTimeTokens';
 import { issueTokens, revokeAllTokensForUser, rotateRefreshToken, verifyAndRevokeRefreshToken } from '../services/accounts/tokens';
-import { checkPassword, dummyPasswordCheck, hashPassword, passwordProblems } from '../services/accounts/passwords';
+import { checkPassword, dummyPasswordCheck, hashPassword, needsRehash, passwordProblems } from '../services/accounts/passwords';
 import { emailAlreadyUsed, isPlainEmail, isValidEduEmail, resolveSchoolFromEmail, upsertVerification } from '../services/accounts/edu';
 import { GoogleTokenInvalid, GoogleUnavailable, verifyGoogleIdToken } from '../services/accounts/google';
 import { EMAIL_LANGUAGE_AUTO, EMAIL_LANGUAGES, resolveLanguage } from '../services/accounts/i18n';
@@ -401,7 +401,7 @@ accountRoutes.post('/token/', rateLimit('login', RATES.login), async (c) => {
   };
   const user = await getUserByEmail(c.env, email);
   if (!user) {
-    // Same bcrypt cost as a real account, so timing does not reveal which addresses exist.
+    // Same hashing cost as a real account, so timing does not reveal which addresses exist.
     await dummyPasswordCheck(password);
     return invalid();
   }
@@ -416,6 +416,15 @@ accountRoutes.post('/token/', rateLimit('login', RATES.login), async (c) => {
   }
   if (!(await checkPassword(password, user.passwordHash))) return invalid();
   if (accountDisabled(user)) apiError(403, 'auth.errAccountDisabled');
+  // Hashed under older parameters: replace it now, while the password is known.
+  if (needsRehash(user.passwordHash!)) {
+    await afterResponse(
+      c,
+      hashPassword(password).then((h) =>
+        c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?').bind(h, user.id, user.passwordHash).run(),
+      ),
+    );
+  }
 
   setSession(c, await issueTokens(c.env, user.id));
   await c.env.DB.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').bind(nowIso(), user.id).run();

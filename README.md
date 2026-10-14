@@ -119,6 +119,7 @@ npx wrangler d1 execute unibooks --remote --command "SELECT email, role FROM use
 
 - 登入狀態只存在 HttpOnly Cookie：`__Host-ub_at`（存取權杖，15 分鐘）、`__Secure-ub_rt`（更新權杖，14 天，只送往 `/api/v1/auth/`）。頁面上的 JavaScript 讀不到任何權杖。
 - 所有改變狀態的請求必須同源（檢查 `Sec-Fetch-Site` / `Origin`），不需要 CORS。
+- 密碼以 Web Crypto 原生 PBKDF2-HMAC-SHA256 雜湊（Workers 上限 10 萬次迭代、22 字元隨機 salt、常數時間比對），格式與 Django 的 `pbkdf2_sha256$…` 相同；參數調高後，舊雜湊會在下次登入時自動更新。
 - 只有一把主金鑰 `SECRET_KEY`：各種 JWT（存取、更新、上傳、聊天、hub）的 HMAC 金鑰都由它以 HKDF-SHA256 依用途分別推導，再加上 `token_type` 檢查，彼此互不通用；缺少或過短的主金鑰直接拒絕。輪替主金鑰會讓所有人登出（同 Django 的 `SECRET_KEY`）。
 - 每個請求都從 D1 重新讀取帳號狀態（停權、降級立即生效）。
 - 上傳一律兩段式且同源：`POST <base>/uploads/` 簽出短效上傳權杖，`PUT <base>/uploads/file/?token=` 由 Worker 寫入 R2；伺服器決定 R2 key、檢查檔案魔數與大小，刊登照片只接受本人上傳的 key。

@@ -1,4 +1,4 @@
-import { hashPassword, verifyPassword } from '../../lib/crypto';
+import { hashPassword, needsRehash, verifyPassword } from '../../lib/crypto';
 
 /**
  * Password rules and their messages: the frontend shows `error.fields` as given (it looks each one up
@@ -122,17 +122,18 @@ export function passwordProblems(password: string, user?: PasswordUser): string[
   return errors;
 }
 
-/**
- * A bcrypt hash of a random string nobody knows. Compared against when the
- * account does not exist (or has no usable password), so a sign-in for an
- * unknown address costs the same bcrypt work as one for a real account.
- */
-const DUMMY_HASH = '$2b$12$llUQrmJ1Saakp22/kxuFZuv8q25MI.qf1UfIrkGq311vhUrV39tva';
+/** Hashed once per isolate: a password nobody knows, under the current parameters. */
+let dummyHash: Promise<string> | null = null;
+const dummy = () => (dummyHash ??= hashPassword(crypto.randomUUID()));
 
-/** Check a password against its hash; a NULL hash (unusable password) never matches, but still costs a bcrypt. */
+/**
+ * Check a password against its hash. A NULL hash (an unusable password)
+ * never matches but still costs one hash, so a sign-in for an unknown
+ * address or a Google-only account takes as long as one for a real account.
+ */
 export async function checkPassword(password: string, hash: string | null | undefined): Promise<boolean> {
   if (!hash) {
-    await verifyPassword(password, DUMMY_HASH);
+    await verifyPassword(password, await dummy());
     return false;
   }
   try {
@@ -142,9 +143,9 @@ export async function checkPassword(password: string, hash: string | null | unde
   }
 }
 
-/** Burn one bcrypt comparison (unknown account). */
+/** Spend one hash comparison (unknown account). */
 export async function dummyPasswordCheck(password: string): Promise<void> {
-  await verifyPassword(password, DUMMY_HASH);
+  await verifyPassword(password, await dummy());
 }
 
-export { hashPassword };
+export { hashPassword, needsRehash };
