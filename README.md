@@ -58,6 +58,16 @@ npm --prefix server run start    # 建置前端 + 套用本機 D1 migration + wr
 npm --prefix server run db:seed
 ```
 
+建立帳號（直接寫入本機 D1、已啟用，不必收啟用信；密碼會以不顯示的方式詢問兩次）：
+
+```bash
+npm --prefix server run user:create -- you@example.com --first Ken --last Chou               # 一般帳號
+npm --prefix server run user:create -- admin@example.com --role admin                        # 超級使用者（staff：區域管理員）
+```
+
+同一個信箱再執行一次會重設密碼並重新啟用；有加 `--role` 才會改角色。密碼由伺服器同一套 `lib/crypto.ts` 雜湊，
+不會出現在指令參數或 shell 歷史裡（給腳本用時可改設環境變數 `CREATE_USER_PASSWORD`）。加 `--remote` 則寫入正式環境的 D1。
+
 本機觸發排程（`npm run dev` 已帶 `--test-scheduled`）：
 
 ```bash
@@ -105,19 +115,19 @@ npm run db:seed:remote         # 首次部署後一次：地區、學校、分�
 
 權限只看 `users.role`：`user`（一般）、`staff`（區域管理員，只管 `staff_managed_regions` 指定的區域）、
 `admin`（超級使用者：所有區域，以及地區、幣別、管理員設定）。後台 API 刻意不接受把人升為 `admin`，
-避免後台帳號被盜時被拿來提權，所以超級使用者只能直接改 D1：
+避免後台帳號被盜時被拿來提權，所以超級使用者只能直接寫入 D1：
 
 ```bash
-cd server
-# 1. 先在網站上正常註冊並啟用該帳號（Email 或 Google 登入皆可）
-# 2. 設為超級使用者（本機開發把 --remote 換成 --local）
-npx wrangler d1 execute unibooks --remote --command "UPDATE users SET role = 'admin', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE email = 'you@example.com'"
-# 3. 確認
-npx wrangler d1 execute unibooks --remote --command "SELECT email, role FROM users WHERE role IN ('staff','admin')"
+# 建立（或把既有帳號升級為）超級使用者；本機開發把 --remote 拿掉
+npm --prefix server run user:create -- you@example.com --role admin --remote
+# 確認
+npx --prefix server wrangler d1 execute unibooks --remote --config server/wrangler.jsonc --command "SELECT email, role FROM users WHERE role IN ('staff','admin')"
 ```
 
-角色每次請求都從資料庫讀取，改完重新整理頁面即可，不必重新登入。之後的區域管理員（`staff`）可由超級使用者在
-後台使用者頁面設定；新增或降級超級使用者仍用上面的 SQL（降級時把 `'admin'` 改成 `'staff'` 或 `'user'`）。
+既有帳號（例如已用 Google 登入的帳號）執行時也會改設為輸入的密碼；若不想動它的密碼，改用 SQL：
+`UPDATE users SET role = 'admin' WHERE email = 'you@example.com'`。角色每次請求都從資料庫讀取，改完重新整理
+頁面即可，不必重新登入。之後的區域管理員（`staff`）可由超級使用者在後台使用者頁面設定；降級超級使用者可用
+`--role staff` 或 `--role user`（同樣會重設密碼；只想改角色就用上面的 SQL）。
 從舊 Postgres 匯入資料時，`is_superuser` / `is_staff` 會自動轉成 `admin` / `staff`（見 `docs/migrate-from-django.md`）。
 
 ## 安全設計摘要

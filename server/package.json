@@ -15,7 +15,8 @@
     "db:seed": "wrangler d1 execute unibooks --local --file src/db/seed.sql",
     "db:seed:remote": "wrangler d1 execute unibooks --remote --file src/db/seed.sql",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\""
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
+    "user:create": "node --experimental-strip-types scripts/create-user.ts"
   },
   "dependencies": {
     "@sentry/cloudflare": "^11.6.0",
