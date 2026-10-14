@@ -65,6 +65,8 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   challengeRequired = false;
   private challengeToken = '';
   private challengeWidget: string | null = null;
+  /** The visitor submitted and was asked for a challenge: sign in once, when it is solved. */
+  private submitWhenSolved = false;
   @ViewChild('challengeBox') private challengeBox?: ElementRef<HTMLElement>;
 
   private auth = inject(AuthStore);
@@ -212,14 +214,15 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.challengeRequired && !this.challengeToken) {
       this.clientAuthError = 'auth.errChallengeRequired';
       this.authIsError = true;
+      this.submitWhenSolved = true;
       return;
     }
 
     this.isLoading = true;
+    // Single-use: whatever the answer, a later attempt needs a fresh token
+    // (the widget is reset only when the server asks for one again).
     const token = this.challengeToken;
-    // Single-use: whatever the answer, the next attempt needs a fresh one.
     this.challengeToken = '';
-    if (token && this.challengeWidget) this.turnstile.reset(this.challengeWidget);
     this.auth.login(this.email, this.password, token || undefined).subscribe({
       // No navigation here: the leave-effect above owns that, so the password
       // and Google paths cannot disagree about where a login lands.
@@ -235,24 +238,39 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
         this.lastAuthError = err;
         this.authIsError = true;
         const code = err?.error?.error?.code;
-        if (code === 'auth.errChallengeRequired' || code === 'auth.errChallengeFailed') this.showChallenge();
+        if (code === 'auth.errChallengeRequired' || code === 'auth.errChallengeFailed') {
+          this.submitWhenSolved = true;
+          this.showChallenge(err.error.error.site_key);
+        }
         this.cdr.markForCheck();
       }
     });
   }
 
-  private async showChallenge(): Promise<void> {
-    if (!this.turnstile.enabled) return;
+  private async showChallenge(siteKey: unknown): Promise<void> {
+    if (typeof siteKey !== 'string' || !siteKey) return;
     this.challengeRequired = true;
     this.cdr.detectChanges();
-    if (this.challengeWidget || !this.challengeBox) return;
+    if (this.challengeWidget) {
+      // Shown already: its last token was used, so earn a fresh one.
+      this.turnstile.reset(this.challengeWidget);
+      return;
+    }
+    if (!this.challengeBox) return;
     try {
       this.challengeWidget = await this.turnstile.render(this.challengeBox.nativeElement, {
+        siteKey,
         language: this.i18n.lang(),
         theme: this.theme.resolved(),
         onToken: (t) => {
           this.challengeToken = t;
-          this.onLogin();
+          // Only an attempt the visitor made is resent, and only once: the
+          // widget can hand out a new token by itself (on expiry, or right
+          // away in non-interactive mode), which must not sign in again.
+          if (this.submitWhenSolved) {
+            this.submitWhenSolved = false;
+            this.onLogin();
+          }
         },
         onError: () => {
           this.challengeToken = '';

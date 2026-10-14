@@ -1,5 +1,4 @@
 import { Injectable } from '@angular/core';
-import { environment } from '../../../environments/environment';
 
 interface TurnstileApi {
   render(el: HTMLElement, options: Record<string, unknown>): string;
@@ -18,17 +17,13 @@ const SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render
 /**
  * Cloudflare Turnstile, loaded only when a sign-in asks for it (after
  * repeated wrong passwords on one account; see server routes/accounts.ts).
- * The site key comes from server/wrangler.jsonc vars (TURNSTILE_SITE_KEY);
- * without one the feature is off and the server never asks.
+ * The site key arrives with the server's challenge answer (from
+ * server/wrangler.jsonc vars or .dev.vars), so no build setting is needed;
+ * without one configured the server never asks.
  */
 @Injectable({ providedIn: 'root' })
 export class TurnstileService {
-  readonly siteKey = environment.turnstileSiteKey || '';
   private api: Promise<TurnstileApi> | null = null;
-
-  get enabled(): boolean {
-    return !!this.siteKey;
-  }
 
   private load(): Promise<TurnstileApi> {
     if (window.turnstile) return Promise.resolve(window.turnstile);
@@ -55,6 +50,7 @@ export class TurnstileService {
   async render(
     el: HTMLElement,
     opts: {
+      siteKey: string;
       language: string;
       theme: 'light' | 'dark';
       onToken: (token: string) => void;
@@ -63,7 +59,7 @@ export class TurnstileService {
   ): Promise<string> {
     const api = await this.load();
     return api.render(el, {
-      sitekey: this.siteKey,
+      sitekey: opts.siteKey,
       language: opts.language,
       theme: opts.theme,
       callback: opts.onToken,

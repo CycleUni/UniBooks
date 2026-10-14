@@ -79,7 +79,8 @@
     "GOOGLE_CLIENT_ID": "101715747117-7076qd90bgjpvo7hca6e1rk913ke570c.apps.googleusercontent.com",
     // Cloudflare Turnstile site key (public). With it and the TURNSTILE_SECRET_KEY
     // secret, repeated wrong passwords on one account ask for a challenge
-    // instead of locking the account. Empty: off.
+    // instead of locking the account; the key reaches the app with the
+    // challenge request (no client build setting). Empty: off.
     "TURNSTILE_SITE_KEY": ""
   },
 

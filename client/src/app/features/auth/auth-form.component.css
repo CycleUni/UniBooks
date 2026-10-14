@@ -169,3 +169,7 @@
   margin-top: 12px;
   min-height: 65px;
 }
+/* display:flex above would otherwise override the hidden attribute. */
+.challenge-box[hidden] {
+  display: none;
+}

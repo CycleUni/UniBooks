@@ -389,8 +389,10 @@ accountRoutes.post('/token/', rateLimit('login', RATES.login), async (c) => {
     // locking the account: a stranger's guesses can no longer keep the
     // owner out, and a guessing script has to solve every challenge.
     if (await failures.reached(LOGIN_CHALLENGE_AFTER_FAILURES)) {
-      if (!challenge) apiError(403, 'auth.errChallengeRequired');
-      if (!(await verifyTurnstile(c.env, challenge, c.req.header('CF-Connecting-IP')))) apiError(403, 'auth.errChallengeFailed');
+      // The site key rides along, so the app needs no build-time setting to render the widget.
+      const site = { site_key: c.env.TURNSTILE_SITE_KEY };
+      if (!challenge) apiError(403, 'auth.errChallengeRequired', site);
+      if (!(await verifyTurnstile(c.env, challenge, c.req.header('CF-Connecting-IP')))) apiError(403, 'auth.errChallengeFailed', site);
     }
   } else {
     await failures.assertUnder();

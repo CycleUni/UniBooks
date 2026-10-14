@@ -47,7 +47,7 @@ describe('AuthFormComponent', () => {
       login: vi.fn().mockReturnValue(of({})),
       register: vi.fn().mockReturnValue(of({}))
     };
-    mockTurnstile = { enabled: true, render: vi.fn().mockResolvedValue('w1'), reset: vi.fn(), remove: vi.fn() };
+    mockTurnstile = { render: vi.fn().mockResolvedValue('w1'), reset: vi.fn(), remove: vi.fn() };
     mockGoogle = { renderButton: vi.fn(), buttonReady: signal(true), opening: signal(false), signingIn: signal(false) };
     mockRouter = {
       navigate: vi.fn().mockResolvedValue(true),
@@ -365,7 +365,7 @@ describe('AuthFormComponent', () => {
   });
 
   it('asks for a Turnstile challenge when sign-in requires one, then signs in with its token', async () => {
-    const challenge = { status: 403, error: { error: { code: 'auth.errChallengeRequired' } } };
+    const challenge = { status: 403, error: { error: { code: 'auth.errChallengeRequired', site_key: 'site-key-1' } } };
     mockAuth.login = vi.fn().mockReturnValueOnce(throwError(() => challenge)).mockReturnValue(of({}));
     build('login');
     component.email = 'a@example.com';
@@ -374,6 +374,7 @@ describe('AuthFormComponent', () => {
     await fixture.whenStable();
     expect(component.challengeRequired).toBe(true);
     expect(mockTurnstile.render).toHaveBeenCalledOnce();
+    expect(mockTurnstile.render.mock.calls[0][1].siteKey).toBe('site-key-1');
 
     // Submitting again before solving it sends nothing.
     component.onLogin();
@@ -382,6 +383,23 @@ describe('AuthFormComponent', () => {
     const { onToken } = mockTurnstile.render.mock.calls[0][1];
     onToken('tok-1');
     expect(mockAuth.login).toHaveBeenLastCalledWith('a@example.com', 'pw', 'tok-1');
+    expect(mockAuth.login).toHaveBeenCalledTimes(2);
+
+    // A token the widget hands out by itself later does not sign in again.
+    onToken('tok-2');
+    expect(mockAuth.login).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks the widget for a fresh token when the server wants another challenge', async () => {
+    const challenge = { status: 403, error: { error: { code: 'auth.errChallengeRequired', site_key: 'k' } } };
+    mockAuth.login = vi.fn().mockReturnValue(throwError(() => challenge));
+    build('login');
+    component.email = 'a@example.com';
+    component.password = 'pw';
+    component.onLogin();
+    await fixture.whenStable();
+    mockTurnstile.render.mock.calls[0][1].onToken('tok-1');
+    await fixture.whenStable();
     expect(mockTurnstile.reset).toHaveBeenCalledWith('w1');
   });
 });
