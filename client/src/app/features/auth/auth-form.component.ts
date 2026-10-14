@@ -219,10 +219,12 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     this.isLoading = true;
-    // Single-use: whatever the answer, a later attempt needs a fresh token
-    // (the widget is reset only when the server asks for one again).
+    // Single-use: whatever the answer, a later attempt needs a fresh token.
+    // Reset the widget now so one is ready by the next submit; it is only
+    // stored, never sent by itself (see onToken).
     const token = this.challengeToken;
     this.challengeToken = '';
+    if (token && this.challengeWidget) this.turnstile.reset(this.challengeWidget);
     this.auth.login(this.email, this.password, token || undefined).subscribe({
       // No navigation here: the leave-effect above owns that, so the password
       // and Google paths cannot disagree about where a login lands.
@@ -251,11 +253,9 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     if (typeof siteKey !== 'string' || !siteKey) return;
     this.challengeRequired = true;
     this.cdr.detectChanges();
-    if (this.challengeWidget) {
-      // Shown already: its last token was used, so earn a fresh one.
-      this.turnstile.reset(this.challengeWidget);
-      return;
-    }
+    // Shown already: it was reset when its last token was sent, and the
+    // fresh token resubmits this attempt (submitWhenSolved).
+    if (this.challengeWidget) return;
     if (!this.challengeBox) return;
     try {
       this.challengeWidget = await this.turnstile.render(this.challengeBox.nativeElement, {

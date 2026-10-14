@@ -390,16 +390,53 @@ describe('AuthFormComponent', () => {
     expect(mockAuth.login).toHaveBeenCalledTimes(2);
   });
 
-  it('asks the widget for a fresh token when the server wants another challenge', async () => {
+  it('readies a fresh token after each attempt, so the next submit is not stuck', async () => {
     const challenge = { status: 403, error: { error: { code: 'auth.errChallengeRequired', site_key: 'k' } } };
-    mockAuth.login = vi.fn().mockReturnValue(throwError(() => challenge));
+    const wrong = { status: 401, error: { error: { code: 'auth.errInvalidCredentials' } } };
+    mockAuth.login = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => challenge))
+      .mockReturnValueOnce(throwError(() => wrong))
+      .mockReturnValue(of({}));
     build('login');
     component.email = 'a@example.com';
     component.password = 'pw';
     component.onLogin();
     await fixture.whenStable();
-    mockTurnstile.render.mock.calls[0][1].onToken('tok-1');
+    const { onToken } = mockTurnstile.render.mock.calls[0][1];
+
+    onToken('tok-1'); // solved: resubmitted once, with the token (wrong password)
+    expect(mockAuth.login).toHaveBeenCalledTimes(2);
+    expect(mockTurnstile.reset).toHaveBeenCalledWith('w1'); // the used token is replaced
+
+    onToken('tok-2'); // the fresh token is kept, not sent by itself
+    expect(mockAuth.login).toHaveBeenCalledTimes(2);
+
+    component.password = 'right';
+    component.onLogin(); // the next submit goes straight out with it
+    expect(mockAuth.login).toHaveBeenLastCalledWith('a@example.com', 'right', 'tok-2');
+  });
+
+  it('waits for the token when submitted before the fresh one is ready, then sends once', async () => {
+    const challenge = { status: 403, error: { error: { code: 'auth.errChallengeRequired', site_key: 'k' } } };
+    const wrong = { status: 401, error: { error: { code: 'auth.errInvalidCredentials' } } };
+    mockAuth.login = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => challenge))
+      .mockReturnValueOnce(throwError(() => wrong))
+      .mockReturnValue(of({}));
+    build('login');
+    component.email = 'a@example.com';
+    component.password = 'pw';
+    component.onLogin();
     await fixture.whenStable();
-    expect(mockTurnstile.reset).toHaveBeenCalledWith('w1');
+    const { onToken } = mockTurnstile.render.mock.calls[0][1];
+    onToken('tok-1');
+
+    component.onLogin(); // no token yet: nothing sent, waiting
+    expect(mockAuth.login).toHaveBeenCalledTimes(2);
+    onToken('tok-2');
+    expect(mockAuth.login).toHaveBeenCalledTimes(3);
+    expect(mockAuth.login).toHaveBeenLastCalledWith('a@example.com', 'pw', 'tok-2');
   });
 });
