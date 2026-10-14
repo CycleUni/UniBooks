@@ -781,6 +781,9 @@ export const en: Record<string, string> = {
   'admin.filterInactiveOnly': 'Inactive only',
   'admin.colRegion': 'Region',
   'admin.allRegions': 'All Regions',
+  'admin.noAdRegion': 'No region (not shown)',
+  'admin.allRegionsOption': 'Run in all regions',
+  'admin.advertiserNoRegionHint': 'Choose at least one region, or the ads of this advertiser will not be shown anywhere.',
   'admin.noRegion': 'Unverified',
 
   'admin.colEmail': 'Email',

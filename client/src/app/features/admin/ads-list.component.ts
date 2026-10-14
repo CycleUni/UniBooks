@@ -250,7 +250,8 @@ export class AdminAdsListComponent implements OnInit {
   }
 
   formatRegions(regions?: string[]): string {
-    if (!regions || regions.length === 0) return this.i18n.t('admin.noRegion');
+    // An ad's reach is its advertiser's regions; none set means it is shown nowhere.
+    if (!regions || regions.length === 0) return this.i18n.t('admin.noAdRegion');
     return regions.map(r => this.getRegionName(r)).join(', ');
   }
 

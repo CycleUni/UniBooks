@@ -18,6 +18,8 @@ import { AdminBulkBarComponent } from './bulk-bar.component';
 import { AdminPickCellComponent } from './pick-cell.component';
 import { BulkController } from './bulk';
 import { keywordsMatch, schoolKeywords } from '../../core/school-search';
+import { RegionService } from '../../core/region.service';
+import { AuthStore } from '../../core/auth.store';
 
 @Component({
   selector: 'app-admin-advertisers-list',
@@ -110,6 +112,15 @@ import { keywordsMatch, schoolKeywords } from '../../core/school-search';
             <ui-checkbox [(ngModel)]="formData.is_active" [label]="'admin.advertiserActive' | t"></ui-checkbox>
           </div>
           <div class="form-group">
+            <label>{{ 'admin.colRegion' | t }}</label>
+            <!-- Only superusers may run an advertiser everywhere (the server refuses it for region managers). -->
+            <ui-checkbox *ngIf="isSuperuser" [(ngModel)]="formData.all_regions" [label]="'admin.allRegionsOption' | t"></ui-checkbox>
+            <div *ngIf="!formData.all_regions" class="region-choices">
+              <ui-checkbox *ngFor="let r of regionChoices" [checked]="formData.regions?.includes(r.code)" (change)="toggleRegion(r.code)" [label]="r.name"></ui-checkbox>
+            </div>
+            <p *ngIf="!formData.all_regions && !formData.regions?.length" class="field-hint">{{ 'admin.advertiserNoRegionHint' | t }}</p>
+          </div>
+          <div class="form-group">
             <ui-checkbox [(ngModel)]="formData.all_schools" [label]="'admin.allSchools' | t"></ui-checkbox>
           </div>
           <div class="form-group" *ngIf="!formData.all_schools">
@@ -136,6 +147,8 @@ import { keywordsMatch, schoolKeywords } from '../../core/school-search';
       width: 400px; max-width: 90%; 
     }
     .form-group { margin-bottom: 16px; }
+    .region-choices { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+    .field-hint { margin: 8px 0 0; font-size: var(--text-sm); color: var(--danger); }
     .form-group label { display: block; margin-bottom: 8px; font-weight: 600; }
   `]
 })
@@ -171,9 +184,30 @@ export class AdminAdvertisersListComponent implements OnInit {
     contact_email: '',
     contact_phone: '',
     is_active: true,
+    all_regions: false,
+    regions: [],
     all_schools: true,
     schools: []
   };
+
+  private regionService = inject(RegionService);
+  private auth = inject(AuthStore);
+
+  get isSuperuser(): boolean {
+    return !!this.auth.user()?.is_superuser;
+  }
+
+  /** The site's regions; the server still refuses ones a region manager does not manage. */
+  get regionChoices(): { code: string; name: string }[] {
+    return this.regionService.regions().map((r: any) => ({ code: String(r.code).toUpperCase(), name: r.name || r.code }));
+  }
+
+  toggleRegion(code: string) {
+    const regions = new Set(this.formData.regions ?? []);
+    if (regions.has(code)) regions.delete(code);
+    else regions.add(code);
+    this.formData = { ...this.formData, regions: [...regions] };
+  }
 
   constructor() {}
 
@@ -224,6 +258,9 @@ export class AdminAdvertisersListComponent implements OnInit {
       contact_email: '',
       contact_phone: '',
       is_active: true,
+      all_regions: false,
+      // A new advertiser runs in the region being administered unless changed.
+      regions: [this.regionService.region().toUpperCase()],
       all_schools: true,
       schools: []
     };
@@ -233,7 +270,7 @@ export class AdminAdvertisersListComponent implements OnInit {
 
   openEditModal(adv: AdminAdvertiser) {
     this.editingId = adv.id;
-    this.formData = { ...adv, schools: adv.schools ? [...adv.schools] : [] };
+    this.formData = { ...adv, regions: adv.regions ? [...adv.regions] : [], schools: adv.schools ? [...adv.schools] : [] };
     this.schoolSearchQuery = '';
     this.showModal = true;
   }
@@ -255,6 +292,12 @@ export class AdminAdvertisersListComponent implements OnInit {
   save() {
     if (!this.formData.company_name || !this.formData.contact_email) {
       this.toast.error(this.i18n.t('admin.errFillRequired'));
+      return;
+    }
+
+    if (!this.formData.all_regions && !this.formData.regions?.length) {
+      // With neither, the advertiser's ads would never be shown anywhere.
+      this.toast.error(this.i18n.t('admin.advertiserNoRegionHint'));
       return;
     }
 

@@ -123,6 +123,23 @@ function advertiserJson(a: Advertiser, regionCodes: string[], schoolIds: number[
   };
 }
 
+/** Where each advertiser's ads run: all regions, or its listed ones. Ads carry it for the admin lists. */
+type RegionScope = { allRegions: boolean; regions: string[] };
+
+async function regionScopes(db: AdsDatabase, advertiserIds: number[]): Promise<Map<number, RegionScope>> {
+  const ids = [...new Set(advertiserIds)];
+  const out = new Map<number, RegionScope>();
+  if (!ids.length) return out;
+  const { regionsBy } = await advertiserRelations(db, ids);
+  for (const a of await db
+    .select({ id: advertisers.id, all: advertisers.allRegions })
+    .from(advertisers)
+    .where(inList(advertisers.id, ids))) {
+    out.set(a.id, { allRegions: !!a.all, regions: [...(regionsBy.get(a.id) ?? [])].sort() });
+  }
+  return out;
+}
+
 async function serializeAdvertisers(db: AdsDatabase, rows: Advertiser[]) {
   const { regionsBy, schoolsBy } = await advertiserRelations(
     db,
@@ -339,12 +356,22 @@ adRoutes.put('/promotions/uploads/file/', (c) => storeUpload(c, { action: 'ad_im
 // Ads ("promotions")
 // ---------------------------------------------------------------------------
 
-function adJson(c: Context<AppEnv>, a: Ad, advertiserName: string, stats: AdCounts = ZERO_COUNTS, statsAvailable = false) {
+function adJson(
+  c: Context<AppEnv>,
+  a: Ad,
+  advertiserName: string,
+  scope: RegionScope | undefined,
+  stats: AdCounts = ZERO_COUNTS,
+  statsAvailable = false,
+) {
   return {
     id: a.id,
     advertiser_name: advertiserName,
     is_internal_image: isInternalImage(c.env, origin(c), a.imageUrl),
     advertiser: a.advertiserId,
+    // The advertiser's reach, shown in the ad list (an ad has no regions of its own).
+    all_regions: scope?.allRegions ?? false,
+    regions: scope?.regions ?? [],
     title: a.title,
     image_url: a.imageUrl,
     target_url: a.targetUrl,
@@ -503,9 +530,13 @@ adRoutes.get('/promotions/', async (c) => {
     c.env,
     rows.map((r) => r.a.id),
   );
+  const scopes = await regionScopes(
+    db,
+    rows.map((r) => r.a.advertiserId),
+  );
   return c.json(
     page.wrap(
-      rows.map((r) => adJson(c, r.a, r.name, stats.counts.get(r.a.id), stats.available)),
+      rows.map((r) => adJson(c, r.a, r.name, scopes.get(r.a.advertiserId), stats.counts.get(r.a.id), stats.available)),
       n,
     ),
   );
@@ -540,7 +571,8 @@ adRoutes.post('/promotions/', async (c) => {
     .returning();
   const [{ name }] = await db.select({ name: advertisers.companyName }).from(advertisers).where(eq(advertisers.id, row.advertiserId));
   await invalidateAds(c);
-  return c.json(adJson(c, row, name, ZERO_COUNTS, !!(c.env.CF_ACCOUNT_ID && c.env.CF_ANALYTICS_TOKEN)), 201);
+  const scopes = await regionScopes(db, [row.advertiserId]);
+  return c.json(adJson(c, row, name, scopes.get(row.advertiserId), ZERO_COUNTS, !!(c.env.CF_ACCOUNT_ID && c.env.CF_ANALYTICS_TOKEN)), 201);
 });
 
 async function loadAd(c: Context<AppEnv>, db: AdsDatabase) {
@@ -554,7 +586,8 @@ async function loadAd(c: Context<AppEnv>, db: AdsDatabase) {
 
 async function adResponse(c: Context<AppEnv>, row: { a: Ad; name: string }) {
   const stats = await adCounts(c.env, [row.a.id]);
-  return c.json(adJson(c, row.a, row.name, stats.counts.get(row.a.id), stats.available));
+  const scopes = await regionScopes(createAdsDb(c.env.DB_ADS), [row.a.advertiserId]);
+  return c.json(adJson(c, row.a, row.name, scopes.get(row.a.advertiserId), stats.counts.get(row.a.id), stats.available));
 }
 
 adRoutes.get('/promotions/:id/', async (c) => {

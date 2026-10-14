@@ -783,6 +783,9 @@ export const zhHK: Record<string, string> = {
   'admin.filterInactiveOnly': '僅顯示停用',
   'admin.colRegion': '地區',
   'admin.allRegions': '全地區',
+  'admin.noAdRegion': '未揀地區（唔會顯示）',
+  'admin.allRegionsOption': '適用於所有地區',
+  'admin.advertiserNoRegionHint': '請至少揀一個地區，唔係呢個贊助商嘅廣告喺邊度都唔會顯示。',
   'admin.noRegion': '未驗證地區',
 
   'admin.colEmail': '電郵',

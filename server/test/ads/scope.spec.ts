@@ -123,6 +123,21 @@ describe('admin ad list numbers', () => {
     expect(body.results).toHaveLength(1);
     expect(body.results[0]).toMatchObject({ views_count: 0, clicks_count: 0, stats_available: false });
   });
+
+  it("shows each ad's reach: its advertiser's regions, or all regions", async () => {
+    const regional = await advertiser({ regions: ['TW'] });
+    await ad(regional);
+    const listed = async (adv: number) =>
+      (
+        (await (await call(`/api/v1/admin/promotions/?advertiser_id=${adv}`, { token: superuser.token })).json()) as {
+          results: Record<string, unknown>[];
+        }
+      ).results[0];
+    expect(await listed(regional)).toMatchObject({ all_regions: false, regions: ['TW'] });
+    const global = await advertiser({ allRegions: true });
+    await ad(global);
+    expect(await listed(global)).toMatchObject({ all_regions: true });
+  });
 });
 
 describe('public list cache', () => {
