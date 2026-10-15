@@ -1,7 +1,9 @@
 /**
  * Listing deletion and page bounds.
  */
+import { and, eq, inArray, notExists, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
+import { books, conversations, createDb, listings, orders, subscriptions } from '../../db';
 import { parsePhotos } from '../../lib/json';
 import { deleteListingPhotos } from './photos';
 
@@ -9,11 +11,11 @@ import { deleteListingPhotos } from './photos';
 export const ACTIVE_ORDER_STATUSES = ['pending', 'accepted', 'handed_over'] as const;
 
 export async function hasActiveOrders(env: Env, listingId: string): Promise<boolean> {
-  const row = await env.DB.prepare(
-    `SELECT 1 AS x FROM orders WHERE listing_id = ? AND status IN ('pending','accepted','handed_over') LIMIT 1`,
-  )
-    .bind(listingId)
-    .first();
+  const [row] = await createDb(env.DB)
+    .select({ id: orders.id })
+    .from(orders)
+    .where(and(eq(orders.listingId, listingId), inArray(orders.status, ACTIVE_ORDER_STATUSES)))
+    .limit(1);
   return !!row;
 }
 
@@ -30,17 +32,26 @@ export async function deleteListing(
   origin: string,
   listing: { id: string; bookId: string; sellerId: string; photos: string },
 ): Promise<void> {
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE orders SET listing_ref = COALESCE(listing_ref, ?1), listing_id = NULL WHERE listing_id = ?1`).bind(listing.id),
-    env.DB.prepare(`UPDATE conversations SET listing_ref = COALESCE(listing_ref, ?1), listing_id = NULL WHERE listing_id = ?1`).bind(
-      listing.id,
-    ),
-    env.DB.prepare(`DELETE FROM listings WHERE id = ?`).bind(listing.id),
-    env.DB.prepare(
-      `DELETE FROM books WHERE id = ?1
-         AND NOT EXISTS (SELECT 1 FROM listings WHERE book_id = ?1)
-         AND NOT EXISTS (SELECT 1 FROM subscriptions WHERE book_id = ?1)`,
-    ).bind(listing.bookId),
+  const db = createDb(env.DB);
+  await db.batch([
+    db
+      .update(orders)
+      .set({ listingRef: sql`COALESCE(${orders.listingRef}, ${listing.id})`, listingId: null })
+      .where(eq(orders.listingId, listing.id)),
+    db
+      .update(conversations)
+      .set({ listingRef: sql`COALESCE(${conversations.listingRef}, ${listing.id})`, listingId: null })
+      .where(eq(conversations.listingId, listing.id)),
+    db.delete(listings).where(eq(listings.id, listing.id)),
+    db
+      .delete(books)
+      .where(
+        and(
+          eq(books.id, listing.bookId),
+          notExists(db.select({ id: listings.id }).from(listings).where(eq(listings.bookId, listing.bookId))),
+          notExists(db.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.bookId, listing.bookId))),
+        ),
+      ),
   ]);
   await deleteListingPhotos(env, origin, listing.sellerId, parsePhotos(listing.photos));
 }
