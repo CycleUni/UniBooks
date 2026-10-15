@@ -1,7 +1,7 @@
-import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lte, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { Env } from '../env';
-import { createDb, subscriptions, books, users, orders, regions } from '../db';
+import { createDb, subscriptions, books, users, orders, regions, listings } from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
 import { orderLock } from '../services/orders/lock';
 import { formatLocal } from '../services/orders/time';
@@ -286,11 +286,16 @@ export async function runCleanup(env: Env) {
     .select({ total: sql<number>`count(*)` })
     .from(books);
   // Books with no listings (any status) and no subscriptions.
-  const orphans = await env.DB.prepare(
-    `DELETE FROM books
-      WHERE NOT EXISTS (SELECT 1 FROM listings WHERE listings.book_id = books.id)
-        AND NOT EXISTS (SELECT 1 FROM subscriptions WHERE subscriptions.book_id = books.id)`,
-  ).run();
+  const db = createDb(env.DB);
+  const orphans = await db
+    .delete(books)
+    .where(
+      and(
+        notExists(db.select({ id: listings.id }).from(listings).where(eq(listings.bookId, books.id))),
+        notExists(db.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.bookId, books.id))),
+      ),
+    )
+    .run();
   const tokensPurged = await purgeTokenStore(env);
   const linksPurged = await purgeOneTimeTokens(env);
   // Throttle counters live in the RateLimiter Durable Object and expire on
