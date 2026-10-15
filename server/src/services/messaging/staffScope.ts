@@ -1,4 +1,6 @@
+import { eq } from 'drizzle-orm';
 import type { Env, AuthUser } from '../../env';
+import { createDb, staffManagedRegions } from '../../db';
 
 /**
  * Admins see every region; other staff see
@@ -12,10 +14,11 @@ import type { Env, AuthUser } from '../../env';
 export async function managedRegionCodes(env: Env, user: AuthUser): Promise<string[] | null> {
   if (user.isAdmin) return null;
   try {
-    const { results } = await env.DB.prepare('SELECT region_code FROM staff_managed_regions WHERE user_id = ?')
-      .bind(user.id)
-      .all<{ region_code: string }>();
-    return results.map((r) => r.region_code);
+    const results = await createDb(env.DB)
+      .select({ regionCode: staffManagedRegions.regionCode })
+      .from(staffManagedRegions)
+      .where(eq(staffManagedRegions.userId, user.id));
+    return results.map((r) => r.regionCode);
   } catch {
     return [];
   }

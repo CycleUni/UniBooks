@@ -1,4 +1,6 @@
+import { and, eq, exists, isNotNull, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
+import { chatReports, conversations, createDb, type Database } from '../../db';
 import { loadPeople, schoolNamesIn } from './people';
 import { parsePhotos } from '../../lib/json';
 
@@ -27,8 +29,32 @@ export interface ConversationRow {
   seller_deleted_at: string | null;
 }
 
+/** Every conversations column, under its SQL name (the shape ConversationRow describes). */
+export function selectConversations(db: Database) {
+  return db
+    .select({
+      id: conversations.id,
+      room_id: conversations.roomId,
+      region_code: conversations.regionCode,
+      buyer_id: conversations.buyerId,
+      seller_id: conversations.sellerId,
+      listing_id: conversations.listingId,
+      listing_ref: conversations.listingRef,
+      book_title: conversations.bookTitle,
+      book_isbn: conversations.bookIsbn,
+      latest_message_body: conversations.latestMessageBody,
+      last_message_at: conversations.lastMessageAt,
+      updated_at: conversations.updatedAt,
+      created_at: conversations.createdAt,
+      buyer_deleted_at: conversations.buyerDeletedAt,
+      seller_deleted_at: conversations.sellerDeletedAt,
+    })
+    .from(conversations);
+}
+
 export async function getConversation(env: Env, id: string): Promise<ConversationRow | null> {
-  return env.DB.prepare('SELECT * FROM conversations WHERE id = ?').bind(id).first<ConversationRow>();
+  const [row] = await selectConversations(createDb(env.DB)).where(eq(conversations.id, id)).limit(1);
+  return row ?? null;
 }
 
 export const isParticipant = (conv: Pick<ConversationRow, 'buyer_id' | 'seller_id'>, userId: string) =>
@@ -52,8 +78,10 @@ export async function recordLatestMessage(
 ): Promise<void> {
   const body = messageType === 'image' ? IMAGE_PREVIEW_TOKEN : content;
   const iso = at.toISOString();
-  await env.DB.prepare('UPDATE conversations SET latest_message_body = ?, last_message_at = ?, updated_at = ? WHERE id = ?')
-    .bind(body, iso, iso, roomId)
+  await createDb(env.DB)
+    .update(conversations)
+    .set({ latestMessageBody: body, lastMessageAt: iso, updatedAt: iso })
+    .where(eq(conversations.id, roomId))
     .run();
 }
 
@@ -64,23 +92,34 @@ export async function recordLatestMessage(
  * other side's inbox order does not move.
  */
 export async function markDeletedBy(env: Env, conv: ConversationRow, userId: string): Promise<'hidden' | 'deleted' | false> {
-  let column: 'buyer_deleted_at' | 'seller_deleted_at';
-  if (conv.buyer_id === userId) column = 'buyer_deleted_at';
-  else if (conv.seller_id === userId) column = 'seller_deleted_at';
+  let column: 'buyerDeletedAt' | 'sellerDeletedAt';
+  if (conv.buyer_id === userId) column = 'buyerDeletedAt';
+  else if (conv.seller_id === userId) column = 'sellerDeletedAt';
   else return false;
   const now = new Date().toISOString();
-  await env.DB.prepare(`UPDATE conversations SET ${column} = COALESCE(${column}, ?) WHERE id = ?`).bind(now, conv.id).run();
+  const db = createDb(env.DB);
+  await db
+    .update(conversations)
+    .set({ [column]: sql`COALESCE(${conversations[column]}, ${now})` })
+    .where(eq(conversations.id, conv.id))
+    .run();
   // Conditional delete: whichever request sets the second mark removes the row.
-  const del = await env.DB.batch([
-    env.DB.prepare(
-      `DELETE FROM chat_reports WHERE conversation_id = ?
-         AND EXISTS (SELECT 1 FROM conversations WHERE id = ? AND buyer_deleted_at IS NOT NULL AND seller_deleted_at IS NOT NULL)`,
-    ).bind(conv.id, conv.id),
-    env.DB.prepare('DELETE FROM conversations WHERE id = ? AND buyer_deleted_at IS NOT NULL AND seller_deleted_at IS NOT NULL').bind(
-      conv.id,
+  const bothDeleted = and(eq(conversations.id, conv.id), isNotNull(conversations.buyerDeletedAt), isNotNull(conversations.sellerDeletedAt));
+  const [, del] = await db.batch([
+    db.delete(chatReports).where(
+      and(
+        eq(chatReports.conversationId, conv.id),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(conversations)
+            .where(bothDeleted),
+        ),
+      ),
     ),
+    db.delete(conversations).where(bothDeleted),
   ]);
-  return (del[1].meta.changes ?? 0) > 0 ? 'deleted' : 'hidden';
+  return (del.meta.changes ?? 0) > 0 ? 'deleted' : 'hidden';
 }
 
 interface OrderRow {
@@ -112,6 +151,7 @@ export async function serializeConversations(
   const [people, schools, listingRows, orderRows] = await Promise.all([
     loadPeople(env, otherIds),
     schoolNamesIn(env, otherIds, regionCode),
+    // Raw: `IN json_each(...)` over the page's ids, and listings as `l.*` rows.
     listingIds.length
       ? env.DB.prepare(
           `SELECT l.*, b.cover_url AS _cover FROM listings l LEFT JOIN books b ON b.id = l.book_id

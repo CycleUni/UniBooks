@@ -1,5 +1,7 @@
 import { Hono, type Context } from 'hono';
+import { and, asc, count, desc, eq, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import type { AppEnv } from '../env';
+import { books, conversations, createDb, listings } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { apiError, notFound, pagination, readJson } from '../lib/http';
@@ -10,6 +12,7 @@ import {
   isParticipant,
   listingDeleted,
   markDeletedBy,
+  selectConversations,
   serializeConversations,
   type ConversationRow,
 } from '../services/messaging/conversations';
@@ -43,33 +46,44 @@ authed.get('/conversations', async (c) => {
 
   // Hidden for the viewer once they deleted it; and a seller is not shown a
   // conversation the buyer opened and never wrote in.
-  const where = `region_code = ?1 AND (
-      (buyer_id = ?2 AND buyer_deleted_at IS NULL)
-      OR (seller_id = ?2 AND seller_deleted_at IS NULL AND latest_message_body IS NOT NULL AND latest_message_body <> '')
-    )`;
-  const [countRow, rows] = await Promise.all([
-    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM conversations WHERE ${where}`).bind(region.code, user.id).first<{ n: number }>(),
-    c.env.DB.prepare(`SELECT * FROM conversations WHERE ${where} ORDER BY updated_at DESC, id LIMIT ?3 OFFSET ?4`)
-      .bind(region.code, user.id, page.limit, page.offset)
-      .all<ConversationRow>(),
+  const where = and(
+    eq(conversations.regionCode, region.code),
+    or(
+      and(eq(conversations.buyerId, user.id), isNull(conversations.buyerDeletedAt)),
+      and(
+        eq(conversations.sellerId, user.id),
+        isNull(conversations.sellerDeletedAt),
+        isNotNull(conversations.latestMessageBody),
+        ne(conversations.latestMessageBody, ''),
+      ),
+    ),
+  );
+  const db = createDb(c.env.DB);
+  const [[countRow], rows] = await Promise.all([
+    db.select({ n: count() }).from(conversations).where(where),
+    selectConversations(db)
+      .where(where)
+      .orderBy(desc(conversations.updatedAt), asc(conversations.id))
+      .limit(page.limit)
+      .offset(page.offset),
   ]);
-  const count = countRow?.n ?? 0;
-  const results = await serializeConversations(c.env, rows.results, user.id, region.code);
-  return c.json(page.wrap(results, count));
+  const results = await serializeConversations(c.env, rows, user.id, region.code);
+  return c.json(page.wrap(results, countRow?.n ?? 0));
 });
 
 authed.post('/conversations', async (c) => {
   const user = c.get('user')!;
   const body = await readJson(c.req);
   const listingId = typeof body.listing_id === 'string' || typeof body.listing_id === 'number' ? String(body.listing_id) : '';
+  const db = createDb(c.env.DB);
 
   // Must be verified in the target region: the listing's, wherever it is.
-  const target =
+  const [target] =
     listingId && UUID_LOOSE_RE.test(listingId)
-      ? await c.env.DB.prepare('SELECT region_code FROM listings WHERE id = ?').bind(listingId).first<{ region_code: string }>()
-      : null;
+      ? await db.select({ regionCode: listings.regionCode }).from(listings).where(eq(listings.id, listingId)).limit(1)
+      : [];
   const region = await requireRegion(c);
-  const verifyIn = target?.region_code ?? region.code;
+  const verifyIn = target?.regionCode ?? region.code;
   if (!(await isVerifiedIn(c.env, user.id, verifyIn))) {
     apiError(403, 'acct.errUnverifiedInRegion', { region: verifyIn });
   }
@@ -77,20 +91,28 @@ authed.post('/conversations', async (c) => {
   if (!listingId) apiError(400, 'msg.errListingRequired');
   if (!UUID_LOOSE_RE.test(listingId)) apiError(404, 'msg.errListingNotFound');
 
-  const listing = await c.env.DB.prepare(
-    `SELECT l.id, l.seller_id, l.status, l.region_code, b.title AS book_title, b.isbn13 AS book_isbn
-       FROM listings l LEFT JOIN books b ON b.id = l.book_id
-      WHERE l.id = ? AND l.region_code = ?`,
-  )
-    .bind(listingId, region.code)
-    .first<{ id: string; seller_id: string; status: string; region_code: string; book_title: string | null; book_isbn: string | null }>();
+  const [listing] = await db
+    .select({
+      id: listings.id,
+      sellerId: listings.sellerId,
+      status: listings.status,
+      regionCode: listings.regionCode,
+      bookTitle: books.title,
+      bookIsbn: books.isbn13,
+    })
+    .from(listings)
+    .leftJoin(books, eq(books.id, listings.bookId))
+    .where(and(eq(listings.id, listingId), eq(listings.regionCode, region.code)))
+    .limit(1);
   if (!listing) apiError(404, 'msg.errListingNotFound');
-  if (listing.seller_id === user.id) apiError(400, 'msg.errCannotMessageSelf');
+  if (listing.sellerId === user.id) apiError(400, 'msg.errCannotMessageSelf');
 
-  const findExisting = () =>
-    c.env.DB.prepare('SELECT * FROM conversations WHERE listing_id = ? AND buyer_id = ?')
-      .bind(listing.id, user.id)
-      .first<ConversationRow>();
+  const findExisting = async () => {
+    const [row] = await selectConversations(db)
+      .where(and(eq(conversations.listingId, listing.id), eq(conversations.buyerId, user.id)))
+      .limit(1);
+    return row ?? null;
+  };
 
   let conv = await findExisting();
   let created = false;
@@ -103,25 +125,24 @@ authed.post('/conversations', async (c) => {
     await checkRate(c, 'conversation_create', CONVERSATION_CREATE_RATE);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const res = await c.env.DB.prepare(
-      `INSERT INTO conversations (id, room_id, region_code, buyer_id, seller_id, listing_id, listing_ref,
-                                  book_title, book_isbn, latest_message_body, last_message_at, updated_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
-       ON CONFLICT DO NOTHING`,
-    )
-      .bind(
+    const res = await db
+      .insert(conversations)
+      .values({
         id,
-        id,
-        listing.region_code,
-        user.id,
-        listing.seller_id,
-        listing.id,
-        listing.id,
-        (listing.book_title ?? '').slice(0, 255),
-        listing.book_isbn ?? '',
-        now,
-        now,
-      )
+        roomId: id,
+        regionCode: listing.regionCode,
+        buyerId: user.id,
+        sellerId: listing.sellerId,
+        listingId: listing.id,
+        listingRef: listing.id,
+        bookTitle: (listing.bookTitle ?? '').slice(0, 255),
+        bookIsbn: listing.bookIsbn ?? '',
+        latestMessageBody: null,
+        lastMessageAt: null,
+        updatedAt: now,
+        createdAt: now,
+      })
+      .onConflictDoNothing()
       .run();
     created = (res.meta.changes ?? 0) > 0;
     conv = await findExisting();

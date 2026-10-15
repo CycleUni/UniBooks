@@ -1,4 +1,6 @@
+import { desc, eq, or } from 'drizzle-orm';
 import type { Env } from '../../env';
+import { conversations, createDb } from '../../db';
 import type { UserHub } from '../../durable-objects/UserHub';
 import { chatRoomStub } from '../../lib/chat';
 
@@ -16,11 +18,12 @@ export async function disconnectUser(env: Env, userId: string): Promise<void> {
   const hubs = env.USER_HUB as DurableObjectNamespace<UserHub>;
   const tasks: Promise<unknown>[] = [hubs.get(hubs.idFromName(userId)).disconnectAll()];
   try {
-    const { results } = await env.DB.prepare(
-      'SELECT id FROM conversations WHERE buyer_id = ? OR seller_id = ? ORDER BY updated_at DESC LIMIT ?',
-    )
-      .bind(userId, userId, MAX_ROOMS)
-      .all<{ id: string }>();
+    const results = await createDb(env.DB)
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(or(eq(conversations.buyerId, userId), eq(conversations.sellerId, userId)))
+      .orderBy(desc(conversations.updatedAt))
+      .limit(MAX_ROOMS);
     for (const r of results) tasks.push(chatRoomStub(env, r.id).disconnectUser(userId));
   } catch (e) {
     console.error('[chat] could not list rooms to disconnect', e);
