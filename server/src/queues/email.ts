@@ -1,4 +1,6 @@
+import { eq } from 'drizzle-orm';
 import type { Env } from '../env';
+import { conversations, createDb, users } from '../db';
 import { escapeHtml } from '../lib/html';
 import { formatMeetupTime } from '../lib/time';
 import { siteOrigin } from '../lib/origin';
@@ -76,12 +78,23 @@ interface UserRow {
 
 async function loadUser(env: Env, id: string | undefined | null): Promise<UserRow | null> {
   if (!id) return null;
-  return env.DB.prepare(
-    `SELECT id, email, first_name, last_name, is_active, is_banned, deleted_at, notify_new_message_email, email_language, site_language
-     FROM users WHERE id = ?`,
-  )
-    .bind(id)
-    .first<UserRow>();
+  const [row] = await createDb(env.DB)
+    .select({
+      id: users.id,
+      email: users.email,
+      first_name: users.firstName,
+      last_name: users.lastName,
+      is_active: users.isActive,
+      is_banned: users.isBanned,
+      deleted_at: users.deletedAt,
+      notify_new_message_email: users.notifyNewMessageEmail,
+      email_language: users.emailLanguage,
+      site_language: users.siteLanguage,
+    })
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1);
+  return row ?? null;
 }
 
 /** Active, not banned, not deleted, with an address (the same rule as push: messaging/people.ts). */
@@ -146,20 +159,19 @@ async function chatNotification(
   env: Env,
   msg: Extract<EmailMessage, { type: 'offline_chat_notification' }>,
 ): Promise<RenderedEmail | null> {
-  const conv = await env.DB.prepare(
-    `SELECT id, region_code, buyer_id, seller_id, book_title, buyer_deleted_at, seller_deleted_at
-     FROM conversations WHERE ${msg.conversation_id ? 'id' : 'room_id'} = ?`,
-  )
-    .bind(msg.conversation_id ?? msg.room_id)
-    .first<{
-      id: string;
-      region_code: string;
-      buyer_id: string;
-      seller_id: string;
-      book_title: string;
-      buyer_deleted_at: string | null;
-      seller_deleted_at: string | null;
-    }>();
+  const [conv] = await createDb(env.DB)
+    .select({
+      id: conversations.id,
+      region_code: conversations.regionCode,
+      buyer_id: conversations.buyerId,
+      seller_id: conversations.sellerId,
+      book_title: conversations.bookTitle,
+      buyer_deleted_at: conversations.buyerDeletedAt,
+      seller_deleted_at: conversations.sellerDeletedAt,
+    })
+    .from(conversations)
+    .where(msg.conversation_id ? eq(conversations.id, msg.conversation_id) : eq(conversations.roomId, msg.room_id))
+    .limit(1);
   if (!conv) return null;
 
   let otherId: string;

@@ -1,4 +1,6 @@
+import { and, eq } from 'drizzle-orm';
 import type { Env } from '../env';
+import { createDb, orders, pushDevices, regions } from '../db';
 import { siteOrigin } from '../lib/origin';
 import { formatMeetupTime } from '../lib/time';
 import type { PushMessage } from './types';
@@ -127,9 +129,17 @@ export interface RenderedPush {
 
 async function regionInfo(env: Env, code: string | null | undefined) {
   if (!code) return null;
-  return env.DB.prepare('SELECT code, default_language, timezone FROM regions WHERE code = ?')
-    .bind(code)
-    .first<{ code: string; default_language: string; timezone: string }>();
+  const [row] = await createDb(env.DB)
+    .select({ code: regions.code, default_language: regions.defaultLanguage, timezone: regions.timezone })
+    .from(regions)
+    .where(eq(regions.code, code))
+    .limit(1);
+  return row ?? null;
+}
+
+async function orderRegion(env: Env, orderId: string): Promise<string | null> {
+  const [row] = await createDb(env.DB).select({ regionCode: orders.regionCode }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  return row?.regionCode ?? null;
 }
 
 const ORDER_STATUS_EVENT: Record<string, string> = {
@@ -192,8 +202,7 @@ export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPu
     case 'order_update': {
       const recipient = await loadPerson(env, msg.user_id);
       if (!reachable(recipient)) return null;
-      const order = await env.DB.prepare('SELECT region_code FROM orders WHERE id = ?').bind(msg.order_id).first<{ region_code: string }>();
-      const region = await regionInfo(env, order?.region_code);
+      const region = await regionInfo(env, await orderRegion(env, msg.order_id));
       const lang: PushLang = languageFor(recipient, region?.default_language);
       const event =
         msg.event && (ORDER_PUSH_EVENTS as readonly string[]).includes(msg.event)
@@ -226,8 +235,7 @@ export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPu
     case 'meetup_reminder': {
       const recipient = await loadPerson(env, msg.user_id);
       if (!reachable(recipient)) return null;
-      const order = await env.DB.prepare('SELECT region_code FROM orders WHERE id = ?').bind(msg.order_id).first<{ region_code: string }>();
-      const region = await regionInfo(env, order?.region_code);
+      const region = await regionInfo(env, await orderRegion(env, msg.order_id));
       const lang = languageFor(recipient, region?.default_language);
       return {
         recipientId: msg.user_id,
@@ -247,9 +255,10 @@ export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPu
 export async function processPushMessage(msg: PushMessage, env: Env, account: FirebaseServiceAccount): Promise<number> {
   const push = await renderPush(msg, env);
   if (!push) return 0;
-  const { results: devices } = await env.DB.prepare('SELECT id, token FROM push_devices WHERE user_id = ? AND is_active = 1')
-    .bind(push.recipientId)
-    .all<{ id: number; token: string }>();
+  const devices = await createDb(env.DB)
+    .select({ id: pushDevices.id, token: pushDevices.token })
+    .from(pushDevices)
+    .where(and(eq(pushDevices.userId, push.recipientId), eq(pushDevices.isActive, 1)));
   if (!devices.length) return 0;
 
   const projectId = env.FIREBASE_PROJECT_ID || account.project_id;
