@@ -88,5 +88,13 @@
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFXU0IYptAGunf16"
   },
 
-  "observability": { "enabled": true }
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": false
+    }
+  }
 }
