@@ -49,10 +49,10 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
   beforeAll(async () => {
     const run = (sql: string, ...args: unknown[]) => env.DB.prepare(sql).bind(...args);
     await env.DB.batch([
-      run(`INSERT INTO currencies (code, symbol) VALUES ('TWD', 'NT$')`),
-      run(`INSERT INTO languages (code, name) VALUES ('zh-TW', 'Chinese')`),
+      run(`INSERT OR IGNORE INTO currencies (code, symbol) VALUES ('TWD', 'NT$')`),
+      run(`INSERT OR IGNORE INTO languages (code, name) VALUES ('zh-TW', 'Chinese')`),
       run(
-        `INSERT INTO regions (code, name, default_currency, default_language, timezone, search_engines, created_at)
+        `INSERT OR IGNORE INTO regions (code, name, default_currency, default_language, timezone, search_engines, created_at)
          VALUES ('TW', 'Taiwan', 'TWD', 'zh-TW', 'Asia/Taipei', '["googlebooks"]', ?)`,
         NOW,
       ),

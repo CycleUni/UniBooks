@@ -19,7 +19,7 @@ export async function seedReference(): Promise<void> {
     ).bind(now),
     env.DB.prepare(
       `INSERT OR IGNORE INTO regions (code, name, default_currency, default_language, timezone, translations, languages, search_engines, edu_email_suffix, sort_order, is_active, created_at)
-       VALUES ('HK', 'Hong Kong', 'HKD', 'zh-HK', 'Asia/Hong_Kong', '{}', '["zh-HK","en"]', '[]', '[".edu.hk"]', 1, 1, ?)`,
+       VALUES ('HK', 'Hong Kong', 'HKD', 'zh-HK', 'Asia/Hong_Kong', '{}', '["zh-HK","en"]', '[]', '[".edu.hk"]', 20, 1, ?)`,
     ).bind(now),
     env.DB.prepare(
       `INSERT OR IGNORE INTO schools (id, region_code, code, name, email_domain, translations, is_active, created_at)

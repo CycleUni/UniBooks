@@ -15,6 +15,13 @@
       "when": 1791856818232,
       "tag": "0001_listings_book_status_created",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792037064722,
+      "tag": "0002_reference_data",
+      "breakpoints": true
     }
   ]
 }
