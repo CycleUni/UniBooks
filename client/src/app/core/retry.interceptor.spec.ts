@@ -26,10 +26,10 @@ describe('RetryInterceptor', () => {
 
   it('retries a GET that failed with a server error', async () => {
     let result: unknown = null;
-    http.get('/listings/').subscribe(r => (result = r));
+    http.get('/listings').subscribe(r => (result = r));
     fail(503);
     await vi.advanceTimersByTimeAsync(5000);
-    backend.expectOne('/listings/').flush({ ok: true });
+    backend.expectOne('/listings').flush({ ok: true });
     expect(result).toEqual({ ok: true });
   });
 
@@ -37,7 +37,7 @@ describe('RetryInterceptor', () => {
     // A 504 or a dropped connection after the backend already did the work:
     // replaying would create a second order or listing.
     let failed = false;
-    http.request(method, '/orders/', { body: {} }).subscribe({ error: () => (failed = true) });
+    http.request(method, '/orders', { body: {} }).subscribe({ error: () => (failed = true) });
     fail(504);
     await vi.advanceTimersByTimeAsync(10_000);
     backend.expectNone(() => true);

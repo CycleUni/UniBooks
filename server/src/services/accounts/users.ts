@@ -128,8 +128,7 @@ export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Rec
     show_avatar: !!user.showAvatar,
     last_seen_bought_orders_at: user.lastSeenBoughtOrdersAt ?? null,
     last_seen_sold_orders_at: user.lastSeenSoldOrdersAt ?? null,
-    is_staff: isStaff,
-    is_superuser: user.role === 'admin',
+    role: user.role,
     managed_regions: isStaff ? await managedRegionsOf(c.env, user.id) : [],
     regions,
     verifications: verifications.map((v) => ({

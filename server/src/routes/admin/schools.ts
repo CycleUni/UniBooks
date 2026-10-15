@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../../env';
 import { invalidates } from '../../lib/cache';
 import { cities, createDb, regionVerifications, schoolRequests, schools, users, type Database, type School } from '../../db';
-import { apiError, fieldErrors, issueFields, pagination, readJson, validate } from '../../lib/http';
+import { apiError, fieldErrors, describeIssues, pagination, readJson, validate } from '../../lib/http';
 import { parseJsonObject } from '../../lib/json';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { assertInScope, intId, likeContains, notFound, regionExists, regionParam, scopeOf } from '../../services/admin/scope';
@@ -119,7 +119,7 @@ async function loadSchool(c: Context<AppEnv>, id: number): Promise<SchoolRow> {
 // Schools: list / create
 // ---------------------------------------------------------------------------
 
-schoolRoutes.get('/schools/', async (c) => {
+schoolRoutes.get('/schools', async (c) => {
   const db = createDb(c.env.DB);
   const scope = await scopeOf(c);
   const page = pagination(c.req.url, { allowPageSize: true, maxPageSize: 100 });
@@ -176,7 +176,7 @@ async function cityIn(db: Database, regionCode: string, cityCode: string): Promi
   return row ? row.id : null;
 }
 
-schoolRoutes.post('/schools/', invalidates('ref'), async (c) => {
+schoolRoutes.post('/schools', invalidates('ref'), async (c) => {
   const body = validate(schoolCreate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
   // Scope first: every later check (region, codes, domains) reads other regions' data.
@@ -227,7 +227,7 @@ schoolRoutes.post('/schools/', invalidates('ref'), async (c) => {
 // Bulk import (before /schools/:id/ so "bulk" is never read as an id)
 // ---------------------------------------------------------------------------
 
-schoolRoutes.post('/schools/bulk/', invalidates('ref'), async (c) => {
+schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
   const body = await readJson(c.req);
   const action = body.action;
   const items = body.items ?? [];
@@ -246,7 +246,7 @@ schoolRoutes.post('/schools/bulk/', invalidates('ref'), async (c) => {
   for (const [index, raw] of items.entries()) {
     const result = schoolBulkItem.safeParse(raw);
     if (!result.success) {
-      itemErrors.push({ index, errors: issueFields(result.error, INVALID) });
+      itemErrors.push({ index, errors: describeIssues(result.error, INVALID).fields });
       continue;
     }
     const domain = result.data.email_domain;
@@ -431,17 +431,17 @@ function sortKeys(v: unknown): unknown {
 // Schools: detail
 // ---------------------------------------------------------------------------
 
-schoolRoutes.get('/schools/:id/', async (c) => {
+schoolRoutes.get('/schools/:id', async (c) => {
   const row = await loadSchool(c, intId(c.req.param('id')));
   return c.json(schoolJson(row, await resolveLanguage(c)));
 });
 
-schoolRoutes.patch('/schools/:id/', invalidates('ref'), async (c) => {
+schoolRoutes.patch('/schools/:id', invalidates('ref'), async (c) => {
   const instance = await loadSchool(c, intId(c.req.param('id')));
   const body = validate(schoolUpdate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
   const region = body.region ?? instance.regionCode;
-  // perform_update: the school's (new or current) region must be managed, checked before any lookup.
+  // The school's (new or current) region must be managed, checked before any lookup.
   assertInScope(await scopeOf(c), region);
   if (body.region !== undefined && !(await regionExists(db, body.region))) fieldErrors({ region: [INVALID] });
 
@@ -499,7 +499,7 @@ schoolRoutes.patch('/schools/:id/', invalidates('ref'), async (c) => {
   return c.json(schoolJson(row, await resolveLanguage(c)));
 });
 
-schoolRoutes.delete('/schools/:id/', invalidates('ref'), async (c) => {
+schoolRoutes.delete('/schools/:id', invalidates('ref'), async (c) => {
   const instance = await loadSchool(c, intId(c.req.param('id')));
   // A school with accounts attached cannot be removed: users would silently
   // lose their school. Admins reassign or remove the accounts first.
@@ -560,7 +560,7 @@ function requestScope(scope: string[] | null): SQL | undefined {
   return scope.length ? inArray(schoolRequests.regionCode, scope) : sql`0`;
 }
 
-schoolRoutes.get('/school-requests/', async (c) => {
+schoolRoutes.get('/school-requests', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url, { allowPageSize: true, maxPageSize: 100 });
   const conds: (SQL | undefined)[] = [requestScope(await scopeOf(c))];
@@ -599,9 +599,9 @@ async function loadRequest(c: Context<AppEnv>, id: number) {
   return row;
 }
 
-schoolRoutes.get('/school-requests/:id/', async (c) => c.json(requestJson(await loadRequest(c, intId(c.req.param('id'))))));
+schoolRoutes.get('/school-requests/:id', async (c) => c.json(requestJson(await loadRequest(c, intId(c.req.param('id'))))));
 
-schoolRoutes.patch('/school-requests/:id/', invalidates('ref'), async (c) => {
+schoolRoutes.patch('/school-requests/:id', invalidates('ref'), async (c) => {
   const id = intId(c.req.param('id'));
   const data = await readJson(c.req);
   const keys = Object.keys(data);

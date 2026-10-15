@@ -2,11 +2,10 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { uploadImage } from '../upload';
+import type { UserRole } from '../auth.store';
 
 export interface Paginated<T> {
   count: number;
-  next: string | null;
-  previous: string | null;
   results: T[];
 }
 
@@ -49,8 +48,7 @@ export interface AdminUser {
   regions?: string[];
   verified_at: string | null;
   created_at: string;
-  is_staff: boolean;
-  is_superuser: boolean;
+  role: UserRole;
 }
 
 export interface AdminListing {
@@ -256,229 +254,229 @@ export class AdminService {
 
   // Regions
   getRegions(): Observable<Paginated<AdminRegion>> {
-    return this.http.get<Paginated<AdminRegion>>('/admin/regions/');
+    return this.http.get<Paginated<AdminRegion>>('/admin/regions');
   }
   
   getRegion(code: string): Observable<AdminRegion> {
-    return this.http.get<AdminRegion>(`/admin/regions/${code}/`);
+    return this.http.get<AdminRegion>(`/admin/regions/${code}`);
   }
   
   createRegion(data: Partial<AdminRegion>): Observable<AdminRegion> {
-    return this.http.post<AdminRegion>('/admin/regions/', data);
+    return this.http.post<AdminRegion>('/admin/regions', data);
   }
   
   updateRegion(code: string, data: Partial<AdminRegion>): Observable<AdminRegion> {
-    return this.http.patch<AdminRegion>(`/admin/regions/${code}/`, data);
+    return this.http.patch<AdminRegion>(`/admin/regions/${code}`, data);
   }
 
   // Currencies
   getCurrencies(): Observable<Paginated<AdminCurrency>> {
-    return this.http.get<Paginated<AdminCurrency>>('/admin/currencies/');
+    return this.http.get<Paginated<AdminCurrency>>('/admin/currencies');
   }
   
   getCurrency(code: string): Observable<AdminCurrency> {
-    return this.http.get<AdminCurrency>(`/admin/currencies/${code}/`);
+    return this.http.get<AdminCurrency>(`/admin/currencies/${code}`);
   }
   
   createCurrency(data: Partial<AdminCurrency>): Observable<AdminCurrency> {
-    return this.http.post<AdminCurrency>('/admin/currencies/', data);
+    return this.http.post<AdminCurrency>('/admin/currencies', data);
   }
   
   updateCurrency(code: string, data: Partial<AdminCurrency>): Observable<AdminCurrency> {
-    return this.http.patch<AdminCurrency>(`/admin/currencies/${code}/`, data);
+    return this.http.patch<AdminCurrency>(`/admin/currencies/${code}`, data);
   }
 
 
   getUsers(opts: { page?: number; q?: string; is_active?: string; school?: string; region?: string } = {}): Observable<Paginated<AdminUser>> {
-    return this.http.get<Paginated<AdminUser>>('/admin/users/', { params: buildParams(opts) });
+    return this.http.get<Paginated<AdminUser>>('/admin/users', { params: buildParams(opts) });
   }
 
   getUser(id: string | number): Observable<AdminUser> {
-    return this.http.get<AdminUser>(`/admin/users/${id}/`);
+    return this.http.get<AdminUser>(`/admin/users/${id}`);
   }
 
   updateUser(id: string | number, changes: { is_active?: boolean; school?: string | number | null; verified?: boolean; region?: string }): Observable<AdminUser> {
-    return this.http.patch<AdminUser>(`/admin/users/${id}/`, changes);
+    return this.http.patch<AdminUser>(`/admin/users/${id}`, changes);
   }
 
-  toggleManager(id: string | number, is_staff: boolean): Observable<AdminUser> {
-    return this.http.post<AdminUser>(`/admin/managers/${id}/toggle/`, { is_staff });
+  setManagerRole(id: string | number, role: 'staff' | 'user'): Observable<AdminUser> {
+    return this.http.patch<AdminUser>(`/admin/managers/${id}`, { role });
   }
 
   getListings(opts: { page?: number; q?: string; status?: string; condition?: string; school?: string; region?: string } = {}): Observable<Paginated<AdminListing>> {
-    return this.http.get<Paginated<AdminListing>>('/admin/listings/', { params: buildParams(opts) });
+    return this.http.get<Paginated<AdminListing>>('/admin/listings', { params: buildParams(opts) });
   }
 
   getListing(id: string): Observable<AdminListing> {
-    return this.http.get<AdminListing>(`/admin/listings/${id}/`);
+    return this.http.get<AdminListing>(`/admin/listings/${id}`);
   }
 
   updateListingStatus(id: string, data: { status?: string; admin_locked?: boolean; admin_lock_reason?: string }): Observable<AdminListing> {
-    return this.http.patch<AdminListing>(`/admin/listings/${id}/`, data);
+    return this.http.patch<AdminListing>(`/admin/listings/${id}`, data);
   }
 
   /** `reason` is required when the listing still has open orders: the
    *  server cancels them on the platform's behalf before deleting it. */
   deleteListing(id: string, reason?: string): Observable<void> {
-    return this.http.delete<void>(`/admin/listings/${id}/`, reason ? { body: { reason } } : {});
+    return this.http.delete<void>(`/admin/listings/${id}`, reason ? { body: { reason } } : {});
   }
 
   getOrders(opts: { page?: number; q?: string; status?: string; region?: string } = {}): Observable<Paginated<AdminOrder>> {
-    return this.http.get<Paginated<AdminOrder>>('/admin/orders/', { params: buildParams(opts) });
+    return this.http.get<Paginated<AdminOrder>>('/admin/orders', { params: buildParams(opts) });
   }
 
   getOrder(id: string): Observable<AdminOrder> {
-    return this.http.get<AdminOrder>(`/admin/orders/${id}/`);
+    return this.http.get<AdminOrder>(`/admin/orders/${id}`);
   }
 
   forceCancelOrder(id: string, reason: string): Observable<{ status: string }> {
-    return this.http.post<{ status: string }>(`/admin/orders/${id}/force_cancel/`, { reason });
+    return this.http.post<{ status: string }>(`/admin/orders/${id}/force-cancel`, { reason });
   }
 
   getReports(status?: string, page?: number, region?: string): Observable<Paginated<AdminReport>> {
-    return this.http.get<Paginated<AdminReport>>('/moderation/all/', { params: buildParams({ status, page, region }) });
+    return this.http.get<Paginated<AdminReport>>('/moderation/all', { params: buildParams({ status, page, region }) });
   }
 
   actionReport(id: string, status: 'actioned' | 'dismissed'): Observable<AdminReport> {
-    return this.http.patch<AdminReport>(`/moderation/${id}/`, { status });
+    return this.http.patch<AdminReport>(`/moderation/${id}`, { status });
   }
 
   getSchools(opts: { page?: number; page_size?: number; q?: string; region?: string } = {}): Observable<Paginated<AdminSchool>> {
-    return this.http.get<Paginated<AdminSchool>>('/admin/schools/', { params: buildParams(opts) });
+    return this.http.get<Paginated<AdminSchool>>('/admin/schools', { params: buildParams(opts) });
   }
 
   getSchool(id: string | number): Observable<AdminSchool> {
-    return this.http.get<AdminSchool>(`/admin/schools/${id}/`);
+    return this.http.get<AdminSchool>(`/admin/schools/${id}`);
   }
 
   createSchool(data: Partial<AdminSchool>): Observable<AdminSchool> {
-    return this.http.post<AdminSchool>('/admin/schools/', data);
+    return this.http.post<AdminSchool>('/admin/schools', data);
   }
 
   updateSchool(id: string | number, data: Partial<AdminSchool>): Observable<AdminSchool> {
-    return this.http.patch<AdminSchool>(`/admin/schools/${id}/`, data);
+    return this.http.patch<AdminSchool>(`/admin/schools/${id}`, data);
   }
 
   getBooks(opts: { page?: number; q?: string; region?: string; review?: AdminBookReviewFilter | '' } = {}): Observable<Paginated<AdminBook>> {
-    return this.http.get<Paginated<AdminBook>>('/admin/books/', { params: buildParams(opts) });
+    return this.http.get<Paginated<AdminBook>>('/admin/books', { params: buildParams(opts) });
   }
 
   getBook(id: number): Observable<AdminBook> {
-    return this.http.get<AdminBook>(`/admin/books/${id}/`);
+    return this.http.get<AdminBook>(`/admin/books/${id}`);
   }
 
   /** Records that no catalogue has this manual book, taking it out of review. */
   confirmManualBook(id: number): Observable<AdminBook> {
-    return this.http.post<AdminBook>(`/admin/books/${id}/confirm-manual/`, {});
+    return this.http.post<AdminBook>(`/admin/books/${id}/confirm-manual`, {});
   }
 
   /** The same for several books; `confirmed` lists those this call confirmed
    *  (others were not pending manual books, or not this admin's). */
   confirmManualBooks(ids: number[]): Observable<{ confirmed: number[] }> {
-    return this.http.post<{ confirmed: number[] }>('/admin/books/confirm-manual/', { ids });
+    return this.http.post<{ confirmed: number[] }>('/admin/books/confirm-manual', { ids });
   }
 
   /** Puts confirmed manual books back in review; `reopened` lists those it did. */
   reopenBookReviews(ids: number[]): Observable<{ reopened: number[] }> {
-    return this.http.post<{ reopened: number[] }>('/admin/books/reopen-review/', { ids });
+    return this.http.post<{ reopened: number[] }>('/admin/books/reopen-review', { ids });
   }
 
   lookupBook(id: number, isbn: string): Observable<AdminBookLookup> {
-    return this.http.get<AdminBookLookup>(`/admin/books/${id}/lookup/`, { params: buildParams({ isbn }) });
+    return this.http.get<AdminBookLookup>(`/admin/books/${id}/lookup`, { params: buildParams({ isbn }) });
   }
 
   /** 409 `admin.errBookIsbnTaken` when another book has the ISBN, unless `merge`. */
   updateBook(id: number, changes: Partial<AdminBookRecord> & { source?: string; merge?: boolean }): Observable<AdminBookUpdate> {
-    return this.http.patch<AdminBookUpdate>(`/admin/books/${id}/`, changes);
+    return this.http.patch<AdminBookUpdate>(`/admin/books/${id}`, changes);
   }
 
   deleteSchool(id: string | number): Observable<void> {
-    return this.http.delete<void>(`/admin/schools/${id}/`);
+    return this.http.delete<void>(`/admin/schools/${id}`);
   }
 
   getCategories(opts: { page?: number; region?: string } = {}): Observable<Paginated<AdminCategory>> {
-    return this.http.get<Paginated<AdminCategory>>('/admin/categories/', { params: buildParams(opts) });
+    return this.http.get<Paginated<AdminCategory>>('/admin/categories', { params: buildParams(opts) });
   }
 
   createCategory(data: Partial<AdminCategory>): Observable<AdminCategory> {
-    return this.http.post<AdminCategory>('/admin/categories/', data);
+    return this.http.post<AdminCategory>('/admin/categories', data);
   }
 
   updateCategory(id: string | number, data: Partial<AdminCategory>): Observable<AdminCategory> {
-    return this.http.patch<AdminCategory>(`/admin/categories/${id}/`, data);
+    return this.http.patch<AdminCategory>(`/admin/categories/${id}`, data);
   }
 
   deleteCategory(id: string | number): Observable<void> {
-    return this.http.delete<void>(`/admin/categories/${id}/`);
+    return this.http.delete<void>(`/admin/categories/${id}`);
   }
 
   bulkImport(endpoint: 'schools' | 'categories', action: 'preview' | 'apply', items: any[]): Observable<any> {
-    return this.http.post<any>(`/admin/${endpoint}/bulk/`, { action, items });
+    return this.http.post<any>(`/admin/${endpoint}/bulk`, { action, items });
   }
 
   getChatReports(status?: string, page?: number, region?: string): Observable<Paginated<AdminChatReport>> {
-    return this.http.get<Paginated<AdminChatReport>>('/admin/chat-reports/', { params: buildParams({ status, page, region }) });
+    return this.http.get<Paginated<AdminChatReport>>('/admin/chat-reports', { params: buildParams({ status, page, region }) });
   }
 
   actionChatReport(id: string, status: 'actioned' | 'dismissed'): Observable<AdminChatReport> {
-    return this.http.patch<AdminChatReport>(`/admin/chat-reports/${id}/`, { status });
+    return this.http.patch<AdminChatReport>(`/admin/chat-reports/${id}`, { status });
   }
 
   getChatReportToken(id: string): Observable<{ token: string; room_id: string }> {
-    return this.http.get<{ token: string; room_id: string }>(`/admin/chat-reports/${id}/chat-token/`);
+    return this.http.get<{ token: string; room_id: string }>(`/admin/chat-reports/${id}/chat-token`);
   }
 
   getSchoolRequests(opts: { page?: number; q?: string; status?: string; region?: string } = {}): Observable<Paginated<AdminSchoolRequest>> {
-    return this.http.get<Paginated<AdminSchoolRequest>>('/admin/school-requests/', { params: buildParams(opts) });
+    return this.http.get<Paginated<AdminSchoolRequest>>('/admin/school-requests', { params: buildParams(opts) });
   }
 
   updateSchoolRequest(id: number, changes: { status?: SchoolRequestStatus; admin_note?: string }): Observable<AdminSchoolRequest> {
-    return this.http.patch<AdminSchoolRequest>(`/admin/school-requests/${id}/`, changes);
+    return this.http.patch<AdminSchoolRequest>(`/admin/school-requests/${id}`, changes);
   }
 
   // API endpoints below renamed from 'advertisers' and 'ads' to 'sponsors' and 'promotions' to evade adblockers
   getAdvertisers(opts: { page?: number; q?: string; page_size?: number; region?: string } = {}): Observable<Paginated<AdminAdvertiser>> {
-    return this.http.get<Paginated<AdminAdvertiser>>('/admin/sponsors/', { params: buildParams(opts) });
+    return this.http.get<Paginated<AdminAdvertiser>>('/admin/sponsors', { params: buildParams(opts) });
   }
 
   getAdvertiser(id: string | number): Observable<AdminAdvertiser> {
-    return this.http.get<AdminAdvertiser>(`/admin/sponsors/${id}/`);
+    return this.http.get<AdminAdvertiser>(`/admin/sponsors/${id}`);
   }
 
   createAdvertiser(data: Partial<AdminAdvertiser>): Observable<AdminAdvertiser> {
-    return this.http.post<AdminAdvertiser>('/admin/sponsors/', data);
+    return this.http.post<AdminAdvertiser>('/admin/sponsors', data);
   }
 
   updateAdvertiser(id: string | number, data: Partial<AdminAdvertiser>): Observable<AdminAdvertiser> {
-    return this.http.patch<AdminAdvertiser>(`/admin/sponsors/${id}/`, data);
+    return this.http.patch<AdminAdvertiser>(`/admin/sponsors/${id}`, data);
   }
 
   deleteAdvertiser(id: string | number): Observable<void> {
-    return this.http.delete<void>(`/admin/sponsors/${id}/`);
+    return this.http.delete<void>(`/admin/sponsors/${id}`);
   }
 
   getAds(opts: { page?: number; advertiser_id?: number; q?: string; region?: string } = {}): Observable<Paginated<AdminAd>> {
-    return this.http.get<Paginated<AdminAd>>('/admin/promotions/', { params: buildParams(opts) });
+    return this.http.get<Paginated<AdminAd>>('/admin/promotions', { params: buildParams(opts) });
   }
 
   getAd(id: string | number): Observable<AdminAd> {
-    return this.http.get<AdminAd>(`/admin/promotions/${id}/`);
+    return this.http.get<AdminAd>(`/admin/promotions/${id}`);
   }
 
   createAd(data: Partial<AdminAd>): Observable<AdminAd> {
-    return this.http.post<AdminAd>('/admin/promotions/', data);
+    return this.http.post<AdminAd>('/admin/promotions', data);
   }
 
   updateAd(id: string | number, data: Partial<AdminAd>): Observable<AdminAd> {
-    return this.http.patch<AdminAd>(`/admin/promotions/${id}/`, data);
+    return this.http.patch<AdminAd>(`/admin/promotions/${id}`, data);
   }
 
   deleteAd(id: string | number): Observable<void> {
-    return this.http.delete<void>(`/admin/promotions/${id}/`);
+    return this.http.delete<void>(`/admin/promotions/${id}`);
   }
 
   // Ad images are uploaded as picked, uncompressed (core/upload.ts).
   uploadAdPhoto(file: File): Observable<{ url: string }> {
-    return uploadImage(this.http, '/admin/promotions/uploads/', file);
+    return uploadImage(this.http, '/admin/promotions/uploads', file);
   }
 }

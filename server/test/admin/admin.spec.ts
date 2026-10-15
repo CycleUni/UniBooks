@@ -125,23 +125,23 @@ describe('school codes', () => {
 describe('admin routing', () => {
   it('answers 401 without a session on every admin path', async () => {
     for (const path of [
-      '/api/v1/admin/regions/',
-      '/api/v1/admin/stats/overview/?region=TW',
-      '/api/v1/admin/promotions/',
-      '/api/v1/admin/users/',
+      '/api/v1/admin/regions',
+      '/api/v1/admin/stats/overview?region=TW',
+      '/api/v1/admin/promotions',
+      '/api/v1/admin/users',
     ]) {
       const res = await fetchApi(path);
       expect(res.status, path).toBe(401);
       expect(await res.json()).toEqual({ error: { code: 'auth.errNotLoggedIn' } });
     }
-    const upload = await fetchApi('/api/v1/admin/promotions/uploads/', { method: 'POST' });
+    const upload = await fetchApi('/api/v1/admin/promotions/uploads', { method: 'POST' });
     expect(upload.status).toBe(401);
-    const put = await fetchApi('/api/v1/admin/promotions/uploads/file/?token=x', { method: 'PUT', body: 'x' });
+    const put = await fetchApi('/api/v1/admin/promotions/uploads/file?token=x', { method: 'PUT', body: 'x' });
     expect(put.status).toBe(401);
   });
 
   it('404s a non-numeric ad id on the public counters', async () => {
-    const res = await fetchApi('/api/v1/promotions/abc/view/', { method: 'POST' });
+    const res = await fetchApi('/api/v1/promotions/abc/view', { method: 'POST' });
     expect(res.status).toBe(404);
   });
 });

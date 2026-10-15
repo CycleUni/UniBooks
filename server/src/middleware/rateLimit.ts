@@ -26,7 +26,7 @@ async function throttled(retryAfter: number): Promise<never> {
   const { HTTPException } = await import('hono/http-exception');
   throw new HTTPException(429, {
     res: Response.json(
-      { detail: `Request was throttled. Expected available in ${retryAfter} seconds.`, error: { code: 'common.errThrottled' } },
+      { error: { code: 'common.errThrottled', wait: retryAfter } },
       { status: 429, headers: { 'Retry-After': String(retryAfter) } },
     ),
   });

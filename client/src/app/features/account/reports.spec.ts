@@ -17,8 +17,6 @@ describe('ReportsComponent', () => {
     mockAccountService = {
       getMyListingReports: vi.fn().mockReturnValue(of({
         count: 1,
-        next: null,
-        previous: null,
         results: [
           {
             id: 'listing-report-1',
@@ -33,8 +31,6 @@ describe('ReportsComponent', () => {
       })),
       getMyChatReports: vi.fn().mockReturnValue(of({
         count: 2,
-        next: null,
-        previous: null,
         results: [
           {
             id: 'report-1',

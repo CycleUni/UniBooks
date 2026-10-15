@@ -5,10 +5,10 @@ import type { z } from 'zod';
 
 /**
  * The API's error contract, which the Angular app reads
- * (src/app/core/api-error.util.ts):
+ * (src/app/core/api-error.util.ts). Every failure has one shape:
  *
- *   {"error": {"code": "<i18n key>"}}   a hand-written failure
- *   {"<field>": ["<i18n key>"]}         request validation (per-field error lists)
+ *   {"error": {"code": "<i18n key>", ...extra}}
+ *   {"error": {"code": "common.errValidation", "fields": {"<field>": ["<i18n key>"]}}}
  *
  * The code is an i18n key the frontend translates; never English prose.
  */
@@ -19,12 +19,11 @@ export function apiError(status: ContentfulStatusCode, code: string, extra?: Rec
   });
 }
 
-/** 400 with per-field errors: {"field": ["code"], ...}. */
-export function fieldErrors(fields: Record<string, string[]>): never {
-  throw new HTTPException(400, {
-    res: Response.json(fields, { status: 400 }),
-    message: 'validation',
-  });
+export type FieldErrors = Record<string, string[]>;
+
+/** 400 with per-field errors: {"error": {"code", "fields": {"field": ["code"]}}}. */
+export function fieldErrors(fields: FieldErrors, code = 'common.errValidation'): never {
+  apiError(400, code, { fields });
 }
 
 /**
@@ -35,18 +34,24 @@ export function fieldErrors(fields: Record<string, string[]>): never {
 export function validate<T extends z.ZodType>(schema: T, data: unknown, fallbackCode = 'common.errValidation'): z.output<T> {
   const result = schema.safeParse(data);
   if (result.success) return result.data;
-  fieldErrors(issueFields(result.error, fallbackCode));
+  const { code, fields } = describeIssues(result.error, fallbackCode);
+  fieldErrors(fields, code);
 }
 
-/** Zod issues as {"field": ["code"]}: i18n-key messages pass through, anything else becomes the fallback. */
-export function issueFields(error: z.ZodError, fallbackCode = 'common.errValidation'): Record<string, string[]> {
-  const fields: Record<string, string[]> = {};
+/**
+ * Zod issues as {code, fields}: i18n-key messages pass through, anything else
+ * becomes the fallback. An issue on the body as a whole (no path) is the code;
+ * otherwise the code is the generic validation one.
+ */
+export function describeIssues(error: z.ZodError, fallbackCode = 'common.errValidation'): { code: string; fields: FieldErrors } {
+  let code = 'common.errValidation';
+  const fields: FieldErrors = {};
   for (const issue of error.issues) {
-    const key = issue.path.length ? issue.path.map(String).join('.') : 'non_field_errors';
     const message = /^[a-z][A-Za-z0-9]*\.[A-Za-z0-9_.]+$/.test(issue.message) ? issue.message : fallbackCode;
-    (fields[key] ??= []).push(message);
+    if (issue.path.length) (fields[issue.path.map(String).join('.')] ??= []).push(message);
+    else code = message;
   }
-  return fields;
+  return { code, fields };
 }
 
 /** Read a JSON body; an absent or malformed body is an empty object. */
@@ -57,15 +62,14 @@ export async function readJson(req: { json: () => Promise<unknown> }): Promise<R
 
 export interface Page<T> {
   count: number;
-  next: string | null;
-  previous: string | null;
   results: T[];
 }
 
 /**
- * Page-number pagination: ?page=N (1-based) and, where the view allows it,
+ * Page-number pagination: ?page=N (1-based) and, where the route allows it,
  * ?page_size=N capped at maxPageSize. Returns the slice bounds plus a
- * function that wraps the rows in {count, next, previous, results}.
+ * function that wraps the rows in {count, results}. A page past the end is
+ * simply empty; a page number that is not a positive integer is a 400.
  */
 export function pagination(url: string, opts: { pageSize?: number; maxPageSize?: number; allowPageSize?: boolean } = {}) {
   const u = new URL(url);
@@ -77,19 +81,7 @@ export function pagination(url: string, opts: { pageSize?: number; maxPageSize?:
       : defaultSize;
   const rawPage = u.searchParams.get('page');
   const page = rawPage === null ? 1 : Number.parseInt(rawPage, 10);
-  if (!Number.isFinite(page) || page < 1) {
-    throw new HTTPException(404, {
-      res: Response.json({ detail: 'Invalid page.' }, { status: 404 }),
-      message: 'Invalid page.',
-    });
-  }
-
-  const link = (n: number) => {
-    const next = new URL(u);
-    if (n === 1) next.searchParams.delete('page');
-    else next.searchParams.set('page', String(n));
-    return next.toString();
-  };
+  if (!Number.isFinite(page) || page < 1) fieldErrors({ page: ['common.errValidation'] });
 
   return {
     page,
@@ -97,19 +89,14 @@ export function pagination(url: string, opts: { pageSize?: number; maxPageSize?:
     offset: (page - 1) * pageSize,
     limit: pageSize,
     wrap<T>(results: T[], count: number): Page<T> {
-      return {
-        count,
-        next: page * pageSize < count ? link(page + 1) : null,
-        previous: page > 1 ? link(page - 1) : null,
-        results,
-      };
+      return { count, results };
     },
   };
 }
 
-/** 404 for a missing object, returned: {"detail": "Not found."}. */
+/** 404 for a missing object or route: {"error": {"code": "common.errNotFound"}}. */
 export function notFound(c: Context): Response {
-  return c.json({ detail: 'Not found.' }, 404);
+  return c.json({ error: { code: 'common.errNotFound' } }, 404);
 }
 
 /**

@@ -13,7 +13,7 @@ import { RegionService } from '../region.service';
 /**
  * adminGuard and superuserGuard read profileCache() directly, with no TTL and
  * no identity check. Whatever lands in that cache is therefore trusted as the
- * CURRENT user's is_staff / is_superuser — so a profile belonging to a session
+ * CURRENT user's role — so a profile belonging to a session
  * that has already ended must never be written there.
  */
 describe('AccountService profile cache across sessions', () => {
@@ -22,7 +22,7 @@ describe('AccountService profile cache across sessions', () => {
   let account: AccountService;
 
   const profileRequests = () =>
-    httpMock.match(req => req.url === '/auth/me/' && req.params.get('page') === '1');
+    httpMock.match(req => req.url === '/auth/me' && req.params.get('page') === '1');
 
   /** Stand-in for a completed sign-in, without the network round trip. */
   const signIn = () => (store as any)._isAuthenticated.set(true);
@@ -47,7 +47,7 @@ describe('AccountService profile cache across sessions', () => {
   it('clears the cache when the session ends', () => {
     signIn();
     account.getMyProfile().subscribe();
-    profileRequests()[0].flush({ id: 1, is_staff: true });
+    profileRequests()[0].flush({ id: 1, role: 'staff' });
     expect(account.profileCache()).not.toBeNull();
 
     store.endSession();
@@ -63,7 +63,7 @@ describe('AccountService profile cache across sessions', () => {
 
     store.endSession();
     TestBed.tick();
-    inFlight.flush({ id: 99, email: 'staff@x.y', is_staff: true, is_superuser: true });
+    inFlight.flush({ id: 99, email: 'staff@x.y', role: 'admin' });
 
     // The effect cleared the cache before the response arrived; the response
     // must not put the ended session's flags back.
@@ -84,7 +84,7 @@ describe('AccountService profile cache across sessions', () => {
     account.getMyProfile().subscribe(profile => (nextProfile = profile));
     const [nextRequest] = profileRequests();
 
-    staffRequest.flush({ id: 99, is_staff: true });
+    staffRequest.flush({ id: 99, role: 'staff' });
 
     // Still one request in flight, and it is the new session's: a third caller
     // shares it instead of starting another, which it would if the stale
@@ -93,9 +93,9 @@ describe('AccountService profile cache across sessions', () => {
     expect(profileRequests()).toEqual([] as TestRequest[]);
     expect(account.profileCache()).toBeNull();
 
-    nextRequest.flush({ id: 7, is_staff: false });
-    expect(nextProfile).toEqual({ id: 7, is_staff: false });
-    expect(account.profileCache()).toEqual({ id: 7, is_staff: false });
+    nextRequest.flush({ id: 7, role: 'user' });
+    expect(nextProfile).toEqual({ id: 7, role: 'user' });
+    expect(account.profileCache()).toEqual({ id: 7, role: 'user' });
 
     httpMock.verify();
   });
@@ -117,7 +117,7 @@ describe('AccountService profile cache across sessions', () => {
     account.getMyProfile().subscribe();
     expect(profileRequests()).toEqual([] as TestRequest[]);
 
-    nextRequest.flush({ id: 7, is_staff: false });
+    nextRequest.flush({ id: 7, role: 'user' });
     httpMock.verify();
   });
 
@@ -142,8 +142,8 @@ describe('AccountService profile cache across sessions', () => {
     const fresh = profileRequests();
     expect(fresh.length).toBe(1);
 
-    fresh[0].flush({ id: 7, is_staff: false });
-    expect(account.profileCache()).toEqual({ id: 7, is_staff: false });
+    fresh[0].flush({ id: 7, role: 'user' });
+    expect(account.profileCache()).toEqual({ id: 7, role: 'user' });
     httpMock.verify();
   });
 
@@ -174,7 +174,7 @@ describe('AccountService site language reporting', () => {
   let httpMock: HttpTestingController;
   let store: AuthStore;
   let lang: ReturnType<typeof signal<string>>;
-  const reports = () => httpMock.match(req => req.url === '/auth/me/site-language/');
+  const reports = () => httpMock.match(req => req.url === '/auth/me/site-language');
 
   /** A signed-in visitor whose profile says they last used `siteLanguage`. */
   function signedIn(siteLanguage: string) {
@@ -269,8 +269,8 @@ describe('AccountService saved region and language', () => {
   let region: ReturnType<typeof signal<string>>;
   let setLang: ReturnType<typeof vi.fn>;
   let setRegion: ReturnType<typeof vi.fn>;
-  const regionReports = () => httpMock.match(req => req.url === '/auth/me/site-region/');
-  const languageReports = () => httpMock.match(req => req.url === '/auth/me/site-language/');
+  const regionReports = () => httpMock.match(req => req.url === '/auth/me/site-region');
+  const languageReports = () => httpMock.match(req => req.url === '/auth/me/site-language');
 
   /** The profile arriving, after a sign-in or (signIn false) a restored session. */
   function profile(user: Record<string, unknown>, signIn = false) {

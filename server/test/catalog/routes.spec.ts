@@ -10,14 +10,14 @@ import { searchRoutes } from '../../src/routes/search';
 import { subscriptionRoutes } from '../../src/routes/subscriptions';
 import { sitemapRoutes } from '../../src/routes/sitemap';
 
-// Mounted with a trailing slash so a router's '/' is '/api/v1/<x>/'
+// Mounted with a trailing slash so a router's '/' is '/api/v1/<x>'
 // (Hono's mergePath drops the slash when the mount has none).
 const app = new Hono<AppEnv>();
 app.onError(errorHandler);
-app.route('/api/v1/books/', bookRoutes);
-app.route('/api/v1/listings/', listingRoutes);
-app.route('/api/v1/search/', searchRoutes);
-app.route('/api/v1/subscriptions/', subscriptionRoutes);
+app.route('/api/v1/books', bookRoutes);
+app.route('/api/v1/listings', listingRoutes);
+app.route('/api/v1/search', searchRoutes);
+app.route('/api/v1/subscriptions', subscriptionRoutes);
 app.route('/api/v1', sitemapRoutes);
 
 const ORIGIN = 'http://x';
@@ -27,11 +27,11 @@ const hex = 'a'.repeat(32);
 describe('auth and upload-token gates', () => {
   it('requires sign-in for writes', async () => {
     for (const [method, path] of [
-      ['POST', '/api/v1/books/manual/'],
-      ['POST', '/api/v1/listings/'],
-      ['POST', '/api/v1/listings/uploads/'],
-      ['GET', '/api/v1/subscriptions/'],
-      ['DELETE', '/api/v1/subscriptions/'],
+      ['POST', '/api/v1/books/manual'],
+      ['POST', '/api/v1/listings'],
+      ['POST', '/api/v1/listings/uploads'],
+      ['GET', '/api/v1/subscriptions'],
+      ['DELETE', '/api/v1/subscriptions'],
     ] as const) {
       const res = await fetchApi(path, {
         method,
@@ -43,7 +43,7 @@ describe('auth and upload-token gates', () => {
   });
 
   it('refuses upload PUTs without a valid upload token, or with the wrong action', async () => {
-    let res = await fetchApi('/api/v1/listings/uploads/file/?token=bad', { method: 'PUT', body: 'x' });
+    let res = await fetchApi('/api/v1/listings/uploads/file?token=bad', { method: 'PUT', body: 'x' });
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: { code: 'upload.errTokenInvalid' } });
     const token = await signToken(
@@ -51,7 +51,7 @@ describe('auth and upload-token gates', () => {
       { user_id: 'u1', action: 'avatar', target_key: `tmp/listings/u1/${hex}.jpg`, content_type: 'image/jpeg', max_bytes: 100 },
       env,
     );
-    res = await fetchApi(`/api/v1/listings/uploads/file/?token=${token}`, {
+    res = await fetchApi(`/api/v1/listings/uploads/file?token=${token}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'image/jpeg' },
       body: new Uint8Array([0xff, 0xd8, 0xff]),
@@ -67,7 +67,7 @@ describe('auth and upload-token gates', () => {
       env,
     );
     const put = (body: Uint8Array, type = 'image/jpeg') =>
-      fetchApi(`/api/v1/listings/uploads/file/?token=${token}`, { method: 'PUT', headers: { 'Content-Type': type }, body });
+      fetchApi(`/api/v1/listings/uploads/file?token=${token}`, { method: 'PUT', headers: { 'Content-Type': type }, body });
     expect((await put(new TextEncoder().encode('<html></html>'))).status).toBe(400); // not a JPEG
     expect((await put(new Uint8Array([0xff, 0xd8, 0xff]), 'text/html')).status).toBe(400); // wrong type
     expect((await put(new Uint8Array(32).fill(0xff))).status).toBe(400); // over max_bytes

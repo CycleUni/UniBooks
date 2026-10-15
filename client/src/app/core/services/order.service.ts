@@ -39,7 +39,7 @@ export interface Order {
 @Injectable({ providedIn: 'root' })
 export class OrderService {
   private http = inject(HttpClient);
-  private url = '/orders/';
+  private url = '/orders';
 
   public unreadOrders$ = new BehaviorSubject<boolean>(false);
 
@@ -102,7 +102,7 @@ export class OrderService {
   }
 
   getOrder(id: string) {
-    return this.http.get<Order>(this.url + id + '/');
+    return this.http.get<Order>(`${this.url}/${id}`);
   }
 
   createOrder(order: Order) {
@@ -114,13 +114,13 @@ export class OrderService {
     if (cancelReason) body.cancel_reason = cancelReason;
     if (meetupTime) body.meetup_time = meetupTime;
     if (meetupLocation) body.meetup_location = meetupLocation;
-    return this.http.patch<Order>(this.url + id + '/', body).pipe(tap(() => { this.recentOrders = null; }));
+    return this.http.patch<Order>(`${this.url}/${id}`, body).pipe(tap(() => { this.recentOrders = null; }));
   }
 
   /** The seller changes the agreed meetup; an empty time clears it. */
   updateMeetupDetails(id: string, meetupTime: string, meetupLocation: string) {
     const body = { meetup_time: meetupTime || null, meetup_location: meetupLocation };
-    return this.http.patch<Order>(this.url + id + '/', body).pipe(tap(() => { this.recentOrders = null; }));
+    return this.http.patch<Order>(`${this.url}/${id}`, body).pipe(tap(() => { this.recentOrders = null; }));
   }
 
   submitReview(orderId: string, rating: number | null, comment: string, isNoShow: boolean = false) {
@@ -130,6 +130,6 @@ export class OrderService {
       comment: comment,
       is_no_show: isNoShow
     };
-    return this.http.post<any>(this.url + 'reviews/', body);
+    return this.http.post<any>(`${this.url}/reviews`, body);
   }
 }

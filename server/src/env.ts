@@ -71,7 +71,7 @@ export interface AuthUser {
   email: string;
   role: 'user' | 'staff' | 'admin';
   isStaff: boolean;
-  isSuperuser: boolean;
+  isAdmin: boolean;
 }
 
 export interface Variables {

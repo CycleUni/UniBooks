@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../../env';
 import { invalidates } from '../../lib/cache';
 import { createDb, currencies, languages, regions, type Currency, type Region } from '../../db';
-import { requireSuperuser } from '../../middleware/auth';
+import { requireAdmin } from '../../middleware/auth';
 import { fieldErrors, pagination, readJson, validate } from '../../lib/http';
 import { invalidateRegionCache } from '../../lib/region';
 import { parseJsonArray, parseJsonObject } from '../../lib/json';
@@ -16,12 +16,12 @@ import { writeAudit, changedFields } from '../../services/admin/audit';
 import { seedDefaultCategories } from '../../services/admin/defaults';
 
 /**
- * Regions and currencies, superuser only.
+ * Regions and currencies, admin only.
  */
 export const regionRoutes = new Hono<AppEnv>();
 
-regionRoutes.use('/regions/*', requireSuperuser());
-regionRoutes.use('/currencies/*', requireSuperuser());
+regionRoutes.use('/regions/*', requireAdmin());
+regionRoutes.use('/currencies/*', requireAdmin());
 
 const INVALID = 'admin.errInvalidField';
 
@@ -47,7 +47,7 @@ const currencyCreate = z.object({
   is_active: z.boolean({ message: INVALID }).optional(),
 });
 
-regionRoutes.get('/currencies/', async (c) => {
+regionRoutes.get('/currencies', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url);
   const [{ n }] = await db.select({ n: count() }).from(currencies);
@@ -55,7 +55,7 @@ regionRoutes.get('/currencies/', async (c) => {
   return c.json(page.wrap(rows.map(currencyJson), n));
 });
 
-regionRoutes.post('/currencies/', invalidates('ref'), async (c) => {
+regionRoutes.post('/currencies', invalidates('ref'), async (c) => {
   const body = validate(currencyCreate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
   const [exists] = await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.code, body.code)).limit(1);
@@ -101,7 +101,7 @@ async function getCurrency(c: Context<AppEnv>): Promise<Currency> {
   return row;
 }
 
-regionRoutes.get('/currencies/:code/', async (c) => c.json(currencyJson(await getCurrency(c))));
+regionRoutes.get('/currencies/:code', async (c) => c.json(currencyJson(await getCurrency(c))));
 
 const currencyUpdate = currencyCreate.partial();
 
@@ -140,8 +140,7 @@ async function updateCurrency(c: Context<AppEnv>) {
   return c.json(currencyJson(row));
 }
 
-regionRoutes.patch('/currencies/:code/', invalidates('ref'), updateCurrency);
-regionRoutes.put('/currencies/:code/', invalidates('ref'), updateCurrency);
+regionRoutes.patch('/currencies/:code', invalidates('ref'), updateCurrency);
 
 // ---------------------------------------------------------------------------
 // Regions
@@ -213,7 +212,7 @@ async function checkRefs(c: Context<AppEnv>, body: { currency?: string; default_
   if (Object.keys(errors).length) fieldErrors(errors);
 }
 
-regionRoutes.get('/regions/', async (c) => {
+regionRoutes.get('/regions', async (c) => {
   const db = createDb(c.env.DB);
   const lang = await resolveLanguage(c);
   const page = pagination(c.req.url);
@@ -227,7 +226,7 @@ regionRoutes.get('/regions/', async (c) => {
   );
 });
 
-regionRoutes.post('/regions/', invalidates('ref'), async (c) => {
+regionRoutes.post('/regions', invalidates('ref'), async (c) => {
   const body = validate(regionCreate, await readJson(c.req), INVALID);
   await checkRefs(c, body);
   if (!body.translations || !Object.keys(body.translations).length) {
@@ -289,7 +288,7 @@ async function getRegionRow(c: Context<AppEnv>): Promise<Region> {
   return row;
 }
 
-regionRoutes.get('/regions/:code/', async (c) => c.json(regionJson(await getRegionRow(c), await resolveLanguage(c))));
+regionRoutes.get('/regions/:code', async (c) => c.json(regionJson(await getRegionRow(c), await resolveLanguage(c))));
 
 async function updateRegion(c: Context<AppEnv>) {
   const instance = await getRegionRow(c);
@@ -353,5 +352,4 @@ async function updateRegion(c: Context<AppEnv>) {
   return c.json(regionJson(row, await resolveLanguage(c)));
 }
 
-regionRoutes.patch('/regions/:code/', invalidates('ref'), updateRegion);
-regionRoutes.put('/regions/:code/', invalidates('ref'), updateRegion);
+regionRoutes.patch('/regions/:code', invalidates('ref'), updateRegion);

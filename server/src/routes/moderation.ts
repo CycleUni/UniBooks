@@ -1,5 +1,4 @@
 import { Hono, type Context } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { cancelOpenOrdersForListing } from '../services/orders/cancel';
@@ -15,7 +14,7 @@ import { checkRate } from '../middleware/rateLimit';
 /**
  * /api/v1/moderation/: listing reports and chat
  * reports, filed by users and reviewed by staff (scoped to the regions they
- * manage; superusers see all).
+ * manage; admins see all).
  */
 export const moderationRoutes = new Hono<AppEnv>();
 moderationRoutes.use('*', authMiddleware());
@@ -23,11 +22,7 @@ moderationRoutes.use('*', authMiddleware());
 const MAX_DETAIL = 5000;
 const MAX_FLAGGED = 200;
 
-function invalidPage(): never {
-  throw new HTTPException(404, { res: Response.json({ detail: 'Invalid page.' }, { status: 404 }), message: 'invalid page' });
-}
-
-/** `AND <col> IN (...)` for a staff scope; null scope = superuser = everything. */
+/** `AND <col> IN (...)` for a staff scope; null scope = admin = everything. */
 function scopeClause(col: string, scope: string[] | null): { sql: string; args: string[] } {
   if (scope === null) return { sql: '', args: [] };
   if (!scope.length) return { sql: ' AND 0', args: [] };
@@ -105,7 +100,6 @@ async function reportPage(c: Context<AppEnv>, where: string, args: unknown[]) {
       .bind(...args, page.limit, page.offset)
       .all<ReportRow>(),
   ]);
-  if (page.page > 1 && !rows.results.length) invalidPage();
   return c.json(page.wrap(rows.results.map(serializeReport), countRow?.n ?? 0));
 }
 
@@ -171,13 +165,13 @@ moderationRoutes.post('/', async (c) => {
 });
 
 /** GET mine/ — the user's own reports in the request's region. */
-moderationRoutes.get('/mine/', async (c) => {
+moderationRoutes.get('/mine', async (c) => {
   const region = await requireRegion(c);
   return reportPage(c, 'r.reporter_id = ? AND r.region_code = ?', [c.get('user')!.id, region.code]);
 });
 
 /** GET all/ — staff, scoped to managed regions; ?status= and ?region= filters. */
-moderationRoutes.get('/all/', requireStaff(), async (c) => {
+moderationRoutes.get('/all', requireStaff(), async (c) => {
   const scope = scopeClause('r.region_code', await managedRegionCodes(c.env, c.get('user')!));
   let where = `1${scope.sql}`;
   const args: unknown[] = [...scope.args];
@@ -253,7 +247,6 @@ async function chatReportPage(c: Context<AppEnv>, where: string, args: unknown[]
       .bind(...args, page.limit, page.offset)
       .all<ChatReportRow>(),
   ]);
-  if (page.page > 1 && !rows.results.length) invalidPage();
   return c.json(page.wrap(rows.results.map(serializeChatReport), countRow?.n ?? 0));
 }
 
@@ -268,7 +261,7 @@ const chatReportCreateSchema = z.object({
 });
 
 /** POST chat-reports/. */
-moderationRoutes.post('/chat-reports/', async (c) => {
+moderationRoutes.post('/chat-reports', async (c) => {
   const user = c.get('user')!;
   await checkRate(c, 'report', '20/hour');
   const body = await readJson(c.req);
@@ -319,12 +312,12 @@ moderationRoutes.post('/chat-reports/', async (c) => {
   );
 });
 
-moderationRoutes.get('/chat-reports/mine/', async (c) => {
+moderationRoutes.get('/chat-reports/mine', async (c) => {
   const region = await requireRegion(c);
   return chatReportPage(c, 'cr.reporter_id = ? AND cr.region_code = ?', [c.get('user')!.id, region.code]);
 });
 
-moderationRoutes.get('/chat-reports/all/', requireStaff(), async (c) => {
+moderationRoutes.get('/chat-reports/all', requireStaff(), async (c) => {
   const scope = scopeClause('cr.region_code', await managedRegionCodes(c.env, c.get('user')!));
   let where = `1${scope.sql}`;
   const args: unknown[] = [...scope.args];
@@ -352,11 +345,11 @@ async function scopedChatReport(c: Context<AppEnv>, id: string): Promise<ChatRep
   return row;
 }
 
-moderationRoutes.get('/chat-reports/:id/', requireStaff(), async (c) => {
+moderationRoutes.get('/chat-reports/:id', requireStaff(), async (c) => {
   return c.json(serializeChatReport(await scopedChatReport(c, c.req.param('id'))));
 });
 
-moderationRoutes.patch('/chat-reports/:id/action/', requireStaff(), async (c) => {
+moderationRoutes.patch('/chat-reports/:id/action', requireStaff(), async (c) => {
   const report = await scopedChatReport(c, c.req.param('id'));
   const status = nextStatus(await readJson(c.req), report.status);
   const res = await c.env.DB.prepare("UPDATE chat_reports SET status = ? WHERE id = ? AND status = 'open'").bind(status, report.id).run();
@@ -371,7 +364,7 @@ moderationRoutes.patch('/chat-reports/:id/action/', requireStaff(), async (c) =>
 
 // ─── Listing report action ────────────────────────────────────────────────
 
-moderationRoutes.patch('/:id/', requireStaff(), async (c) => {
+moderationRoutes.patch('/:id', requireStaff(), async (c) => {
   const user = c.get('user')!;
   const id = c.req.param('id');
   if (!UUID_LOOSE_RE.test(id)) notFound();

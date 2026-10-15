@@ -4,12 +4,12 @@ import { ad, advertiser, call, seedReference, staff } from './helpers';
 import { canWrite } from '../../src/routes/admin/ads';
 
 let manager: { id: string; token: string };
-let superuser: { id: string; token: string };
+let admin: { id: string; token: string };
 
 beforeAll(async () => {
   await seedReference();
   manager = await staff('tw-manager@example.com', { regions: ['TW'] });
-  superuser = await staff('root@example.com', { superuser: true });
+  admin = await staff('root@example.com', { admin: true });
 });
 
 /** An own tmp upload, as resolveAdImage requires for a new ad. */
@@ -43,18 +43,15 @@ describe('H-1: region managers and advertisers they do not own', () => {
     const global = await advertiser({ name: 'Global', allRegions: true });
     const gAd = await ad(global);
     const t = manager.token;
-    expect((await call(`/api/v1/admin/sponsors/${global}/`, { token: t })).status).toBe(200);
-    expect((await call(`/api/v1/admin/promotions/${gAd}/`, { token: t })).status).toBe(200);
-    expect(
-      (await call(`/api/v1/admin/sponsors/${global}/`, { token: t, method: 'PATCH', body: { company_name: 'Hijacked' } })).status,
-    ).toBe(403);
-    expect((await call(`/api/v1/admin/sponsors/${global}/`, { token: t, method: 'PUT', body: { company_name: 'Hijacked' } })).status).toBe(
+    expect((await call(`/api/v1/admin/sponsors/${global}`, { token: t })).status).toBe(200);
+    expect((await call(`/api/v1/admin/promotions/${gAd}`, { token: t })).status).toBe(200);
+    expect((await call(`/api/v1/admin/sponsors/${global}`, { token: t, method: 'PATCH', body: { company_name: 'Hijacked' } })).status).toBe(
       403,
     );
-    expect((await call(`/api/v1/admin/sponsors/${global}/`, { token: t, method: 'DELETE' })).status).toBe(403);
-    expect((await call(`/api/v1/admin/promotions/${gAd}/`, { token: t, method: 'PATCH', body: { title: 'Hijacked' } })).status).toBe(403);
-    expect((await call(`/api/v1/admin/promotions/${gAd}/`, { token: t, method: 'DELETE' })).status).toBe(403);
-    expect((await call('/api/v1/admin/promotions/', { token: t, body: await newAd(manager.id, global) })).status).toBe(403);
+    expect((await call(`/api/v1/admin/sponsors/${global}`, { token: t, method: 'DELETE' })).status).toBe(403);
+    expect((await call(`/api/v1/admin/promotions/${gAd}`, { token: t, method: 'PATCH', body: { title: 'Hijacked' } })).status).toBe(403);
+    expect((await call(`/api/v1/admin/promotions/${gAd}`, { token: t, method: 'DELETE' })).status).toBe(403);
+    expect((await call('/api/v1/admin/promotions', { token: t, body: await newAd(manager.id, global) })).status).toBe(403);
 
     const row = await env.DB_ADS.prepare('SELECT company_name FROM advertisers WHERE id = ?')
       .bind(global)
@@ -67,49 +64,49 @@ describe('H-1: region managers and advertisers they do not own', () => {
     const mixed = await advertiser({ name: 'Mixed', regions: ['TW', 'HK'] });
     const mAd = await ad(mixed);
     const t = manager.token;
-    expect((await call(`/api/v1/admin/sponsors/${mixed}/`, { token: t })).status).toBe(200);
-    expect((await call(`/api/v1/admin/sponsors/${mixed}/`, { token: t, method: 'PATCH', body: { regions: ['TW'] } })).status).toBe(403);
-    expect((await call(`/api/v1/admin/promotions/${mAd}/`, { token: t, method: 'PATCH', body: { title: 'x' } })).status).toBe(403);
-    expect((await call('/api/v1/admin/promotions/', { token: t, body: await newAd(manager.id, mixed) })).status).toBe(403);
+    expect((await call(`/api/v1/admin/sponsors/${mixed}`, { token: t })).status).toBe(200);
+    expect((await call(`/api/v1/admin/sponsors/${mixed}`, { token: t, method: 'PATCH', body: { regions: ['TW'] } })).status).toBe(403);
+    expect((await call(`/api/v1/admin/promotions/${mAd}`, { token: t, method: 'PATCH', body: { title: 'x' } })).status).toBe(403);
+    expect((await call('/api/v1/admin/promotions', { token: t, body: await newAd(manager.id, mixed) })).status).toBe(403);
   });
 
   it('may modify an own-region advertiser, but not widen it', async () => {
     const own = await advertiser({ name: 'Own', regions: ['TW'] });
     const oAd = await ad(own);
     const t = manager.token;
-    expect((await call(`/api/v1/admin/sponsors/${own}/`, { token: t, method: 'PATCH', body: { company_name: 'Own 2' } })).status).toBe(200);
-    expect((await call(`/api/v1/admin/sponsors/${own}/`, { token: t, method: 'PATCH', body: { regions: ['TW', 'HK'] } })).status).toBe(403);
-    expect((await call(`/api/v1/admin/sponsors/${own}/`, { token: t, method: 'PATCH', body: { all_regions: true } })).status).toBe(403);
-    expect((await call(`/api/v1/admin/promotions/${oAd}/`, { token: t, method: 'PATCH', body: { title: 'Edited' } })).status).toBe(200);
+    expect((await call(`/api/v1/admin/sponsors/${own}`, { token: t, method: 'PATCH', body: { company_name: 'Own 2' } })).status).toBe(200);
+    expect((await call(`/api/v1/admin/sponsors/${own}`, { token: t, method: 'PATCH', body: { regions: ['TW', 'HK'] } })).status).toBe(403);
+    expect((await call(`/api/v1/admin/sponsors/${own}`, { token: t, method: 'PATCH', body: { all_regions: true } })).status).toBe(403);
+    expect((await call(`/api/v1/admin/promotions/${oAd}`, { token: t, method: 'PATCH', body: { title: 'Edited' } })).status).toBe(200);
     // Moving an own ad under a global advertiser is a write to that advertiser too.
     const global = await advertiser({ allRegions: true });
-    expect((await call(`/api/v1/admin/promotions/${oAd}/`, { token: t, method: 'PATCH', body: { advertiser: global } })).status).toBe(403);
-    const created = await call('/api/v1/admin/promotions/', { token: t, body: await newAd(manager.id, own) });
+    expect((await call(`/api/v1/admin/promotions/${oAd}`, { token: t, method: 'PATCH', body: { advertiser: global } })).status).toBe(403);
+    const created = await call('/api/v1/admin/promotions', { token: t, body: await newAd(manager.id, own) });
     expect(created.status).toBe(201);
     const json = (await created.json()) as Record<string, unknown>;
     expect(json).toMatchObject({ views_count: 0, clicks_count: 0, stats_available: false });
-    expect((await call(`/api/v1/admin/promotions/${json.id}/`, { token: t, method: 'DELETE' })).status).toBe(204);
-    expect((await call(`/api/v1/admin/sponsors/${own}/`, { token: t, method: 'DELETE' })).status).toBe(204);
+    expect((await call(`/api/v1/admin/promotions/${json.id}`, { token: t, method: 'DELETE' })).status).toBe(204);
+    expect((await call(`/api/v1/admin/sponsors/${own}`, { token: t, method: 'DELETE' })).status).toBe(204);
   });
 
   it('cannot create a global advertiser or one outside their regions', async () => {
     const t = manager.token;
     const base = { company_name: 'New', contact_email: 'n@example.com' };
-    expect((await call('/api/v1/admin/sponsors/', { token: t, body: { ...base, all_regions: true } })).status).toBe(403);
-    expect((await call('/api/v1/admin/sponsors/', { token: t, body: { ...base, regions: ['HK'] } })).status).toBe(403);
-    expect((await call('/api/v1/admin/sponsors/', { token: t, body: { ...base, regions: ['TW'] } })).status).toBe(201);
+    expect((await call('/api/v1/admin/sponsors', { token: t, body: { ...base, all_regions: true } })).status).toBe(403);
+    expect((await call('/api/v1/admin/sponsors', { token: t, body: { ...base, regions: ['HK'] } })).status).toBe(403);
+    expect((await call('/api/v1/admin/sponsors', { token: t, body: { ...base, regions: ['TW'] } })).status).toBe(201);
   });
 
-  it('leaves superusers unrestricted', async () => {
+  it('leaves admins unrestricted', async () => {
     const global = await advertiser({ allRegions: true });
     const gAd = await ad(global);
-    const t = superuser.token;
-    expect((await call(`/api/v1/admin/sponsors/${global}/`, { token: t, method: 'PATCH', body: { company_name: 'Renamed' } })).status).toBe(
+    const t = admin.token;
+    expect((await call(`/api/v1/admin/sponsors/${global}`, { token: t, method: 'PATCH', body: { company_name: 'Renamed' } })).status).toBe(
       200,
     );
-    expect((await call(`/api/v1/admin/promotions/${gAd}/`, { token: t, method: 'PATCH', body: { title: 'Renamed' } })).status).toBe(200);
-    expect((await call('/api/v1/admin/promotions/', { token: t, body: await newAd(superuser.id, global) })).status).toBe(201);
-    expect((await call(`/api/v1/admin/sponsors/${global}/`, { token: t, method: 'DELETE' })).status).toBe(204);
+    expect((await call(`/api/v1/admin/promotions/${gAd}`, { token: t, method: 'PATCH', body: { title: 'Renamed' } })).status).toBe(200);
+    expect((await call('/api/v1/admin/promotions', { token: t, body: await newAd(admin.id, global) })).status).toBe(201);
+    expect((await call(`/api/v1/admin/sponsors/${global}`, { token: t, method: 'DELETE' })).status).toBe(204);
   });
 });
 
@@ -117,7 +114,7 @@ describe('admin ad list numbers', () => {
   it('fills views_count / clicks_count (0 without the SQL API) for each row', async () => {
     const adv = await advertiser({ regions: ['TW'] });
     await ad(adv);
-    const res = await call(`/api/v1/admin/promotions/?advertiser_id=${adv}`, { token: superuser.token });
+    const res = await call(`/api/v1/admin/promotions?advertiser_id=${adv}`, { token: admin.token });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { results: Record<string, unknown>[] };
     expect(body.results).toHaveLength(1);
@@ -129,7 +126,7 @@ describe('admin ad list numbers', () => {
     await ad(regional);
     const listed = async (adv: number) =>
       (
-        (await (await call(`/api/v1/admin/promotions/?advertiser_id=${adv}`, { token: superuser.token })).json()) as {
+        (await (await call(`/api/v1/admin/promotions?advertiser_id=${adv}`, { token: admin.token })).json()) as {
           results: Record<string, unknown>[];
         }
       ).results[0];
@@ -146,7 +143,7 @@ describe('public list cache', () => {
     const id = await ad(adv, { title: 'Before' });
     const titles = async () =>
       (
-        (await (await call('/api/v1/promotions/active/?position=home_banner')).json()) as { results: { id: number; title: string }[] }
+        (await (await call('/api/v1/promotions/active?position=home_banner')).json()) as { results: { id: number; title: string }[] }
       ).results
         .filter((r) => r.id === id)
         .map((r) => r.title);
@@ -155,13 +152,13 @@ describe('public list cache', () => {
     await env.DB_ADS.prepare("UPDATE ads SET title = 'Sneaky' WHERE id = ?").bind(id).run();
     expect(await titles()).toEqual(['Before']);
     // An admin write invalidates it.
-    const res = await call(`/api/v1/admin/promotions/${id}/`, { token: superuser.token, method: 'PATCH', body: { title: 'After' } });
+    const res = await call(`/api/v1/admin/promotions/${id}`, { token: admin.token, method: 'PATCH', body: { title: 'After' } });
     expect(res.status).toBe(200);
     expect(await titles()).toEqual(['After']);
     // So does an advertiser write (deactivating hides its ads).
-    expect(
-      (await call(`/api/v1/admin/sponsors/${adv}/`, { token: superuser.token, method: 'PATCH', body: { is_active: false } })).status,
-    ).toBe(200);
+    expect((await call(`/api/v1/admin/sponsors/${adv}`, { token: admin.token, method: 'PATCH', body: { is_active: false } })).status).toBe(
+      200,
+    );
     expect(await titles()).toEqual([]);
   });
 });

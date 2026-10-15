@@ -5,7 +5,7 @@ import { RouterModule, Router, NavigationEnd, ActivatedRouteSnapshot } from '@an
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs/operators';
 import { TPipe } from '../../core/i18n.service';
-import { AuthStore } from '../../core/auth.store';
+import { AuthStore, UserRole, hasStaffAccess, isAdminUser } from '../../core/auth.store';
 import { AccountService } from '../../core/services/account.service';
 import { RegionService } from '../../core/region.service';
 import { regionUrlTree } from '../../core/region-path';
@@ -321,7 +321,7 @@ export class AdminShellComponent {
   /** Active on this path only, whatever the query string says. */
   readonly exactPath = { paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' } as const;
   auth = inject(AuthStore);
-  isSuperuser() { return this.auth.user()?.is_superuser; }
+  isSuperuser() { return isAdminUser(this.auth.user()); }
 
   isDrawerOpen = false;
   isBrowser = false;
@@ -348,10 +348,10 @@ export class AdminShellComponent {
   readonly access = computed<'granted' | 'pending' | 'denied'>(() => {
     if (!this.auth.isAuthenticated()) return 'denied';
     const profile = (this.auth.user() ?? this.accountService.profileCache()) as
-      { is_staff?: boolean; is_superuser?: boolean } | null;
+      { role?: UserRole } | null;
     if (!profile) return 'pending';
-    if (profile.is_staff !== true) return 'denied';
-    if (this.superuserRoute() && profile.is_superuser !== true) return 'denied';
+    if (!hasStaffAccess(profile)) return 'denied';
+    if (this.superuserRoute() && !isAdminUser(profile)) return 'denied';
     return 'granted';
   });
 

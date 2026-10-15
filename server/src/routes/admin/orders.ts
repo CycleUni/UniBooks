@@ -10,7 +10,7 @@ import { forceCancelOrder } from '../../services/orders/cancel';
 import { bookSearch, PLATFORM_CANCEL_REASON_MIN_LENGTH } from './listings';
 
 /**
- * Read-only list/detail plus force_cancel.
+ * Read-only list/detail plus force-cancel.
  */
 export const orderRoutes = new Hono<AppEnv>();
 
@@ -44,7 +44,7 @@ export function orderJson(row: OrderRow) {
   };
 }
 
-orderRoutes.get('/orders/', async (c) => {
+orderRoutes.get('/orders', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url);
   const conds: (SQL | undefined)[] = [scopeWhere(orders.regionCode, await scopeOf(c))];
@@ -87,12 +87,12 @@ async function loadOrder(c: Context<AppEnv>, db: Database, id: string): Promise<
   return row;
 }
 
-orderRoutes.get('/orders/:id/', async (c) => {
+orderRoutes.get('/orders/:id', async (c) => {
   const db = createDb(c.env.DB);
   return c.json(orderJson(await loadOrder(c, db, uuidId(c.req.param('id')))));
 });
 
-orderRoutes.post('/orders/:id/force_cancel/', async (c) => {
+orderRoutes.post('/orders/:id/force-cancel', async (c) => {
   const db = createDb(c.env.DB);
   const id = uuidId(c.req.param('id'));
   const order = await loadOrder(c, db, id);

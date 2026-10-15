@@ -43,7 +43,7 @@ describe('OrdersComponent.updateStatus', () => {
     // pressed Accept and nothing whatsoever happened.
     updateOrderStatus.mockReturnValue(throwError(() => ({
       status: 400,
-      error: { status: ['checkout.errListingUnavailable'] },
+      error: { error: { code: 'checkout.errListingUnavailable' } },
     })));
 
     component.updateStatus(component.soldOrders[0], 'accepted');

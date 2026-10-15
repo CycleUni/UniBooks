@@ -12,8 +12,8 @@ import { IMAGE_TYPES, MAX_IMAGE_BYTES, newObjectName, publicUrl, sniffImage, val
  *   1. POST <base>/uploads/ {content_type, content_length}: the route checks
  *      the caller may upload, then `issueUpload` signs an upload token that
  *      fixes the storage key, the type and the maximum size, and answers
- *      {upload_url: <base>/uploads/file/?token=…, photo_url}.
- *   2. PUT <base>/uploads/file/?token=…: `storeUpload` checks the bytes
+ *      {upload_url: <base>/uploads/file?token=…, photo_url}.
+ *   2. PUT <base>/uploads/file?token=…: `storeUpload` checks the bytes
  *      against the token and their magic bytes and writes them, once.
  *
  * The token is the PUT's whole authority: it names one key under the
@@ -59,7 +59,7 @@ export async function issueUpload(
     { user_id: opts.userId, action: opts.action, target_key: key, content_type: contentType, max_bytes: size },
     c.env,
   );
-  const uploadUrl = new URL(`${opts.base}uploads/file/`, c.req.url);
+  const uploadUrl = new URL(`${opts.base}uploads/file`, c.req.url);
   uploadUrl.searchParams.set('token', token);
   return c.json({ upload_url: uploadUrl.toString(), photo_url: publicUrl(c.env, origin(c), key) });
 }

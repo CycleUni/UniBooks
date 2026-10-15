@@ -43,7 +43,7 @@ beforeAll(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
   await seedReference();
-  root = await staff('stats-root@example.com', { superuser: true });
+  root = await staff('stats-root@example.com', { admin: true });
   const db = createDb(env.DB);
   const rnd = prng(7);
   const pick = <T>(xs: T[]): T => xs[Math.floor(rnd() * xs.length)];
@@ -275,11 +275,11 @@ async function get(path: string) {
 
 describe('admin stats answers (characterization)', () => {
   it.each([0, 1, 7, 30, 90, 365])('overview days=%i', async (days) => {
-    expect(await get(`overview/?region=TW&days=${days}`)).toMatchSnapshot();
+    expect(await get(`overview?region=TW&days=${days}`)).toMatchSnapshot();
   });
 
   it.each([1, 7, 30, 365])('timeseries days=%i', async (days) => {
-    expect(await get(`timeseries/?region=TW&days=${days}`)).toMatchSnapshot();
+    expect(await get(`timeseries?region=TW&days=${days}`)).toMatchSnapshot();
   });
 
   it('book ranking', async () => {
@@ -299,12 +299,12 @@ describe('admin stats answers (characterization)', () => {
       '&school=3&category=12&days=0',
       '&page_size=3&page=2&days=0',
     ];
-    for (const q of qs) expect({ q, ...(await get(`books/ranking/?region=TW${q}`)) }).toMatchSnapshot();
+    for (const q of qs) expect({ q, ...(await get(`books/ranking?region=TW${q}`)) }).toMatchSnapshot();
   });
 
   it('book requests', async () => {
     for (const q of ['', '&days=0', '&days=7', '&unlisted=1&days=0', '&q=calc&days=365', '&page_size=2&page=2&days=0']) {
-      expect({ q, ...(await get(`books/requests/?region=TW${q}`)) }).toMatchSnapshot();
+      expect({ q, ...(await get(`books/requests?region=TW${q}`)) }).toMatchSnapshot();
     }
   });
 
@@ -319,13 +319,13 @@ describe('admin stats answers (characterization)', () => {
         '&sort=active_listings&days=0',
         '&sort=orders&days=90',
       ]) {
-        out.push({ by, q, ...(await get(`breakdown/?region=TW&by=${by}${q}`)) });
+        out.push({ by, q, ...(await get(`breakdown?region=TW&by=${by}${q}`)) });
       }
     }
-    out.push(await get('breakdown/?region=TW&by=category&school=3&days=0'));
-    out.push(await get('breakdown/?region=TW&by=course&school=1&days=365'));
-    out.push(await get('breakdown/?region=TW&by=school&q=ncku&days=0'));
-    out.push(await get('breakdown/?region=TW&by=school&page=2&page_size=1&days=0'));
+    out.push(await get('breakdown?region=TW&by=category&school=3&days=0'));
+    out.push(await get('breakdown?region=TW&by=course&school=1&days=365'));
+    out.push(await get('breakdown?region=TW&by=school&q=ncku&days=0'));
+    out.push(await get('breakdown?region=TW&by=school&page=2&page_size=1&days=0'));
     expect(out).toMatchSnapshot();
   });
 
@@ -333,22 +333,22 @@ describe('admin stats answers (characterization)', () => {
     const out: unknown[] = [];
     for (const [i, id] of bookIds.entries()) {
       // All-time (a year of daily points) for one book only, to keep the snapshot small.
-      for (const days of i < 1 ? [7, 30, 0] : [7, 30]) out.push(await get(`books/${id}/?region=TW&days=${days}`));
+      for (const days of i < 1 ? [7, 30, 0] : [7, 30]) out.push(await get(`books/${id}?region=TW&days=${days}`));
     }
-    out.push(await get('books/10000000-0000-4000-8000-000000000099/?region=TW'));
+    out.push(await get('books/10000000-0000-4000-8000-000000000099?region=TW'));
     expect(out).toMatchSnapshot();
   });
 
   it.each([1, 7, 30, 90, 365, 0])('growth days=%i', async (days) => {
-    expect(await get(`growth/?region=TW&days=${days}`)).toMatchSnapshot();
+    expect(await get(`growth?region=TW&days=${days}`)).toMatchSnapshot();
   });
 
   it.each(['all', 'buyer', 'seller'])('retention role=%s', async (role) => {
-    expect(await get(`retention/?region=TW&role=${role}`)).toMatchSnapshot();
+    expect(await get(`retention?region=TW&role=${role}`)).toMatchSnapshot();
   });
 
   it('is never empty', async () => {
-    const o = (await get('overview/?region=TW&days=0')).body as { orders: { new: number }; listings: { new: number } };
+    const o = (await get('overview?region=TW&days=0')).body as { orders: { new: number }; listings: { new: number } };
     expect(o.orders.new).toBeGreaterThan(30);
     expect(o.listings.new).toBeGreaterThan(20);
   });

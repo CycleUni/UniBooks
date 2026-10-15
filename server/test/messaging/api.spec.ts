@@ -14,7 +14,7 @@ describe.skipIf(!ready)('messaging API', () => {
     const buyer = await seedUser({ verifiedIn: 'TW' });
     const listing = await seedListing(seller.id);
 
-    const first = await api('/api/v1/messaging/conversations/', {
+    const first = await api('/api/v1/messaging/conversations', {
       method: 'POST',
       token: buyer.token,
       body: JSON.stringify({ listing_id: listing }),
@@ -23,14 +23,14 @@ describe.skipIf(!ready)('messaging API', () => {
     const conv = (await first.json()) as { id: string; other_party_role: string };
     expect(conv.other_party_role).toBe('seller');
 
-    const again = await api('/api/v1/messaging/conversations/', {
+    const again = await api('/api/v1/messaging/conversations', {
       method: 'POST',
       token: buyer.token,
       body: JSON.stringify({ listing_id: listing }),
     });
     expect(again.status).toBe(200);
 
-    const self = await api('/api/v1/messaging/conversations/', {
+    const self = await api('/api/v1/messaging/conversations', {
       method: 'POST',
       token: seller.token,
       body: JSON.stringify({ listing_id: listing }),
@@ -42,7 +42,7 @@ describe.skipIf(!ready)('messaging API', () => {
     const seller = await seedUser({ verifiedIn: 'TW' });
     const buyer = await seedUser();
     const listing = await seedListing(seller.id);
-    const res = await api('/api/v1/messaging/conversations/', {
+    const res = await api('/api/v1/messaging/conversations', {
       method: 'POST',
       token: buyer.token,
       body: JSON.stringify({ listing_id: listing }),
@@ -59,15 +59,15 @@ describe.skipIf(!ready)('messaging API', () => {
     const conv = await seedConversation(buyer.id, seller.id, listing);
     const gone = await seedConversation(buyer.id, seller.id, null);
 
-    const ok = await api(`/api/v1/messaging/chat-token/?conversation_id=${conv}`, { token: buyer.token });
+    const ok = await api(`/api/v1/messaging/chat-token?conversation_id=${conv}`, { token: buyer.token });
     expect(ok.status).toBe(200);
     const body = (await ok.json()) as Record<string, unknown>;
     expect(Object.keys(body)).toEqual(['token']);
 
-    expect((await api(`/api/v1/messaging/chat-token/?conversation_id=${conv}`, { token: stranger.token })).status).toBe(403);
-    expect((await api('/api/v1/messaging/chat-token/', { token: buyer.token })).status).toBe(400);
+    expect((await api(`/api/v1/messaging/chat-token?conversation_id=${conv}`, { token: stranger.token })).status).toBe(403);
+    expect((await api('/api/v1/messaging/chat-token', { token: buyer.token })).status).toBe(400);
 
-    const obs = await api(`/api/v1/messaging/chat-token/?conversation_id=${gone}`, { token: buyer.token });
+    const obs = await api(`/api/v1/messaging/chat-token?conversation_id=${gone}`, { token: buyer.token });
     const { token } = (await obs.json()) as { token: string };
     const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
     expect(payload.role).toBe('observer');
@@ -77,9 +77,9 @@ describe.skipIf(!ready)('messaging API', () => {
     const seller = await seedUser();
     const buyer = await seedUser();
     const conv = await seedConversation(buyer.id, seller.id, await seedListing(seller.id));
-    const r1 = await api(`/api/v1/messaging/conversations/${conv}/delete/`, { method: 'DELETE', token: buyer.token });
+    const r1 = await api(`/api/v1/messaging/conversations/${conv}`, { method: 'DELETE', token: buyer.token });
     expect(await r1.json()).toEqual({ status: 'hidden' });
-    const r2 = await api(`/api/v1/messaging/conversations/${conv}/delete/`, { method: 'DELETE', token: seller.token });
+    const r2 = await api(`/api/v1/messaging/conversations/${conv}`, { method: 'DELETE', token: seller.token });
     expect(await r2.json()).toEqual({ status: 'deleted' });
   });
 
@@ -141,7 +141,7 @@ describe.skipIf(!ready)('messaging API', () => {
     const buyer = await seedUser();
     const stranger = await seedUser();
     const conv = await seedConversation(buyer.id, seller.id, await seedListing(seller.id));
-    const req = (t: string, body: unknown) => api('/api/v1/messaging/uploads/', { method: 'POST', token: t, body: JSON.stringify(body) });
+    const req = (t: string, body: unknown) => api('/api/v1/messaging/uploads', { method: 'POST', token: t, body: JSON.stringify(body) });
     expect((await req(stranger.token, { conversation_id: conv, content_type: 'image/png', content_length: 10 })).status).toBe(403);
     expect((await req(buyer.token, { conversation_id: conv, content_type: 'image/svg+xml', content_length: 10 })).status).toBe(400);
 
@@ -149,7 +149,7 @@ describe.skipIf(!ready)('messaging API', () => {
     expect(issued.status).toBe(200);
     const { upload_url } = (await issued.json()) as { upload_url: string };
     const path = new URL(upload_url).pathname + new URL(upload_url).search;
-    expect(path).toMatch(/^\/api\/v1\/messaging\/uploads\/file\/\?token=/);
+    expect(path).toMatch(/^\/api\/v1\/messaging\/uploads\/file\?token=/);
     const html = await api(path, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: '<html></html>' });
     expect(html.status).toBe(400);
   });
@@ -164,29 +164,29 @@ describe.skipIf(!ready)('moderation API', () => {
     const staff = await seedUser({ role: 'admin' });
     const listing = await seedListing(seller.id);
 
-    const invalid = await api('/api/v1/moderation/', {
+    const invalid = await api('/api/v1/moderation', {
       method: 'POST',
       token: (await seedUser({ verifiedIn: 'TW' })).token,
       body: JSON.stringify({ listing, reason: 'nope' }),
     });
     expect(invalid.status).toBe(400);
 
-    const created = await api('/api/v1/moderation/', {
+    const created = await api('/api/v1/moderation', {
       method: 'POST',
       token: reporter.token,
       body: JSON.stringify({ listing, reason: 'scam' }),
     });
     expect(created.status).toBe(201);
     const { id } = (await created.json()) as { id: string };
-    const dup = await api('/api/v1/moderation/', {
+    const dup = await api('/api/v1/moderation', {
       method: 'POST',
       token: reporter.token,
       body: JSON.stringify({ listing, reason: 'scam' }),
     });
     expect(await dup.json()).toMatchObject({ error: { code: 'moderation.errAlreadyReported' } });
 
-    expect((await api('/api/v1/moderation/all/', { token: reporter.token })).status).toBe(403);
-    const acted = await api(`/api/v1/moderation/${id}/`, {
+    expect((await api('/api/v1/moderation/all', { token: reporter.token })).status).toBe(403);
+    const acted = await api(`/api/v1/moderation/${id}`, {
       method: 'PATCH',
       token: staff.token,
       body: JSON.stringify({ status: 'actioned' }),
@@ -196,14 +196,14 @@ describe.skipIf(!ready)('moderation API', () => {
       .bind(listing)
       .first<{ status: string; admin_locked: number }>();
     expect(l).toEqual({ status: 'removed', admin_locked: 1 });
-    const again = await api(`/api/v1/moderation/${id}/`, {
+    const again = await api(`/api/v1/moderation/${id}`, {
       method: 'PATCH',
       token: staff.token,
       body: JSON.stringify({ status: 'dismissed' }),
     });
-    expect(await again.json()).toEqual({ status: ['admin.errReportAlreadyResolved'] });
+    expect(await again.json()).toEqual({ error: { code: 'common.errValidation', fields: { status: ['admin.errReportAlreadyResolved'] } } });
 
-    const mine = await api('/api/v1/moderation/mine/', { token: reporter.token });
+    const mine = await api('/api/v1/moderation/mine', { token: reporter.token });
     expect(((await mine.json()) as { count: number }).count).toBe(1);
   });
 
@@ -214,21 +214,23 @@ describe.skipIf(!ready)('moderation API', () => {
     const scopedStaff = await seedUser({ role: 'staff' });
     const conv = await seedConversation(buyer.id, seller.id, await seedListing(seller.id));
 
-    const bad = await api('/api/v1/moderation/chat-reports/', {
+    const bad = await api('/api/v1/moderation/chat-reports', {
       method: 'POST',
       token: buyer.token,
       body: JSON.stringify({ conversation: conv, reported_party: outsider.id, reason: 'spam' }),
     });
-    expect(await bad.json()).toEqual({ reported_party: ['moderation.errInvalidReportedParty'] });
+    expect(await bad.json()).toEqual({
+      error: { code: 'common.errValidation', fields: { reported_party: ['moderation.errInvalidReportedParty'] } },
+    });
 
-    const notMine = await api('/api/v1/moderation/chat-reports/', {
+    const notMine = await api('/api/v1/moderation/chat-reports', {
       method: 'POST',
       token: outsider.token,
       body: JSON.stringify({ conversation: conv, reported_party: buyer.id, reason: 'spam' }),
     });
     expect(notMine.status).toBe(400);
 
-    const ok = await api('/api/v1/moderation/chat-reports/', {
+    const ok = await api('/api/v1/moderation/chat-reports', {
       method: 'POST',
       token: buyer.token,
       body: JSON.stringify({ conversation: conv, reported_party: seller.id, reason: 'spam', flagged_message_ids: ['m1'] }),
@@ -238,7 +240,7 @@ describe.skipIf(!ready)('moderation API', () => {
 
     // A second open report on the same conversation is refused, whatever region the request names.
     await seedRegion('HK');
-    const dup = await api('/api/v1/moderation/chat-reports/', {
+    const dup = await api('/api/v1/moderation/chat-reports', {
       method: 'POST',
       token: buyer.token,
       headers: { 'X-Region': 'HK' },
@@ -248,8 +250,8 @@ describe.skipIf(!ready)('moderation API', () => {
     expect(await dup.json()).toMatchObject({ error: { code: 'moderation.errAlreadyReported' } });
 
     // Staff with no managed regions sees nothing.
-    expect((await api(`/api/v1/moderation/chat-reports/${id}/`, { token: scopedStaff.token })).status).toBe(404);
-    const list = await api('/api/v1/moderation/chat-reports/all/', { token: scopedStaff.token });
+    expect((await api(`/api/v1/moderation/chat-reports/${id}`, { token: scopedStaff.token })).status).toBe(404);
+    const list = await api('/api/v1/moderation/chat-reports/all', { token: scopedStaff.token });
     expect(((await list.json()) as { count: number }).count).toBe(0);
   });
 });

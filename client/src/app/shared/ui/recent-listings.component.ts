@@ -16,7 +16,7 @@ import { I18nService, TPipe } from '../../core/i18n.service';
 import { bookPreviewState, bookQueryParams } from '../../core/book-preview';
 
 /**
- * Books per page of recent_books/. The backend paginates this endpoint at its
+ * Books per page of recent-books. The backend paginates this endpoint at its
  * REST_FRAMEWORK PAGE_SIZE (20) and `limit` only trims within that page, so
  * asking for more never returned more: the search page's `limit=4000` (and
  * the old default of 200, the backend's cap) were requests for 20 books that

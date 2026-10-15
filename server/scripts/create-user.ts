@@ -1,7 +1,7 @@
 /**
  * Create (or reset) an activated account directly in D1, skipping the
  * activation email. For local development, and for a deployment's first
- * superuser.
+ * admin.
  *
  *   npm run user:create -- you@example.com [--first Ken] [--last Chou] [--role user|staff|admin] [--remote]
  *

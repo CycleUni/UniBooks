@@ -86,7 +86,7 @@ describe('book link-preview page', () => {
 
     it('asks the same-origin API the way the app does', () => {
       expect(bookApiUrl(ORIGIN, 'tw', { kind: 'isbn', value: '9781449319793' })).toBe(
-        `${ORIGIN}/api/v1/books/?isbn=9781449319793&region=tw`,
+        `${ORIGIN}/api/v1/books?isbn=9781449319793&region=tw`,
       );
     });
 
@@ -248,7 +248,7 @@ describe('book link-preview page', () => {
       expect(response.status).toBe(200);
       expect(t.injected[0].meta.title).toBe('Python for Data Analysis · UniBooks');
       expect(t.shell).toHaveBeenCalledTimes(1);
-      expect(t.api).toHaveBeenCalledWith(`${ORIGIN}/api/v1/books/?isbn=9781449319793&region=tw`, expect.anything());
+      expect(t.api).toHaveBeenCalledWith(`${ORIGIN}/api/v1/books?isbn=9781449319793&region=tw`, expect.anything());
       const stored = [...t.cache.store.values()][0];
       expect(stored).not.toContain('someone');
       expect(JSON.parse(stored)).toEqual({

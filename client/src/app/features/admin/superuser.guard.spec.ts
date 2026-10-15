@@ -34,10 +34,10 @@ describe('superuserGuard', () => {
   });
 
   it('allows a superuser and refuses a staff member who is not one', async () => {
-    mockAccountService.getMyProfile.mockReturnValue(of({ is_staff: true, is_superuser: true }));
+    mockAccountService.getMyProfile.mockReturnValue(of({ role: 'admin' }));
     expect(await runGuard()).toBe(true);
 
-    mockAccountService.getMyProfile.mockReturnValue(of({ is_staff: true, is_superuser: false }));
+    mockAccountService.getMyProfile.mockReturnValue(of({ role: 'staff' }));
     expect(await runGuard()).toBeInstanceOf(UrlTree);
   });
 

@@ -10,7 +10,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AdminService, AdminUser } from '../../core/services/admin.service';
 import { MetadataService } from '../../core/services/metadata.service';
-import { AuthStore } from '../../core/auth.store';
+import { AuthStore, hasStaffAccess, isAdminUser } from '../../core/auth.store';
 import { RegionService } from '../../core/region.service';
 import { TPipe, I18nService } from '../../core/i18n.service';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
@@ -37,7 +37,7 @@ import { schoolKeywords } from '../../core/school-search';
       <div class="field-grid">
         <div class="field"><label>{{ 'admin.colEmail' | t }}</label><span>{{ user.email }}</span></div>
         <div class="field"><label>{{ 'admin.colName' | t }}</label><span>{{ user.first_name }} {{ user.last_name }}</span></div>
-        <div class="field"><label>{{ 'admin.staffBadge' | t }}</label><span class="admin-status-badge" [class.ok]="user.is_staff">{{ (user.is_staff ? 'admin.yes' : 'admin.no') | t }}</span></div>
+        <div class="field"><label>{{ 'admin.staffBadge' | t }}</label><span class="admin-status-badge" [class.ok]="hasStaffAccess(user)">{{ (hasStaffAccess(user) ? 'admin.yes' : 'admin.no') | t }}</span></div>
       </div>
 
       <div class="toggle-row">
@@ -138,13 +138,14 @@ export class AdminUserDetailComponent implements OnInit {
   schoolsByRegion: Record<string, DropdownOption[]> = {};
   verificationStates: Record<string, { school: string | number | ''; verified: boolean }> = {};
 
+  readonly hasStaffAccess = hasStaffAccess;
   newRegion = '';
   newRegionSchool: string | number | '' = '';
 
   get availableRegions() {
     const user = this.authStore.user() as any;
     const allRegions = this.regionService.regions();
-    if (user?.is_superuser) return allRegions;
+    if (isAdminUser(user)) return allRegions;
     if (Array.isArray(user?.managed_regions)) {
       return allRegions.filter((r: any) => user.managed_regions.includes(r.code));
     }
@@ -268,7 +269,7 @@ export class AdminUserDetailComponent implements OnInit {
           ...res.results.map(s => ({ value: String(s.id), label: s.display_name, keywords: schoolKeywords(s) })),
         ];
 
-        if (res.next && res.results.length > 0) {
+        if (res.results.length > 0 && merged.length < res.count) {
           this.fetchSchoolPage(region, page + 1, merged);
           return;
         }

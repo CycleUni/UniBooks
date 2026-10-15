@@ -15,8 +15,8 @@ import { statsRoutes } from './stats';
 /**
  * /api/v1/admin/*. Every endpoint needs a staff
  * user; region scoping (the regions a staff user manages) is applied
- * per view through services/admin/scope.ts, superuser-only views add
- * requireSuperuser().
+ * per route through services/admin/scope.ts, admin-only routes add
+ * requireAdmin().
  */
 export const adminRoutes = new Hono<AppEnv>();
 

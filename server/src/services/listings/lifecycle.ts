@@ -1,9 +1,7 @@
 /**
  * Listing deletion and page bounds.
  */
-import { HTTPException } from 'hono/http-exception';
 import type { Env } from '../../env';
-import { pagination } from '../../lib/http';
 import { parsePhotos } from '../../lib/json';
 import { deleteListingPhotos } from './photos';
 
@@ -45,19 +43,4 @@ export async function deleteListing(
     ).bind(listing.bookId),
   ]);
   await deleteListingPhotos(env, origin, listing.sellerId, parsePhotos(listing.photos));
-}
-
-/**
- * Page bounds, answering 404 {"detail":"Invalid page."}
- * for a page past the end (page 1 of nothing is fine).
- */
-export function pageFor(url: string, count: number) {
-  const p = pagination(url);
-  if (p.page > 1 && p.offset >= count) {
-    throw new HTTPException(404, {
-      res: Response.json({ detail: 'Invalid page.' }, { status: 404 }),
-      message: 'Invalid page.',
-    });
-  }
-  return p;
 }

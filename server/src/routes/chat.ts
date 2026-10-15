@@ -159,9 +159,9 @@ async function roomAccess(c: Context<AppEnv>, roomId: string): Promise<RoomAcces
     const scope = await managedRegionCodes(c.env, {
       id: person.id,
       email: person.email,
-      role: person.isSuperuser ? 'admin' : 'staff',
+      role: person.isAdmin ? 'admin' : 'staff',
       isStaff: true,
-      isSuperuser: person.isSuperuser,
+      isAdmin: person.isAdmin,
     });
     if (scope !== null && !scope.includes(conv.region_code)) return text('Forbidden: Region not managed', 403);
   }

@@ -466,7 +466,7 @@ function reportTotals(rows: { status: string; reason: string; n: number; fresh: 
   return { open, fresh, reasons };
 }
 
-statsRoutes.get('/stats/overview/', async (c) => {
+statsRoutes.get('/stats/overview', async (c) => {
   const db = createDb(c.env.DB);
   const region = await resolveStatsRegion(c, db);
   const days = parseDays(c);
@@ -659,7 +659,7 @@ statsRoutes.get('/stats/overview/', async (c) => {
 // Timeseries
 // ---------------------------------------------------------------------------
 
-statsRoutes.get('/stats/timeseries/', async (c) => {
+statsRoutes.get('/stats/timeseries', async (c) => {
   const db = createDb(c.env.DB);
   const region = await resolveStatsRegion(c, db);
   const days = parseDays(c);
@@ -689,7 +689,7 @@ statsRoutes.get('/stats/timeseries/', async (c) => {
 // Book ranking
 // ---------------------------------------------------------------------------
 
-statsRoutes.get('/stats/books/ranking/', async (c) => {
+statsRoutes.get('/stats/books/ranking', async (c) => {
   const db = createDb(c.env.DB);
   const region = await resolveStatsRegion(c, db);
   const days = parseDays(c);
@@ -757,7 +757,7 @@ statsRoutes.get('/stats/books/ranking/', async (c) => {
 // Book requests
 // ---------------------------------------------------------------------------
 
-statsRoutes.get('/stats/books/requests/', async (c) => {
+statsRoutes.get('/stats/books/requests', async (c) => {
   const db = createDb(c.env.DB);
   const region = await resolveStatsRegion(c, db);
   const days = parseDays(c);
@@ -797,7 +797,7 @@ statsRoutes.get('/stats/books/requests/', async (c) => {
 const BREAKDOWN_DIMENSIONS = ['school', 'category', 'course', 'professor'] as const;
 const BREAKDOWN_SORTS = ['completed', 'gmv', 'orders', 'new_listings', 'active_listings'] as const;
 
-statsRoutes.get('/stats/breakdown/', async (c) => {
+statsRoutes.get('/stats/breakdown', async (c) => {
   const db = createDb(c.env.DB);
   const region = await resolveStatsRegion(c, db);
   const days = parseDays(c);
@@ -967,7 +967,7 @@ statsRoutes.get('/stats/breakdown/', async (c) => {
 // One book
 // ---------------------------------------------------------------------------
 
-statsRoutes.get('/stats/books/:id/', async (c) => {
+statsRoutes.get('/stats/books/:id', async (c) => {
   const db = createDb(c.env.DB);
   const region = await resolveStatsRegion(c, db);
   const days = parseDays(c);
@@ -1098,7 +1098,7 @@ function durations(pairs: [string | null | undefined, string | null | undefined]
   };
 }
 
-statsRoutes.get('/stats/growth/', async (c) => {
+statsRoutes.get('/stats/growth', async (c) => {
   const db = createDb(c.env.DB);
   const region = await resolveStatsRegion(c, db);
   const days = parseDays(c);
@@ -1224,7 +1224,7 @@ statsRoutes.get('/stats/growth/', async (c) => {
 
 const ROLES = ['all', 'buyer', 'seller'];
 
-statsRoutes.get('/stats/retention/', async (c) => {
+statsRoutes.get('/stats/retention', async (c) => {
   const db = createDb(c.env.DB);
   const region = await resolveStatsRegion(c, db);
   const terms = optionalInt(c, 'terms') || 6;

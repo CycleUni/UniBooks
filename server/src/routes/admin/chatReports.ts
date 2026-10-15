@@ -51,7 +51,7 @@ function reportJson(row: ReportRow) {
   };
 }
 
-chatReportRoutes.get('/chat-reports/', async (c) => {
+chatReportRoutes.get('/chat-reports', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url);
   const conds: (SQL | undefined)[] = [scopeWhere(conversations.regionCode, await scopeOf(c))];
@@ -82,9 +82,9 @@ async function loadReport(c: Context<AppEnv>, db: Database): Promise<ReportRow> 
   return row;
 }
 
-chatReportRoutes.get('/chat-reports/:id/', async (c) => c.json(reportJson(await loadReport(c, createDb(c.env.DB)))));
+chatReportRoutes.get('/chat-reports/:id', async (c) => c.json(reportJson(await loadReport(c, createDb(c.env.DB)))));
 
-chatReportRoutes.patch('/chat-reports/:id/', async (c) => {
+chatReportRoutes.patch('/chat-reports/:id', async (c) => {
   const data = await readJson(c.req);
   if (Object.keys(data).some((k) => k !== 'status')) apiError(400, 'admin.errForbiddenField');
   if (!('status' in data)) apiError(400, 'admin.errInvalidField');
@@ -112,7 +112,7 @@ chatReportRoutes.patch('/chat-reports/:id/', async (c) => {
  * the reported conversation. The chat is served by this same Worker, so the
  * chat URL is the request's own origin.
  */
-chatReportRoutes.get('/chat-reports/:id/chat-token/', async (c) => {
+chatReportRoutes.get('/chat-reports/:id/chat-token', async (c) => {
   const row = await loadReport(c, createDb(c.env.DB));
   const roomId = String(row.r.conversationId);
   const token = await mintChatToken(c.env, {

@@ -85,25 +85,20 @@ export interface PasswordUser {
   lastName?: string | null;
 }
 
-/** Every validator's message for `password`, [] when it passes. */
+/** The i18n code of every rule `password` breaks, [] when it passes. */
 export function passwordProblems(password: string, user?: PasswordUser): string[] {
   const errors: string[] = [];
 
   if (user) {
     const pwd = password.toLowerCase();
-    const attributes: [string | null | undefined, string][] = [
-      [user.firstName, 'first name'],
-      [user.lastName, 'last name'],
-      [user.email, 'email address'],
-    ];
-    outer: for (const [value, verboseName] of attributes) {
+    outer: for (const value of [user.firstName, user.lastName, user.email]) {
       if (!value) continue;
       const lower = value.toLowerCase();
       const parts = [...lower.split(/\W+/), lower];
       for (const part of parts) {
         if (exceedsMaximumLengthRatio(pwd, MAX_SIMILARITY, part)) continue;
         if (quickRatio(pwd, part) >= MAX_SIMILARITY) {
-          errors.push(`The password is too similar to the ${verboseName}.`);
+          errors.push('acct.errPasswordTooSimilar');
           break outer;
         }
       }
@@ -111,13 +106,13 @@ export function passwordProblems(password: string, user?: PasswordUser): string[
   }
 
   if (password.length < MIN_LENGTH) {
-    errors.push(`This password is too short. It must contain at least ${MIN_LENGTH} characters.`);
+    errors.push('acct.errPasswordTooShort');
   }
   if (COMMON.has(password.toLowerCase().trim())) {
-    errors.push('This password is too common.');
+    errors.push('acct.errPasswordTooCommon');
   }
   if (/^\d+$/.test(password)) {
-    errors.push('This password is entirely numeric.');
+    errors.push('acct.errPasswordNumeric');
   }
   return errors;
 }

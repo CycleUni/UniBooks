@@ -77,7 +77,7 @@ export function bookSearch(q: string): SQL {
   return sql`(${sql.join(parts, sql` OR `)})`;
 }
 
-listingRoutes.get('/listings/', async (c) => {
+listingRoutes.get('/listings', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url);
   const conds: (SQL | undefined)[] = [scopeWhere(listings.regionCode, await scopeOf(c))];
@@ -134,12 +134,12 @@ async function loadListing(c: Context<AppEnv>, db: Database): Promise<ListingRow
   return row;
 }
 
-listingRoutes.get('/listings/:id/', async (c) => {
+listingRoutes.get('/listings/:id', async (c) => {
   const db = createDb(c.env.DB);
   return c.json(listingJson(await loadListing(c, db), await resolveLanguage(c)));
 });
 
-listingRoutes.patch('/listings/:id/', async (c) => {
+listingRoutes.patch('/listings/:id', async (c) => {
   const data = await readJson(c.req);
   // `reason`: required when the status change cancels open orders (as for the delete).
   const allowed = new Set(['status', 'admin_locked', 'admin_lock_reason', 'reason']);
@@ -242,7 +242,7 @@ listingRoutes.patch('/listings/:id/', async (c) => {
   return c.json(listingJson(fresh, null));
 });
 
-listingRoutes.delete('/listings/:id/', async (c) => {
+listingRoutes.delete('/listings/:id', async (c) => {
   const db = createDb(c.env.DB);
   const row = await loadListing(c, db);
   const l = row.l;

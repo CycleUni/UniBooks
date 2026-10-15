@@ -60,10 +60,13 @@ const PARTICIPANT_CANCEL_REASONS = new Set(['buyer_cancelled', 'seller_cancelled
 /** Statuses in which the seller may still change the agreed time/place. */
 const MEETUP_EDITABLE_STATUSES: string[] = ['accepted'];
 
-export type LockedResult = { ok: true; order: NoticeOrder; notices: OrderNotice[] } | { ok: false; status: 400 | 403 | 404; body: unknown };
+/** A refusal carries the API error contract's code (and per-field codes); the route turns it into the response. */
+export type LockedResult =
+  | { ok: true; order: NoticeOrder; notices: OrderNotice[] }
+  | { ok: false; status: 400 | 403 | 404; code: string; fields?: Record<string, string[]> };
 
-const fail = (status: 400 | 403 | 404, body: unknown): LockedResult => ({ ok: false, status, body });
-const codeError = (status: 400 | 403 | 404, code: string) => fail(status, { error: { code } });
+const codeError = (status: 400 | 403 | 404, code: string): LockedResult => ({ ok: false, status, code });
+const fieldError = (fields: Record<string, string[]>): LockedResult => ({ ok: false, status: 400, code: 'common.errValidation', fields });
 
 function toNotice(o: typeof orders.$inferSelect): NoticeOrder {
   return {
@@ -101,9 +104,9 @@ export async function applyOrderUpdate(
     .innerJoin(regions, eq(regions.code, orders.regionCode))
     .where(eq(orders.id, orderId))
     .limit(1);
-  if (!row) return fail(404, { detail: 'Not found.' });
+  if (!row) return codeError(404, 'common.errNotFound');
   const order = row.order;
-  if (actorId !== order.buyerId && actorId !== order.sellerId) return fail(404, { detail: 'Not found.' });
+  if (actorId !== order.buyerId && actorId !== order.sellerId) return codeError(404, 'common.errNotFound');
   const isSeller = actorId === order.sellerId;
   const isBuyer = actorId === order.buyerId;
   const oldStatus = order.status as OrderStatus;
@@ -167,15 +170,15 @@ export async function applyOrderUpdate(
     if (typeof l === 'string' && l.length <= 255) set.meetupLocation = l;
     else errors.meetup_location = ['common.errValidation'];
   }
-  if (Object.keys(errors).length) return fail(400, errors);
+  if (Object.keys(errors).length) return fieldError(errors);
 
-  // perform_update: of two racing accepts the second finds the listing reserved.
+  // Of two racing accepts the second finds the listing reserved.
   const accepting = newStatus === 'accepted' && oldStatus !== 'accepted';
   if (accepting) {
     const [listing] = order.listingId
       ? await db.select({ status: listings.status }).from(listings).where(eq(listings.id, order.listingId)).limit(1)
       : [];
-    if (!listing || listing.status !== 'active') return fail(400, { status: 'checkout.errListingUnavailable' });
+    if (!listing || listing.status !== 'active') return codeError(400, 'checkout.errListingUnavailable');
   }
 
   const now = new Date().toISOString();
@@ -241,7 +244,7 @@ export async function applyOrderUpdate(
   const updated = results[0] as { id: string }[];
   if (!updated.length) {
     // The order (or its listing) moved on between the read and the write.
-    return fail(400, accepting ? { status: 'checkout.errListingUnavailable' } : { status: ['order.errInvalidTransition'] });
+    return accepting ? codeError(400, 'checkout.errListingUnavailable') : fieldError({ status: ['order.errInvalidTransition'] });
   }
 
   const after = { ...order, ...set } as typeof orders.$inferSelect;

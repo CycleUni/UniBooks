@@ -92,7 +92,7 @@ export class RetryInterceptor implements HttpInterceptor {
     // re-runs that whole refresh schedule each time — three refresh POSTs
     // became nine for a single request while the token store was down.
     // error.url is the response's URL, which the browser reports absolute.
-    if (error.url?.includes(`${environment.backendUrl}/auth/refresh/`)) {
+    if (error.url?.includes(`${environment.backendUrl}/auth/refresh`)) {
       return false;
     }
     // Server errors (502/503/504): the classic Lambda cold-start signature

@@ -10,7 +10,7 @@ describe('admin ad image uploads', () => {
   it('issues a same-origin upload URL, stores matching bytes once, and binds the token to its staff member', async () => {
     const staff = await seedUser({ role: 'admin' });
     const other = await seedUser({ role: 'admin' });
-    const ticket = await api('/api/v1/admin/promotions/uploads/', {
+    const ticket = await api('/api/v1/admin/promotions/uploads', {
       method: 'POST',
       token: staff.token,
       body: JSON.stringify({ content_type: 'image/png', content_length: PNG.byteLength }),
@@ -18,7 +18,7 @@ describe('admin ad image uploads', () => {
     expect(ticket.status).toBe(200);
     const { upload_url, photo_url } = (await ticket.json()) as { upload_url: string; photo_url: string };
     const url = new URL(upload_url);
-    expect(url.pathname).toBe('/api/v1/admin/promotions/uploads/file/');
+    expect(url.pathname).toBe('/api/v1/admin/promotions/uploads/file');
     const path = url.pathname + url.search;
     const put = (token: string, body: BodyInit, type = 'image/png') =>
       api(path, { method: 'PUT', token, headers: { 'Content-Type': type }, body });
@@ -37,7 +37,7 @@ describe('admin ad image uploads', () => {
 
   it('refuses a non-image type when issuing', async () => {
     const staff = await seedUser({ role: 'admin' });
-    const res = await api('/api/v1/admin/promotions/uploads/', {
+    const res = await api('/api/v1/admin/promotions/uploads', {
       method: 'POST',
       token: staff.token,
       body: JSON.stringify({ content_type: 'image/svg+xml', content_length: 10 }),

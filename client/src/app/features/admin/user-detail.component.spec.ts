@@ -38,7 +38,7 @@ describe('AdminUserDetailComponent', () => {
         {
           provide: AuthStore,
           useValue: {
-            user: signal({ is_superuser: true })
+            user: signal({ role: 'admin' })
           }
         },
         {

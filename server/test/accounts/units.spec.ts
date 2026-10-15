@@ -16,10 +16,10 @@ beforeAll(async () => {
 describe('helpers', () => {
   it('password validators', () => {
     expect(passwordProblems('Str0ng-Pass-Phrase!')).toEqual([]);
-    expect(passwordProblems('12345678')).toContain('This password is entirely numeric.');
-    expect(passwordProblems('password')).toContain('This password is too common.');
-    expect(passwordProblems('short1')).toHaveLength(1);
-    expect(passwordProblems('janedoe123', { email: 'janedoe123@example.com' }).length).toBeGreaterThan(0);
+    expect(passwordProblems('12345678')).toContain('acct.errPasswordNumeric');
+    expect(passwordProblems('password')).toContain('acct.errPasswordTooCommon');
+    expect(passwordProblems('short1')).toEqual(['acct.errPasswordTooShort']);
+    expect(passwordProblems('janedoe123', { email: 'janedoe123@example.com' })).toContain('acct.errPasswordTooSimilar');
   });
 
   it('display names and languages', () => {
@@ -141,12 +141,12 @@ describe('emails', () => {
 
 describe('core', () => {
   it('healthz, regions, geo, metadata', async () => {
-    const health = await call('/api/v1/core/healthz/');
+    const health = await call('/api/v1/core/healthz');
     const hb = (await health.json()) as any;
     expect(hb.checks.database).toBe('ok');
     expect(hb.checks.cache).toBe('ok');
 
-    const regions = (await (await call('/api/v1/core/regions/?lang=zh-TW')).json()) as any[];
+    const regions = (await (await call('/api/v1/core/regions?lang=zh-TW')).json()) as any[];
     expect(regions.map((r) => r.code)).toEqual(['TW', 'HK']);
     expect(regions[0]).toMatchObject({
       localized_name: '台灣',
@@ -154,17 +154,17 @@ describe('core', () => {
       edu_email_suffix: ['.edu.tw'],
     });
 
-    const geo = await call('/api/v1/core/geo/', { headers: { 'CF-IPCountry': 'tw' } });
+    const geo = await call('/api/v1/core/geo', { headers: { 'CF-IPCountry': 'tw' } });
     expect(await geo.json()).toEqual({ region: 'TW' });
     expect(geo.headers.get('Cache-Control')).toBe('no-store');
-    expect(await (await call('/api/v1/core/geo/', { headers: { 'CF-IPCountry': 'XX' } })).json()).toEqual({ region: null });
+    expect(await (await call('/api/v1/core/geo', { headers: { 'CF-IPCountry': 'XX' } })).json()).toEqual({ region: null });
 
-    const meta = (await (await call('/api/v1/core/metadata/?region=TW&lang=zh-TW')).json()) as any;
+    const meta = (await (await call('/api/v1/core/metadata?region=TW&lang=zh-TW')).json()) as any;
     expect(meta.region).toEqual({ code: 'TW', currency: 'TWD' });
     expect(meta.schools[0]).toMatchObject({ code: 'NTU', display_name: '國立臺灣大學', email_domain: 'ntu.edu.tw' });
     expect(meta.schools[0].names).toEqual(['National Taiwan University', '國立臺灣大學']);
     expect(meta.waitlist).toEqual([]);
-    const unknown = (await (await call('/api/v1/core/metadata/?region=TW&school=NOPE')).json()) as any;
+    const unknown = (await (await call('/api/v1/core/metadata?region=TW&school=NOPE')).json()) as any;
     expect(unknown.waitlist).toEqual([]);
   });
 });

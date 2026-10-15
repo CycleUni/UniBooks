@@ -22,6 +22,19 @@ export interface RegionVerification {
   verified_at: string | null;
 }
 
+/** What the account may do: 'staff' reaches the admin area, 'admin' also manages staff and advertisers. */
+export type UserRole = 'user' | 'staff' | 'admin';
+
+/** Staff access: the admin area at all (role 'staff' or 'admin'). */
+export function hasStaffAccess(user: { role?: unknown } | null | undefined): boolean {
+  return user?.role === 'staff' || user?.role === 'admin';
+}
+
+/** Full admin: everything staff can do, plus staff and advertiser management. */
+export function isAdminUser(user: { role?: unknown } | null | undefined): boolean {
+  return user?.role === 'admin';
+}
+
 export interface AuthUser {
   id: string | number;
   email: string;
@@ -36,8 +49,7 @@ export interface AuthUser {
   avatar_url?: string;
   show_avatar?: boolean;
   is_google_linked?: boolean;
-  is_staff?: boolean;
-  is_superuser?: boolean;
+  role?: UserRole;
   verifications?: RegionVerification[];
   /** The language the site was last used in, as last reported. */
   site_language?: string;
@@ -251,7 +263,7 @@ export class AuthStore {
 
     const generation = this._sessionGeneration;
     this.profileRequestGeneration = generation;
-    const request = this.http.get<AuthUser>('/auth/me/').pipe(
+    const request = this.http.get<AuthUser>('/auth/me').pipe(
       tap(profile => {
         // Signed out while this was in the air (e.g. logout with an expired
         // access token: the refresh fires this fetch, then the retried logout
@@ -278,7 +290,7 @@ export class AuthStore {
         if (err.status === 401) {
           this.endSession();
         } else {
-          console.error('Failed to load user profile from /auth/me/', err?.status, err);
+          console.error('Failed to load user profile from /auth/me', err?.status, err);
           // The session is intact but the profile is missing — which looks
           // exactly like being signed out: no name in the header, no admin
           // link. That used to last until a full reload. On a cold serverless
@@ -559,7 +571,7 @@ export class AuthStore {
   /** `challenge`: a Turnstile token, when the server asked for one. */
   login(email: string, password: string, challenge?: string): Observable<any> {
     const body = challenge ? { email, password, cf_turnstile_response: challenge } : { email, password };
-    return this.http.post<any>('/auth/token/', body).pipe(
+    return this.http.post<any>('/auth/login', body).pipe(
       tap(response => {
         if (isLoginSuccess(response)) {
           this.signInPending = true;
@@ -581,7 +593,7 @@ export class AuthStore {
 
   getAuthConfig(): Observable<any> {
     if (!this.authConfig$) {
-      this.authConfig$ = this.http.get<any>('/auth/config/').pipe(
+      this.authConfig$ = this.http.get<any>('/auth/config').pipe(
         catchError(err => {
           this.authConfig$ = null;
           return throwError(() => err);
@@ -593,7 +605,7 @@ export class AuthStore {
   }
 
   loginWithGoogle(credential: string): Observable<any> {
-    return this.http.post<any>('/auth/google/', { credential }).pipe(
+    return this.http.post<any>('/auth/google', { credential }).pipe(
       tap(response => {
         if (isLoginSuccess(response)) {
           this.signInPending = true;
@@ -605,7 +617,7 @@ export class AuthStore {
   }
 
   register(email: string, password: string, firstName: string, lastName: string): Observable<any> {
-    return this.http.post<any>('/auth/register/', {
+    return this.http.post<any>('/auth/register', {
       email,
       password,
       first_name: firstName,
@@ -618,7 +630,7 @@ export class AuthStore {
   }
 
   requestEduVerification(eduEmail: string): Observable<any> {
-    return this.http.post<any>('/auth/verify/request/', { edu_email: eduEmail }).pipe(
+    return this.http.post<any>('/auth/verify/request', { edu_email: eduEmail }).pipe(
       tap(() => {
         this.ga.trackEduVerificationRequest();
       })
@@ -626,13 +638,13 @@ export class AuthStore {
   }
 
   verifyEmail(token: string): Observable<any> {
-    return this.http.post<any>('/auth/verify/', { token });
+    return this.http.post<any>('/auth/verify', { token });
   }
 
   // The password chosen at registration is asked for again: the server
   // activates only if it matches the one the link was issued for.
   verifyRegistration(token: string, password: string): Observable<any> {
-    return this.http.post<any>('/auth/verify-registration/', { token, password }).pipe(
+    return this.http.post<any>('/auth/verify-registration', { token, password }).pipe(
       tap(response => {
         if (isLoginSuccess(response)) {
           this.signInPending = true;
@@ -644,11 +656,11 @@ export class AuthStore {
   }
 
   requestPasswordReset(email: string): Observable<any> {
-    return this.http.post<any>('/auth/password/reset/request/', { email });
+    return this.http.post<any>('/auth/password/reset/request', { email });
   }
 
   confirmPasswordReset(token: string, newPassword: string): Observable<any> {
-    return this.http.post<any>('/auth/password/reset/confirm/', { token, new_password: newPassword });
+    return this.http.post<any>('/auth/password/reset/confirm', { token, new_password: newPassword });
   }
 
   logout(): Observable<any> {
@@ -660,7 +672,7 @@ export class AuthStore {
     if (hasSessionHint()) {
       // The refresh cookie travels with this request (Path=/api/v1/auth/);
       // the server revokes it and clears every session cookie.
-      return this.http.post('/auth/logout/', {}).pipe(
+      return this.http.post('/auth/logout', {}).pipe(
         tap({
           next: () => this.signOut(),
           error: () => this.signOut()

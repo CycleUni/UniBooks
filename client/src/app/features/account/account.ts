@@ -4,7 +4,7 @@ import { CommonModule } from '@angular/common';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiPrefsSelector } from '../../shared/ui/prefs-selector.component';
 
-import { AuthStore } from '../../core/auth.store';
+import { AuthStore, hasStaffAccess } from '../../core/auth.store';
 import { AccountService } from '../../core/services/account.service';
 import { OrderService } from '../../core/services/order.service';
 import { I18nService, TPipe } from '../../core/i18n.service';
@@ -66,7 +66,7 @@ export class Account {
   /** Staff reach the admin console from here on phones, where it is no
    *  longer a bottom tab (the desktop header still links it directly). */
   get isStaff(): boolean {
-    return this.auth.isAuthenticated() && this.auth.user()?.is_staff === true;
+    return this.auth.isAuthenticated() && hasStaffAccess(this.auth.user());
   }
 
   constructor(public auth: AuthStore) {

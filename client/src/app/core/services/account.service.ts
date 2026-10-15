@@ -4,7 +4,7 @@ import { Observable, of, shareReplay, switchMap, take, tap, catchError, throwErr
 import { Router } from '@angular/router';
 import { I18nService } from '../i18n.service';
 import { Lang, SUPPORTED_LANGS } from '../i18n';
-import { AuthStore, AuthUser } from '../auth.store';
+import { AuthStore, AuthUser, UserRole } from '../auth.store';
 import { RegionService } from '../region.service';
 import { SKIP_AUTH } from '../auth.interceptor';
 import { isSameRegion, stripRegionPrefix } from '../region-path';
@@ -48,8 +48,6 @@ export interface ListingReportItem {
 
 export interface PaginatedResponse<T> {
   count: number;
-  next: string | null;
-  previous: string | null;
   results: T[];
 }
 
@@ -100,8 +98,7 @@ export interface UserProfile {
   /** Whether other users see avatar_url; the owner always gets it. */
   show_avatar?: boolean;
   is_google_linked?: boolean;
-  is_staff?: boolean;
-  is_superuser?: boolean;
+  role?: UserRole;
   last_seen_bought_orders_at?: string | null;
   last_seen_sold_orders_at?: string | null;
   [key: string]: unknown;
@@ -148,7 +145,7 @@ export class AccountService {
     // current login", and adminGuard/superuserGuard read profileCache()
     // directly with no TTL check (the 60s TTL lives inside getMyProfile only) —
     // so a cache surviving into the next sign-in would judge a different user
-    // on the previous one's is_staff / is_superuser. This clears what is
+    // on the previous one's role. This clears what is
     // already cached; a response still in flight at sign-out is dropped by the
     // session-generation check in getMyProfile(), which this effect alone
     // could not catch.
@@ -239,7 +236,7 @@ export class AccountService {
     const reporting = `${user.id}:${lang}`;
     if (this.siteLanguageReported === reporting) return;
     this.siteLanguageReported = reporting;
-    this.http.put('/auth/me/site-language/', { language: lang }).subscribe({
+    this.http.put('/auth/me/site-language', { language: lang }).subscribe({
       next: () => this.authStore.updateUser(u => ({ ...u, site_language: lang })),
       // Best effort; the next page load or language change tries again.
       error: () => {
@@ -256,7 +253,7 @@ export class AccountService {
     const reporting = `${user.id}:${code}`;
     if (this.siteRegionReported === reporting) return;
     this.siteRegionReported = reporting;
-    this.http.put('/auth/me/site-region/', { region: code }).subscribe({
+    this.http.put('/auth/me/site-region', { region: code }).subscribe({
       next: () => this.authStore.updateUser(u => ({ ...u, site_region: code })),
       error: () => {
         if (this.siteRegionReported === reporting) this.siteRegionReported = null;
@@ -343,7 +340,7 @@ export class AccountService {
     const generation = this.authStore.sessionGeneration;
     const stillCurrent = () => generation === this.authStore.sessionGeneration;
     const ownsLock = () => this.profileRequest === req;
-    const req: Observable<any> = this.http.get<any>('/auth/me/', { params }).pipe(
+    const req: Observable<any> = this.http.get<any>('/auth/me', { params }).pipe(
       tap(profile => {
         if (!plain) return;
         if (stillCurrent()) {
@@ -373,11 +370,11 @@ export class AccountService {
   }
 
   getNotificationSettings(): Observable<NotificationSettings> {
-    return this.http.get<NotificationSettings>('/auth/me/notifications/');
+    return this.http.get<NotificationSettings>('/auth/me/notifications');
   }
 
   updateNotificationSettings(changes: Partial<NotificationSettings>): Observable<NotificationSettings> {
-    return this.http.patch<NotificationSettings>('/auth/me/notifications/', changes);
+    return this.http.patch<NotificationSettings>('/auth/me/notifications', changes);
   }
 
   clearProfileCache() {
@@ -388,8 +385,8 @@ export class AccountService {
     this.cacheTimestamp = 0;
   }
 
-  updateProfile(data: { first_name?: string, last_name?: string, email?: string, show_avatar?: boolean, last_seen_bought_orders_at?: string, last_seen_sold_orders_at?: string }): Observable<any> {
-    return this.http.patch<any>('/auth/me/', data).pipe(
+  updateProfile(data: { first_name?: string, last_name?: string, email?: string, current_password?: string, show_avatar?: boolean, last_seen_bought_orders_at?: string, last_seen_sold_orders_at?: string }): Observable<any> {
+    return this.http.patch<any>('/auth/me', data).pipe(
       tap(profile => {
         // A request to change the sign-in email answers with the pending
         // address instead of the profile, since nothing has changed yet —
@@ -410,30 +407,30 @@ export class AccountService {
   /** Apply a pending sign-in-email change. The token comes from the link in
    *  the mail sent to the new address; no session is needed to follow it. */
   confirmEmailChange(token: string): Observable<any> {
-    return this.http.post<any>('/auth/email/change/confirm/', { token });
+    return this.http.post<any>('/auth/email/change/confirm', { token });
   }
 
   cancelEmailChange(): Observable<any> {
-    return this.http.post<any>('/auth/email/change/cancel/', {});
+    return this.http.post<any>('/auth/email/change/cancel', {});
   }
 
   /** Changing the password ends every other session; the response sets this
    *  browser's fresh session cookies, replacing the revoked ones, so there is
    *  nothing to store here. */
   changePassword(data: { old_password?: string, new_password?: string }): Observable<any> {
-    return this.http.post<any>('/auth/password/', data);
+    return this.http.post<any>('/auth/password', data);
   }
 
   removePassword(data: { password?: string }): Observable<any> {
-    return this.http.post<any>('/auth/password/remove/', data);
+    return this.http.post<any>('/auth/password/remove', data);
   }
 
   requestEduVerification(eduEmail: string): Observable<any> {
-    return this.http.post<any>('/auth/verify/request/', { edu_email: eduEmail });
+    return this.http.post<any>('/auth/verify/request', { edu_email: eduEmail });
   }
 
   autoVerifyEduEmail(): Observable<any> {
-    return this.http.post<any>('/auth/verify/auto/', {}).pipe(
+    return this.http.post<any>('/auth/verify/auto', {}).pipe(
       tap(() => this.profileCache.set(null))
     );
   }
@@ -442,17 +439,17 @@ export class AccountService {
    *  Resolves with 201 for a new request, 200 when an identical one is
    *  already pending — both mean the report is on file. */
   createSchoolRequest(data: SchoolRequestInput): Observable<SchoolRequest> {
-    return this.http.post<SchoolRequest>('/auth/school-requests/', data);
+    return this.http.post<SchoolRequest>('/auth/school-requests', data);
   }
 
   getPublicUserProfile(userId: string): Observable<any> {
-    return this.http.get<any>(`/auth/users/${userId}/`, {
+    return this.http.get<any>(`/auth/users/${userId}`, {
       context: new HttpContext().set(SKIP_AUTH, true)
     });
   }
 
   unbindEduEmail(regionCode: string): Observable<any> {
-    return this.http.post<any>('/auth/verify/unbind/', { region: regionCode }).pipe(
+    return this.http.post<any>('/auth/verify/unbind', { region: regionCode }).pipe(
       tap(() => {
         this.profileCache.update(p => p ? { ...p, verifications: (p['verifications'] as any[] || []).filter((v: any) => !isSameRegion(v.region, regionCode)) } : null);
         this.authStore.updateUser(u => ({ ...u, verifications: (u.verifications || []).filter((v: any) => !isSameRegion(v.region, regionCode)) }));
@@ -461,28 +458,28 @@ export class AccountService {
   }
 
   unsubscribe(subscriptionId: string): Observable<any> {
-    return this.http.delete(`/subscriptions/${subscriptionId}/`);
+    return this.http.delete(`/subscriptions/${subscriptionId}`);
   }
 
   unsubscribeAll(): Observable<any> {
-    return this.http.delete('/subscriptions/');
+    return this.http.delete('/subscriptions');
   }
 
   getMySubscriptions(): Observable<any[]> {
-    return this.http.get<any[]>('/subscriptions/');
+    return this.http.get<any[]>('/subscriptions');
   }
 
   getMyListingReports(page: number = 1): Observable<PaginatedResponse<ListingReportItem>> {
     const params = new HttpParams().set('page', page.toString());
-    return this.http.get<PaginatedResponse<ListingReportItem>>('/moderation/mine/', { params });
+    return this.http.get<PaginatedResponse<ListingReportItem>>('/moderation/mine', { params });
   }
 
   getMyChatReports(page: number = 1): Observable<PaginatedResponse<ChatReportItem>> {
     const params = new HttpParams().set('page', page.toString());
-    return this.http.get<PaginatedResponse<ChatReportItem>>('/moderation/chat-reports/mine/', { params });
+    return this.http.get<PaginatedResponse<ChatReportItem>>('/moderation/chat-reports/mine', { params });
   }
 
   deleteAccount(): Observable<any> {
-    return this.http.delete<any>('/auth/me/');
+    return this.http.delete<any>('/auth/me');
   }
 }

@@ -35,7 +35,7 @@ describe('MessageService hub reconnect', () => {
       // The hub snapshot fetched on open, and the fresh hub token below, are
       // the only two calls this test's paths make.
       get: vi.fn((url: string) =>
-        url.includes('/messaging/hub-token/')
+        url.includes('/messaging/hub-token')
           ? of({ token: 'fresh-token' })
           : of({ unread: [], count: 0 })
       ),
@@ -63,7 +63,7 @@ describe('MessageService hub reconnect', () => {
 
     dropTheConnection();
 
-    expect(http.get).toHaveBeenCalledWith('/messaging/hub-token/');
+    expect(http.get).toHaveBeenCalledWith('/messaging/hub-token');
     expect(sockets).toHaveLength(2);
     expect(sockets[1].protocols).toEqual(['fresh-token']);
   });
@@ -75,7 +75,7 @@ describe('MessageService hub reconnect', () => {
     // What HttpClient actually reports when the request never reached a
     // server: an HttpErrorResponse with status 0.
     http.get.mockImplementation((url: string) =>
-      url.includes('/messaging/hub-token/')
+      url.includes('/messaging/hub-token')
         ? throwError(() => new HttpErrorResponse({ status: 0, statusText: 'Unknown Error' }))
         : of({ unread: [], count: 0 })
     );
@@ -88,7 +88,7 @@ describe('MessageService hub reconnect', () => {
 
   const tokenResponse = (respond: (url: string) => unknown) =>
     http.get.mockImplementation((url: string) =>
-      url.includes('/messaging/hub-token/') ? respond(url) : of({ unread: [], count: 0 })
+      url.includes('/messaging/hub-token') ? respond(url) : of({ unread: [], count: 0 })
     );
 
   it.each([401, 403])('stops reconnecting once the session is gone (hub-token %i)', (status) => {
@@ -100,7 +100,7 @@ describe('MessageService hub reconnect', () => {
     dropTheConnection();
     vi.advanceTimersByTime(10 * 60_000);
 
-    const tokenCalls = http.get.mock.calls.filter(([url]) => String(url).includes('/messaging/hub-token/'));
+    const tokenCalls = http.get.mock.calls.filter(([url]) => String(url).includes('/messaging/hub-token'));
     expect(tokenCalls).toHaveLength(1);
     expect(sockets).toHaveLength(1);
   });

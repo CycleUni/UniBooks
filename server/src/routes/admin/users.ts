@@ -7,7 +7,7 @@ import { disconnectUser } from '../../services/messaging/disconnect';
 import { createDb, regionVerifications, regions, schools, staffManagedRegions, users, type Database, type User } from '../../db';
 import { apiError, pagination, readJson } from '../../lib/http';
 import { getRegion } from '../../lib/region';
-import { requireSuperuser } from '../../middleware/auth';
+import { requireAdmin } from '../../middleware/auth';
 import { displayName } from '../../services/accounts/users';
 import { writeAudit } from '../../services/admin/audit';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
@@ -16,12 +16,12 @@ import { likeContains, notFound, regionExists, regionParam, scopeOf, uuidId } fr
 import { schoolSearch } from './schools';
 
 /**
- * Granting staff rights is superuser-only (managers/<id>/toggle/); the user
- * PATCH never accepts is_staff / is_superuser / password.
+ * Granting staff rights is admin-only (PATCH managers/<id>); the user
+ * PATCH never accepts role / password.
  */
 export const userRoutes = new Hono<AppEnv>();
 
-const FORBIDDEN_USER_FIELDS = ['is_staff', 'is_superuser', 'password', 'groups', 'user_permissions', 'role'];
+const FORBIDDEN_USER_FIELDS = ['password', 'role'];
 
 // ---------------------------------------------------------------------------
 // Serialization
@@ -91,8 +91,7 @@ export function userJson(u: User, verifications: VerificationRow[], lang: string
     is_verified: verifications.length > 0,
     verified_at: primary ? primary.verifiedAt : null,
     created_at: u.createdAt,
-    is_staff: u.role === 'staff' || u.role === 'admin',
-    is_superuser: u.role === 'admin',
+    role: u.role,
     regions: verifications.map((v) => v.regionCode),
     verifications: verifications.map((v) => ({
       region: v.regionCode,
@@ -125,7 +124,7 @@ function userScope(scope: string[] | null): SQL | undefined {
 // List
 // ---------------------------------------------------------------------------
 
-userRoutes.get('/users/', async (c) => {
+userRoutes.get('/users', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url);
   const conds: (SQL | undefined)[] = [userScope(await scopeOf(c))];
@@ -193,7 +192,7 @@ async function loadUser(c: Context<AppEnv>, db: Database): Promise<User> {
   return row;
 }
 
-userRoutes.get('/users/:id/', async (c) => {
+userRoutes.get('/users/:id', async (c) => {
   const db = createDb(c.env.DB);
   return c.json(await serializeOne(c, db, await loadUser(c, db)));
 });
@@ -232,7 +231,7 @@ async function ensureVerification(db: Database, userId: string, regionCode: stri
   return { row: raced, created: false };
 }
 
-userRoutes.patch('/users/:id/', async (c) => {
+userRoutes.patch('/users/:id', async (c) => {
   const data = await readJson(c.req);
   if (FORBIDDEN_USER_FIELDS.some((f) => f in data)) apiError(400, 'admin.errForbiddenField');
   const db = createDb(c.env.DB);
@@ -250,6 +249,21 @@ userRoutes.patch('/users/:id/', async (c) => {
     if (typeof value !== 'boolean') apiError(400, 'admin.errInvalidField');
     if (!value && (instance.role === 'staff' || instance.role === 'admin')) apiError(400, 'admin.errForbiddenField');
     if (!!instance.isActive !== value) {
+      // A sign-up not yet confirmed by email (no password, no Google link) or a
+      // deleted account is never switched on from here: that would skip the
+      // email check and keep the address from its real owner.
+      if (value && ((!instance.passwordHash && !instance.googleId) || instance.deletedAt)) apiError(400, 'admin.errForbiddenField');
+      // The account is global: a region manager may switch it only when every
+      // region it is verified in is one they manage.
+      if (scope !== null) {
+        const regionsOf = (
+          await db
+            .select({ code: regionVerifications.regionCode })
+            .from(regionVerifications)
+            .where(eq(regionVerifications.userId, instance.id))
+        ).map((r) => r.code);
+        if (!regionsOf.length || regionsOf.some((code) => !scope.includes(code))) apiError(403, 'admin.errRegionForbidden');
+      }
       newIsActive = value ? 1 : 0;
       changes.is_active = value;
     }
@@ -320,10 +334,10 @@ userRoutes.patch('/users/:id/', async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// Managers (superuser only)
+// Managers (admin only)
 // ---------------------------------------------------------------------------
 
-userRoutes.post('/managers/:id/toggle/', requireSuperuser(), async (c) => {
+userRoutes.patch('/managers/:id', requireAdmin(), async (c) => {
   const db = createDb(c.env.DB);
   const id = uuidId(c.req.param('id'));
   const [target] = await db.select().from(users).where(eq(users.id, id)).limit(1);
@@ -334,15 +348,13 @@ userRoutes.post('/managers/:id/toggle/', requireSuperuser(), async (c) => {
   let hasChanges = false;
 
   let newRole: User['role'] | undefined;
-  if ('is_staff' in data) {
-    const v = data.is_staff;
-    if (typeof v !== 'boolean') apiError(400, 'admin.errInvalidField');
-    const isStaff = target.role === 'staff' || target.role === 'admin';
-    if (isStaff !== v) {
-      // A superuser is staff by definition here (role 'admin'); demoting one
-      // is not something this endpoint can express.
+  if ('role' in data) {
+    const v = data.role;
+    if (v !== 'staff' && v !== 'user') apiError(400, 'admin.errInvalidField');
+    if (target.role !== v) {
+      // Admin accounts are neither granted nor revoked here.
       if (target.role === 'admin') apiError(400, 'admin.errForbiddenField');
-      newRole = v ? 'staff' : 'user';
+      newRole = v;
     }
   }
   let newRegions: string[] | undefined;
@@ -359,7 +371,7 @@ userRoutes.post('/managers/:id/toggle/', requireSuperuser(), async (c) => {
   if (newRole) {
     writes.push(db.update(users).set({ role: newRole, updatedAt: new Date().toISOString() }).where(eq(users.id, target.id)));
     hasChanges = true;
-    metaChanges.is_staff = newRole === 'staff';
+    metaChanges.role = newRole;
   }
   if (newRegions) {
     writes.push(db.delete(staffManagedRegions).where(eq(staffManagedRegions.userId, target.id)));

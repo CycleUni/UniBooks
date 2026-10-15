@@ -10,7 +10,7 @@ import { UiDropdown, DropdownOption } from './dropdown.component';
 import { UiPrefsSelector } from './prefs-selector.component';
 import { RegionService } from '../../core/region.service';
 import { MetadataService } from '../../core/services/metadata.service';
-import { AuthStore } from '../../core/auth.store';
+import { AuthStore, hasStaffAccess } from '../../core/auth.store';
 import { AccountService } from '../../core/services/account.service';
 import { SchoolStateService, SchoolOption, CityOption } from '../../core/services/school-state.service';
 import { MessageService } from '../../core/services/message.service';
@@ -176,7 +176,7 @@ export class UiLayout implements OnDestroy {
 
   get isStaff(): boolean {
     if (!this.authStore.isAuthenticated()) return false;
-    return this.authStore.user()?.is_staff === true;
+    return hasStaffAccess(this.authStore.user());
   }
 
   constructor() {

@@ -94,7 +94,7 @@ export function sessionOf(res: Response): { access: string; refresh: string } {
 }
 
 export async function login(email: string, password = PASSWORD): Promise<{ access: string; refresh: string }> {
-  const res = await call('/api/v1/auth/token/', { body: { email, password } });
+  const res = await call('/api/v1/auth/login', { body: { email, password } });
   if (res.status !== 200) throw new Error(`login failed: ${res.status} ${await res.text()}`);
   return sessionOf(res);
 }

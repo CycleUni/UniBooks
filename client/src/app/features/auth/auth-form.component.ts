@@ -154,16 +154,18 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
       const msg = this.i18n.t('auth.errRegisterFailed');
       let errorDetails = '';
       const fields = err.error?.error?.fields;
-      // Field errors come back as i18n keys when the backend has one and as
-      // plain prose when it doesn't, so each falls back to itself.
-      const field = (messages: string[]) =>
-        messages.map((e: string) => this.i18n.tOrNull(e) ?? e).join(', ');
+      // Field errors are i18n keys; one this locale lacks is left out rather
+      // than shown raw.
+      const field = (codes: string[]) =>
+        codes.map((code: string) => this.i18n.tOrNull(code)).filter(Boolean).join(', ');
       if (fields) {
         if (fields.email) errorDetails += this.i18n.t('auth.errEmailField', {msg: field(fields.email)});
         if (fields.password) errorDetails += this.i18n.t('auth.errPasswordField', {msg: field(fields.password)});
         if (fields.first_name) errorDetails += this.i18n.t('auth.errNameField', {msg: field(fields.first_name)});
         if (fields.last_name) errorDetails += this.i18n.t('auth.errNameField', {msg: field(fields.last_name)});
-        if (fields.non_field_errors) errorDetails += ` ${field(fields.non_field_errors)}`;
+      } else {
+        const code = this.i18n.tOrNull(err.error?.error?.code);
+        if (code) errorDetails += ` ${code}`;
       }
       return `${msg}${errorDetails}`;
     }

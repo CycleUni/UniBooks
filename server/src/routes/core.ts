@@ -23,7 +23,7 @@ export const coreRoutes = new Hono<AppEnv>();
 const SCHEMA_TABLES = (Object.values(schema) as unknown[]).filter((v): v is SQLiteTable => is(v, SQLiteTable)).map((t) => getTableName(t));
 
 // Unauthenticated and touches D1 + KV: throttle it like any other public probe.
-coreRoutes.get('/healthz/', rateLimit('healthz', '30/min'), async (c) => {
+coreRoutes.get('/healthz', rateLimit('healthz', '30/min'), async (c) => {
   let dbOk = false;
   try {
     const row = await c.env.DB.prepare('SELECT 1 AS ok').first<{ ok: number }>();
@@ -69,7 +69,7 @@ coreRoutes.get('/healthz/', rateLimit('healthz', '30/min'), async (c) => {
   );
 });
 
-coreRoutes.get('/regions/', async (c) => {
+coreRoutes.get('/regions', async (c) => {
   const lang = await resolveLanguage(c);
   // Same for every visitor; admin region/currency edits invalidate 'ref'.
   const body = await cached(c.env, 'ref', `regions:${lang}`, 3600, async () => {
@@ -103,7 +103,7 @@ coreRoutes.get('/regions/', async (c) => {
   return c.json(body);
 });
 
-coreRoutes.get('/geo/', async (c) => {
+coreRoutes.get('/geo', async (c) => {
   // Only the CDN's country header: ?region=/X-Region/cookie would just echo
   // back what the frontend already sent.
   const country = (c.req.header('CF-IPCountry') ?? '').trim().toUpperCase();
@@ -132,7 +132,7 @@ function allNames(row: Row): string[] {
   return names;
 }
 
-coreRoutes.get('/metadata/', rateLimit('metadata', '120/min'), optionalAuthMiddleware(), async (c) => {
+coreRoutes.get('/metadata', rateLimit('metadata', '120/min'), optionalAuthMiddleware(), async (c) => {
   const [lang, region] = await Promise.all([resolveLanguage(c), requireRegion(c)]);
   const schoolParam = c.req.query('school') ?? '';
   // The key holds only validated values (a school id, or one shared marker

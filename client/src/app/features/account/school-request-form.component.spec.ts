@@ -100,7 +100,7 @@ describe('SchoolRequestFormComponent', () => {
   it("shows the backend's field error and keeps the form open", () => {
     accountService.createSchoolRequest.mockReturnValue(throwError(() => new HttpErrorResponse({
       status: 400,
-      error: { school_website: ['acct.errSchoolRequestWebsite'] },
+      error: { error: { code: 'common.errValidation', fields: { school_website: ['acct.errSchoolRequestWebsite'] } } },
     })));
     component.toggle();
     fillAndSubmit('Example University', 'https://example.edu.tw');

@@ -33,7 +33,7 @@ describe('AdminSchoolRequestsListComponent', () => {
 
   beforeEach(async () => {
     adminService = {
-      getSchoolRequests: vi.fn().mockReturnValue(of({ count: 1, next: null, previous: null, results: [row()] })),
+      getSchoolRequests: vi.fn().mockReturnValue(of({ count: 1, results: [row()] })),
       updateSchoolRequest: vi.fn(),
     };
     toast = { success: vi.fn(), error: vi.fn() };

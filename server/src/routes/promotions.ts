@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { and, count, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../env';
 import { advertisers, ads, createAdsDb, createDb } from '../db';
-import { pagination } from '../lib/http';
+import { notFound, pagination } from '../lib/http';
 import { getRegion } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { takePlatformRate } from '../middleware/rateLimit';
@@ -36,7 +36,7 @@ function liveConds(now: string): SQL[] {
 /** Ad slots that exist; anything else matches no ad (and is never cached). */
 export const AD_POSITIONS = ['home_banner'] as const;
 
-promotionRoutes.get('/active/', async (c) => {
+promotionRoutes.get('/active', async (c) => {
   if (!(await takePlatformRate(c, c.env.AD_LIST_LIMIT, 'ads_active', AD_LIST_RATE))) {
     return c.json({ error: { code: 'common.errThrottled' } }, 429);
   }
@@ -144,7 +144,7 @@ async function liveAdPosition(c: Context<AppEnv>, adId: number): Promise<string 
 function recordEvent(event: 'view' | 'click') {
   return async (c: Context<AppEnv>) => {
     const raw = c.req.param('id') ?? '';
-    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) return c.json({ detail: 'Not found.' }, 404);
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) return notFound(c);
     const adId = Number(raw);
     const position = await liveAdPosition(c, adId);
     if (position === null) return c.body(null, 404);
@@ -159,5 +159,5 @@ function recordEvent(event: 'view' | 'click') {
   };
 }
 
-promotionRoutes.post('/:id/view/', optionalAuthMiddleware(), recordEvent('view'));
-promotionRoutes.post('/:id/click/', optionalAuthMiddleware(), recordEvent('click'));
+promotionRoutes.post('/:id/view', optionalAuthMiddleware(), recordEvent('view'));
+promotionRoutes.post('/:id/click', optionalAuthMiddleware(), recordEvent('click'));

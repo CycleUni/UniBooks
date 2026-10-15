@@ -32,7 +32,7 @@ describe('ErrorReportInterceptor', () => {
   };
 
   it('reports a 5xx from our backend and still passes the error on', () => {
-    const thrown = failWith('/orders/', 500, 'POST');
+    const thrown = failWith('/orders', 500, 'POST');
     expect(thrown).toBeTruthy();
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
     const options = vi.mocked(Sentry.captureException).mock.calls[0][1] as any;
@@ -41,13 +41,13 @@ describe('ErrorReportInterceptor', () => {
   });
 
   it('groups by route, not by record id or query string', () => {
-    failWith('/listings/123/?lang=en', 502);
+    failWith('/listings/123?lang=en', 502);
     const options = vi.mocked(Sentry.captureException).mock.calls[0][1] as any;
-    expect(options.fingerprint).toEqual(['http-5xx', 'GET', '502', '/listings/:id/']);
+    expect(options.fingerprint).toEqual(['http-5xx', 'GET', '502', '/listings/:id']);
   });
 
   it.each([400, 401, 403, 404, 429, 0])('does not report %s', status => {
-    failWith('/listings/', status);
+    failWith('/listings', status);
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
@@ -57,7 +57,7 @@ describe('ErrorReportInterceptor', () => {
   });
 
   it('reports absolute URLs under the backend', () => {
-    failWith(`${environment.backendUrl}/books/`, 503);
+    failWith(`${environment.backendUrl}/books`, 503);
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
   });
 });

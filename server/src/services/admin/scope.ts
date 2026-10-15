@@ -1,6 +1,5 @@
 import type { Context } from 'hono';
 import { eq, inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
-import { HTTPException } from 'hono/http-exception';
 import type { AppEnv, AuthUser } from '../../env';
 import { createDb, regions, staffManagedRegions, type Database } from '../../db';
 import { apiError } from '../../lib/http';
@@ -9,12 +8,12 @@ import { UUID_RE } from '../../lib/uuid';
 /**
  * Region scoping: the `managed_regions` filters every admin view applies.
  *
- * A superuser manages every region (null). Any other staff account manages
+ * An admin manages every region (null). Any other staff account manages
  * exactly the regions in staff_managed_regions — possibly none, in which
  * case every region-scoped list comes back empty and every object 404s.
  */
 export async function managedRegions(db: Database, user: AuthUser): Promise<string[] | null> {
-  if (user.isSuperuser) return null;
+  if (user.isAdmin) return null;
   const rows = await db
     .select({ code: staffManagedRegions.regionCode })
     .from(staffManagedRegions)
@@ -44,7 +43,7 @@ export function assertInScope(scope: string[] | null, regionCode: string | null 
   if (!inScope(scope, regionCode)) apiError(403, 'admin.errRegionForbidden');
 }
 
-/** WHERE fragment limiting a region-coded column to the managed regions: none for a superuser, never-true for an empty scope. */
+/** WHERE fragment limiting a region-coded column to the managed regions: none for a admin, never-true for an empty scope. */
 export function scopeWhere(column: SQLWrapper, scope: string[] | null): SQL | undefined {
   if (scope === null) return undefined;
   return scope.length ? inArray(column, scope) : sql`0`;
@@ -61,9 +60,9 @@ export function regionParam(c: Context<AppEnv>): string {
   return (c.req.query('region') ?? '').trim().toUpperCase();
 }
 
-/** 404 for a missing object: {"detail": "Not found."}. */
+/** Throw the 404 for a missing object. */
 export function notFound(): never {
-  throw new HTTPException(404, { res: Response.json({ detail: 'Not found.' }, { status: 404 }), message: 'not found' });
+  apiError(404, 'common.errNotFound');
 }
 
 /** Parse a positive integer path id, or 404. */

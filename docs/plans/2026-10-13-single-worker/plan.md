@@ -38,8 +38,13 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
 17. Budget: few subagents at a time; small tasks → sonnet subagent or `agy`.
 
 ## Decisions
-- API contract = Django's (paths with trailing slash, `{error:{code}}`), so the
-  Angular app needs only the auth/chat changes listed here.
+- API contract (revised 2026-10-15, Django/DRF conventions dropped): no trailing
+  slashes; one error shape `{error:{code, fields?, ...extra}}` with i18n codes only
+  (no `detail` prose, no top-level field dicts, no `non_field_errors`); pages are
+  `{count, results}` and a page past the end is empty, not 404; users expose `role`
+  instead of is_staff/is_superuser; renamed /auth/token→/auth/login,
+  recent_books→recent-books, force_cancel→force-cancel, DELETE conversations/:id,
+  PATCH admin/managers/:id {role}; PUT aliases of PATCH removed.
 - Auth cookies: `ub_at` (access, HttpOnly, Secure, SameSite=Lax, Path=/api),
   `ub_rt` (refresh, HttpOnly, Secure, SameSite=Strict, Path=/api/v1/auth),
   plus a non-HttpOnly `ub_session=1` hint so the SPA knows it is signed in.
@@ -116,3 +121,8 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
 - 2026-10-13: tests: 41 accounts green after cookie auth; frontend route tests fail until client/ is built.
 - 2026-10-13: dev vars filled from UniBooks-Old (GOOGLE_BOOKS_API_KEY,
   ISBNNET_RESOLVER_URL, CHAT_JWT_SECRET). Accounts 39/39, orders 15/15 green.
+- 2026-10-15: de-Django review: contract above applied server + client; password
+  validator and account validation answer i18n codes; security: email-change rate
+  limit + current password, staff is_active scope, no activating unconfirmed sign-ups.
+  Gates: server tsc / prettier / 278 tests / import self-test, client 1063 tests + build,
+  wrangler dry-run; browser smoke (login error, admin managers grant/revoke).

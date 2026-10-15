@@ -65,14 +65,15 @@
 
 ## 6. 錯誤訊息（NS09）
 
-後端的錯誤格式是 `{"error": {"code": "<i18n key>"}}`，欄位驗證錯誤則是
-`{"field": ["<i18n key>"]}`（`server/src/lib/http.ts`）。若回應帶有 `detail`，那是**未翻譯的英文句子**。
+後端所有錯誤只有一種格式（`server/src/lib/http.ts`）：`{"error": {"code": "<i18n key>", ...附加欄位}}`；
+欄位驗證錯誤是 `{"error": {"code": "common.errValidation", "fields": {"<欄位>": ["<i18n key>"]}}}`。
+錯誤碼一律是 i18n key，後端不回傳英文句子。
 
 - 顯示 API 錯誤一律用 `core/api-error.util.ts`：
   - `parseApiError(err, this.i18n, 'fallback.key')`：直接得到可以顯示的句子。
   - `translateApiError(err, this.i18n)`：翻不出來時回傳 `null`，讓呼叫端決定要顯示什麼。
-- **禁止**把 `err.error.detail`、`err.error.status`、`err.message` 直接顯示給使用者。
-  這些是英文句子、錯誤碼陣列，或 Angular 的 `Http failure response for …`，使用者看不懂也無從處理。
+- **禁止**把 `err.error`、`err.message` 直接顯示給使用者。
+  那是原始 JSON 或 Angular 的 `Http failure response for …`，使用者看不懂也無從處理。
 - 查詢後端傳來的錯誤碼時，用 `i18n.tOrNull(code)` 而不是 `i18n.t(code)`；
   後者在找不到 key 時會把原始 key 直接顯示在畫面上。
 - 錯誤訊息要說明發生了什麼事、下一步可以怎麼做（例如「請再試一次」），不要責怪使用者。
@@ -94,7 +95,7 @@
   （`proxy.conf.json` 只有一條 `/api` → :8787，`ws: true`、`changeOrigin: false`，聊天室 WebSocket 也走這條）。
 - 不要在 `src/app` 寫死任何 API 或聊天室的絕對網址；API 一律走 `environment.backendUrl`
   （預設 `/api/v1`），聊天室網址一律用 `core/chat-urls.ts` 以本頁 origin 組出。
-- 圖片上傳（刊登照片、聊天圖片、廣告圖）一律走 `core/upload.ts` 的兩段式：`POST <base>/uploads/` 拿 `{upload_url, photo_url}`，再 PUT 檔案到 `upload_url`。
+- 圖片上傳（刊登照片、聊天圖片、廣告圖）一律走 `core/upload.ts` 的兩段式：`POST <base>/uploads` 拿 `{upload_url, photo_url}`，再 PUT 檔案到 `upload_url`。
 - 與後端共用的公開值（`R2_PUBLIC_URL`、`GOOGLE_CLIENT_ID`）只有一個來源：`../server/wrangler.jsonc`
   的 `vars`（本地再疊 `../server/.dev.vars`），由 `scripts/set-env.js` 讀取，不要在前端另寫一份。
   只有前端用的值放 `production.env`（只放會進到公開 bundle 或 header 的值，不放機密）；
@@ -105,8 +106,8 @@
 
 - Session 是伺服器設定的 HttpOnly cookie，前端**拿不到也不該存** token：不要把 access／refresh token
   寫進 localStorage、sessionStorage、signal 或任何欄位，也不要自己加 `Authorization` 到 `/api/v1` 請求。
-- 「已登入」＝有 `ub_session=1` 提示 cookie，且 `/auth/me/` 成功（`AuthStore.isAuthenticated()`／`user()`）。
-- 401 的處理只在 `AuthInterceptor`：單一共用的 `POST /auth/refresh/`，成功後重送一次，失敗就
+- 「已登入」＝有 `ub_session=1` 提示 cookie，且 `/auth/me` 成功（`AuthStore.isAuthenticated()`／`user()`）。
+- 401 的處理只在 `AuthInterceptor`：單一共用的 `POST /auth/refresh`，成功後重送一次，失敗就
   `AuthStore.endSession()`。元件不要自己重試或導去登入頁。
 - 跨分頁的登入／登出走 `BroadcastChannel('ub-auth')`，訊息只有事件名稱。
 - 聊天室的 chat／hub token 例外：它們是短效、限定房間的 token，仍由 JS 帶在 `Authorization: Bearer`

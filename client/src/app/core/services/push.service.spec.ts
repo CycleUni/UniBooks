@@ -28,7 +28,7 @@ describe('PushService', () => {
   async function answerConfig(fcm: unknown) {
     // The config request is made a microtask after the call.
     await Promise.resolve();
-    http.expectOne('/auth/config/').flush({ google_client_id: 'g', fcm });
+    http.expectOne('/auth/config').flush({ google_client_id: 'g', fcm });
   }
 
   it('is unavailable until the backend has a Firebase project', async () => {
@@ -40,7 +40,7 @@ describe('PushService', () => {
   it('is unavailable when the config request fails, rather than throwing', async () => {
     const result = service.availability();
     await Promise.resolve();
-    http.expectOne('/auth/config/').flush('nope', { status: 500, statusText: 'err' });
+    http.expectOne('/auth/config').flush('nope', { status: 500, statusText: 'err' });
     expect(await result).toBe('unavailable');
   });
 
@@ -84,7 +84,7 @@ describe('PushService', () => {
   describe('unregisterThisDevice', () => {
     it('does nothing for a browser that never enabled push', async () => {
       await service.unregisterThisDevice();
-      http.expectNone('/auth/me/push-devices/');
+      http.expectNone('/auth/me/push-devices');
     });
 
     it('forgets the device and tells the backend which token to drop', async () => {
@@ -92,7 +92,7 @@ describe('PushService', () => {
 
       const done = service.unregisterThisDevice();
       await Promise.resolve();
-      const req = http.expectOne('/auth/me/push-devices/');
+      const req = http.expectOne('/auth/me/push-devices');
       expect(req.request.method).toBe('DELETE');
       expect(req.request.body).toEqual({ token: 'tok' });
       expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
@@ -101,7 +101,7 @@ describe('PushService', () => {
       // Then the config lookup for dropping the Firebase token; none set up.
       await Promise.resolve();
       await Promise.resolve();
-      http.expectOne('/auth/config/').flush({ fcm: null });
+      http.expectOne('/auth/config').flush({ fcm: null });
       await done;
     });
   });
@@ -114,18 +114,18 @@ describe('PushService', () => {
     it('leaves a recent registration alone', async () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ userId: '7', token: 't', at: Date.now() }));
       await service.refreshRegistration(7);
-      http.expectNone('/auth/config/');
+      http.expectNone('/auth/config');
     });
 
     it('leaves another account alone on a shared browser', async () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ userId: '7', token: 't', at: 0 }));
       await service.refreshRegistration(8);
-      http.expectNone('/auth/config/');
+      http.expectNone('/auth/config');
     });
 
     it('does nothing when push was never enabled here', async () => {
       await service.refreshRegistration(7);
-      http.expectNone('/auth/config/');
+      http.expectNone('/auth/config');
     });
   });
 });

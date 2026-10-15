@@ -21,28 +21,15 @@ describe('parseAdminError', () => {
     expect(parseAdminError(err, i18n)).toBe(en['admin.errRegionForbidden']);
   });
 
-  it('reads field errors, which do not use that shape', () => {
-    // A serializer's validate() surfaces as a flat {field: message} body. This
-    // used to fall straight through to the generic message, so every region
-    // validation error read "something went wrong" regardless of cause.
-    expect(parseAdminError({ error: { is_active: 'admin.errCannotDisableLastRegion' } }, i18n))
-      .toBe(en['admin.errCannotDisableLastRegion']);
-  });
-
-  it('reads field errors delivered as arrays', () => {
-    // The server wraps some messages in a list and passes others through bare, so
-    // both forms have to be understood — the region serializer produces one
-    // of each.
-    expect(parseAdminError({ error: { default_language: ['admin.errDefaultLanguageNotSupported'] } }, i18n))
-      .toBe(en['admin.errDefaultLanguageNotSupported']);
+  it('reads field errors', () => {
+    const body = { error: { code: 'common.errValidation', fields: { default_language: ['admin.errDefaultLanguageNotSupported'] } } };
+    expect(parseAdminError({ error: body }, i18n)).toBe(en['admin.errDefaultLanguageNotSupported']);
   });
 
   it('falls back rather than showing a raw key', () => {
     // i18n.t() echoes an unknown key, and echoing 'admin.errSomethingNew' at
     // an admin is worse than the generic sentence.
     expect(parseAdminError({ error: { error: { code: 'admin.errNotTranslatedYet' } } }, i18n))
-      .toBe(en['admin.errGeneric']);
-    expect(parseAdminError({ error: { detail: 'Some untranslated prose' } }, i18n))
       .toBe(en['admin.errGeneric']);
     expect(parseAdminError({}, i18n)).toBe(en['admin.errGeneric']);
   });

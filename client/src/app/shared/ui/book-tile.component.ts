@@ -225,7 +225,7 @@ export class UiBookTile {
   // mode: 'sellers'
   /** Number of active listings for this book, not distinct sellers. */
   @Input() sellerCount?: number;
-  /** Map of condition slug -> number of listings, as returned by recent_books/. */
+  /** Map of condition slug -> number of listings, as returned by recent-books. */
   @Input() conditions?: Record<string, number> | null;
   @Input() minPrice: number | null = null;
   /** minPrice is the cheapest of copies priced differently, so it reads "from". */

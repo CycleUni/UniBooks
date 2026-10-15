@@ -66,7 +66,7 @@ describe('AdminShellComponent access gate', () => {
   });
 
   it('shows the admin area straight away when the profile already confirms staff', async () => {
-    user.set({ id: 1, is_staff: true });
+    user.set({ id: 1, role: 'staff' });
     await harness.navigateByUrl('/tw/admin/users');
     await settle();
 
@@ -83,7 +83,7 @@ describe('AdminShellComponent access gate', () => {
     expect(el().querySelector('ui-error-state')).not.toBeNull();
 
     // AuthStore's scheduled retry succeeds.
-    user.set({ id: 1, is_staff: true });
+    user.set({ id: 1, role: 'staff' });
     await settle();
 
     expect(el().querySelector('.admin-page')).not.toBeNull();
@@ -94,7 +94,7 @@ describe('AdminShellComponent access gate', () => {
     await harness.navigateByUrl('/tw/admin/users');
     await settle();
 
-    profileCache.set({ id: 1, is_staff: true });
+    profileCache.set({ id: 1, role: 'staff' });
     await settle();
 
     expect(el().querySelector('.admin-page')).not.toBeNull();
@@ -104,7 +104,7 @@ describe('AdminShellComponent access gate', () => {
     await harness.navigateByUrl('/tw/admin/users');
     await settle();
 
-    user.set({ id: 2, is_staff: false });
+    user.set({ id: 2, role: 'user' });
     await settle();
 
     expect(router.url).toBe('/tw');
@@ -115,7 +115,7 @@ describe('AdminShellComponent access gate', () => {
     await settle();
     expect(router.url).toBe('/tw/admin/regions');
 
-    user.set({ id: 3, is_staff: true, is_superuser: false });
+    user.set({ id: 3, role: 'staff' });
     await settle();
 
     expect(router.url).toBe('/tw');
@@ -125,7 +125,7 @@ describe('AdminShellComponent access gate', () => {
     await harness.navigateByUrl('/tw/admin/regions');
     await settle();
 
-    user.set({ id: 4, is_staff: true, is_superuser: true });
+    user.set({ id: 4, role: 'admin' });
     await settle();
 
     expect(router.url).toBe('/tw/admin/regions');
@@ -144,8 +144,8 @@ describe('AdminShellComponent access gate', () => {
     expect(getMyProfile).toHaveBeenCalled();
     expect(el().querySelector('.admin-access-checking')).not.toBeNull();
 
-    profileCache.set({ id: 1, is_staff: true });
-    response.next({ id: 1, is_staff: true });
+    profileCache.set({ id: 1, role: 'staff' });
+    response.next({ id: 1, role: 'staff' });
     response.complete();
     await settle();
 

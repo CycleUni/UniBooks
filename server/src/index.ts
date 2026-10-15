@@ -5,6 +5,7 @@ import type { AppEnv, Env } from './env';
 import { rememberOrigin } from './lib/origin';
 import { sameOriginGuard } from './lib/session';
 import { errorHandler } from './middleware/error';
+import { notFound } from './lib/http';
 import { accountRoutes } from './routes/accounts';
 import { coreRoutes } from './routes/core';
 import { bookRoutes } from './routes/books';
@@ -39,12 +40,8 @@ export const UserHub = Sentry.instrumentDurableObjectWithSentry(sentryOptions, U
  * platform before this runs; only the paths in wrangler.jsonc
  * `run_worker_first` reach it: /api/* and /<region>/book.
  *
- * REST resources live under /api/v1 with trailing-slash paths; chat under
+ * REST resources live under /api/v1 (no trailing slashes); chat under
  * /api/chat.
- *
- * Each module router is mounted with a trailing slash: Hono only matches a
- * sub-router's '/' route against the mount path exactly as written, and the
- * URLs the app calls end in '/' (e.g. GET /api/v1/listings/).
  */
 export const app = new Hono<AppEnv>();
 
@@ -55,17 +52,17 @@ app.use('/api/*', rememberOrigin());
 app.use('/api/*', sameOriginGuard());
 app.onError(errorHandler);
 
-app.route('/api/v1/auth/', accountRoutes);
-app.route('/api/v1/core/', coreRoutes);
-app.route('/api/v1/books/', bookRoutes);
-app.route('/api/v1/listings/', listingRoutes);
-app.route('/api/v1/search/', searchRoutes);
-app.route('/api/v1/subscriptions/', subscriptionRoutes);
-app.route('/api/v1/messaging/', messagingRoutes);
-app.route('/api/v1/moderation/', moderationRoutes);
-app.route('/api/v1/orders/', orderRoutes);
-app.route('/api/v1/admin/', adminRoutes);
-app.route('/api/v1/promotions/', promotionRoutes);
+app.route('/api/v1/auth', accountRoutes);
+app.route('/api/v1/core', coreRoutes);
+app.route('/api/v1/books', bookRoutes);
+app.route('/api/v1/listings', listingRoutes);
+app.route('/api/v1/search', searchRoutes);
+app.route('/api/v1/subscriptions', subscriptionRoutes);
+app.route('/api/v1/messaging', messagingRoutes);
+app.route('/api/v1/moderation', moderationRoutes);
+app.route('/api/v1/orders', orderRoutes);
+app.route('/api/v1/admin', adminRoutes);
+app.route('/api/v1/promotions', promotionRoutes);
 app.route('/api/v1', sitemapRoutes); // /api/v1/sitemap.xml, /api/v1/sitemap/<kind>-<region>-<page>.xml
 
 // Chat: hub + room WebSockets and room REST (see routes/chat.ts).
@@ -91,7 +88,7 @@ app.get('/api/media/*', async (c) => {
 app.notFound((c) => {
   const path = c.req.path;
   if (path.startsWith('/api/') || path === '/api') {
-    return c.json({ detail: 'Not found.' }, 404);
+    return notFound(c);
   }
   // A run_worker_first path no route claimed (e.g. /tw/book without a match):
   // hand it back to the static app.

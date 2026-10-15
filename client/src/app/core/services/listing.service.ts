@@ -12,7 +12,7 @@ import { importOrReload } from '../chunk-recovery';
 })
 export class ListingService {
   private http = inject(HttpClient);
-  private apiUrl = '/listings/';
+  private apiUrl = '/listings';
 
   /** Public listing endpoints don't need auth — an expired token would
    * cause SimpleJWT to reject the request even though the view is AllowAny. */
@@ -50,7 +50,7 @@ export class ListingService {
       if (sellerId) {
         params = params.set('seller_id', sellerId);
       }
-      const request = this.http.get<any>('/listings/', { params, context: this.publicCtx }).pipe(
+      const request = this.http.get<any>('/listings', { params, context: this.publicCtx }).pipe(
         catchError(err => {
           // Evict the failed entry so the next subscriber starts a fresh
           // request instead of replaying the same error to every caller.
@@ -72,7 +72,7 @@ export class ListingService {
     if (school) {
       params = params.set('school', school);
     }
-    return this.http.get<any>(`${this.apiUrl}recent_books/`, { params, context: this.publicCtx });
+    return this.http.get<any>(`${this.apiUrl}/recent-books`, { params, context: this.publicCtx });
   }
 
   clearCache(school?: string) {
@@ -86,7 +86,7 @@ export class ListingService {
   }
 
   getListing(id: string | number): Observable<any> {
-    return this.http.get<any>(`${this.apiUrl}${id}/`, { context: this.publicCtx });
+    return this.http.get<any>(`${this.apiUrl}/${id}`, { context: this.publicCtx });
   }
 
   createListing(listingData: any): Observable<any> {
@@ -101,23 +101,23 @@ export class ListingService {
       useWebWorker: true,
       fileType: 'image/webp',
     }))).pipe(
-      switchMap(compressed => uploadImage(this.http, `${this.apiUrl}uploads/`, compressed))
+      switchMap(compressed => uploadImage(this.http, `${this.apiUrl}/uploads`, compressed))
     );
   }
 
   updateListing(id: string | number, listingData: any): Observable<any> {
-    return this.http.patch<any>(`${this.apiUrl}${id}/`, listingData);
+    return this.http.patch<any>(`${this.apiUrl}/${id}`, listingData);
   }
 
   deleteListing(id: string | number): Observable<any> {
-    return this.http.delete<any>(`${this.apiUrl}${id}/`);
+    return this.http.delete<any>(`${this.apiUrl}/${id}`);
   }
 
   reportListing(listingId: string | number, reason: 'fake' | 'scam' | 'other', detail?: string): Observable<any> {
-    return this.http.post<any>('/moderation/', { listing: listingId, reason, detail: detail || '' });
+    return this.http.post<any>('/moderation', { listing: listingId, reason, detail: detail || '' });
   }
 
   deletePhoto(url: string): Observable<any> {
-    return this.http.delete<any>(`${this.apiUrl}uploads/`, { params: { url } });
+    return this.http.delete<any>(`${this.apiUrl}/uploads`, { params: { url } });
   }
 }

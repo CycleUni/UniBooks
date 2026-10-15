@@ -22,8 +22,8 @@ import {
   type BookRecord,
 } from '../services/catalog/lookups';
 import { categoryIdsMatchingText, regionCategories, schoolFilterId, schoolFilterScope } from '../services/listings/places';
-import { pageFor } from '../services/listings/lifecycle';
 import { CONDITIONS } from '../services/listings/validate';
+import { pagination } from '../lib/http';
 
 export const searchRoutes = new Hono<AppEnv>();
 
@@ -102,7 +102,7 @@ async function categoryIdsForSlug(env: Env, regionCode: string, slug: string): P
   return ids.length ? ids : [-1];
 }
 
-searchRoutes.get('/books/', optionalAuthMiddleware(), async (c) => {
+searchRoutes.get('/books', optionalAuthMiddleware(), async (c) => {
   await checkRate(c, 'search', SEARCH_RATE);
   const env = c.env;
   // Bounded: every distinct query is a DB scan plus an external lookup.
@@ -472,7 +472,7 @@ searchRoutes.get('/books/', optionalAuthMiddleware(), async (c) => {
   const localCount = filtered.filter((i) => i.localActiveListings > 0).length;
   const cityCount = filtered.filter((i) => i.cityActiveListings > 0).length;
 
-  const p = pageFor(c.req.url, filtered.length);
+  const p = pagination(c.req.url);
   const page = p.wrap(filtered.slice(p.offset, p.offset + p.limit), filtered.length);
   return c.json({
     ...page,
@@ -486,7 +486,7 @@ searchRoutes.get('/books/', optionalAuthMiddleware(), async (c) => {
   });
 });
 
-searchRoutes.get('/courses/', async (c) => {
+searchRoutes.get('/courses', async (c) => {
   await checkRate(c, 'search', SEARCH_RATE);
   const region = await requireRegion(c);
   const category = (c.req.query('category') ?? '').slice(0, 64);

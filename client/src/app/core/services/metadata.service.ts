@@ -61,7 +61,7 @@ export class MetadataService {
     if (schoolId) {
       params = params.set('school', String(schoolId));
     }
-    const request$ = this.http.get<any>('/core/metadata/', {
+    const request$ = this.http.get<any>('/core/metadata', {
       context: new HttpContext().set(SKIP_AUTH, true),
       params
     }).pipe(
@@ -106,21 +106,21 @@ export class MetadataService {
     if (schoolId) {
       params = params.set('school', String(schoolId));
     }
-    // Endpoint renamed from '/ads/active/' to '/promotions/active/' to evade adblockers
-    return this.http.get<any>('/promotions/active/', {
+    // Endpoint renamed from '/ads/active/' to '/promotions/active' to evade adblockers
+    return this.http.get<any>('/promotions/active', {
       context: new HttpContext().set(SKIP_AUTH, true),
       params
     });
   }
 
   recordAdView(id: number): Observable<any> {
-    return this.http.post<any>(`/promotions/${id}/view/`, {}, {
+    return this.http.post<any>(`/promotions/${id}/view`, {}, {
       context: new HttpContext().set(SKIP_AUTH, true)
     });
   }
 
   recordAdClick(id: number): Observable<any> {
-    return this.http.post<any>(`/promotions/${id}/click/`, {}, {
+    return this.http.post<any>(`/promotions/${id}/click`, {}, {
       context: new HttpContext().set(SKIP_AUTH, true)
     });
   }

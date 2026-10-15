@@ -20,10 +20,10 @@ const schemaReady = cols.results.some((c) => c.name === 'authors');
 
 const app = new Hono<AppEnv>();
 app.onError(errorHandler);
-app.route('/api/v1/books/', bookRoutes);
-app.route('/api/v1/listings/', listingRoutes);
-app.route('/api/v1/search/', searchRoutes);
-app.route('/api/v1/subscriptions/', subscriptionRoutes);
+app.route('/api/v1/books', bookRoutes);
+app.route('/api/v1/listings', listingRoutes);
+app.route('/api/v1/search', searchRoutes);
+app.route('/api/v1/subscriptions', subscriptionRoutes);
 app.route('/api/v1', sitemapRoutes);
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -107,7 +107,7 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('book detail: listings, price stats over every copy, no private note', async () => {
-    const res = await call(`/api/v1/books/?id=${BOOK}`);
+    const res = await call(`/api/v1/books?id=${BOOK}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, any>;
     expect(body.publisher).toBe('Prentice Hall');
@@ -115,49 +115,49 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
     expect(body.price_stats).toEqual({ count: 2, min: 100, max: 300 });
     expect(body.listings.results.every((l: Record<string, unknown>) => !('private_note' in l))).toBe(true);
     expect(body.local_listings_count).toBeNull();
-    const local = (await (await call(`/api/v1/books/?id=${BOOK}&school=NTU`)).json()) as Record<string, any>;
+    const local = (await (await call(`/api/v1/books?id=${BOOK}&school=NTU`)).json()) as Record<string, any>;
     expect(local.local_listings_count).toBe(1);
   });
 
   it('book detail 404s cleanly', async () => {
-    const res = await call('/api/v1/books/?id=not-a-valid-id');
+    const res = await call('/api/v1/books?id=not-a-valid-id');
     expect(res.status).toBe(404);
     expect(((await res.json()) as any).error.code).toBe('not_found');
-    expect((await call('/api/v1/books/')).status).toBe(400);
+    expect((await call('/api/v1/books')).status).toBe(400);
   });
 
   it('manual create: verified only, unvetted source stays manual, bad cover dropped', async () => {
     const payload = JSON.stringify({ isbn13: '9781285740621', title: 'X', source: 'fake', cover_url: 'javascript:alert(1)' });
-    expect((await call('/api/v1/books/manual/', { method: 'POST', body: payload, auth: buyerAuth })).status).toBe(403);
-    const res = await call('/api/v1/books/manual/', { method: 'POST', body: payload, auth: sellerAuth });
+    expect((await call('/api/v1/books/manual', { method: 'POST', body: payload, auth: buyerAuth })).status).toBe(403);
+    const res = await call('/api/v1/books/manual', { method: 'POST', body: payload, auth: sellerAuth });
     expect(res.status).toBe(201);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body).toMatchObject({ source: 'manual', cover_url: '', isbn13: '9781285740621' });
     expect(body).not.toHaveProperty('reviewed_at');
     // Same ISBN again returns the existing book.
-    expect((await call('/api/v1/books/manual/', { method: 'POST', body: payload, auth: sellerAuth })).status).toBe(200);
-    expect((await call('/api/v1/books/manual/', { method: 'POST', body: '{}', auth: sellerAuth })).status).toBe(400);
+    expect((await call('/api/v1/books/manual', { method: 'POST', body: payload, auth: sellerAuth })).status).toBe(200);
+    expect((await call('/api/v1/books/manual', { method: 'POST', body: '{}', auth: sellerAuth })).status).toBe(400);
   });
 
   it('subscriptions: create, idempotent, list, delete only own', async () => {
-    let res = await call('/api/v1/subscriptions/', { method: 'POST', body: JSON.stringify({ book_id: BOOK }), auth: buyerAuth });
+    let res = await call('/api/v1/subscriptions', { method: 'POST', body: JSON.stringify({ book_id: BOOK }), auth: buyerAuth });
     expect(res.status).toBe(201);
     const sub = (await res.json()) as Record<string, any>;
     expect(sub).toMatchObject({ book: BOOK, bookTitle: 'The C Programming Language', isbn: '9780131103627', newListingsCount: 0 });
-    res = await call('/api/v1/subscriptions/', { method: 'POST', body: JSON.stringify({ book_id: BOOK }), auth: buyerAuth });
+    res = await call('/api/v1/subscriptions', { method: 'POST', body: JSON.stringify({ book_id: BOOK }), auth: buyerAuth });
     expect(res.status).toBe(200);
-    const list = (await (await call('/api/v1/subscriptions/', { auth: buyerAuth })).json()) as unknown[];
+    const list = (await (await call('/api/v1/subscriptions', { auth: buyerAuth })).json()) as unknown[];
     expect(list).toHaveLength(1);
-    const detail = (await (await call(`/api/v1/books/?id=${BOOK}`, { auth: buyerAuth })).json()) as Record<string, any>;
+    const detail = (await (await call(`/api/v1/books?id=${BOOK}`, { auth: buyerAuth })).json()) as Record<string, any>;
     expect(detail).toMatchObject({ is_subscribed: true, subscription_id: sub.id, waiting_count: 1 });
-    expect((await call(`/api/v1/subscriptions/${sub.id}/`, { method: 'DELETE', auth: sellerAuth })).status).toBe(404);
-    expect((await call(`/api/v1/subscriptions/${sub.id}/`, { method: 'DELETE', auth: buyerAuth })).status).toBe(204);
-    expect((await call('/api/v1/subscriptions/', { method: 'POST', body: '{}', auth: buyerAuth })).status).toBe(400);
+    expect((await call(`/api/v1/subscriptions/${sub.id}`, { method: 'DELETE', auth: sellerAuth })).status).toBe(404);
+    expect((await call(`/api/v1/subscriptions/${sub.id}`, { method: 'DELETE', auth: buyerAuth })).status).toBe(204);
+    expect((await call('/api/v1/subscriptions', { method: 'POST', body: '{}', auth: buyerAuth })).status).toBe(400);
   });
 
   it('search: no filters is [], browse by filters and category, facets', async () => {
-    expect(await (await call('/api/v1/search/books/')).json()).toEqual([]);
-    let body = (await (await call('/api/v1/search/books/?condition=noted')).json()) as Record<string, any>;
+    expect(await (await call('/api/v1/search/books')).json()).toEqual([]);
+    let body = (await (await call('/api/v1/search/books?condition=noted')).json()) as Record<string, any>;
     expect(body.count).toBe(1);
     expect(body.results[0]).toMatchObject({ id: BOOK, activeListings: 2, minPrice: 100 });
     expect(body.facets.condition).toEqual([
@@ -168,11 +168,11 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
     ]);
     expect(body.facets.category).toEqual([{ value: 'eng', count: 1 }]);
     expect(body.facets.course).toEqual([{ value: 'Calculus', count: 1 }]);
-    body = (await (await call('/api/v1/search/books/?category=eng&school=NTU')).json()) as Record<string, any>;
+    body = (await (await call('/api/v1/search/books?category=eng&school=NTU')).json()) as Record<string, any>;
     expect(body).toMatchObject({ count: 1, scope: 'school', local_count: 1 });
-    body = (await (await call('/api/v1/search/books/?price_min=150&in_stock=1')).json()) as Record<string, any>;
+    body = (await (await call('/api/v1/search/books?price_min=150&in_stock=1')).json()) as Record<string, any>;
     expect(body.count).toBe(0);
-    body = (await (await call('/api/v1/search/books/?condition=none')).json()) as Record<string, any>;
+    body = (await (await call('/api/v1/search/books?condition=none')).json()) as Record<string, any>;
     expect(body.count).toBe(0);
   });
 
@@ -191,7 +191,7 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
         ],
       }),
     );
-    const res = await call('/api/v1/search/books/?q=calculus');
+    const res = await call('/api/v1/search/books?q=calculus');
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, any>;
     const byIsbn = Object.fromEntries(body.results.map((r: any) => [r.isbn, r]));
@@ -201,43 +201,43 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
   });
 
   it('courses', async () => {
-    const res = await call('/api/v1/search/courses/');
+    const res = await call('/api/v1/search/courses');
     expect(await res.json()).toEqual([{ value: 'Calculus', count: 1 }]);
   });
 
   it('listings feed is public and strips the private note; the seller sees it on detail', async () => {
-    const feed = (await (await call('/api/v1/listings/')).json()) as Record<string, any>;
+    const feed = (await (await call('/api/v1/listings')).json()) as Record<string, any>;
     expect(feed.count).toBe(2);
     expect(feed.results[0].id).toBe(L2); // newest first
     expect(feed.results.every((l: any) => !('private_note' in l))).toBe(true);
-    const own = (await (await call(`/api/v1/listings/${L1}/`, { auth: sellerAuth })).json()) as Record<string, any>;
+    const own = (await (await call(`/api/v1/listings/${L1}`, { auth: sellerAuth })).json()) as Record<string, any>;
     expect(own.private_note).toBe('secret');
-    const other = (await (await call(`/api/v1/listings/${L1}/`, { auth: buyerAuth })).json()) as Record<string, any>;
+    const other = (await (await call(`/api/v1/listings/${L1}`, { auth: buyerAuth })).json()) as Record<string, any>;
     expect(other).not.toHaveProperty('private_note');
-    const recent = (await (await call('/api/v1/listings/recent_books/')).json()) as Record<string, any>;
+    const recent = (await (await call('/api/v1/listings/recent-books')).json()) as Record<string, any>;
     expect(recent.results[0]).toMatchObject({ id: BOOK, min_price: 100, max_price: 300 });
   });
 
   it('listing create: verified only, foreign photo keys refused', async () => {
     const base = { book: BOOK2, price: 50, condition: 'new' };
-    expect((await call('/api/v1/listings/', { method: 'POST', body: JSON.stringify(base), auth: buyerAuth })).status).toBe(403);
+    expect((await call('/api/v1/listings', { method: 'POST', body: JSON.stringify(base), auth: buyerAuth })).status).toBe(403);
     const r2Base = (env.R2_PUBLIC_URL || 'http://x/media').replace(/\/+$/, '');
-    let res = await call('/api/v1/listings/', {
+    let res = await call('/api/v1/listings', {
       method: 'POST',
       body: JSON.stringify({ ...base, photos: [`${r2Base}/tmp/listings/${BUYER}/${'c'.repeat(32)}.jpg`] }),
       auth: sellerAuth,
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as any).error.fields.photos).toEqual(['listing.errPhotoNotOwned']);
-    res = await call('/api/v1/listings/', { method: 'POST', body: JSON.stringify(base), auth: sellerAuth });
+    res = await call('/api/v1/listings', { method: 'POST', body: JSON.stringify(base), auth: sellerAuth });
     expect(res.status).toBe(201);
     const created = (await res.json()) as Record<string, any>;
     expect(created).toMatchObject({ seller: SELLER, school: 1, currency: 'TWD', status: 'active' });
   });
 
   it('listing patch/delete: only the seller; delete keeps order history', async () => {
-    expect((await call(`/api/v1/listings/${L2}/`, { method: 'PATCH', body: '{"price":120}', auth: buyerAuth })).status).toBe(404);
-    const res = await call(`/api/v1/listings/${L2}/`, { method: 'PATCH', body: '{"price":120}', auth: sellerAuth });
+    expect((await call(`/api/v1/listings/${L2}`, { method: 'PATCH', body: '{"price":120}', auth: buyerAuth })).status).toBe(404);
+    const res = await call(`/api/v1/listings/${L2}`, { method: 'PATCH', body: '{"price":120}', auth: sellerAuth });
     expect(res.status).toBe(200);
     expect(((await res.json()) as any).price).toBe(120);
 
@@ -248,8 +248,8 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
     )
       .bind(order, L2, BUYER, SELLER, NOW, NOW)
       .run();
-    expect((await call(`/api/v1/listings/${L2}/`, { method: 'DELETE', auth: buyerAuth })).status).toBe(404);
-    expect((await call(`/api/v1/listings/${L2}/`, { method: 'DELETE', auth: sellerAuth })).status).toBe(204);
+    expect((await call(`/api/v1/listings/${L2}`, { method: 'DELETE', auth: buyerAuth })).status).toBe(404);
+    expect((await call(`/api/v1/listings/${L2}`, { method: 'DELETE', auth: sellerAuth })).status).toBe(204);
     const row = await env.DB.prepare(`SELECT listing_id, listing_ref, book_title FROM orders WHERE id = ?`).bind(order).first();
     expect(row).toEqual({ listing_id: null, listing_ref: L2, book_title: 'The C Programming Language' });
   });

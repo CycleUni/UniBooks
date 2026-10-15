@@ -102,6 +102,11 @@
           <button type="button" class="link-btn" (click)="onCancelEmailChange()">{{ 'acct.cancelEmailChange' | t }}</button>
         </div>
       </div>
+      <div *ngIf="emailChanged && !isGoogleLinked" class="mb-4">
+        <label>{{ 'acct.currentPassword' | t }}</label>
+        <ui-input type="password" autocomplete="current-password" [(ngModel)]="emailChangePassword"></ui-input>
+        <div class="text-muted" style="font-size: var(--text-xs); margin-top: 4px;">{{ 'acct.emailChangePasswordDesc' | t }}</div>
+      </div>
       <div  style="display: flex; gap: 16px;">
         <div  class="flex-1">
           <label>{{ 'auth.lastNameLabel' | t }}</label>
@@ -144,8 +149,12 @@
       </label>
     </div>
 
-    <div class="form-group"  style="max-width: 400px; margin-top: 32px; border-top: 1px solid var(--line); padding-top: 32px;">
-      <div  class="mb-4" *ngIf="hasPassword">
+    <div class="form-group" *ngIf="!hasPassword" style="max-width: 400px; margin-top: 32px; border-top: 1px solid var(--line); padding-top: 32px;">
+      <p class="text-muted">{{ 'acct.passwordlessDesc' | t }}</p>
+    </div>
+
+    <div class="form-group" *ngIf="hasPassword" style="max-width: 400px; margin-top: 32px; border-top: 1px solid var(--line); padding-top: 32px;">
+      <div  class="mb-4">
         <label>{{ 'acct.currentPassword' | t }}</label>
         <ui-input type="password" [(ngModel)]="oldPassword" ></ui-input>
       </div>
@@ -159,7 +168,7 @@
       </div>
       
       <ui-button  class="mt-2" (onClick)="onChangePassword()" [disabled]="isLoading">
-        {{ (hasPassword ? 'acct.changePasswordBtn' : 'acct.setPasswordBtn') | t }}
+        {{ 'acct.changePasswordBtn' | t }}
       </ui-button>
       <div *ngIf="pwdMessage" class="inline-msg" [class.error]="pwdIsError">
         {{ pwdMessage }}

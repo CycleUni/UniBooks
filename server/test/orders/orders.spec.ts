@@ -80,7 +80,7 @@ function api(path: string, token: string, init: RequestInit = {}) {
   headers.set('X-Region', 'TW');
   if (init.body) headers.set('Content-Type', 'application/json');
   const worker = (exports as unknown as { default: { fetch(r: Request): Promise<Response> } }).default;
-  return worker.fetch(new Request(`http://x/api/v1/orders/${path}`, { ...init, headers }));
+  return worker.fetch(new Request(`http://x/api/v1/orders${path ? `/${path}` : ''}`, { ...init, headers }));
 }
 const post = (path: string, token: string, body: unknown) => api(path, token, { method: 'POST', body: JSON.stringify(body) });
 const patch = (path: string, token: string, body: unknown) => api(path, token, { method: 'PATCH', body: JSON.stringify(body) });
@@ -115,7 +115,7 @@ describe.skipIf(!schemaReady)('orders API', () => {
 
     let res = await post('', buyer.token, { listing: l.id });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ listing: ['checkout.errNoChat'] });
+    expect(await res.json()).toEqual({ error: { code: 'common.errValidation', fields: { listing: ['checkout.errNoChat'] } } });
 
     await chat(l.id, buyer.id, seller.id);
     res = await post('', buyer.token, { listing: l.id, total_amount: 1, status: 'completed' });
@@ -131,27 +131,27 @@ describe.skipIf(!schemaReady)('orders API', () => {
     });
 
     // Only the seller accepts.
-    res = await patch(`${order.id}/`, buyer.token, { status: 'accepted' });
+    res = await patch(`${order.id}`, buyer.token, { status: 'accepted' });
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: { code: 'order.errSellerOnly' } });
 
-    res = await patch(`${order.id}/`, seller.token, { status: 'accepted', meetup_time: '2030-01-02T18:30', meetup_location: 'Library' });
+    res = await patch(`${order.id}`, seller.token, { status: 'accepted', meetup_time: '2030-01-02T18:30', meetup_location: 'Library' });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'accepted', meetup_time: '2030-01-02T10:30:00.000Z', meetup_location: 'Library' });
     expect(await listingStatus(l.id)).toBe('reserved');
 
     // Illegal edge.
-    res = await patch(`${order.id}/`, seller.token, { status: 'pending' });
+    res = await patch(`${order.id}`, seller.token, { status: 'pending' });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ status: ['order.errInvalidTransition'] });
+    expect(await res.json()).toEqual({ error: { code: 'common.errValidation', fields: { status: ['order.errInvalidTransition'] } } });
 
     // Buyer cannot edit the meetup.
-    res = await patch(`${order.id}/`, buyer.token, { meetup_location: 'Elsewhere' });
+    res = await patch(`${order.id}`, buyer.token, { meetup_location: 'Elsewhere' });
     expect(res.status).toBe(403);
 
-    res = await patch(`${order.id}/`, seller.token, { status: 'handed_over' });
+    res = await patch(`${order.id}`, seller.token, { status: 'handed_over' });
     expect(res.status).toBe(200);
-    res = await patch(`${order.id}/`, buyer.token, { status: 'completed' });
+    res = await patch(`${order.id}`, buyer.token, { status: 'completed' });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { completed_at: string | null }).completed_at).toBeTruthy();
     expect(await listingStatus(l.id)).toBe('sold');
@@ -159,27 +159,27 @@ describe.skipIf(!schemaReady)('orders API', () => {
     // Reviews: one per party; no-show only on a qualifying cancel.
     // A stranger (even an unverified one) and an unknown id look the same: 404.
     const stranger = await makeUser('stranger', false);
-    res = await post('reviews/', stranger.token, { order: order.id, rating: 5 });
+    res = await post('reviews', stranger.token, { order: order.id, rating: 5 });
     expect(res.status).toBe(404);
-    res = await post('reviews/', stranger.token, { order: crypto.randomUUID(), rating: 5 });
+    res = await post('reviews', stranger.token, { order: crypto.randomUUID(), rating: 5 });
     expect(res.status).toBe(404);
-    res = await post('reviews/', buyer.token, { order: order.id, rating: 9 });
+    res = await post('reviews', buyer.token, { order: order.id, rating: 9 });
     expect(res.status).toBe(400);
-    res = await post('reviews/', buyer.token, { order: order.id, is_no_show: true });
+    res = await post('reviews', buyer.token, { order: order.id, is_no_show: true });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ order: 'order.errNoShowNeedsCancelled' });
-    res = await post('reviews/', buyer.token, { order: order.id, rating: 5, comment: 'great' });
+    res = await post('reviews', buyer.token, { order: order.id, rating: 5, comment: 'great' });
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({ rating: 5, reviewer: buyer.id, reviewee: seller.id, is_no_show: false });
-    res = await post('reviews/', buyer.token, { order: order.id, rating: 4 });
+    res = await post('reviews', buyer.token, { order: order.id, rating: 4 });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ order: 'order.errAlreadyReviewed' });
 
-    res = await api(`${order.id}/`, buyer.token);
+    res = await api(`${order.id}`, buyer.token);
     expect(((await res.json()) as { has_reviewed: boolean }).has_reviewed).toBe(true);
 
-    res = await api(`${order.id}/`, buyer.token, { method: 'DELETE' });
-    expect(res.status).toBe(405);
+    res = await api(`${order.id}`, buyer.token, { method: 'DELETE' });
+    expect(res.status).toBe(404);
   });
 
   it('refuses a second accept on a reserved listing', async () => {
@@ -192,8 +192,8 @@ describe.skipIf(!schemaReady)('orders API', () => {
     const o1 = (await (await post('', b1.token, { listing: l.id })).json()) as { id: string };
     const o2 = (await (await post('', b2.token, { listing: l.id })).json()) as { id: string };
     const [r1, r2] = await Promise.all([
-      patch(`${o1.id}/`, seller.token, { status: 'accepted' }),
-      patch(`${o2.id}/`, seller.token, { status: 'accepted' }),
+      patch(`${o1.id}`, seller.token, { status: 'accepted' }),
+      patch(`${o2.id}`, seller.token, { status: 'accepted' }),
     ]);
     expect([r1.status, r2.status].sort()).toEqual([200, 400]);
     expect(await listingStatus(l.id)).toBe('reserved');
@@ -205,48 +205,48 @@ describe.skipIf(!schemaReady)('orders API', () => {
     const l = await makeListing(seller.id);
     await chat(l.id, buyer.id, seller.id);
     const o = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
-    await patch(`${o.id}/`, seller.token, { status: 'accepted', meetup_time: '2099-01-01T10:00' });
+    await patch(`${o.id}`, seller.token, { status: 'accepted', meetup_time: '2099-01-01T10:00' });
     // Backing out early (even rewriting the time in the same request) does not qualify.
-    let res = await patch(`${o.id}/`, buyer.token, { status: 'cancelled', meetup_time: '2000-01-01T10:00' });
+    let res = await patch(`${o.id}`, buyer.token, { status: 'cancelled', meetup_time: '2000-01-01T10:00' });
     expect(res.status).toBe(403); // the meetup is the seller's, even riding along with a move
-    res = await patch(`${o.id}/`, buyer.token, { status: 'cancelled' });
+    res = await patch(`${o.id}`, buyer.token, { status: 'cancelled' });
     expect(res.status).toBe(200);
     expect(await listingStatus(l.id)).toBe('active');
-    res = await post('reviews/', buyer.token, { order: o.id, is_no_show: true });
+    res = await post('reviews', buyer.token, { order: o.id, is_no_show: true });
     expect(res.status).toBe(400);
 
     // A meetup arranged in the past is refused outright.
     const l2 = await makeListing(seller.id);
     await chat(l2.id, buyer.id, seller.id);
     const o2 = (await (await post('', buyer.token, { listing: l2.id })).json()) as { id: string };
-    res = await patch(`${o2.id}/`, seller.token, { status: 'accepted', meetup_time: '2000-01-01T10:00' });
+    res = await patch(`${o2.id}`, seller.token, { status: 'accepted', meetup_time: '2000-01-01T10:00' });
     expect(res.status).toBe(400);
-    await patch(`${o2.id}/`, seller.token, { status: 'accepted', meetup_time: '2099-01-01T10:00' });
+    await patch(`${o2.id}`, seller.token, { status: 'accepted', meetup_time: '2099-01-01T10:00' });
 
     // Moved to "just after now" right before cancelling: not real notice, no report.
     const soon = new Date(Date.now() + 60_000).toISOString();
-    res = await patch(`${o2.id}/`, seller.token, { meetup_time: soon });
+    res = await patch(`${o2.id}`, seller.token, { meetup_time: soon });
     expect(res.status).toBe(200);
     await db
       .update(orders)
       .set({ meetupTime: new Date(Date.now() - 1000).toISOString() })
       .where(eq(orders.id, o2.id));
-    await patch(`${o2.id}/`, seller.token, { status: 'cancelled' });
-    res = await post('reviews/', seller.token, { order: o2.id, is_no_show: true });
+    await patch(`${o2.id}`, seller.token, { status: 'cancelled' });
+    res = await post('reviews', seller.token, { order: o2.id, is_no_show: true });
     expect(res.status).toBe(400);
 
     // Arranged days ahead, the time came and went, then cancelled: reportable.
     const l3 = await makeListing(seller.id);
     await chat(l3.id, buyer.id, seller.id);
     const o3 = (await (await post('', buyer.token, { listing: l3.id })).json()) as { id: string };
-    await patch(`${o3.id}/`, seller.token, { status: 'accepted', meetup_time: '2099-01-01T10:00' });
+    await patch(`${o3.id}`, seller.token, { status: 'accepted', meetup_time: '2099-01-01T10:00' });
     const day = 86_400_000;
     await db
       .update(orders)
       .set({ meetupSetAt: new Date(Date.now() - 3 * day).toISOString(), meetupTime: new Date(Date.now() - day).toISOString() })
       .where(eq(orders.id, o3.id));
-    await patch(`${o3.id}/`, seller.token, { status: 'cancelled' });
-    res = await post('reviews/', seller.token, { order: o3.id, is_no_show: true, rating: 5 });
+    await patch(`${o3.id}`, seller.token, { status: 'cancelled' });
+    res = await post('reviews', seller.token, { order: o3.id, is_no_show: true, rating: 5 });
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({ is_no_show: true, rating: null, reviewee: buyer.id });
   });
@@ -259,7 +259,9 @@ describe.skipIf(!schemaReady)('orders API', () => {
     expect((await post('', buyer.token, { listing: l.id })).status).toBe(201);
     const again = await post('', buyer.token, { listing: l.id });
     expect(again.status).toBe(400);
-    expect(await again.json()).toEqual({ listing: ['checkout.errListingUnavailable'] });
+    expect(await again.json()).toEqual({
+      error: { code: 'common.errValidation', fields: { listing: ['checkout.errListingUnavailable'] } },
+    });
     const rows = await db.select().from(orders).where(eq(orders.listingId, l.id));
     expect(rows).toHaveLength(1);
   });
@@ -280,8 +282,8 @@ describe.skipIf(!schemaReady)('orders API', () => {
     const l = await makeListing(seller.id);
     await chat(l.id, buyer.id, seller.id);
     const o = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
-    expect((await api(`${o.id}/`, other.token)).status).toBe(404);
-    expect((await patch(`${o.id}/`, other.token, { status: 'cancelled' })).status).toBe(404);
+    expect((await api(`${o.id}`, other.token)).status).toBe(404);
+    expect((await patch(`${o.id}`, other.token, { status: 'cancelled' })).status).toBe(404);
     const list = (await (await api('', other.token)).json()) as { count: number };
     expect(list.count).toBe(0);
   });
@@ -293,7 +295,7 @@ describe.skipIf(!schemaReady)('orders API', () => {
     const l = await makeListing(seller.id);
     await chat(l.id, buyer.id, seller.id);
     const o = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
-    await patch(`${o.id}/`, seller.token, { status: 'accepted' });
+    await patch(`${o.id}`, seller.token, { status: 'accepted' });
     await forceCancelOrder(env, { orderId: o.id, actorId: admin.id, reason: 'fraud' });
     const [row] = await db.select().from(orders).where(eq(orders.id, o.id));
     expect(row.status).toBe('cancelled');
@@ -388,7 +390,7 @@ describe.skipIf(!schemaReady)('taking a listing down settles its open orders', (
     const l = await makeListing(seller.id);
     await chat(l.id, buyer.id, seller.id);
     const created = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
-    expect((await patch(`${created.id}/`, seller.token, { status: 'accepted' })).status).toBe(200);
+    expect((await patch(`${created.id}`, seller.token, { status: 'accepted' })).status).toBe(200);
     expect(await listingStatus(l.id)).toBe('reserved');
     return { seller, buyer, listing: l, orderId: created.id };
   }
@@ -403,7 +405,7 @@ describe.skipIf(!schemaReady)('taking a listing down settles its open orders', (
     const { listing, orderId } = await acceptedOrder();
     const staff = await admin();
     const set = (body: unknown) =>
-      raw(`/api/v1/admin/listings/${listing.id}/`, staff.token, { method: 'PATCH', body: JSON.stringify(body) });
+      raw(`/api/v1/admin/listings/${listing.id}`, staff.token, { method: 'PATCH', body: JSON.stringify(body) });
 
     expect((await set({ status: 'sold' })).status).toBe(400);
     expect((await set({ status: 'active' })).status).toBe(409);
@@ -420,13 +422,13 @@ describe.skipIf(!schemaReady)('taking a listing down settles its open orders', (
     const { listing, orderId } = await acceptedOrder();
     const reporter = await makeUser('reporter');
     const staff = await admin();
-    const filed = await raw('/api/v1/moderation/', reporter.token, {
+    const filed = await raw('/api/v1/moderation', reporter.token, {
       method: 'POST',
       body: JSON.stringify({ listing: listing.id, reason: 'scam' }),
     });
     expect(filed.status).toBe(201);
     const { id } = (await filed.json()) as { id: string };
-    const acted = await raw(`/api/v1/moderation/${id}/`, staff.token, { method: 'PATCH', body: JSON.stringify({ status: 'actioned' }) });
+    const acted = await raw(`/api/v1/moderation/${id}`, staff.token, { method: 'PATCH', body: JSON.stringify({ status: 'actioned' }) });
     expect(acted.status).toBe(200);
     expect(await orderStatus(orderId)).toBe('cancelled');
     expect(await listingStatus(listing.id)).toBe('removed');
@@ -434,12 +436,12 @@ describe.skipIf(!schemaReady)('taking a listing down settles its open orders', (
 
   it("deleting an account cancels that user's open orders, as buyer and as seller", async () => {
     const a = await acceptedOrder();
-    expect((await raw('/api/v1/auth/me/', a.buyer.token, { method: 'DELETE' })).status).toBe(204);
+    expect((await raw('/api/v1/auth/me', a.buyer.token, { method: 'DELETE' })).status).toBe(204);
     expect(await orderStatus(a.orderId)).toBe('cancelled');
     expect(await listingStatus(a.listing.id)).toBe('active');
 
     const b = await acceptedOrder();
-    expect((await raw('/api/v1/auth/me/', b.seller.token, { method: 'DELETE' })).status).toBe(204);
+    expect((await raw('/api/v1/auth/me', b.seller.token, { method: 'DELETE' })).status).toBe(204);
     expect(await orderStatus(b.orderId)).toBe('cancelled');
     expect(await listingStatus(b.listing.id)).toBe('removed');
   });
@@ -452,15 +454,15 @@ describe.skipIf(!schemaReady)('after handover', () => {
     const l = await makeListing(seller.id);
     await chat(l.id, buyer.id, seller.id);
     const { id } = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
-    expect((await patch(`${id}/`, seller.token, { status: 'accepted' })).status).toBe(200);
-    expect((await patch(`${id}/`, seller.token, { status: 'handed_over' })).status).toBe(200);
+    expect((await patch(`${id}`, seller.token, { status: 'accepted' })).status).toBe(200);
+    expect((await patch(`${id}`, seller.token, { status: 'handed_over' })).status).toBe(200);
 
-    const buyerCancel = await patch(`${id}/`, buyer.token, { status: 'cancelled' });
+    const buyerCancel = await patch(`${id}`, buyer.token, { status: 'cancelled' });
     expect(buyerCancel.status).toBe(403);
     expect(await buyerCancel.json()).toEqual({ error: { code: 'order.errSellerOnly' } });
     expect(await listingStatus(l.id)).toBe('reserved');
 
-    expect((await patch(`${id}/`, seller.token, { status: 'cancelled' })).status).toBe(200);
+    expect((await patch(`${id}`, seller.token, { status: 'cancelled' })).status).toBe(200);
     expect(await listingStatus(l.id)).toBe('active');
   });
 });
@@ -473,11 +475,11 @@ describe.skipIf(!schemaReady)('cancel reasons', () => {
     await chat(l.id, buyer.id, seller.id);
     const { id } = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
 
-    expect((await patch(`${id}/`, buyer.token, { cancel_reason: 'buyer_cancelled' })).status).toBe(400);
-    expect((await patch(`${id}/`, buyer.token, { status: 'cancelled', cancel_reason: 'admin_override: fraud' })).status).toBe(400);
-    expect((await patch(`${id}/`, buyer.token, { status: 'cancelled', cancel_reason: 'buyer_cancelled' })).status).toBe(200);
+    expect((await patch(`${id}`, buyer.token, { cancel_reason: 'buyer_cancelled' })).status).toBe(400);
+    expect((await patch(`${id}`, buyer.token, { status: 'cancelled', cancel_reason: 'admin_override: fraud' })).status).toBe(400);
+    expect((await patch(`${id}`, buyer.token, { status: 'cancelled', cancel_reason: 'buyer_cancelled' })).status).toBe(200);
     // Final: a later rewrite is refused.
-    expect((await patch(`${id}/`, seller.token, { cancel_reason: 'seller_cancelled' })).status).toBe(400);
+    expect((await patch(`${id}`, seller.token, { cancel_reason: 'seller_cancelled' })).status).toBe(400);
     const [o] = await db.select({ r: orders.cancelReason }).from(orders).where(eq(orders.id, id));
     expect(o.r).toBe('buyer_cancelled');
   });

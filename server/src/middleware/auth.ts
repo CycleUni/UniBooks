@@ -32,7 +32,7 @@ async function resolveUser(c: Parameters<MiddlewareHandler<AppEnv>>[0], token: s
     email: row.email,
     role: row.role,
     isStaff: row.role === 'staff' || row.role === 'admin',
-    isSuperuser: row.role === 'admin',
+    isAdmin: row.role === 'admin',
   };
 }
 
@@ -64,8 +64,8 @@ export const requireStaff = (): MiddlewareHandler<AppEnv> => async (c, next) => 
   await next();
 };
 
-/** Superuser only. Use after authMiddleware. */
-export const requireSuperuser = (): MiddlewareHandler<AppEnv> => async (c, next) => {
-  if (!c.get('user')?.isSuperuser) apiError(403, 'admin.errForbiddenAction');
+/** Admin only. Use after authMiddleware. */
+export const requireAdmin = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+  if (!c.get('user')?.isAdmin) apiError(403, 'admin.errForbiddenAction');
   await next();
 };

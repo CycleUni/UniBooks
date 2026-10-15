@@ -14,7 +14,7 @@ import { RegionService } from '../region.service';
 describe('MetadataService.getMetadataWithRetry', () => {
   let service: MetadataService;
   let httpMock: HttpTestingController;
-  const requests = () => httpMock.match(req => req.url === '/core/metadata/');
+  const requests = () => httpMock.match(req => req.url === '/core/metadata');
   const unavailable = { status: 503, statusText: 'Service Unavailable' };
 
   beforeEach(() => {
@@ -121,12 +121,12 @@ describe('MetadataService cache', () => {
 
     let tw: any = null;
     service.getMetadata().subscribe(d => (tw = d));
-    httpMock.expectOne(req => req.url === '/core/metadata/').flush({ schools: [{ code: 'HKU', name: 'Hungkuang' }] });
+    httpMock.expectOne(req => req.url === '/core/metadata').flush({ schools: [{ code: 'HKU', name: 'Hungkuang' }] });
 
     region.set('hk');
     let hk: any = null;
     service.getMetadata().subscribe(d => (hk = d));
-    httpMock.expectOne(req => req.url === '/core/metadata/').flush({ schools: [{ code: 'HKU', name: 'The University of Hong Kong' }] });
+    httpMock.expectOne(req => req.url === '/core/metadata').flush({ schools: [{ code: 'HKU', name: 'The University of Hong Kong' }] });
 
     expect(tw.schools[0].name).toBe('Hungkuang');
     expect(hk.schools[0].name).toBe('The University of Hong Kong');

@@ -64,7 +64,7 @@ function advertiserScope(scope: string[] | null, idCol: SQL | typeof advertisers
 /**
  * Whether a region manager may modify an advertiser running in these regions:
  * never one that runs everywhere, never one with no regions, and only when
- * every region is one they manage. Superusers (scope null) always may.
+ * every region is one they manage. Admins (scope null) always may.
  */
 export function canWrite(scope: string[] | null, allRegions: boolean, regionCodes: string[]): boolean {
   if (scope === null) return true;
@@ -195,7 +195,7 @@ async function checkAdvertiserRefs(db: Database, adb: AdsDatabase, body: { regio
   if (Object.keys(errors).length) fieldErrors(errors);
 }
 
-adRoutes.get('/sponsors/', async (c) => {
+adRoutes.get('/sponsors', async (c) => {
   const db = createAdsDb(c.env.DB_ADS);
   const page = pagination(c.req.url, { allowPageSize: true, maxPageSize: 100 });
   const conds: (SQL | undefined)[] = [advertiserScope(await scopeOf(c))];
@@ -225,7 +225,7 @@ adRoutes.get('/sponsors/', async (c) => {
   return c.json(page.wrap(await serializeAdvertisers(db, rows), n));
 });
 
-adRoutes.post('/sponsors/', async (c) => {
+adRoutes.post('/sponsors', async (c) => {
   const body = validate(advertiserCreate, await readJson(c.req), INVALID);
   const adb = createAdsDb(c.env.DB_ADS);
   const regionCodes = [...new Set(body.regions ?? [])];
@@ -268,7 +268,7 @@ async function loadAdvertiser(c: Context<AppEnv>, db: AdsDatabase): Promise<Adve
   return row;
 }
 
-adRoutes.get('/sponsors/:id/', async (c) => {
+adRoutes.get('/sponsors/:id', async (c) => {
   const db = createAdsDb(c.env.DB_ADS);
   const [json] = await serializeAdvertisers(db, [await loadAdvertiser(c, db)]);
   return c.json(json);
@@ -316,10 +316,9 @@ async function updateAdvertiser(c: Context<AppEnv>) {
   return c.json(json);
 }
 
-adRoutes.patch('/sponsors/:id/', updateAdvertiser);
-adRoutes.put('/sponsors/:id/', updateAdvertiser);
+adRoutes.patch('/sponsors/:id', updateAdvertiser);
 
-adRoutes.delete('/sponsors/:id/', async (c) => {
+adRoutes.delete('/sponsors/:id', async (c) => {
   const db = createAdsDb(c.env.DB_ADS);
   const instance = await loadAdvertiser(c, db);
   await assertAdvertiserWritable(c, db, instance);
@@ -340,7 +339,7 @@ adRoutes.delete('/sponsors/:id/', async (c) => {
 // ---------------------------------------------------------------------------
 
 /** Step one (lib/upload.ts): staff upload under their own tmp/ads/ folder; saving an ad promotes it. */
-adRoutes.post('/promotions/uploads/', async (c) => {
+adRoutes.post('/promotions/uploads', async (c) => {
   const userId = c.get('user')!.id;
   return issueUpload(
     c,
@@ -350,7 +349,7 @@ adRoutes.post('/promotions/uploads/', async (c) => {
 });
 
 /** Step two. This route is also staff-authenticated, so the token must be the caller's own. */
-adRoutes.put('/promotions/uploads/file/', (c) => storeUpload(c, { action: 'ad_image', keyPrefix: tmpAdPrefix, caller: c.get('user')!.id }));
+adRoutes.put('/promotions/uploads/file', (c) => storeUpload(c, { action: 'ad_image', keyPrefix: tmpAdPrefix, caller: c.get('user')!.id }));
 
 // ---------------------------------------------------------------------------
 // Ads ("promotions")
@@ -508,7 +507,7 @@ async function resolveImage(c: Context<AppEnv>, url: string, current: string | n
   return res.url;
 }
 
-adRoutes.get('/promotions/', async (c) => {
+adRoutes.get('/promotions', async (c) => {
   const db = createAdsDb(c.env.DB_ADS);
   const page = pagination(c.req.url, { allowPageSize: true, maxPageSize: 100 });
   const conds: (SQL | undefined)[] = [adScope(await scopeOf(c))];
@@ -542,7 +541,7 @@ adRoutes.get('/promotions/', async (c) => {
   );
 });
 
-adRoutes.post('/promotions/', async (c) => {
+adRoutes.post('/promotions', async (c) => {
   const body = validate(adCreate, stripReadOnly(await readJson(c.req)), INVALID);
   if (body.start_date >= body.end_date) fieldErrors({ end_date: [INVALID] });
   const db = createAdsDb(c.env.DB_ADS);
@@ -590,7 +589,7 @@ async function adResponse(c: Context<AppEnv>, row: { a: Ad; name: string }) {
   return c.json(adJson(c, row.a, row.name, scopes.get(row.a.advertiserId), stats.counts.get(row.a.id), stats.available));
 }
 
-adRoutes.get('/promotions/:id/', async (c) => {
+adRoutes.get('/promotions/:id', async (c) => {
   return adResponse(c, await loadAd(c, createAdsDb(c.env.DB_ADS)));
 });
 
@@ -628,10 +627,9 @@ async function updateAd(c: Context<AppEnv>) {
   return adResponse(c, await loadAd(c, db));
 }
 
-adRoutes.patch('/promotions/:id/', updateAd);
-adRoutes.put('/promotions/:id/', updateAd);
+adRoutes.patch('/promotions/:id', updateAd);
 
-adRoutes.delete('/promotions/:id/', async (c) => {
+adRoutes.delete('/promotions/:id', async (c) => {
   const db = createAdsDb(c.env.DB_ADS);
   const { a } = await loadAd(c, db);
   await assertAdvertiserIdWritable(c, db, a.advertiserId);

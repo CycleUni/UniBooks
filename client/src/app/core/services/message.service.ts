@@ -157,19 +157,19 @@ export class MessageService {
   }
 
   getConversations(): Observable<any[]> {
-    return this.http.get<any>('/messaging/conversations/').pipe(
+    return this.http.get<any>('/messaging/conversations').pipe(
       map(res => res.results !== undefined ? res.results : res)
     );
   }
 
   startConversation(listingId: string): Observable<any> {
-    return this.http.post<any>('/messaging/conversations/', { listing_id: listingId });
+    return this.http.post<any>('/messaging/conversations', { listing_id: listingId });
   }
 
   // Room-scoped: the backend verifies the caller is a participant of this
   // conversation before issuing a token, and the token only works for it.
   getChatToken(conversationId: string): Observable<{token: string}> {
-    return this.http.get<{token: string}>('/messaging/chat-token/', {
+    return this.http.get<{token: string}>('/messaging/chat-token', {
       params: { conversation_id: conversationId }
     });
   }
@@ -177,11 +177,11 @@ export class MessageService {
   // User-scoped, not room-scoped: proves identity for the single hub
   // connection but grants no access to any conversation's content on its own.
   getHubToken(): Observable<{token: string}> {
-    return this.http.get<{token: string}>('/messaging/hub-token/');
+    return this.http.get<{token: string}>('/messaging/hub-token');
   }
 
   markConversationRead(conversationId: string): Observable<void> {
-    return this.http.post<void>(`/messaging/conversations/${conversationId}/read/`, {});
+    return this.http.post<void>(`/messaging/conversations/${conversationId}/read`, {});
   }
 
   // Mark a room read via the chat room (/api/chat). The token comes from the
@@ -196,7 +196,7 @@ export class MessageService {
   }
 
   deleteConversation(conversationId: string): Observable<{status: string}> {
-    return this.http.delete<{status: string}>(`/messaging/conversations/${conversationId}/delete/`);
+    return this.http.delete<{status: string}>(`/messaging/conversations/${conversationId}/delete`);
   }
 
   // Upload a chat image: compress client-side, then upload in two steps
@@ -210,7 +210,7 @@ export class MessageService {
       fileType: 'image/webp',
     }))).pipe(
       switchMap(compressed =>
-        uploadImage(this.http, '/messaging/uploads/', compressed, { conversation_id: conversationId })
+        uploadImage(this.http, '/messaging/uploads', compressed, { conversation_id: conversationId })
       )
     );
   }

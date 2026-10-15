@@ -19,7 +19,7 @@ import { AdminPickCellComponent } from './pick-cell.component';
 import { BulkController } from './bulk';
 import { keywordsMatch, schoolKeywords } from '../../core/school-search';
 import { RegionService } from '../../core/region.service';
-import { AuthStore } from '../../core/auth.store';
+import { AuthStore, isAdminUser } from '../../core/auth.store';
 
 @Component({
   selector: 'app-admin-advertisers-list',
@@ -194,7 +194,7 @@ export class AdminAdvertisersListComponent implements OnInit {
   private auth = inject(AuthStore);
 
   get isSuperuser(): boolean {
-    return !!this.auth.user()?.is_superuser;
+    return isAdminUser(this.auth.user());
   }
 
   /** The site's regions; the server still refuses ones a region manager does not manage. */

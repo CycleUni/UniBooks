@@ -1,5 +1,4 @@
 import { and, eq, inArray, or } from 'drizzle-orm';
-import { HTTPException } from 'hono/http-exception';
 import type { Env } from '../../env';
 import { apiError } from '../../lib/http';
 import { createDb, orders } from '../../db';
@@ -92,7 +91,7 @@ export async function cancelOpenOrdersForUser(env: Env, userId: string): Promise
 export async function forceCancelOrder(env: Env, args: { orderId: string; actorId: string; reason?: string }): Promise<void> {
   const db = createDb(env.DB);
   const [o] = await db.select({ id: orders.id, listingId: orders.listingId }).from(orders).where(eq(orders.id, args.orderId)).limit(1);
-  if (!o) throw new HTTPException(404, { res: Response.json({ detail: 'Not found.' }, { status: 404 }) });
+  if (!o) apiError(404, 'common.errNotFound');
   const reason = (args.reason ?? '').trim();
   const res = await orderLock(env, lockKeyFor(o)).platformCancel({
     orderId: o.id,

@@ -33,7 +33,7 @@ authed.use('*', authMiddleware());
 
 // ─── Conversations ────────────────────────────────────────────────────────
 
-authed.get('/conversations/', async (c) => {
+authed.get('/conversations', async (c) => {
   const user = c.get('user')!;
   const region = await requireRegion(c);
   const page = pagination(c.req.url);
@@ -51,14 +51,11 @@ authed.get('/conversations/', async (c) => {
       .all<ConversationRow>(),
   ]);
   const count = countRow?.n ?? 0;
-  if (page.page > 1 && rows.results.length === 0) {
-    return c.json({ detail: 'Invalid page.' }, 404);
-  }
   const results = await serializeConversations(c.env, rows.results, user.id, region.code);
   return c.json(page.wrap(results, count));
 });
 
-authed.post('/conversations/', async (c) => {
+authed.post('/conversations', async (c) => {
   const user = c.get('user')!;
   const body = await readJson(c.req);
   const listingId = typeof body.listing_id === 'string' || typeof body.listing_id === 'number' ? String(body.listing_id) : '';
@@ -128,7 +125,7 @@ authed.post('/conversations/', async (c) => {
   return c.json(data, created ? 201 : 200);
 });
 
-authed.delete('/conversations/:id/delete/', async (c) => {
+authed.delete('/conversations/:id', async (c) => {
   const user = c.get('user')!;
   const id = c.req.param('id');
   if (!UUID_LOOSE_RE.test(id)) return notFound(c);
@@ -145,7 +142,7 @@ authed.delete('/conversations/:id/delete/', async (c) => {
  * lives in the user's UserHub, so this is the same mark-read the chat
  * transport's /api/chat/rooms/<room>/read does, reached with the access token.
  */
-authed.post('/conversations/:id/read/', async (c) => {
+authed.post('/conversations/:id/read', async (c) => {
   const user = c.get('user')!;
   const id = c.req.param('id');
   if (!UUID_LOOSE_RE.test(id)) return notFound(c);
@@ -163,7 +160,7 @@ authed.post('/conversations/:id/read/', async (c) => {
 
 // ─── Chat tokens ──────────────────────────────────────────────────────────
 
-authed.get('/chat-token/', async (c) => {
+authed.get('/chat-token', async (c) => {
   const user = c.get('user')!;
   const conversationId = c.req.query('conversation_id');
   if (!conversationId) apiError(400, 'msg.errConversationRequired');
@@ -183,7 +180,7 @@ authed.get('/chat-token/', async (c) => {
   return c.json({ token });
 });
 
-authed.get('/hub-token/', async (c) => {
+authed.get('/hub-token', async (c) => {
   const user = c.get('user')!;
   const token = await mintHubToken(c.env, user.id);
   return c.json({ token });
@@ -205,7 +202,7 @@ async function uploadableConversation(c: Context<AppEnv>, raw: unknown): Promise
 }
 
 /** Step one (lib/upload.ts): only a participant may post an image into a chat. */
-authed.post('/uploads/', async (c) => {
+authed.post('/uploads', async (c) => {
   const user = c.get('user')!;
   await checkRate(c, 'upload', UPLOAD_RATE);
   const body = await readJson(c.req);
@@ -219,5 +216,5 @@ authed.post('/uploads/', async (c) => {
  * and its handler answers before the auth middleware would run.
  */
 export const messagingRoutes = new Hono<AppEnv>();
-messagingRoutes.put('/uploads/file/', (c) => storeUpload(c, { action: 'chat_image', keyPrefix: chatImagePrefix }));
+messagingRoutes.put('/uploads/file', (c) => storeUpload(c, { action: 'chat_image', keyPrefix: chatImagePrefix }));
 messagingRoutes.route('/', authed);

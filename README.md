@@ -105,7 +105,7 @@ npm run db:seed:remote         # 首次部署後一次：地區、學校、分�
 ```
 
 主金鑰之外的密鑰請貼上各服務核發的值。輪替主金鑰時再執行一次上面的 `openssl rand … | wrangler secret put SECRET_KEY`
-即可（所有人會被登出，等同輪替 Django 的 `SECRET_KEY`）。本機開發的 `server/.dev.vars` 也可用
+即可（所有人會被登出）。本機開發的 `server/.dev.vars` 也可用
 `openssl rand -base64 48` 產生 `SECRET_KEY` 的值。
 
 非機密設定（R2 公開網址、寄件者、Google Client ID、預設地區）在 `server/wrangler.jsonc` 的 `vars`，
@@ -138,8 +138,9 @@ npx --prefix server wrangler d1 execute unibooks --remote --config server/wrangl
 
 - 登入狀態只存在 HttpOnly Cookie：`__Host-ub_at`（存取權杖，15 分鐘）、`__Secure-ub_rt`（更新權杖，14 天，只送往 `/api/v1/auth/`）。頁面上的 JavaScript 讀不到任何權杖。
 - 所有改變狀態的請求必須同源（檢查 `Sec-Fetch-Site` / `Origin`），不需要 CORS。
-- 密碼以 Web Crypto 原生 PBKDF2-HMAC-SHA256 雜湊（Workers 上限 10 萬次迭代、22 字元隨機 salt、常數時間比對），格式與 Django 的 `pbkdf2_sha256$…` 相同；參數調高後，舊雜湊會在下次登入時自動更新。
-- 只有一把主金鑰 `SECRET_KEY`：各種 JWT（存取、更新、上傳、聊天、hub）的 HMAC 金鑰都由它以 HKDF-SHA256 依用途分別推導，再加上 `token_type` 檢查，彼此互不通用；缺少或過短的主金鑰直接拒絕。輪替主金鑰會讓所有人登出（同 Django 的 `SECRET_KEY`）。
+- 密碼以 Web Crypto 原生 PBKDF2-HMAC-SHA256 雜湊（Workers 上限 10 萬次迭代、22 字元隨機 salt、常數時間比對），以 `pbkdf2_sha256$<迭代次數>$<salt>$<雜湊>` 格式儲存；參數調高後，舊雜湊會在下次登入時自動更新。
+- 只用 Google 登入的帳號預設沒有密碼，也無法用登入狀態另外設定密碼（沒有密碼可被暴力破解或外洩）；更換登入信箱需輸入目前的密碼。
+- 只有一把主金鑰 `SECRET_KEY`：各種 JWT（存取、更新、上傳、聊天、hub）的 HMAC 金鑰都由它以 HKDF-SHA256 依用途分別推導，再加上 `token_type` 檢查，彼此互不通用；缺少或過短的主金鑰直接拒絕。輪替主金鑰會讓所有人登出。
 - 每個請求都從 D1 重新讀取帳號狀態（停權、降級立即生效）。
 - 上傳一律兩段式且同源：`POST <base>/uploads/` 簽出短效上傳權杖，`PUT <base>/uploads/file/?token=` 由 Worker 寫入 R2；伺服器決定 R2 key、檢查檔案魔數與大小，刊登照片只接受本人上傳的 key。
 - 限流以 Durable Object 原子計數（登入、註冊、驗證、搜尋、上傳、下單等）。

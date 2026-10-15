@@ -56,7 +56,7 @@ export class BookService {
    * to list books with no keyword.
    */
   searchBooks(query: string, category?: string, course?: string, school?: string, page: number = 1, engine?: SearchEngine | null, filters: Record<string, string> = {}): Observable<any> {
-    let url = `/search/books/?q=${encodeURIComponent(query)}&page=${page}`;
+    let url = `/search/books?q=${encodeURIComponent(query)}&page=${page}`;
     if (category) {
       url += `&category=${encodeURIComponent(category)}`;
     }
@@ -88,7 +88,7 @@ export class BookService {
   }
 
   createManualBook(bookData: any): Observable<any> {
-    return this.http.post<any>('/books/manual/', bookData);
+    return this.http.post<any>('/books/manual', bookData);
   }
 
   /**
@@ -98,7 +98,7 @@ export class BookService {
    * whichever ships first must not break the course filter in the other.
    */
   getTopCourses(school?: string, category?: string): Observable<CourseFacet[]> {
-    let url = `/search/courses/?`;
+    let url = `/search/courses?`;
     const params = new URLSearchParams();
     if (school) params.set('school', school);
     if (category) params.set('category', category);
@@ -110,10 +110,10 @@ export class BookService {
   }
 
   subscribe(bookId: string): Observable<any> {
-    return this.http.post<any>('/subscriptions/', { book_id: bookId });
+    return this.http.post<any>('/subscriptions', { book_id: bookId });
   }
 
   unsubscribe(subscriptionId: string | number): Observable<any> {
-    return this.http.delete<any>(`/subscriptions/${subscriptionId}/`);
+    return this.http.delete<any>(`/subscriptions/${subscriptionId}`);
   }
 }

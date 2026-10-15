@@ -153,7 +153,7 @@ subscriptionRoutes.post('/', async (c) => {
   return c.json(out, inserted.length ? 201 : 200);
 });
 
-subscriptionRoutes.delete('/:id/', async (c) => {
+subscriptionRoutes.delete('/:id', async (c) => {
   const id = c.req.param('id');
   if (!UUID_RE.test(id)) return c.body(null, 404);
   const region = await requireRegion(c);

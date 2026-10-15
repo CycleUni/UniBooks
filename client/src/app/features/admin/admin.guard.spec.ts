@@ -42,18 +42,18 @@ describe('adminGuard', () => {
     expect(mockAccountService.getMyProfile).not.toHaveBeenCalled();
   });
 
-  it('allows access when the cached profile has is_staff true', async () => {
+  it('allows access when the cached profile has staff access', async () => {
     mockAuthStore.isLoggedIn.mockReturnValue(true);
-    mockAccountService.profileCache.mockReturnValue({ is_staff: true });
+    mockAccountService.profileCache.mockReturnValue({ role: 'staff' });
 
     const result = await runGuard();
 
     expect(result).toBe(true);
   });
 
-  it('redirects to / when the cached profile has is_staff false', async () => {
+  it('redirects to / when the cached profile has no staff access', async () => {
     mockAuthStore.isLoggedIn.mockReturnValue(true);
-    mockAccountService.profileCache.mockReturnValue({ is_staff: false });
+    mockAccountService.profileCache.mockReturnValue({ role: 'user' });
 
     const result = await runGuard();
 
@@ -63,7 +63,7 @@ describe('adminGuard', () => {
   it('fetches the profile first when the cache is empty, then allows staff through', async () => {
     mockAuthStore.isLoggedIn.mockReturnValue(true);
     mockAccountService.profileCache.mockReturnValue(null);
-    mockAccountService.getMyProfile.mockReturnValue(of({ is_staff: true }));
+    mockAccountService.getMyProfile.mockReturnValue(of({ role: 'staff' }));
 
     const result = await runGuard();
 
@@ -74,7 +74,7 @@ describe('adminGuard', () => {
   it('fetches the profile first when the cache is empty, then redirects non-staff', async () => {
     mockAuthStore.isLoggedIn.mockReturnValue(true);
     mockAccountService.profileCache.mockReturnValue(null);
-    mockAccountService.getMyProfile.mockReturnValue(of({ is_staff: false }));
+    mockAccountService.getMyProfile.mockReturnValue(of({ role: 'user' }));
 
     const result = await runGuard();
 

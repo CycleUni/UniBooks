@@ -70,7 +70,7 @@ const REVIEW_FILTERS: Record<string, SQL> = {
   confirmed: and(eq(books.source, 'manual'), isNotNull(books.reviewedAt))!,
 };
 
-bookRoutes.get('/books/', async (c) => {
+bookRoutes.get('/books', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url, { allowPageSize: true, maxPageSize: 100 });
   const conds: (SQL | undefined)[] = [scopeWhere(books.regionCode, await scopeOf(c))];
@@ -97,7 +97,7 @@ function bulkIds(data: Record<string, unknown>): string[] {
   return [...new Set((ids as string[]).map((i) => i.toLowerCase()))];
 }
 
-bookRoutes.post('/books/confirm-manual/', async (c) => {
+bookRoutes.post('/books/confirm-manual', async (c) => {
   const ids = bulkIds(await readJson(c.req));
   const db = createDb(c.env.DB);
   const me = c.get('user')!;
@@ -127,7 +127,7 @@ bookRoutes.post('/books/confirm-manual/', async (c) => {
   return c.json({ confirmed: changed.map((b) => b.id).sort() });
 });
 
-bookRoutes.post('/books/reopen-review/', async (c) => {
+bookRoutes.post('/books/reopen-review', async (c) => {
   const ids = bulkIds(await readJson(c.req));
   const db = createDb(c.env.DB);
   const me = c.get('user')!;
@@ -178,9 +178,9 @@ async function otherBookWith(db: Database, book: Book, isbn: string): Promise<Bo
   return other;
 }
 
-bookRoutes.get('/books/:id/', async (c) => c.json(adminBookJson(await loadBook(c, createDb(c.env.DB)))));
+bookRoutes.get('/books/:id', async (c) => c.json(adminBookJson(await loadBook(c, createDb(c.env.DB)))));
 
-bookRoutes.get('/books/:id/lookup/', async (c) => {
+bookRoutes.get('/books/:id/lookup', async (c) => {
   const db = createDb(c.env.DB);
   const { b: book } = await loadBook(c, db);
   const isbn = validateBookIsbn(c.req.query('isbn'));
@@ -244,7 +244,7 @@ function parseUpdates(data: Record<string, unknown>): BookUpdates {
   return updates;
 }
 
-bookRoutes.patch('/books/:id/', async (c) => {
+bookRoutes.patch('/books/:id', async (c) => {
   const db = createDb(c.env.DB);
   const { b: book } = await loadBook(c, db);
   const raw = await c.req.json().catch(() => null);
@@ -371,7 +371,7 @@ bookRoutes.patch('/books/:id/', async (c) => {
   return c.json({ merged_into: null, book: serializeBook(fresh) });
 });
 
-bookRoutes.post('/books/:id/confirm-manual/', async (c) => {
+bookRoutes.post('/books/:id/confirm-manual', async (c) => {
   const db = createDb(c.env.DB);
   const { b: book } = await loadBook(c, db);
   if (book.source !== 'manual') apiError(400, 'admin.errBookNotManual');

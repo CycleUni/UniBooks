@@ -7,11 +7,11 @@ import { SignJWT, jwtVerify } from 'jose';
  * key passed for any other: a 14-day refresh token or a 15-minute upload URL
  * opened the whole API as an access token.
  *
- * Keys: one secret, SECRET_KEY (like Django's), from which HKDF-SHA256
+ * Keys: one secret, SECRET_KEY, from which HKDF-SHA256
  * derives a separate HMAC-SHA256 key per token type. A token of one type
  * fails the signature check as any other, on top of the token_type check,
  * and there is only one secret to set and rotate (rotating it signs
- * everyone out, as rotating Django's SECRET_KEY does).
+ * everyone out).
  */
 export type TokenType = 'access' | 'refresh' | 'chat' | 'hub' | 'upload';
 

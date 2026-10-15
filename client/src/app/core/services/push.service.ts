@@ -91,7 +91,7 @@ export class PushService {
 
       const token = await this.fetchToken(config);
       if (!token) return 'failed';
-      await firstValueFrom(this.http.post('/auth/me/push-devices/', { token }));
+      await firstValueFrom(this.http.post('/auth/me/push-devices', { token }));
       this.writeStored({ userId: String(userId), token, at: Date.now() });
       return 'enabled';
     } catch (err) {
@@ -116,7 +116,7 @@ export class PushService {
     if (!stored) return;
     this.clearStored();
     try {
-      await firstValueFrom(this.http.request('DELETE', '/auth/me/push-devices/', { body: { token: stored.token } }));
+      await firstValueFrom(this.http.request('DELETE', '/auth/me/push-devices', { body: { token: stored.token } }));
     } catch (err) {
       console.error('Failed to unregister push device', err);
     }
@@ -147,7 +147,7 @@ export class PushService {
       if (!config) return;
       const token = await this.fetchToken(config);
       if (!token) return;
-      await firstValueFrom(this.http.post('/auth/me/push-devices/', { token }));
+      await firstValueFrom(this.http.post('/auth/me/push-devices', { token }));
       this.writeStored({ userId: stored.userId, token, at: Date.now() });
     } catch (err) {
       console.error('Failed to refresh push registration', err);
@@ -156,7 +156,7 @@ export class PushService {
 
   private loadConfig(): Promise<FcmConfig | null> {
     if (!this.config$) {
-      this.config$ = this.http.get<{ fcm: FcmConfig | null }>('/auth/config/').pipe(
+      this.config$ = this.http.get<{ fcm: FcmConfig | null }>('/auth/config').pipe(
         catchError((err) => {
           this.config$ = null;
           return throwError(() => err);

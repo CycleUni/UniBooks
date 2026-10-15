@@ -55,7 +55,7 @@ describe('frontend routes in the Worker', () => {
   });
 
   it('keeps unknown /api/ paths as JSON 404s instead of the SPA fallback', async () => {
-    const res = await get('/api/v1/definitely-not-a-route/');
+    const res = await get('/api/v1/definitely-not-a-route');
     expect(res.status).toBe(404);
     expect(res.headers.get('content-type')).toContain('application/json');
   });

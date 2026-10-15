@@ -9,6 +9,7 @@ import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AdminService, AdminSchool, Paginated } from '../../core/services/admin.service';
 import { TPipe, I18nService } from '../../core/i18n.service';
+import { parseApiError } from '../../core/api-error.util';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { ToastService } from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
@@ -224,7 +225,7 @@ export class AdminSchoolsListComponent implements OnInit {
         this.cdr.markForCheck();
       },
       error: (err) => {
-        this.toast.error(err?.error?.detail || this.i18n.t('admin.errDeleteFailed'));
+        this.toast.error(parseApiError(err, this.i18n, 'admin.errDeleteFailed'));
         this.cdr.markForCheck();
       }
     });

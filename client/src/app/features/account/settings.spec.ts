@@ -7,6 +7,7 @@ import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 import { AuthStore } from '../../core/auth.store';
 import { AccountService } from '../../core/services/account.service';
+import { en } from '../../core/i18n/en';
 
 describe('SettingsComponent', () => {
   let component: SettingsComponent;
@@ -95,32 +96,32 @@ describe('SettingsComponent', () => {
 
   describe('pwdMessage', () => {
     it('spells out why the validators rejected the new password', () => {
-      // Change-password runs AUTH_PASSWORD_VALIDATORS now, and answers in the
-      // shape registration uses. Before this was read, "too short", "too
-      // common" and "entirely numeric" all arrived as a bare "update failed".
+      // The server lists every rule the new password breaks under
+      // fields.new_password; each is shown rather than a bare "update failed".
       component.pwdIsError = true;
       (component as any).lastPwdError = {
-        error: { error: { code: 'auth.errValidation', fields: ['This password is too common.'] } },
+        error: { error: { code: 'common.errValidation', fields: { new_password: ['acct.errPasswordTooCommon', 'acct.errPasswordNumeric'] } } },
       };
 
-      expect(component.pwdMessage).toContain('This password is too common.');
+      expect(component.pwdMessage).toContain(en['acct.errPasswordTooCommon']);
+      expect(component.pwdMessage).toContain(en['acct.errPasswordNumeric']);
       expect(component.pwdMessage).not.toBe('Update failed. Please try again.');
     });
 
-    it('does not show the registration wording for auth.errValidation itself', () => {
-      // auth.errValidation reads "please provide an email and password",
-      // which is nonsense on the change-password form.
+    it('falls back to its own sentence for a code this locale lacks', () => {
       (component as any).lastPwdError = {
-        error: { error: { code: 'auth.errValidation', fields: [] } },
+        error: { error: { code: 'acct.errNotTranslatedYet' } },
       };
 
       expect(component.pwdMessage).toBe('Update failed. Please try again.');
     });
 
     it('still reports a wrong current password', () => {
-      (component as any).lastPwdError = { error: { old_password: ['Incorrect password.'] } };
+      (component as any).lastPwdError = {
+        error: { error: { code: 'common.errValidation', fields: { old_password: ['auth.errInvalidPassword'] } } },
+      };
 
-      expect(component.pwdMessage).toBe('Incorrect password.');
+      expect(component.pwdMessage).toBe(en['auth.errInvalidPassword']);
     });
   });
 
@@ -151,6 +152,21 @@ describe('SettingsComponent', () => {
 
       expect(component.pendingEmail).toBeNull();
       expect((component as any).clientSettingsMsg).toBe('acct.profileSaved');
+    });
+
+    it('sends the current password only with a new address', () => {
+      const updateProfile = vi.fn(() => of({ id: 1 }));
+      (component as any).accountService = { updateProfile, clearProfileCache: vi.fn() };
+      (component as any).savedEmail = 'old@example.com';
+
+      component.email = 'OLD@example.com';
+      component.emailChangePassword = 'secret';
+      component.onUpdateProfile();
+      expect(updateProfile).toHaveBeenLastCalledWith(expect.not.objectContaining({ current_password: expect.anything() }));
+
+      component.email = 'new@example.com';
+      component.onUpdateProfile();
+      expect(updateProfile).toHaveBeenLastCalledWith(expect.objectContaining({ email: 'new@example.com', current_password: 'secret' }));
     });
 
     it('drops the pending address when the change is cancelled', () => {

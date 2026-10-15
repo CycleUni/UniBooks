@@ -8,7 +8,7 @@
  */
 import { Hono, type Context } from 'hono';
 import { cached } from '../lib/cache';
-import { afterResponse } from '../lib/http';
+import { afterResponse, notFound } from '../lib/http';
 import type { AppEnv, Env } from '../env';
 import { activeRegions } from '../lib/region';
 
@@ -119,14 +119,14 @@ sitemapRoutes.get('/sitemap/:file', (c) => edgeCached(c, () => sitemapSection(c)
 
 async function sitemapSection(c: Context<AppEnv>): Promise<Response> {
   const m = SECTION_RE.exec(c.req.param('file') ?? '');
-  if (!m) return Response.json({ detail: 'Not found.' }, { status: 404 });
+  if (!m) return notFound(c);
   const kind = m[1] as Kind;
   const region = m[2];
   const page = Number(m[3]);
   const code = region.toUpperCase();
-  if (!(await activeRegions(c.env)).has(code)) return Response.json({ detail: 'Not found.' }, { status: 404 });
+  if (!(await activeRegions(c.env)).has(code)) return notFound(c);
   const pages = await buildPages(c.env, kind, code);
-  if (page < 1 || page > pages.length) return Response.json({ detail: 'Not found.' }, { status: 404 });
+  if (page < 1 || page > pages.length) return notFound(c);
   const start = page > 1 ? pages[page - 1][0] : null;
   const end = page < pages.length ? pages[page][0] : null;
 

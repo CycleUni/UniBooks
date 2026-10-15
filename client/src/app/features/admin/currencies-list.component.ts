@@ -120,7 +120,7 @@ export class AdminCurrenciesListComponent implements OnInit {
     this.adminService.getCurrencies().subscribe({
       next: (res) => {
         if (Array.isArray(res)) {
-           this.data = { count: res.length, results: res, next: null, previous: null } as any;
+           this.data = { count: res.length, results: res } as any;
            this.total = res.length;
         } else {
            this.data = res;

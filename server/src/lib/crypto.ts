@@ -1,19 +1,18 @@
 /**
  * Password hashing: PBKDF2-HMAC-SHA256 through Web Crypto, the hasher the
  * Workers runtime implements natively (bcrypt or argon2 would run as
- * JavaScript or WASM and cost a few hundred ms of CPU per sign-in). It is
- * also Django's default hasher, stored in Django's format:
+ * JavaScript or WASM and cost a few hundred ms of CPU per sign-in). A hash
+ * is stored self-describing, so its parameters can change later:
  *
  *   pbkdf2_sha256$<iterations>$<salt>$<hash, base64>
  *
- * byte for byte (the salt is a random alphanumeric string, used as its
- * UTF-8 bytes), so a Django-made hash within the iteration limit verifies.
+ * (the salt is a random alphanumeric string, used as its UTF-8 bytes).
  * PBKDF2_ITERATIONS is the most the runtime accepts (100 000). A hash made
  * with fewer is upgraded at the next sign-in (needsRehash), so the count can
  * only go up without anyone resetting a password.
  */
 export const PBKDF2_ITERATIONS = 100_000;
-/** Django's salt: 22 random alphanumerics (~131 bits). */
+/** Salt: 22 random alphanumerics (~131 bits). */
 const SALT_LENGTH = 22;
 const SALT_ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const HASH_BYTES = 32;

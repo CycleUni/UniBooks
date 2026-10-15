@@ -39,7 +39,7 @@ export class AuthInterceptor implements HttpInterceptor {
   // HttpBackend is the raw XHR/fetch layer; it skips the entire interceptor chain.
   private http: HttpClient;
 
-  private readonly refreshBackendUrl = `${environment.backendUrl}/auth/refresh/`;
+  private readonly refreshBackendUrl = `${environment.backendUrl}/auth/refresh`;
 
   constructor(
     private authStore: AuthStore,
@@ -74,11 +74,11 @@ export class AuthInterceptor implements HttpInterceptor {
   /** Endpoints whose 401 means "wrong credentials", not "session expired". */
   private isAuthEndpoint(url: string): boolean {
     return (
-      url.includes('/auth/token/') ||
-      url.includes('/auth/google/') ||
-      url.includes('/auth/register/') ||
-      url.includes('/auth/verify-registration/') ||
-      url.includes('/auth/refresh/')
+      url.includes('/auth/login') ||
+      url.includes('/auth/google') ||
+      url.includes('/auth/register') ||
+      url.includes('/auth/verify-registration') ||
+      url.includes('/auth/refresh')
     );
   }
 

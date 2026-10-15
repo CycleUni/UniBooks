@@ -43,9 +43,9 @@ describe('AuthInterceptor refresh refusal', () => {
     },
   ];
 
-  const REFRESH_URL = `${environment.backendUrl}/auth/refresh/`;
+  const REFRESH_URL = `${environment.backendUrl}/auth/refresh`;
   const settle = () => new Promise(resolve => setTimeout(resolve, 0));
-  const listings = (req: { url: string }) => req.url.endsWith('/listings/');
+  const listings = (req: { url: string }) => req.url.endsWith('/listings');
 
   let httpMock: HttpTestingController;
   let http: HttpClient;
@@ -90,7 +90,7 @@ describe('AuthInterceptor refresh refusal', () => {
     build();
     await router.navigateByUrl('/tw');
 
-    http.get('/listings/').subscribe();
+    http.get('/listings').subscribe();
     const req = httpMock.expectOne(listings);
     // The browser sends the HttpOnly cookie; script never sees or sets one.
     expect(req.request.headers.has('Authorization')).toBe(false);
@@ -103,7 +103,7 @@ describe('AuthInterceptor refresh refusal', () => {
     build();
     await router.navigateByUrl('/tw');
 
-    http.get('/listings/').subscribe({ next: () => {}, error: () => {} });
+    http.get('/listings').subscribe({ next: () => {}, error: () => {} });
     httpMock.expectOne(listings).flush({}, UNAUTHORIZED);
 
     await settle();
@@ -124,7 +124,7 @@ describe('AuthInterceptor refresh refusal', () => {
     build();
     await router.navigateByUrl('/tw');
 
-    http.get('/listings/').subscribe({ next: () => {}, error: () => {} });
+    http.get('/listings').subscribe({ next: () => {}, error: () => {} });
     httpMock.expectOne(listings).flush({}, UNAUTHORIZED);
     await settle();
     httpMock.expectOne(REFRESH_URL).flush({}, { status: 403, statusText: 'Forbidden' });
@@ -141,7 +141,7 @@ describe('AuthInterceptor refresh refusal', () => {
     await router.navigateByUrl('/tw/account');
     expect(router.url).toBe('/tw/account');
 
-    http.get('/listings/').subscribe({ next: () => {}, error: () => {} });
+    http.get('/listings').subscribe({ next: () => {}, error: () => {} });
     httpMock.expectOne(listings).flush({}, UNAUTHORIZED);
 
     await settle();
@@ -157,7 +157,7 @@ describe('AuthInterceptor refresh refusal', () => {
     build();
     await router.navigateByUrl('/tw');
 
-    http.get('/listings/').subscribe({ next: () => {}, error: () => {} });
+    http.get('/listings').subscribe({ next: () => {}, error: () => {} });
     httpMock.expectOne(listings).flush({}, UNAUTHORIZED);
     await settle();
 
@@ -176,13 +176,13 @@ describe('AuthInterceptor refresh refusal', () => {
     await router.navigateByUrl('/tw');
 
     let status = 0;
-    http.get('/messaging/hub-token/').subscribe({ error: err => (status = err.status) });
-    httpMock.expectOne(req => req.url.endsWith('/messaging/hub-token/'))
+    http.get('/messaging/hub-token').subscribe({ error: err => (status = err.status) });
+    httpMock.expectOne(req => req.url.endsWith('/messaging/hub-token'))
       .flush({ detail: 'not signed in' }, UNAUTHORIZED);
     await settle();
 
     expect(httpMock.match(REFRESH_URL)).toEqual([]);
-    expect(httpMock.match(req => req.url.endsWith('/messaging/hub-token/'))).toEqual([]);
+    expect(httpMock.match(req => req.url.endsWith('/messaging/hub-token'))).toEqual([]);
     expect(status).toBe(401);
     drain();
   });
@@ -194,7 +194,7 @@ describe('AuthInterceptor refresh refusal', () => {
     expect(store.isAuthenticated()).toBe(true);
 
     clearSessionHint();   // another tab signed out; its broadcast was missed
-    http.get('/listings/').subscribe({ next: () => {}, error: () => {} });
+    http.get('/listings').subscribe({ next: () => {}, error: () => {} });
     httpMock.expectOne(listings).flush({}, UNAUTHORIZED);
     await settle();
 
@@ -209,10 +209,10 @@ describe('AuthInterceptor refresh refusal', () => {
     await router.navigateByUrl('/tw');
 
     const results: string[] = [];
-    for (const path of ['/listings/', '/orders/', '/messaging/conversations/']) {
+    for (const path of ['/listings', '/orders', '/messaging/conversations']) {
       http.get<{ path: string }>(path).subscribe({ next: v => results.push(v.path), error: () => results.push('error') });
     }
-    for (const path of ['/listings/', '/orders/', '/messaging/conversations/']) {
+    for (const path of ['/listings', '/orders', '/messaging/conversations']) {
       httpMock.expectOne(req => req.url.endsWith(path)).flush({}, UNAUTHORIZED);
     }
     await settle();
@@ -223,12 +223,12 @@ describe('AuthInterceptor refresh refusal', () => {
     refreshes[0].flush({ code: 'auth.refreshed' });
     await settle();
 
-    for (const path of ['/listings/', '/orders/', '/messaging/conversations/']) {
+    for (const path of ['/listings', '/orders', '/messaging/conversations']) {
       const replay = httpMock.match(req => req.url.endsWith(path));
       expect(replay.length).toBe(1);
       replay[0].flush({ path });
     }
-    expect(results.sort()).toEqual(['/listings/', '/messaging/conversations/', '/orders/']);
+    expect(results.sort()).toEqual(['/listings', '/messaging/conversations', '/orders']);
     expect(httpMock.match(REFRESH_URL)).toEqual([]);
     expect(store.isAuthenticated()).toBe(true);
     drain();
@@ -239,14 +239,14 @@ describe('AuthInterceptor refresh refusal', () => {
     build();
     await router.navigateByUrl('/tw');
 
-    http.get('/listings/').subscribe({ next: () => {}, error: () => {} });
+    http.get('/listings').subscribe({ next: () => {}, error: () => {} });
     httpMock.expectOne(listings).flush({}, UNAUTHORIZED);
     await settle();
     httpMock.expectOne(REFRESH_URL).flush({ code: 'auth.refreshed' });
     httpMock.expectOne(listings).flush([]);
 
-    http.get('/orders/').subscribe({ next: () => {}, error: () => {} });
-    httpMock.expectOne(req => req.url.endsWith('/orders/')).flush({}, UNAUTHORIZED);
+    http.get('/orders').subscribe({ next: () => {}, error: () => {} });
+    httpMock.expectOne(req => req.url.endsWith('/orders')).flush({}, UNAUTHORIZED);
     await settle();
     expect(httpMock.match(REFRESH_URL).length).toBe(1);
     drain();
@@ -258,7 +258,7 @@ describe('AuthInterceptor refresh refusal', () => {
     await router.navigateByUrl('/tw');
 
     let status = 0;
-    http.get('/listings/').subscribe({ error: err => (status = err.status) });
+    http.get('/listings').subscribe({ error: err => (status = err.status) });
     httpMock.expectOne(listings).flush({}, UNAUTHORIZED);
     await settle();
     httpMock.expectOne(REFRESH_URL).flush({ code: 'auth.refreshed' });
@@ -271,9 +271,9 @@ describe('AuthInterceptor refresh refusal', () => {
   });
 
   it.each([
-    ['/auth/token/', 'a sign-in with the wrong password'],
-    ['/auth/google/', 'a refused Google credential'],
-    ['/auth/verify-registration/', 'a dead registration link'],
+    ['/auth/login', 'a sign-in with the wrong password'],
+    ['/auth/google', 'a refused Google credential'],
+    ['/auth/verify-registration', 'a dead registration link'],
   ])('passes a 401 from %s straight through (%s)', async (path) => {
     setSessionHint();
     build();
@@ -295,7 +295,7 @@ describe('AuthInterceptor refresh refusal', () => {
     await router.navigateByUrl('/tw');
 
     let status = 0;
-    http.get('/listings/', { context: new HttpContext().set(SKIP_AUTH, true) })
+    http.get('/listings', { context: new HttpContext().set(SKIP_AUTH, true) })
       .subscribe({ error: err => (status = err.status) });
     httpMock.expectOne(listings).flush({}, UNAUTHORIZED);
     await settle();
@@ -333,7 +333,7 @@ describe('AuthInterceptor refresh refusal', () => {
     build();
     await router.navigateByUrl('/tw');
 
-    const subscription = http.get('/listings/').subscribe({ next: () => {}, error: () => {} });
+    const subscription = http.get('/listings').subscribe({ next: () => {}, error: () => {} });
     httpMock.expectOne(listings).flush({}, UNAUTHORIZED);
     await settle();
 
@@ -358,7 +358,7 @@ describe('AuthInterceptor refresh refusal', () => {
       vi.useFakeTimers();
 
       const outcome: { value?: any; error?: any } = {};
-      http.get('/listings/').subscribe({ next: v => (outcome.value = v), error: e => (outcome.error = e) });
+      http.get('/listings').subscribe({ next: v => (outcome.value = v), error: e => (outcome.error = e) });
       httpMock.expectOne(listings).flush({}, UNAUTHORIZED);
       await tick(0);
       return outcome;
@@ -441,7 +441,7 @@ describe('AuthInterceptor refresh refusal', () => {
  * chain retried — including a refresh failure it has already retried itself.
  */
 describe('AuthInterceptor inside the real interceptor chain', () => {
-  const REFRESH_URL = `${environment.backendUrl}/auth/refresh/`;
+  const REFRESH_URL = `${environment.backendUrl}/auth/refresh`;
   let httpMock: HttpTestingController;
   let http: HttpClient;
   let router: Router;
@@ -486,14 +486,14 @@ describe('AuthInterceptor inside the real interceptor chain', () => {
   });
 
   it('makes one bounded set of refresh attempts, not one per outer retry', async () => {
-    http.get('/listings/').subscribe({ error: () => {} });
+    http.get('/listings').subscribe({ error: () => {} });
     const unavailable = { status: 503, statusText: 'Service Unavailable' };
     let refreshAttempts = 0;
 
     // Answer every request for a while: listings with 401 (expired access
     // cookie), every refresh with 503 (token store down).
     for (let i = 0; i < 40; i++) {
-      for (const req of httpMock.match(r => r.url.endsWith('/listings/'))) {
+      for (const req of httpMock.match(r => r.url.endsWith('/listings'))) {
         req.flush({}, UNAUTHORIZED);
       }
       for (const req of httpMock.match(REFRESH_URL)) {

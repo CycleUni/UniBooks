@@ -64,6 +64,7 @@ const RATES = {
   passwordChange: '5/min',
   pushDevice: '30/min',
   passwordResetRequest: '3/hour',
+  emailChange: '5/hour',
   schoolRequest: '5/hour',
   publicProfile: '30/min',
 } as const;
@@ -117,31 +118,29 @@ function parseBoolField(value: unknown): boolean | undefined {
 // Registration and verification
 // ---------------------------------------------------------------------------
 
-accountRoutes.post('/register/', rateLimit('register', RATES.register), async (c) => {
+accountRoutes.post('/register', rateLimit('register', RATES.register), async (c) => {
   const body = await readJson(c.req);
   const fields: Record<string, string[]> = {};
 
   const rawEmail = body.email;
   let email = '';
-  if (rawEmail === undefined || rawEmail === null) fields.email = ['This field is required.'];
-  else if (typeof rawEmail !== 'string' || !rawEmail.trim()) fields.email = ['This field may not be blank.'];
+  if (typeof rawEmail !== 'string' || !rawEmail.trim()) fields.email = ['auth.errFillEmailPassword'];
   else {
     email = rawEmail.trim().toLowerCase();
-    if (!isPlainEmail(email)) fields.email = ['Enter a valid email address.'];
+    if (!isPlainEmail(email)) fields.email = ['common.errEmailInvalid'];
   }
 
   const names: Record<'first_name' | 'last_name', string> = { first_name: '', last_name: '' };
   for (const key of ['first_name', 'last_name'] as const) {
     const v = body[key];
     if (v === undefined || v === null) continue;
-    if (typeof v !== 'string') fields[key] = ['Not a valid string.'];
-    else if (v.trim().length > NAME_MAX_LENGTH) fields[key] = [`Ensure this field has no more than ${NAME_MAX_LENGTH} characters.`];
+    if (typeof v !== 'string') fields[key] = ['common.errValidation'];
+    else if (v.trim().length > NAME_MAX_LENGTH) fields[key] = ['acct.errNameTooLong'];
     else names[key] = v.trim();
   }
 
   const password = body.password;
-  if (password === undefined || password === null) fields.password = ['This field is required.'];
-  else if (typeof password !== 'string' || !password) fields.password = ['This field may not be blank.'];
+  if (typeof password !== 'string' || !password) fields.password = ['auth.errFillEmailPassword'];
   else {
     const problems = passwordProblems(password);
     if (problems.length) fields.password = problems;
@@ -150,7 +149,7 @@ accountRoutes.post('/register/', rateLimit('register', RATES.register), async (c
   const existing = fields.email ? null : await getUserByEmail(c.env, email);
   const supersede = existing ? await ott.isPendingRegistration(c.env, existing) : false;
   if (existing && !supersede) fields.email = ['acct.errEmailTaken'];
-  if (Object.keys(fields).length) apiError(400, 'auth.errValidation', { fields });
+  if (Object.keys(fields).length) fieldErrors(fields);
 
   // The password travels with the link, not on the row: only the person who
   // follows the link mailed for *this* registration sets the password the
@@ -189,7 +188,7 @@ accountRoutes.post('/register/', rateLimit('register', RATES.register), async (c
       .bind(id, email, name, firstName, lastName, now, now)
       .run();
   } catch (e) {
-    if (isUniqueViolation(e)) apiError(400, 'auth.errValidation', { fields: { email: ['acct.errEmailTaken'] } });
+    if (isUniqueViolation(e)) fieldErrors({ email: ['acct.errEmailTaken'] });
     throw e;
   }
 
@@ -207,7 +206,7 @@ accountRoutes.post('/register/', rateLimit('register', RATES.register), async (c
  * squatter's link would activate their account with the squatter's
  * password. A wrong password leaves the link usable for another try.
  */
-accountRoutes.post('/verify-registration/', rateLimit('activate', RATES.login), async (c) => {
+accountRoutes.post('/verify-registration', rateLimit('activate', RATES.login), async (c) => {
   const { token, password } = await readJson(c.req);
   if (!token) apiError(400, 'auth.errMissingToken');
   const record = await ott.read(c.env, ott.REGISTER, token);
@@ -241,7 +240,7 @@ accountRoutes.post('/verify-registration/', rateLimit('activate', RATES.login), 
   }
 });
 
-accountRoutes.post('/verify/request/', authMiddleware(), rateLimit('verify-request', RATES.verifyRequest), async (c) => {
+accountRoutes.post('/verify/request', authMiddleware(), rateLimit('verify-request', RATES.verifyRequest), async (c) => {
   const body = await readJson(c.req);
   const raw = body.edu_email;
   if (!raw || typeof raw !== 'string') apiError(400, 'acct.errEduEmail');
@@ -258,7 +257,7 @@ accountRoutes.post('/verify/request/', authMiddleware(), rateLimit('verify-reque
   return c.json({ code: 'acct.sentVerification' });
 });
 
-accountRoutes.post('/verify/', async (c) => {
+accountRoutes.post('/verify', async (c) => {
   const { token } = await readJson(c.req);
   if (!token) apiError(400, 'auth.errMissingToken');
   const record = await ott.read(c.env, ott.EDU_VERIFY, token);
@@ -288,7 +287,7 @@ accountRoutes.post('/verify/', async (c) => {
   return c.json({ code: 'acct.verifySuccess' });
 });
 
-accountRoutes.post('/verify/auto/', authMiddleware(), rateLimit('verify-request', RATES.verifyRequest), async (c) => {
+accountRoutes.post('/verify/auto', authMiddleware(), rateLimit('verify-request', RATES.verifyRequest), async (c) => {
   const user = await currentUser(c);
   const email = user.email.trim().toLowerCase();
   if (!(await isValidEduEmail(c.env, email))) apiError(400, 'acct.errEduEmail');
@@ -302,7 +301,7 @@ accountRoutes.post('/verify/auto/', authMiddleware(), rateLimit('verify-request'
   return c.json({ code: 'acct.verifySuccess' });
 });
 
-accountRoutes.post('/verify/unbind/', authMiddleware(), async (c) => {
+accountRoutes.post('/verify/unbind', authMiddleware(), async (c) => {
   const region = await getRegion(c);
   if (!region) apiError(400, 'sys.errUnknownRegion');
   const res = await c.env.DB.prepare(
@@ -342,7 +341,7 @@ function pendingSchoolRequest(c: C, userId: string, region: string, name: string
     .first<SchoolRequestRow>();
 }
 
-accountRoutes.post('/school-requests/', authMiddleware(), rateLimit('school-request', RATES.schoolRequest), async (c) => {
+accountRoutes.post('/school-requests', authMiddleware(), rateLimit('school-request', RATES.schoolRequest), async (c) => {
   const region = await getRegion(c);
   if (!region) apiError(400, 'sys.errUnknownRegion');
   const body = await readJson(c.req);
@@ -388,7 +387,7 @@ accountRoutes.post('/school-requests/', authMiddleware(), rateLimit('school-requ
 // Sign-in, tokens, sign-out
 // ---------------------------------------------------------------------------
 
-accountRoutes.post('/token/', rateLimit('login', RATES.login), async (c) => {
+accountRoutes.post('/login', rateLimit('login', RATES.login), async (c) => {
   const { email, password, cf_turnstile_response: challenge } = await readJson(c.req);
   if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
     apiError(400, 'auth.errValidation');
@@ -446,7 +445,7 @@ accountRoutes.post('/token/', rateLimit('login', RATES.login), async (c) => {
   return c.json({ code: 'auth.loginSuccess', user_id: user.id });
 });
 
-accountRoutes.post('/refresh/', rateLimit('refresh_token', RATES.refresh), async (c) => {
+accountRoutes.post('/refresh', rateLimit('refresh_token', RATES.refresh), async (c) => {
   const refresh = refreshTokenFrom(c, await readJson(c.req));
   if (!refresh) apiError(401, 'auth.errInvalidToken');
   try {
@@ -460,7 +459,7 @@ accountRoutes.post('/refresh/', rateLimit('refresh_token', RATES.refresh), async
   return c.json({ code: 'auth.refreshed' });
 });
 
-accountRoutes.post('/google/', rateLimit('login', RATES.login), async (c) => {
+accountRoutes.post('/google', rateLimit('login', RATES.login), async (c) => {
   const { credential } = await readJson(c.req);
   if (!credential || typeof credential !== 'string') apiError(400, 'auth.errMissingCredential');
   const clientId = c.env.GOOGLE_CLIENT_ID;
@@ -555,7 +554,7 @@ accountRoutes.post('/google/', rateLimit('login', RATES.login), async (c) => {
   return c.json({ code: 'auth.loginSuccess', user_id: user.id, user: { is_verified: isVerified } });
 });
 
-accountRoutes.get('/config/', (c) => {
+accountRoutes.get('/config', (c) => {
   // Firebase web config: public values, but only offered once push is fully set up.
   const env = c.env as AppEnv['Bindings'] & Record<string, string | undefined>;
   const web = {
@@ -570,7 +569,7 @@ accountRoutes.get('/config/', (c) => {
   return c.json({ google_client_id: c.env.GOOGLE_CLIENT_ID ?? '', fcm: complete ? web : null });
 });
 
-accountRoutes.post('/logout/', optionalAuthMiddleware(), async (c) => {
+accountRoutes.post('/logout', optionalAuthMiddleware(), async (c) => {
   // Best effort, and never refused: the cookies are always cleared, and the
   // refresh token is revoked whenever it still verifies — even when the
   // access token has already expired.
@@ -597,16 +596,17 @@ accountRoutes.post('/logout/', optionalAuthMiddleware(), async (c) => {
 // Passwords
 // ---------------------------------------------------------------------------
 
-accountRoutes.post('/password/', authMiddleware(), rateLimit('password_change', RATES.passwordChange), async (c) => {
+accountRoutes.post('/password', authMiddleware(), rateLimit('password_change', RATES.passwordChange), async (c) => {
   const user = await currentUser(c);
   const { old_password: oldPassword, new_password: newPassword } = await readJson(c.req);
-  if (!newPassword || typeof newPassword !== 'string') apiError(400, 'auth.errValidation');
-  if (user.passwordHash) {
-    if (!oldPassword || typeof oldPassword !== 'string') apiError(400, 'auth.errValidation');
-    if (!(await checkPassword(oldPassword, user.passwordHash))) fieldErrors({ old_password: ['Incorrect password.'] });
-  }
+  // Changes an existing password only. A Google-only account stays without
+  // one: there is nothing to guess, and a session alone must not add a way in.
+  if (!user.passwordHash) apiError(400, 'acct.errPasswordlessAccount');
+  if (!newPassword || typeof newPassword !== 'string') apiError(400, 'common.errValidation');
+  if (!oldPassword || typeof oldPassword !== 'string') apiError(400, 'common.errValidation');
+  if (!(await checkPassword(oldPassword, user.passwordHash))) fieldErrors({ old_password: ['auth.errInvalidPassword'] });
   const problems = passwordProblems(newPassword, user);
-  if (problems.length) apiError(400, 'auth.errValidation', { fields: problems });
+  if (problems.length) fieldErrors({ new_password: problems });
 
   await c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
     .bind(await hashPassword(newPassword), nowIso(), user.id)
@@ -617,10 +617,10 @@ accountRoutes.post('/password/', authMiddleware(), rateLimit('password_change', 
   return c.json({ code: 'acct.passwordUpdated' });
 });
 
-accountRoutes.post('/password/remove/', authMiddleware(), rateLimit('password_change', RATES.passwordChange), async (c) => {
+accountRoutes.post('/password/remove', authMiddleware(), rateLimit('password_change', RATES.passwordChange), async (c) => {
   const user = await currentUser(c);
   const { password } = await readJson(c.req);
-  if (!password || typeof password !== 'string') apiError(400, 'auth.errValidation');
+  if (!password || typeof password !== 'string') apiError(400, 'common.errValidation');
   if (!user.googleId) apiError(400, 'auth.errNoGoogleLinked');
   if (isStaffRole(user.role)) apiError(400, 'auth.errStaffCannotRemovePassword');
   if (!user.passwordHash) apiError(400, 'auth.errNoUsablePassword');
@@ -629,9 +629,9 @@ accountRoutes.post('/password/remove/', authMiddleware(), rateLimit('password_ch
   return c.json({ code: 'acct.passwordRemoved' });
 });
 
-accountRoutes.post('/password/reset/request/', rateLimit('password-reset-request', RATES.passwordResetRequest), async (c) => {
+accountRoutes.post('/password/reset/request', rateLimit('password-reset-request', RATES.passwordResetRequest), async (c) => {
   const { email: raw } = await readJson(c.req);
-  if (!raw || typeof raw !== 'string') apiError(400, 'auth.errValidation');
+  if (!raw || typeof raw !== 'string') apiError(400, 'common.errValidation');
   const email = raw.trim();
   const sent = { code: 'acct.passwordResetSent' };
   // Per address as well as per caller, so one mailbox cannot be flooded
@@ -652,10 +652,10 @@ accountRoutes.post('/password/reset/request/', rateLimit('password-reset-request
   return c.json(sent);
 });
 
-accountRoutes.post('/password/reset/confirm/', async (c) => {
+accountRoutes.post('/password/reset/confirm', async (c) => {
   const { token, new_password: newPassword } = await readJson(c.req);
   if (!token) apiError(400, 'auth.errMissingToken');
-  if (!newPassword || typeof newPassword !== 'string') apiError(400, 'auth.errValidation');
+  if (!newPassword || typeof newPassword !== 'string') apiError(400, 'common.errValidation');
   const record = await ott.read(c.env, ott.PASSWORD_RESET, token);
   if (!record) apiError(400, 'auth.errInvalidToken');
   const user = await getUser(c.env, record.userId);
@@ -666,7 +666,7 @@ accountRoutes.post('/password/reset/confirm/', async (c) => {
   }
   // Validated before consuming: a rejected password leaves the link usable.
   const problems = passwordProblems(newPassword, user);
-  if (problems.length) apiError(400, 'auth.errValidation', { fields: problems });
+  if (problems.length) fieldErrors({ new_password: problems });
   if (!(await ott.consume(c.env, record.id))) apiError(400, 'auth.errInvalidToken');
 
   await c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
@@ -681,7 +681,7 @@ accountRoutes.post('/password/reset/confirm/', async (c) => {
 // Email change
 // ---------------------------------------------------------------------------
 
-accountRoutes.post('/email/change/confirm/', rateLimit('password_change', RATES.passwordChange), async (c) => {
+accountRoutes.post('/email/change/confirm', rateLimit('password_change', RATES.passwordChange), async (c) => {
   const { token } = await readJson(c.req);
   if (!token) apiError(400, 'auth.errMissingToken');
   const record = await ott.read(c.env, ott.EMAIL_CHANGE, token);
@@ -717,7 +717,7 @@ accountRoutes.post('/email/change/confirm/', rateLimit('password_change', RATES.
   return c.json({ code: 'acct.emailChanged' });
 });
 
-accountRoutes.post('/email/change/cancel/', authMiddleware(), async (c) => {
+accountRoutes.post('/email/change/cancel', authMiddleware(), async (c) => {
   await ott.cancelEmailChange(c.env, c.get('user')!.id);
   return c.json({ code: 'acct.emailChangeCancelled' });
 });
@@ -779,10 +779,6 @@ async function myListingsBlock(c: C, userId: string, regionCode: string | null, 
     .from(listings)
     .innerJoin(books, eq(books.id, listings.bookId))
     .where(where);
-  if (page.page > 1 && page.offset >= Number(total)) {
-    // A page past the end is a 404.
-    return { counts: { ...counts, all }, invalidPage: true as const };
-  }
   const rows = await db
     .select({ listing: listings })
     .from(listings)
@@ -830,12 +826,11 @@ async function mySubscriptions(c: C, userId: string, regionCode: string | null) 
   }));
 }
 
-accountRoutes.get('/me/', authMiddleware(), async (c) => {
+accountRoutes.get('/me', authMiddleware(), async (c) => {
   const user = await currentUser(c);
   const [data, region, lang] = await Promise.all([serializeUser(c, user), getRegion(c), resolveLanguage(c)]);
   const regionCode = region?.code ?? null;
   const listingsBlock = await myListingsBlock(c, user.id, regionCode, lang);
-  if ('invalidPage' in listingsBlock) return c.json({ detail: 'Invalid page.' }, 404);
   const [pendingEmail, subs] = await Promise.all([ott.pendingEmailChange(c.env, user.id), mySubscriptions(c, user.id, regionCode)]);
   return c.json({
     ...data,
@@ -853,26 +848,26 @@ function parseDateTime(value: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-accountRoutes.patch('/me/', authMiddleware(), async (c) => {
+accountRoutes.patch('/me', authMiddleware(), async (c) => {
   const user = await currentUser(c);
   const body = await readJson(c.req);
   const { first_name: firstName, last_name: lastName, email, show_avatar: showAvatar } = body;
 
-  if (showAvatar !== undefined && showAvatar !== null && typeof showAvatar !== 'boolean') fieldErrors({ show_avatar: ['Invalid value.'] });
+  if (showAvatar !== undefined && showAvatar !== null && typeof showAvatar !== 'boolean')
+    fieldErrors({ show_avatar: ['common.errValidation'] });
   for (const [key, value] of [
     ['first_name', firstName],
     ['last_name', lastName],
   ] as const) {
     if (value === undefined || value === null) continue;
-    if (typeof value !== 'string') fieldErrors({ [key]: ['Invalid value.'] });
-    if (value.trim().length > NAME_MAX_LENGTH)
-      fieldErrors({ [key]: [`Ensure this field has no more than ${NAME_MAX_LENGTH} characters.`] });
+    if (typeof value !== 'string') fieldErrors({ [key]: ['common.errValidation'] });
+    if (value.trim().length > NAME_MAX_LENGTH) fieldErrors({ [key]: ['acct.errNameTooLong'] });
   }
   for (const key of ['last_seen_bought_orders_at', 'last_seen_sold_orders_at'] as const) {
     const v = body[key];
-    if (v !== undefined && v !== null && typeof v !== 'string') fieldErrors({ [key]: ['Invalid value.'] });
+    if (v !== undefined && v !== null && typeof v !== 'string') fieldErrors({ [key]: ['common.errValidation'] });
   }
-  if (email !== undefined && email !== null && typeof email !== 'string') fieldErrors({ email: ['Invalid value.'] });
+  if (email !== undefined && email !== null && typeof email !== 'string') fieldErrors({ email: ['common.errValidation'] });
 
   const sets: string[] = [];
   const binds: unknown[] = [];
@@ -902,15 +897,28 @@ accountRoutes.patch('/me/', authMiddleware(), async (c) => {
   if (typeof email === 'string') {
     const newEmail = email.trim().toLowerCase();
     if (newEmail !== user.email) {
-      if (user.googleId) fieldErrors({ email: ['You cannot change the email of a Google-linked account.'] });
-      if (!isPlainEmail(newEmail)) fieldErrors({ email: ['Enter a valid email address.'] });
+      if (user.googleId) fieldErrors({ email: ['acct.errGoogleEmailLocked'] });
+      if (!isPlainEmail(newEmail)) fieldErrors({ email: ['common.errEmailInvalid'] });
       const taken = await c.env.DB.prepare('SELECT 1 AS hit FROM users WHERE lower(email) = ? AND id != ? LIMIT 1')
         .bind(newEmail, user.id)
         .first();
-      if (taken) fieldErrors({ email: ['Email is already in use.'] });
+      if (taken) fieldErrors({ email: ['acct.errEmailTaken'] });
       // A campus address as the sign-in email is what auto-verify trusts; it
       // is only ever set by registration or Google, never edited in.
       if (await isValidEduEmail(c.env, newEmail)) apiError(400, 'acct.errEduEmailChangeNotAllowed');
+      // Each request mails a link to an address the caller chose: limited per
+      // account and per recipient, so no mailbox can be flooded from here.
+      if (
+        !(await takeRate(c, 'email-change', RATES.emailChange)) ||
+        !(await takeRate(c, 'email-change-recipient', RATES.emailChange, `email:${newEmail}`))
+      ) {
+        apiError(429, 'common.errThrottled');
+      }
+      // A session alone does not move the sign-in address: the link would let
+      // whoever holds it reset the password and keep the account.
+      const currentPassword = body.current_password;
+      if (typeof currentPassword !== 'string' || !currentPassword) fieldErrors({ current_password: ['acct.errCurrentPasswordRequired'] });
+      if (!(await checkPassword(currentPassword, user.passwordHash))) fieldErrors({ current_password: ['auth.errInvalidPassword'] });
       // Not applied here: only once the link mailed to the new address is followed.
       // The other fields are saved first, so an error there leaves no live link.
       await saveFields();
@@ -933,7 +941,7 @@ accountRoutes.patch('/me/', authMiddleware(), async (c) => {
   return c.json(await serializeUser(c, fresh));
 });
 
-accountRoutes.delete('/me/', authMiddleware(), async (c) => {
+accountRoutes.delete('/me', authMiddleware(), async (c) => {
   // Anonymizes rather than removes. (A 204 cannot carry a body.)
   await deleteAccount(c.env, c.get('user')!.id);
   clearSession(c);
@@ -949,11 +957,11 @@ function notificationSettings(user: User) {
   };
 }
 
-accountRoutes.get('/me/notifications/', authMiddleware(), async (c) => {
+accountRoutes.get('/me/notifications', authMiddleware(), async (c) => {
   return c.json(notificationSettings(await currentUser(c)));
 });
 
-accountRoutes.patch('/me/notifications/', authMiddleware(), async (c) => {
+accountRoutes.patch('/me/notifications', authMiddleware(), async (c) => {
   const user = await currentUser(c);
   const body = await readJson(c.req);
   const sets: string[] = [];
@@ -964,13 +972,13 @@ accountRoutes.patch('/me/notifications/', authMiddleware(), async (c) => {
   ] as const) {
     if (!(key in body)) continue;
     const v = parseBoolField(body[key]);
-    if (v === undefined) apiError(400, 'auth.errValidation');
+    if (v === undefined) apiError(400, 'common.errValidation');
     sets.push(`${column} = ?`);
     binds.push(v ? 1 : 0);
   }
   if ('email_language' in body) {
     const v = body.email_language;
-    if (typeof v !== 'string' || ![EMAIL_LANGUAGE_AUTO, ...EMAIL_LANGUAGES].includes(v)) apiError(400, 'auth.errValidation');
+    if (typeof v !== 'string' || ![EMAIL_LANGUAGE_AUTO, ...EMAIL_LANGUAGES].includes(v)) apiError(400, 'common.errValidation');
     sets.push('email_language = ?');
     binds.push(v);
   }
@@ -989,9 +997,9 @@ function pushToken(body: Record<string, unknown>): string | null {
   return token.trim();
 }
 
-accountRoutes.post('/me/push-devices/', authMiddleware(), rateLimit('push_device', RATES.pushDevice), async (c) => {
+accountRoutes.post('/me/push-devices', authMiddleware(), rateLimit('push_device', RATES.pushDevice), async (c) => {
   const token = pushToken(await readJson(c.req));
-  if (!token) apiError(400, 'auth.errValidation');
+  if (!token) apiError(400, 'common.errValidation');
   const now = nowIso();
   // Keyed on the token alone: registering one another account holds moves it here.
   await c.env.DB.prepare(
@@ -1004,35 +1012,35 @@ accountRoutes.post('/me/push-devices/', authMiddleware(), rateLimit('push_device
   return c.body(null, 204);
 });
 
-accountRoutes.delete('/me/push-devices/', authMiddleware(), rateLimit('push_device', RATES.pushDevice), async (c) => {
+accountRoutes.delete('/me/push-devices', authMiddleware(), rateLimit('push_device', RATES.pushDevice), async (c) => {
   const token = pushToken(await readJson(c.req));
-  if (!token) apiError(400, 'auth.errValidation');
+  if (!token) apiError(400, 'common.errValidation');
   // Only ever the caller's own device.
   await c.env.DB.prepare('DELETE FROM push_devices WHERE user_id = ? AND token = ?').bind(c.get('user')!.id, token).run();
   return c.body(null, 204);
 });
 
-accountRoutes.put('/me/site-language/', authMiddleware(), async (c) => {
+accountRoutes.put('/me/site-language', authMiddleware(), async (c) => {
   const { language } = await readJson(c.req);
-  if (typeof language !== 'string' || !EMAIL_LANGUAGES.includes(language)) apiError(400, 'auth.errValidation');
+  if (typeof language !== 'string' || !EMAIL_LANGUAGES.includes(language)) apiError(400, 'common.errValidation');
   await c.env.DB.prepare('UPDATE users SET site_language = ? WHERE id = ? AND site_language != ?')
     .bind(language, c.get('user')!.id, language)
     .run();
   return c.body(null, 204);
 });
 
-accountRoutes.put('/me/site-region/', authMiddleware(), async (c) => {
+accountRoutes.put('/me/site-region', authMiddleware(), async (c) => {
   const { region } = await readJson(c.req);
   const userId = c.get('user')!.id;
   if (typeof region !== 'string' || !region || !(await isVerifiedIn(c.env, userId, region.toUpperCase()))) {
-    apiError(400, 'auth.errValidation');
+    apiError(400, 'common.errValidation');
   }
   const code = region.toUpperCase();
   await c.env.DB.prepare('UPDATE users SET site_region = ? WHERE id = ? AND site_region != ?').bind(code, userId, code).run();
   return c.body(null, 204);
 });
 
-accountRoutes.get('/users/:id/', optionalAuthMiddleware(), rateLimit('public_profile', RATES.publicProfile), async (c) => {
+accountRoutes.get('/users/:id', optionalAuthMiddleware(), rateLimit('public_profile', RATES.publicProfile), async (c) => {
   const id = c.req.param('id');
   const user = UUID_RE.test(id) ? await getUser(c.env, id) : null;
   if (!user) apiError(404, 'auth.errUserNotFound');

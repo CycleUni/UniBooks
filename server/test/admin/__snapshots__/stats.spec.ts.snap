@@ -5,8 +5,6 @@ exports[`admin stats answers (characterization) > book ranking 1`] = `
   "body": {
     "count": 7,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -147,8 +145,6 @@ exports[`admin stats answers (characterization) > book ranking 2`] = `
   "body": {
     "count": 8,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 1,
@@ -307,8 +303,6 @@ exports[`admin stats answers (characterization) > book ranking 3`] = `
   "body": {
     "count": 7,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -449,8 +443,6 @@ exports[`admin stats answers (characterization) > book ranking 4`] = `
   "body": {
     "count": 8,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 1,
@@ -609,8 +601,6 @@ exports[`admin stats answers (characterization) > book ranking 5`] = `
   "body": {
     "count": 1,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -643,8 +633,6 @@ exports[`admin stats answers (characterization) > book ranking 6`] = `
   "body": {
     "count": 2,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -695,8 +683,6 @@ exports[`admin stats answers (characterization) > book ranking 7`] = `
   "body": {
     "count": 3,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -765,8 +751,6 @@ exports[`admin stats answers (characterization) > book ranking 8`] = `
   "body": {
     "count": 4,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -853,8 +837,6 @@ exports[`admin stats answers (characterization) > book ranking 9`] = `
   "body": {
     "count": 5,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -959,8 +941,6 @@ exports[`admin stats answers (characterization) > book ranking 10`] = `
   "body": {
     "count": 6,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -1083,8 +1063,6 @@ exports[`admin stats answers (characterization) > book ranking 11`] = `
   "body": {
     "count": 7,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 3,
@@ -1225,8 +1203,6 @@ exports[`admin stats answers (characterization) > book ranking 12`] = `
   "body": {
     "count": 4,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 1,
@@ -1313,8 +1289,6 @@ exports[`admin stats answers (characterization) > book ranking 13`] = `
   "body": {
     "count": 2,
     "currency": "TWD",
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 1,
@@ -1365,8 +1339,6 @@ exports[`admin stats answers (characterization) > book ranking 14`] = `
   "body": {
     "count": 8,
     "currency": "TWD",
-    "next": "http://x/api/v1/admin/stats/books/ranking/?region=TW&page_size=3&page=3&days=0",
-    "previous": "http://x/api/v1/admin/stats/books/ranking/?region=TW&page_size=3&days=0",
     "results": [
       {
         "active_listings": 0,
@@ -1434,8 +1406,6 @@ exports[`admin stats answers (characterization) > book requests 1`] = `
 {
   "body": {
     "count": 8,
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -1582,8 +1552,6 @@ exports[`admin stats answers (characterization) > book requests 2`] = `
 {
   "body": {
     "count": 8,
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -1730,8 +1698,6 @@ exports[`admin stats answers (characterization) > book requests 3`] = `
 {
   "body": {
     "count": 8,
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -1878,8 +1844,6 @@ exports[`admin stats answers (characterization) > book requests 4`] = `
 {
   "body": {
     "count": 4,
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -1962,8 +1926,6 @@ exports[`admin stats answers (characterization) > book requests 5`] = `
 {
   "body": {
     "count": 1,
-    "next": null,
-    "previous": null,
     "results": [
       {
         "active_listings": 0,
@@ -1998,8 +1960,6 @@ exports[`admin stats answers (characterization) > book requests 6`] = `
 {
   "body": {
     "count": 8,
-    "next": "http://x/api/v1/admin/stats/books/requests/?region=TW&page_size=2&page=3&days=0",
-    "previous": "http://x/api/v1/admin/stats/books/requests/?region=TW&page_size=2&days=0",
     "results": [
       {
         "active_listings": 0,
@@ -9033,7 +8993,9 @@ exports[`admin stats answers (characterization) > one book 1`] = `
   },
   {
     "body": {
-      "detail": "Not found.",
+      "error": {
+        "code": "common.errNotFound",
+      },
     },
     "status": 404,
   },

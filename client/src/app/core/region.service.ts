@@ -127,7 +127,7 @@ export class RegionService {
       this.detection = detectRegion(
         {
           backend: () => firstValueFrom(
-            this.http.get<{ region: string | null }>('/core/geo/')
+            this.http.get<{ region: string | null }>('/core/geo')
               .pipe(map(res => res?.region ?? null)),
           ),
           trace: () => fetchTrace(),
@@ -158,7 +158,7 @@ export class RegionService {
     // which already ends in /api/v1 — spelling it again here produced
     // /api/v1/api/v1/core/regions/, a silent 404 that left regions() empty
     // and the region picker with nothing to show.
-    this.http.get<Region[]>('/core/regions/').pipe(
+    this.http.get<Region[]>('/core/regions').pipe(
       tap(regs => {
         const isFirst = this.regions().length === 0;
         this.regions.set(regs);

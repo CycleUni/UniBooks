@@ -42,22 +42,22 @@ afterAll(() => {
 
 describe('Google sign-in', () => {
   it('needs a credential', async () => {
-    const res = await call('/api/v1/auth/google/', { body: {} });
+    const res = await call('/api/v1/auth/google', { body: {} });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: { code: 'auth.errMissingCredential' } });
   });
 
   it('refuses another audience, a forged signature and an unverified email', async () => {
-    const wrongAud = await call('/api/v1/auth/google/', {
+    const wrongAud = await call('/api/v1/auth/google', {
       body: { credential: await idToken({ sub: 's1', email: 'a@example.com', email_verified: true, aud: 'someone-else' }) },
     });
     expect(wrongAud.status).toBe(401);
     const good = await idToken({ sub: 's1', email: 'a@example.com', email_verified: true });
     const forged = good.slice(0, -4) + (good.endsWith('AAAA') ? 'BBBB' : 'AAAA');
-    expect((await call('/api/v1/auth/google/', { body: { credential: forged } })).status).toBe(401);
+    expect((await call('/api/v1/auth/google', { body: { credential: forged } })).status).toBe(401);
 
     await createUser('victim@example.com');
-    const unverified = await call('/api/v1/auth/google/', {
+    const unverified = await call('/api/v1/auth/google', {
       body: { credential: await idToken({ sub: 's2', email: 'victim@example.com', email_verified: false }) },
     });
     expect(unverified.status).toBe(403);
@@ -65,7 +65,7 @@ describe('Google sign-in', () => {
   });
 
   it('creates an account, then signs the same Google user back in and links by email', async () => {
-    const res = await call('/api/v1/auth/google/', {
+    const res = await call('/api/v1/auth/google', {
       body: {
         credential: await idToken({
           sub: 's3',
@@ -88,7 +88,7 @@ describe('Google sign-in', () => {
     expect(row).toMatchObject({ email: 'new.google@example.com', google_id: 's3', password_hash: null, is_active: 1 });
 
     const existing = await createUser('linkme@ntu.edu.tw');
-    const linked = await call('/api/v1/auth/google/', {
+    const linked = await call('/api/v1/auth/google', {
       body: { credential: await idToken({ sub: 's4', email: 'linkme@ntu.edu.tw', email_verified: true }) },
       headers: { 'X-Region': 'TW' },
     });
@@ -98,10 +98,10 @@ describe('Google sign-in', () => {
   });
 
   it('claims a never-activated registration for the verified Google owner, dropping its password', async () => {
-    expect((await call('/api/v1/auth/register/', { body: { email: 'claim@example.com', password: 'Attacker-Pass-123!' } })).status).toBe(
+    expect((await call('/api/v1/auth/register', { body: { email: 'claim@example.com', password: 'Attacker-Pass-123!' } })).status).toBe(
       201,
     );
-    const res = await call('/api/v1/auth/google/', {
+    const res = await call('/api/v1/auth/google', {
       body: { credential: await idToken({ sub: 's6', email: 'claim@example.com', email_verified: true }) },
     });
     expect(res.status).toBe(200);
@@ -112,10 +112,10 @@ describe('Google sign-in', () => {
   });
 
   it('refuses a different Google identity on an already-linked account', async () => {
-    await call('/api/v1/auth/google/', {
+    await call('/api/v1/auth/google', {
       body: { credential: await idToken({ sub: 's7', email: 'recycled@example.com', email_verified: true }) },
     });
-    const other = await call('/api/v1/auth/google/', {
+    const other = await call('/api/v1/auth/google', {
       body: { credential: await idToken({ sub: 's8', email: 'recycled@example.com', email_verified: true }) },
     });
     expect(other.status).toBe(403);
@@ -123,7 +123,7 @@ describe('Google sign-in', () => {
 
   it('does not get past a disabled account', async () => {
     await createUser('off@example.com', { active: false });
-    const res = await call('/api/v1/auth/google/', {
+    const res = await call('/api/v1/auth/google', {
       body: { credential: await idToken({ sub: 's5', email: 'off@example.com', email_verified: true }) },
     });
     expect(res.status).toBe(403);

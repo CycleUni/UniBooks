@@ -42,7 +42,7 @@ function isOwnBackend(url: string): boolean {
   return !url.startsWith('http') || url.startsWith(environment.backendUrl);
 }
 
-/** The path without the query string, with ids collapsed: /listings/42/ -> /listings/:id/ */
+/** The path without the query string, with ids collapsed: /listings/42 -> /listings/:id */
 function routeOf(url: string): string {
   const path = url.replace(environment.backendUrl, '').split(/[?#]/)[0];
   return path.replace(/\/(\d+|[0-9a-f]{8}-[0-9a-f-]{27})(?=\/|$)/gi, '/:id');

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../../env';
 import { invalidates } from '../../lib/cache';
 import { categories, createDb, type Category, type Database } from '../../db';
-import { apiError, fieldErrors, issueFields, pagination, readJson, validate } from '../../lib/http';
+import { apiError, fieldErrors, describeIssues, pagination, readJson, validate } from '../../lib/http';
 import { parseJsonObject } from '../../lib/json';
 import { auditInsert, changedFields, writeAudit } from '../../services/admin/audit';
 import { assertInScope, intId, notFound, regionExists, regionParam, scopeOf, scopeWhere } from '../../services/admin/scope';
@@ -62,7 +62,7 @@ async function slugTaken(db: Database, slug: string, region: string, excludeId?:
   return rows.some((r) => r.id !== excludeId);
 }
 
-categoryRoutes.get('/categories/', async (c) => {
+categoryRoutes.get('/categories', async (c) => {
   const db = createDb(c.env.DB);
   const page = pagination(c.req.url);
   const conds: (SQL | undefined)[] = [scopeWhere(categories.regionCode, await scopeOf(c))];
@@ -80,13 +80,13 @@ categoryRoutes.get('/categories/', async (c) => {
   return c.json(page.wrap(rows.map(categoryJson), n));
 });
 
-categoryRoutes.post('/categories/', invalidates('ref', 'search'), async (c) => {
+categoryRoutes.post('/categories', invalidates('ref', 'search'), async (c) => {
   const body = validate(categoryCreate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
   // Scope first, so the region and slug checks tell staff nothing about regions they do not manage.
   assertInScope(await scopeOf(c), body.region);
   if (!(await regionExists(db, body.region))) fieldErrors({ region: [INVALID] });
-  if (await slugTaken(db, body.slug, body.region)) fieldErrors({ non_field_errors: [INVALID] });
+  if (await slugTaken(db, body.slug, body.region)) fieldErrors({ slug: [INVALID] });
   const [row] = await db
     .insert(categories)
     .values({
@@ -117,7 +117,7 @@ categoryRoutes.post('/categories/', invalidates('ref', 'search'), async (c) => {
 // Bulk import (before /categories/:id/)
 // ---------------------------------------------------------------------------
 
-categoryRoutes.post('/categories/bulk/', invalidates('ref', 'search'), async (c) => {
+categoryRoutes.post('/categories/bulk', invalidates('ref', 'search'), async (c) => {
   const body = await readJson(c.req);
   const action = body.action;
   const items = body.items ?? [];
@@ -135,7 +135,7 @@ categoryRoutes.post('/categories/bulk/', invalidates('ref', 'search'), async (c)
   for (const [index, raw] of items.entries()) {
     const result = categoryBulkItem.safeParse(raw);
     if (!result.success) {
-      itemErrors.push({ index, errors: issueFields(result.error, INVALID) });
+      itemErrors.push({ index, errors: describeIssues(result.error, INVALID).fields });
       continue;
     }
     if (seenSlugs.has(result.data.slug)) {
@@ -261,9 +261,9 @@ async function loadCategory(c: Context<AppEnv>): Promise<Category> {
   return row;
 }
 
-categoryRoutes.get('/categories/:id/', async (c) => c.json(categoryJson(await loadCategory(c))));
+categoryRoutes.get('/categories/:id', async (c) => c.json(categoryJson(await loadCategory(c))));
 
-categoryRoutes.patch('/categories/:id/', invalidates('ref', 'search'), async (c) => {
+categoryRoutes.patch('/categories/:id', invalidates('ref', 'search'), async (c) => {
   const instance = await loadCategory(c);
   const body = validate(categoryUpdate, await readJson(c.req), INVALID);
   const db = createDb(c.env.DB);
@@ -272,7 +272,7 @@ categoryRoutes.patch('/categories/:id/', invalidates('ref', 'search'), async (c)
   if (body.region !== undefined && !(await regionExists(db, body.region))) fieldErrors({ region: [INVALID] });
   const slug = body.slug ?? instance.slug;
   if ((body.slug !== undefined || body.region !== undefined) && (await slugTaken(db, slug, region, instance.id))) {
-    fieldErrors({ non_field_errors: [INVALID] });
+    fieldErrors({ slug: [INVALID] });
   }
 
   const set: Partial<Category> = {};
@@ -304,7 +304,7 @@ categoryRoutes.patch('/categories/:id/', invalidates('ref', 'search'), async (c)
   return c.json(categoryJson(row));
 });
 
-categoryRoutes.delete('/categories/:id/', invalidates('ref', 'search'), async (c) => {
+categoryRoutes.delete('/categories/:id', invalidates('ref', 'search'), async (c) => {
   const instance = await loadCategory(c);
   // listings.category_id is ON DELETE SET NULL.
   const db = createDb(c.env.DB);

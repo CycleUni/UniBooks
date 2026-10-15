@@ -1,0 +1,62 @@
+import { beforeAll, describe, expect, it } from 'vitest';
+import { env } from 'cloudflare:workers';
+import { call, seedReference, staff } from '../ads/helpers';
+import { createUser } from '../accounts/helpers';
+
+let root: { id: string; token: string };
+let twManager: { id: string; token: string };
+
+beforeAll(async () => {
+  await seedReference();
+  root = await staff('users-root@example.com', { admin: true });
+  twManager = await staff('users-tw@example.com', { regions: ['TW'] });
+});
+
+async function verifyIn(userId: string, region: string) {
+  await env.DB.prepare(
+    'INSERT INTO region_verifications (user_id, region_code, is_manual_verification, verified_at, is_active, created_at) VALUES (?, ?, 1, ?, 1, ?)',
+  )
+    .bind(userId, region, new Date().toISOString(), new Date().toISOString())
+    .run();
+}
+
+const setActive = (id: string, token: string, value: boolean) =>
+  call(`/api/v1/admin/users/${id}`, { token, method: 'PATCH', body: { is_active: value } });
+
+describe('switching an account on or off', () => {
+  it('lets a region manager switch only accounts verified solely in their regions', async () => {
+    const twOnly = await createUser('users-tw-only@example.com');
+    await verifyIn(twOnly, 'TW');
+    expect((await setActive(twOnly, twManager.token, false)).status).toBe(200);
+    expect((await setActive(twOnly, twManager.token, true)).status).toBe(200);
+
+    const both = await createUser('users-tw-hk@example.com');
+    await verifyIn(both, 'TW');
+    await verifyIn(both, 'HK');
+    expect((await setActive(both, twManager.token, false)).status).toBe(403);
+    expect((await setActive(both, root.token, false)).status).toBe(200);
+
+    const unverified = await createUser('users-unverified@example.com');
+    expect((await setActive(unverified, twManager.token, false)).status).toBe(403);
+  });
+
+  it('never activates a sign-up that has not confirmed its email', async () => {
+    const pending = await createUser('users-pending@example.com', { active: false, password: null });
+    const res = await setActive(pending, root.token, true);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: { code: 'admin.errForbiddenField' } });
+  });
+
+  it('grants and revokes staff by role', async () => {
+    const someone = await createUser('users-promote@example.com');
+    const grant = await call(`/api/v1/admin/managers/${someone}`, { token: root.token, method: 'PATCH', body: { role: 'staff' } });
+    expect(grant.status).toBe(200);
+    expect(((await grant.json()) as { role: string }).role).toBe('staff');
+    expect((await call(`/api/v1/admin/managers/${someone}`, { token: root.token, method: 'PATCH', body: { role: 'admin' } })).status).toBe(
+      400,
+    );
+    expect(
+      (await call(`/api/v1/admin/managers/${someone}`, { token: twManager.token, method: 'PATCH', body: { role: 'user' } })).status,
+    ).toBe(403);
+  });
+});

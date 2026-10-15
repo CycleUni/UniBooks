@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { and, desc, eq, max, min, sql } from 'drizzle-orm';
 import type { AppEnv, Env } from '../env';
 import { createDb, books, listings, subscriptions, type Book, type InsertBook } from '../db';
-import { apiError, fieldErrors, readJson } from '../lib/http';
+import { apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
@@ -22,7 +22,6 @@ import {
 } from '../services/catalog/lookups';
 import { resolveLanguage, schoolFilterId } from '../services/listings/places';
 import { serializeBook, serializeListings } from '../services/listings/serialize';
-import { pageFor } from '../services/listings/lifecycle';
 import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
 
@@ -106,7 +105,7 @@ bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
       .where(eq(subscriptions.bookId, book.id)),
   ]);
   const count = Number(agg?.n ?? 0);
-  const p = pageFor(c.req.url, count);
+  const p = pagination(c.req.url);
   const rows = count
     ? await db.select().from(listings).where(activeWhere).orderBy(desc(listings.createdAt)).limit(p.limit).offset(p.offset)
     : [];
@@ -178,7 +177,7 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : undefined;
 }
 
-bookRoutes.post('/manual/', authMiddleware(), async (c) => {
+bookRoutes.post('/manual', authMiddleware(), async (c) => {
   const region = await requireRegion(c);
   await assertVerifiedIn(c, region.code);
   await checkRate(c, 'book_create', '20/hour');
@@ -252,7 +251,7 @@ bookRoutes.post('/manual/', authMiddleware(), async (c) => {
     await db.insert(books).values(row);
   } catch (e) {
     // Lost a race with another create of the same ISBN.
-    if (isbn13 && /UNIQUE/i.test(String(e))) fieldErrors({ non_field_errors: ['listing.errIsbnTaken'] });
+    if (isbn13 && /UNIQUE/i.test(String(e))) apiError(400, 'listing.errIsbnTaken');
     throw e;
   }
   return c.json(serializeBook(row as Book), 201);

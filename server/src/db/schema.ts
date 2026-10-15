@@ -134,7 +134,7 @@ export const users = sqliteTable('users', {
   avatarUrl: text('avatar_url'),
   // Whether other users see avatar_url; the owner always does.
   showAvatar: integer('show_avatar').notNull().default(1),
-  // staff = 'staff' | 'admin', superuser = 'admin'.
+  // staff = 'staff' | 'admin', admin = 'admin'.
   role: text('role', { enum: ['user', 'staff', 'admin'] })
     .notNull()
     .default('user'),
@@ -714,8 +714,8 @@ export type NewAuditEvent = InsertAuditEvent;
 // 22. Staff managed regions
 // ============================================================================
 /**
- * The regions a non-superuser staff account may administer (IsRegionManager).
- * Superusers (role 'admin') see every region regardless of rows here.
+ * The regions a non-admin staff account may administer.
+ * Admins (role 'admin') see every region regardless of rows here.
  */
 export const staffManagedRegions = sqliteTable(
   'staff_managed_regions',

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AdminService, AdminUser } from '../../core/services/admin.service';
+import { hasStaffAccess, isAdminUser } from '../../core/auth.store';
 import { parseAdminError } from '../../core/admin-error.util';
 import { AccountService } from '../../core/services/account.service';
 import { TPipe, I18nService } from '../../core/i18n.service';
@@ -66,16 +67,16 @@ import { UiButton } from '../../shared/ui/button.component';
           <td>{{ user.display_name || (user.first_name + ' ' + user.last_name) }}</td>
           <td>{{ user.school_name }}</td>
           <td>
-            <span class="admin-status-badge" [class.ok]="user.is_staff">{{ (user.is_staff ? 'admin.yes' : 'admin.no') | t }}</span>
-            <span class="admin-status-badge superuser-badge" *ngIf="user.is_superuser">{{ 'admin.superuser' | t }}</span>
+            <span class="admin-status-badge" [class.ok]="hasStaffAccess(user)">{{ (hasStaffAccess(user) ? 'admin.yes' : 'admin.no') | t }}</span>
+            <span class="admin-status-badge superuser-badge" *ngIf="user.role === 'admin'">{{ 'admin.superuser' | t }}</span>
           </td>
           <td>
             <button 
               *ngIf="canManage(user)"
               class="btn-toggle" 
-              [class.revoke]="user.is_staff" 
+              [class.revoke]="hasStaffAccess(user)" 
               (click)="toggleAdmin(user)">
-              {{ (user.is_staff ? 'admin.revokeAdmin' : 'admin.grantAdmin') | t }}
+              {{ (hasStaffAccess(user) ? 'admin.revokeAdmin' : 'admin.grantAdmin') | t }}
             </button>
             <span *ngIf="!isSuperuser" class="text-muted text-sm">{{ 'admin.superuserOnly' | t }}</span>
           </td>
@@ -161,11 +162,12 @@ export class AdminManagersListComponent implements OnInit {
     return !!(this.q || this.isActiveFilter);
   }
   isSuperuser = false;
+  readonly hasStaffAccess = hasStaffAccess;
 
   constructor() {
     effect(() => {
       const profile = this.accountService.profileCache();
-      this.isSuperuser = profile?.is_superuser === true;
+      this.isSuperuser = isAdminUser(profile);
       this.cdr.markForCheck();
     });
   }
@@ -214,11 +216,11 @@ export class AdminManagersListComponent implements OnInit {
 
   /** Only admin rights can be taken in bulk; granting stays one at a time. */
   canRevoke(user: AdminUser): boolean {
-    return this.canManage(user) && !!user.is_staff;
+    return this.canManage(user) && hasStaffAccess(user);
   }
 
   bulkRevoke() {
-    this.bulk.run((id) => this.adminService.toggleManager(id, false), {
+    this.bulk.run((id) => this.adminService.setManagerRole(id, 'user'), {
       confirm: this.i18n.t('admin.bulk.confirmRevokeAdmin', { n: this.bulk.selection.size }),
       danger: true,
       confirmLabel: this.i18n.t('admin.revokeAdmin'),
@@ -226,13 +228,13 @@ export class AdminManagersListComponent implements OnInit {
   }
 
   canManage(targetUser: AdminUser): boolean {
-    return this.isSuperuser && !targetUser.is_superuser;
+    return this.isSuperuser && targetUser.role !== 'admin';
   }
 
   async toggleAdmin(user: AdminUser) {
     if (!this.canManage(user)) return;
     
-    const newStaffStatus = !user.is_staff;
+    const newStaffStatus = !hasStaffAccess(user);
     const action = newStaffStatus ? this.i18n.t('admin.grantAdmin') : this.i18n.t('admin.revokeAdmin');
     // Granting can be walked back from this same screen; revoking can lock the
     // last other admin out of it, so only the revoke half gets the red button.
@@ -243,9 +245,9 @@ export class AdminManagersListComponent implements OnInit {
     });
     if (!confirmed) return;
 
-    this.adminService.toggleManager(user.id, newStaffStatus).subscribe({
+    this.adminService.setManagerRole(user.id, newStaffStatus ? 'staff' : 'user').subscribe({
       next: (updatedUser) => {
-        user.is_staff = updatedUser.is_staff;
+        user.role = updatedUser.role;
         this.cdr.markForCheck();
       },
       error: (err) => {

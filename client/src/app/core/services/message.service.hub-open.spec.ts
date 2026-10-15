@@ -44,7 +44,7 @@ describe('MessageService opening the hub', () => {
 
     const http = {
       get: vi.fn((url: string) => {
-        if (!url.includes('/messaging/hub-token/')) return of({ unread: [], count: 0 });
+        if (!url.includes('/messaging/hub-token')) return of({ unread: [], count: 0 });
         tokenRequests++;
         const next = tokenResponses.length > 1 ? tokenResponses.shift()! : tokenResponses[0];
         return next();

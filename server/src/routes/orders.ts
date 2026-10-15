@@ -5,7 +5,7 @@ import type { AppEnv } from '../env';
 import { createDb, orders, listings, books, conversations, reviews, users } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { getRegion, assertVerifiedIn } from '../lib/region';
-import { fieldErrors, notFound, pagination, readJson } from '../lib/http';
+import { apiError, fieldErrors, notFound, pagination, readJson } from '../lib/http';
 import { listOrders, getOrderFor } from '../services/orders/serialize';
 import { resolveLanguage } from '../services/accounts/i18n';
 import type { LockedResult } from '../services/orders/transitions';
@@ -28,8 +28,6 @@ import { UUID_LOOSE_RE, normUuid } from '../lib/uuid';
 export const orderRoutes = new Hono<AppEnv>();
 
 orderRoutes.use('*', authMiddleware());
-
-const methodNotAllowed = (c: Context<AppEnv>) => c.json({ detail: `Method "${c.req.method}" not allowed.` }, 405);
 
 /** Answer 400 with a single (un-listed) field error: {"order": "code"}. */
 function plainFieldError(c: Context<AppEnv>, field: string, code: string) {
@@ -75,7 +73,7 @@ function serializeReview(r: ReviewRow) {
 
 const mine = (userId: string) => or(eq(reviews.reviewerId, userId), eq(reviews.revieweeId, userId))!;
 
-orderRoutes.get('/reviews/', async (c) => {
+orderRoutes.get('/reviews', async (c) => {
   const userId = c.get('userId')!;
   const page = pagination(c.req.url);
   const db = createDb(c.env.DB);
@@ -108,7 +106,7 @@ function parseRating(v: unknown): number | null | undefined {
   return undefined;
 }
 
-orderRoutes.post('/reviews/', async (c) => {
+orderRoutes.post('/reviews', async (c) => {
   const user = c.get('user')!;
   const data = await readJson(c.req);
   const db = createDb(c.env.DB);
@@ -169,7 +167,7 @@ orderRoutes.post('/reviews/', async (c) => {
   return c.json(serializeReview(row), 201);
 });
 
-orderRoutes.get('/reviews/:id/', async (c) => {
+orderRoutes.get('/reviews/:id', async (c) => {
   const id = Number(c.req.param('id'));
   if (!Number.isSafeInteger(id)) return notFound(c);
   const [row] = await reviewSelect(c)
@@ -177,9 +175,6 @@ orderRoutes.get('/reviews/:id/', async (c) => {
     .limit(1);
   return row ? c.json(serializeReview(row)) : notFound(c);
 });
-
-orderRoutes.on(['PUT', 'PATCH', 'DELETE'], '/reviews/', methodNotAllowed);
-orderRoutes.on(['PUT', 'PATCH', 'DELETE', 'POST'], '/reviews/:id/', methodNotAllowed);
 
 // ---------------------------------------------------------------------------
 // Orders
@@ -240,7 +235,7 @@ orderRoutes.post('/', async (c) => {
     .limit(1);
   if (!conv) fieldErrors({ listing: ['checkout.errNoChat'] });
 
-  // perform_create: amount, region and currency come from the listing, never the request.
+  // Amount, region and currency come from the listing, never the request.
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   // The partial unique index orders_open_buyer_listing_uniq refuses a second
@@ -299,14 +294,14 @@ async function findVisibleOrder(c: Context<AppEnv>, rawId: string) {
   return o ?? null;
 }
 
-orderRoutes.get('/:id/', async (c) => {
+orderRoutes.get('/:id', async (c) => {
   const o = await findVisibleOrder(c, c.req.param('id'));
   if (!o) return notFound(c);
   const body = await getOrderFor(c.env, c.get('userId')!, o.regionCode, o.id, await resolveLanguage(c));
   return body ? c.json(body) : notFound(c);
 });
 
-orderRoutes.patch('/:id/', async (c) => {
+orderRoutes.patch('/:id', async (c) => {
   const userId = c.get('userId')!;
   const o = await findVisibleOrder(c, c.req.param('id'));
   if (!o) return notFound(c);
@@ -314,7 +309,7 @@ orderRoutes.patch('/:id/', async (c) => {
   const data = await readJson(c.req);
 
   const res = (await orderLock(c.env, lockKeyFor(o)).updateOrder({ orderId: o.id, actorId: userId, data })) as LockedResult;
-  if (!res.ok) return c.json(res.body as object, res.status);
+  if (!res.ok) apiError(res.status, res.code, res.fields && { fields: res.fields });
 
   // Chat notices are network calls: they go once the write has committed
   // and the lock is free, and never fail the request.
@@ -323,6 +318,3 @@ orderRoutes.patch('/:id/', async (c) => {
   const body = await getOrderFor(c.env, userId, o.regionCode, o.id, await resolveLanguage(c));
   return body ? c.json(body) : notFound(c);
 });
-
-orderRoutes.on(['PUT', 'DELETE'], '/', methodNotAllowed);
-orderRoutes.on(['PUT', 'DELETE', 'POST'], '/:id/', methodNotAllowed);

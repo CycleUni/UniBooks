@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { I18nService, TPipe } from '../../core/i18n.service';
-import { translateApiError } from '../../core/api-error.util';
+import { parseApiError } from '../../core/api-error.util';
 import { UiButton } from './button.component';
 import { UiRadioGroup } from './radio-group.component';
 import { UiTextarea } from './textarea.component';
@@ -86,7 +86,7 @@ export class UiReportModal implements OnInit {
     this.submitting = true;
     this.error = '';
 
-    this.http.post('/moderation/chat-reports/', {
+    this.http.post('/moderation/chat-reports', {
       conversation: this.conversationId,
       reported_party: this.reportedPartyId,
       reason: this.reason,
@@ -101,13 +101,9 @@ export class UiReportModal implements OnInit {
         this.cdr.markForCheck();
       },
       error: (err: any) => {
-        // A serializer raise answers {"reported_party": ["<code>"]}, not the
-        // {"error": {"code"}} contract this used to read — so the check that
-        // the reported party is really the other participant landed here as
-        // the generic "could not report" message.
-        this.error = translateApiError(err, this.i18n)
-          ?? err?.error?.error?.detail
-          ?? this.i18n.t('msg.reportError');
+        // A field code (e.g. the reported party is not the other participant)
+        // says more than the generic "could not report" message.
+        this.error = parseApiError(err, this.i18n, 'msg.reportError');
         this.submitting = false;
         this.cdr.markForCheck();
       },

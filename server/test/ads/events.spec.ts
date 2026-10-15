@@ -10,9 +10,9 @@ describe('ad view / click events', () => {
     const live = await ad(await advertiser({ regions: ['TW'] }));
     const AD_EVENTS = stubAdEvents();
     const headers = { 'CF-Connecting-IP': '203.0.113.7', 'User-Agent': 'test-agent' };
-    const view = await call(`/api/v1/promotions/${live}/view/`, { method: 'POST', headers, env: { AD_EVENTS: AD_EVENTS as any } });
+    const view = await call(`/api/v1/promotions/${live}/view`, { method: 'POST', headers, env: { AD_EVENTS: AD_EVENTS as any } });
     expect(view.status).toBe(204);
-    const click = await call(`/api/v1/promotions/${live}/click/`, { method: 'POST', headers, env: { AD_EVENTS: AD_EVENTS as any } });
+    const click = await call(`/api/v1/promotions/${live}/click`, { method: 'POST', headers, env: { AD_EVENTS: AD_EVENTS as any } });
     expect(click.status).toBe(204);
 
     expect(AD_EVENTS.writeDataPoint).toHaveBeenCalledTimes(2);
@@ -27,7 +27,7 @@ describe('ad view / click events', () => {
     expect(JSON.stringify(first)).not.toContain('203.0.113.7');
 
     // A different client hashes differently.
-    await call(`/api/v1/promotions/${live}/view/`, {
+    await call(`/api/v1/promotions/${live}/view`, {
       method: 'POST',
       headers: { 'CF-Connecting-IP': '198.51.100.1', 'User-Agent': 'test-agent' },
       env: { AD_EVENTS: AD_EVENTS as any },
@@ -46,7 +46,7 @@ describe('ad view / click events', () => {
     const AD_EVENTS = stubAdEvents();
     for (const id of ids) {
       for (const kind of ['view', 'click']) {
-        const res = await call(`/api/v1/promotions/${id}/${kind}/`, { method: 'POST', env: { AD_EVENTS: AD_EVENTS as any } });
+        const res = await call(`/api/v1/promotions/${id}/${kind}`, { method: 'POST', env: { AD_EVENTS: AD_EVENTS as any } });
         expect(res.status, `${id} ${kind}`).toBe(204);
       }
     }
@@ -55,14 +55,14 @@ describe('ad view / click events', () => {
 
   it('404s an unknown or malformed id', async () => {
     const AD_EVENTS = stubAdEvents();
-    expect((await call('/api/v1/promotions/999999/view/', { method: 'POST', env: { AD_EVENTS: AD_EVENTS as any } })).status).toBe(404);
-    expect((await call('/api/v1/promotions/abc/click/', { method: 'POST', env: { AD_EVENTS: AD_EVENTS as any } })).status).toBe(404);
+    expect((await call('/api/v1/promotions/999999/view', { method: 'POST', env: { AD_EVENTS: AD_EVENTS as any } })).status).toBe(404);
+    expect((await call('/api/v1/promotions/abc/click', { method: 'POST', env: { AD_EVENTS: AD_EVENTS as any } })).status).toBe(404);
     expect(AD_EVENTS.writeDataPoint).not.toHaveBeenCalled();
   });
 
   it('works without the binding (local dev)', async () => {
     const live = await ad(await advertiser({ allRegions: true }));
-    expect((await call(`/api/v1/promotions/${live}/view/`, { method: 'POST', env: { AD_EVENTS: undefined } })).status).toBe(204);
+    expect((await call(`/api/v1/promotions/${live}/view`, { method: 'POST', env: { AD_EVENTS: undefined } })).status).toBe(204);
   });
 });
 
@@ -71,7 +71,7 @@ describe('public active list', () => {
     const adv = await advertiser({ name: 'Bookshop', regions: ['HK'] });
     const live = await ad(adv, { title: 'HK only' });
     await ad(adv, { title: 'Off', active: false });
-    const res = await call('/api/v1/promotions/active/?position=home_banner', { headers: { 'X-Region': 'HK' } });
+    const res = await call('/api/v1/promotions/active?position=home_banner', { headers: { 'X-Region': 'HK' } });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { count: number; results: Record<string, unknown>[] };
     const mine = body.results.filter((r) => r.advertiser_name === 'Bookshop');
@@ -90,10 +90,8 @@ describe('public active list', () => {
       show_in_hero: false,
     });
     expect(body).toHaveProperty('count');
-    expect(body).toHaveProperty('next');
-    expect(body).toHaveProperty('previous');
 
-    const tw = (await (await call('/api/v1/promotions/active/?position=home_banner', { headers: { 'X-Region': 'TW' } })).json()) as {
+    const tw = (await (await call('/api/v1/promotions/active?position=home_banner', { headers: { 'X-Region': 'TW' } })).json()) as {
       results: { advertiser_name: string }[];
     };
     expect(tw.results.some((r) => r.advertiser_name === 'Bookshop')).toBe(false);

@@ -8,7 +8,7 @@ import { OrderService } from './order.service';
 describe('OrderService.checkUnreadOrders', () => {
   let service: OrderService;
   let http: HttpTestingController;
-  const orders = () => http.match(req => req.url === '/orders/');
+  const orders = () => http.match(req => req.url === '/orders');
 
   beforeEach(() => {
     TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });

@@ -11,7 +11,7 @@ import { isSameRegion } from '../../core/region-path';
 import { ToastService } from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { ActivatedRoute, Router } from '@angular/router';
-import { parseApiError } from '../../core/api-error.util';
+import { parseApiError, translateApiError } from '../../core/api-error.util';
 import { SchoolRequestFormComponent } from './school-request-form.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
@@ -23,9 +23,18 @@ const SCHOOL_NOT_SUPPORTED = 'acct.errSchoolNotSupported';
 @Component({
   selector: 'app-account-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, UiButton, UiInput, TPipe, SchoolRequestFormComponent, UiSkeleton, UiErrorState],
+  imports: [
+    CommonModule,
+    FormsModule,
+    UiButton,
+    UiInput,
+    TPipe,
+    SchoolRequestFormComponent,
+    UiSkeleton,
+    UiErrorState,
+  ],
   templateUrl: './settings.html',
-  styleUrls: ['./settings.css']
+  styleUrls: ['./settings.css'],
 })
 export class SettingsComponent implements OnInit, OnDestroy {
   get currentRegion(): Region | null {
@@ -34,11 +43,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   get currentVerification(): any | null {
     if (!this.currentRegion) return null;
-    return (this.verifications || []).find(v => isSameRegion(v.region, this.currentRegion!.code) && !!v.verified_at) || null;
+    return (
+      (this.verifications || []).find(
+        (v) => isSameRegion(v.region, this.currentRegion!.code) && !!v.verified_at,
+      ) || null
+    );
   }
 
-  private readonly verifyPendingEmailStorageKeyLegacy = 'unibooks.account.eduVerification.pendingEmail';
-  private readonly verifyCooldownUntilStorageKeyLegacy = 'unibooks.account.eduVerification.cooldownUntil';
+  private readonly verifyPendingEmailStorageKeyLegacy =
+    'unibooks.account.eduVerification.pendingEmail';
+  private readonly verifyCooldownUntilStorageKeyLegacy =
+    'unibooks.account.eduVerification.cooldownUntil';
 
   email = '';
   firstName = '';
@@ -81,17 +96,19 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (throttledSeconds !== null) {
       return this.i18n.t('acct.verifyThrottled', {
         minutes: this.resendCooldownMinutes,
-        seconds: this.resendCooldownSecondsPart
+        seconds: this.resendCooldownSecondsPart,
       });
     }
-    return err.error?.detail || err.error?.edu_email?.[0] || this.i18n.t('acct.verifyFailed');
+    return translateApiError(err, this.i18n) ?? this.i18n.t('acct.verifyFailed');
   }
 
   /** Whether the last manual verification attempt failed because the
    *  address's school is not in the registry — the case the "report my
    *  school" form is offered for. */
   get schoolNotSupported(): boolean {
-    return !this.clientVerifyMsg && this.lastVerifyError?.error?.error?.code === SCHOOL_NOT_SUPPORTED;
+    return (
+      !this.clientVerifyMsg && this.lastVerifyError?.error?.error?.code === SCHOOL_NOT_SUPPORTED
+    );
   }
 
   clientSettingsMsg = '';
@@ -100,7 +117,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (this.clientSettingsMsg) return this.i18n.t(this.clientSettingsMsg);
     if (!this.lastSettingsError) return '';
     const err = this.lastSettingsError;
-    return err.error?.email?.[0] || this.i18n.t('acct.saveFailed');
+    return translateApiError(err, this.i18n) ?? this.i18n.t('acct.saveFailed');
   }
 
   clientPwdMsg = '';
@@ -109,27 +126,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (this.clientPwdMsg) return this.i18n.t(this.clientPwdMsg);
     if (!this.lastPwdError) return '';
     const err = this.lastPwdError;
-    // Changing a password now runs the server's password validators, which
-    // answer {error:{code:'auth.errValidation', fields:[...]}} — the shape
-    // registration already knows. Nothing here read it, so "too short",
-    // "too common" and "entirely numeric" all arrived as a bare "update
-    // failed" with nothing to act on. The code itself is not shown:
-    // auth.errValidation reads "provide an email and password", which is the
-    // registration wording and wrong here. Each message falls back to itself,
-    // since the validators answer in prose, not in i18n keys.
-    const backend = err.error?.error;
-    if (backend?.code === 'auth.errValidation') {
-      // A list from the validators, but a lone string costs nothing to accept.
-      const raw = backend.fields;
-      const messages: string[] = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
-      const detail = messages.map((m: string) => this.i18n.tOrNull(m) ?? m).join(' ');
-      return detail
-        ? this.i18n.t('acct.errPasswordRejected', { msg: detail })
-        : this.i18n.t('acct.updateFailed');
+    // The server's password validators answer with every problem of the new
+    // password under fields.new_password, so "too short", "too common" and
+    // "entirely numeric" are shown together rather than as a bare "update
+    // failed". A rejected old password is a different field and reads through
+    // translateApiError below.
+    const rejected: string[] = err.error?.error?.fields?.new_password ?? [];
+    if (rejected.length) {
+      const detail = rejected.map((code: string) => this.i18n.tOrNull(code)).filter(Boolean).join(' ');
+      return this.i18n.t('acct.errPasswordRejected', { msg: detail });
     }
-    const code = this.i18n.tOrNull(backend?.code);
-    if (code) return code;
-    return err.error?.old_password?.[0] || err.error?.detail || this.i18n.t('acct.updateFailed');
+    return translateApiError(err, this.i18n) ?? this.i18n.t('acct.updateFailed');
   }
 
   removePasswordInput = '';
@@ -140,9 +147,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (this.clientRemovePwdMsg) return this.i18n.t(this.clientRemovePwdMsg);
     if (!this.lastRemovePwdError) return '';
     const err = this.lastRemovePwdError;
-    const code = err.error?.error?.code;
-    if (code) return this.i18n.t(code);
-    return err.error?.password?.[0] || err.error?.detail || this.i18n.t('acct.updateFailed');
+    return translateApiError(err, this.i18n) ?? this.i18n.t('acct.updateFailed');
   }
 
   private authStore = inject(AuthStore);
@@ -178,13 +183,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
     const parts = this.email.split('@');
     if (parts.length !== 2) return null;
     const loginDomain = parts[1].toLowerCase();
-    
-    const suffixes = this.currentRegion.edu_email_suffix.map(s => {
+
+    const suffixes = this.currentRegion.edu_email_suffix.map((s) => {
       const lower = s.toLowerCase();
       return lower.startsWith('.') ? lower : '.' + lower;
     });
-    
-    if (suffixes.some(s => loginDomain.endsWith(s))) {
+
+    if (suffixes.some((s) => loginDomain.endsWith(s))) {
       return this.currentRegion;
     }
     return null;
@@ -193,6 +198,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
   /** A sign-in-email change waiting for the link in the new mailbox to be
    *  followed. Until then `email` below is still the address that works. */
   pendingEmail: string | null = null;
+
+  /** The sign-in email as loaded; changing it needs the current password. */
+  private savedEmail = '';
+  emailChangePassword = '';
+  get emailChanged(): boolean {
+    return this.email.trim().toLowerCase() !== this.savedEmail.toLowerCase();
+  }
 
   ngOnInit() {
     this.clearLegacyPendingVerificationState();
@@ -245,6 +257,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.profileLoaded = true;
         this.profileUserId = data.id ? String(data.id) : null;
         this.email = data.email || '';
+        this.savedEmail = this.email;
+        this.emailChangePassword = '';
         this.firstName = data.first_name || '';
         this.lastName = data.last_name || '';
         this.eduEmail = data.edu_email || '';
@@ -270,7 +284,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.clientSettingsMsg = 'acct.loadProfileFailed';
         console.error('Failed to load profile', err);
         this.cdr.markForCheck();
-      }
+      },
     });
   }
 
@@ -278,7 +292,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     const verifiedRegion = this.getVerifiedRegionForEmail(this.eduEmail);
     if (verifiedRegion) {
       const proceed = await this.confirms.ask(
-        this.i18n.t('acct.regionAlreadyVerifiedConfirm', { region: verifiedRegion.localized_name })
+        this.i18n.t('acct.regionAlreadyVerifiedConfirm', { region: verifiedRegion.localized_name }),
       );
       if (!proceed) return;
     }
@@ -290,18 +304,20 @@ export class SettingsComponent implements OnInit, OnDestroy {
     const parts = emailInput.trim().split('@');
     if (parts.length !== 2) return null;
     const loginDomain = parts[1].toLowerCase();
-    
+
     const regions = this.regionService.regions();
-    const matchedRegion = regions.find(r => {
-      const suffixes = r.edu_email_suffix.map(s => {
+    const matchedRegion = regions.find((r) => {
+      const suffixes = r.edu_email_suffix.map((s) => {
         const lower = s.toLowerCase();
         return lower.startsWith('.') ? lower : '.' + lower;
       });
-      return suffixes.some(s => loginDomain.endsWith(s));
+      return suffixes.some((s) => loginDomain.endsWith(s));
     });
-    
+
     if (matchedRegion) {
-      const isVerified = (this.verifications || []).some(v => isSameRegion(v.region, matchedRegion.code) && !!v.verified_at);
+      const isVerified = (this.verifications || []).some(
+        (v) => isSameRegion(v.region, matchedRegion.code) && !!v.verified_at,
+      );
       if (isVerified) {
         return matchedRegion;
       }
@@ -357,7 +373,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
           this.applyCooldownUntil(Date.now() + throttledSeconds * 1000);
         }
         this.cdr.markForCheck();
-      }
+      },
     });
   }
 
@@ -393,7 +409,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.autoVerifyMessage = code ? this.i18n.t(code) : this.i18n.t('acct.verifyFailed');
         this.autoVerifySchoolNotSupported = code === SCHOOL_NOT_SUPPORTED;
         this.cdr.markForCheck();
-      }
+      },
     });
   }
 
@@ -404,35 +420,38 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.settingsIsError = false;
     this.cdr.markForCheck();
 
-    this.accountService.updateProfile({
-      first_name: this.firstName,
-      last_name: this.lastName,
-      email: this.email
-    }).subscribe({
-      next: (resp) => {
-        this.isLoading = false;
-        // A new sign-in email is not applied on save — it waits for the link
-        // sent to that address — so say so rather than "profile saved", which
-        // would read as though the address had already changed.
-        if (resp?.code === 'acct.emailChangePending') {
-          this.clientSettingsMsg = 'acct.emailChangePending';
-          // Re-read rather than trust the response: /auth/me/ reports the
-          // pending address as well as the one still in force, and the field
-          // above must go back to showing the address that actually works.
-          this.accountService.clearProfileCache();
-          this.loadProfile();
-        } else {
-          this.clientSettingsMsg = 'acct.profileSaved';
-        }
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.isLoading = false;
-        this.settingsIsError = true;
-        this.lastSettingsError = err;
-        this.cdr.markForCheck();
-      }
-    });
+    this.accountService
+      .updateProfile({
+        first_name: this.firstName,
+        last_name: this.lastName,
+        email: this.email,
+        ...(this.emailChanged ? { current_password: this.emailChangePassword } : {}),
+      })
+      .subscribe({
+        next: (resp) => {
+          this.isLoading = false;
+          // A new sign-in email is not applied on save — it waits for the link
+          // sent to that address — so say so rather than "profile saved", which
+          // would read as though the address had already changed.
+          if (resp?.code === 'acct.emailChangePending') {
+            this.clientSettingsMsg = 'acct.emailChangePending';
+            // Re-read rather than trust the response: /auth/me/ reports the
+            // pending address as well as the one still in force, and the field
+            // above must go back to showing the address that actually works.
+            this.accountService.clearProfileCache();
+            this.loadProfile();
+          } else {
+            this.clientSettingsMsg = 'acct.profileSaved';
+          }
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.isLoading = false;
+          this.settingsIsError = true;
+          this.lastSettingsError = err;
+          this.cdr.markForCheck();
+        },
+      });
   }
 
   setShowAvatar(input: HTMLInputElement) {
@@ -459,15 +478,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.savingShowAvatar = false;
         this.toast.error(parseApiError(err, this.i18n, 'acct.showAvatarSaveFailed'));
         this.cdr.markForCheck();
-      }
+      },
     });
   }
 
   onChangePassword() {
     this.clientPwdMsg = '';
     this.lastPwdError = null;
-    
-    if (this.hasPassword && !this.oldPassword) {
+
+    if (!this.oldPassword) {
       this.pwdIsError = true;
       this.clientPwdMsg = 'auth.errFillAll';
       return;
@@ -482,28 +501,28 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.pwdIsError = false;
     this.cdr.markForCheck();
 
-    this.accountService.changePassword({
-      old_password: this.oldPassword,
-      new_password: this.newPassword
-    }).subscribe({
-      next: () => {
-        this.isLoading = false;
-        this.pwdIsError = false;
-        this.clientPwdMsg = this.hasPassword ? 'acct.passwordUpdated' : 'acct.passwordSet';
-        this.oldPassword = '';
-        this.newPassword = '';
-        this.confirmPassword = '';
-        this.hasPassword = true; // They now have a password
-        this.authStore.updateUser(u => ({ ...u, has_password: true }));
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.isLoading = false;
-        this.pwdIsError = true;
-        this.lastPwdError = err;
-        this.cdr.markForCheck();
-      }
-    });
+    this.accountService
+      .changePassword({
+        old_password: this.oldPassword,
+        new_password: this.newPassword,
+      })
+      .subscribe({
+        next: () => {
+          this.isLoading = false;
+          this.pwdIsError = false;
+          this.clientPwdMsg = 'acct.passwordUpdated';
+          this.oldPassword = '';
+          this.newPassword = '';
+          this.confirmPassword = '';
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.isLoading = false;
+          this.pwdIsError = true;
+          this.lastPwdError = err;
+          this.cdr.markForCheck();
+        },
+      });
   }
 
   onRemovePassword() {
@@ -527,7 +546,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.clientRemovePwdMsg = 'acct.passwordRemoved';
         this.removePasswordInput = '';
         this.hasPassword = false; // Immediately reflect in UI
-        this.authStore.updateUser(u => ({ ...u, has_password: false })); // Sync AuthStore
+        this.authStore.updateUser((u) => ({ ...u, has_password: false })); // Sync AuthStore
         this.cdr.markForCheck();
       },
       error: (err) => {
@@ -535,20 +554,20 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.removePwdIsError = true;
         this.lastRemovePwdError = err;
         this.cdr.markForCheck();
-      }
+      },
     });
   }
 
   async onUnbindEduEmail(regionCode: string) {
-    if (!await this.confirms.askDanger(this.i18n.t('acct.unbindConfirm'))) {
+    if (!(await this.confirms.askDanger(this.i18n.t('acct.unbindConfirm')))) {
       return;
     }
-    
+
     this.isLoading = true;
     this.accountService.unbindEduEmail(regionCode).subscribe({
       next: () => {
         this.isLoading = false;
-        this.verifications = this.verifications.filter(v => !isSameRegion(v.region, regionCode));
+        this.verifications = this.verifications.filter((v) => !isSameRegion(v.region, regionCode));
         if (this.verifications.length === 0) {
           this.eduEmail = '';
         }
@@ -562,7 +581,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.isLoading = false;
         this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
         this.cdr.markForCheck();
-      }
+      },
     });
   }
 
@@ -654,7 +673,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   private extractThrottleSeconds(err: any): number | null {
-    const retryAfterHeader = err?.headers?.get?.('Retry-After') ?? err?.headers?.get?.('retry-after');
+    const retryAfterHeader =
+      err?.headers?.get?.('Retry-After') ?? err?.headers?.get?.('retry-after');
     if (retryAfterHeader) {
       const retryAfterSeconds = Number(retryAfterHeader);
       if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
@@ -669,18 +689,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
       }
     }
 
-    const waitValue = Number(err?.error?.wait ?? err?.error?.error?.wait);
+    const waitValue = Number(err?.error?.error?.wait);
     if (Number.isFinite(waitValue) && waitValue > 0) {
       return Math.ceil(waitValue);
-    }
-
-    const detail = String(err?.error?.detail ?? '');
-    const match = detail.match(/Expected available in (\d+) seconds?/i);
-    if (match) {
-      const seconds = Number(match[1]);
-      if (Number.isFinite(seconds) && seconds > 0) {
-        return seconds;
-      }
     }
     return null;
   }
@@ -708,15 +719,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   async onDeleteAccount() {
-    if (!await this.confirms.askDanger(this.i18n.t('acct.deleteAccountConfirm'), {
-      confirmLabel: this.i18n.t('common.delete'),
-    })) {
+    if (
+      !(await this.confirms.askDanger(this.i18n.t('acct.deleteAccountConfirm'), {
+        confirmLabel: this.i18n.t('common.delete'),
+      }))
+    ) {
       return;
     }
-    
+
     this.isLoading = true;
     this.cdr.markForCheck();
-    
+
     this.accountService.deleteAccount().subscribe({
       next: () => {
         this.isLoading = false;
@@ -727,7 +740,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.isLoading = false;
         this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
         this.cdr.markForCheck();
-      }
+      },
     });
   }
 }

@@ -91,8 +91,6 @@ export interface AdminBookRankingRow extends BookStatsFigures {
 
 export interface AdminBookRanking {
   count: number;
-  next: string | null;
-  previous: string | null;
   currency: string;
   sort: BookRankingSort;
   results: AdminBookRankingRow[];
@@ -122,8 +120,6 @@ export interface AdminBookRequestRow extends RequestFigures {
 
 export interface AdminBookRequests {
   count: number;
-  next: string | null;
-  previous: string | null;
   summary: RequestSummary;
   results: AdminBookRequestRow[];
 }
@@ -243,11 +239,11 @@ export class AdminStatsService {
   private http = inject(HttpClient);
 
   getOverview(region: string, days: StatsDays): Observable<AdminStatsOverview> {
-    return this.http.get<AdminStatsOverview>('/admin/stats/overview/', { params: params({ region, days }) });
+    return this.http.get<AdminStatsOverview>('/admin/stats/overview', { params: params({ region, days }) });
   }
 
   getTimeseries(region: string, days: StatsDays): Observable<AdminStatsTimeseries> {
-    return this.http.get<AdminStatsTimeseries>('/admin/stats/timeseries/', { params: params({ region, days }) });
+    return this.http.get<AdminStatsTimeseries>('/admin/stats/timeseries', { params: params({ region, days }) });
   }
 
   getBookRanking(opts: {
@@ -258,7 +254,7 @@ export class AdminStatsService {
     page?: number;
     page_size?: number;
   } & BookScope): Observable<AdminBookRanking> {
-    return this.http.get<AdminBookRanking>('/admin/stats/books/ranking/', { params: params(opts) });
+    return this.http.get<AdminBookRanking>('/admin/stats/books/ranking', { params: params(opts) });
   }
 
   getBookRequests(opts: {
@@ -270,7 +266,7 @@ export class AdminStatsService {
     page_size?: number;
   }): Observable<AdminBookRequests> {
     const { unlisted, ...rest } = opts;
-    return this.http.get<AdminBookRequests>('/admin/stats/books/requests/', {
+    return this.http.get<AdminBookRequests>('/admin/stats/books/requests', {
       params: params({ ...rest, unlisted: unlisted ? 1 : undefined }),
     });
   }
@@ -285,18 +281,18 @@ export class AdminStatsService {
     page?: number;
     page_size?: number;
   }): Observable<AdminStatsBreakdown> {
-    return this.http.get<AdminStatsBreakdown>('/admin/stats/breakdown/', { params: params(opts) });
+    return this.http.get<AdminStatsBreakdown>('/admin/stats/breakdown', { params: params(opts) });
   }
 
   getGrowth(region: string, days: StatsDays): Observable<AdminStatsGrowth> {
-    return this.http.get<AdminStatsGrowth>('/admin/stats/growth/', { params: params({ region, days }) });
+    return this.http.get<AdminStatsGrowth>('/admin/stats/growth', { params: params({ region, days }) });
   }
 
   getRetention(region: string, role: RetentionRole, terms = 6): Observable<AdminStatsRetention> {
-    return this.http.get<AdminStatsRetention>('/admin/stats/retention/', { params: params({ region, role, terms }) });
+    return this.http.get<AdminStatsRetention>('/admin/stats/retention', { params: params({ region, role, terms }) });
   }
 
   getBookStats(id: number, region: string, days: StatsDays): Observable<AdminBookStats> {
-    return this.http.get<AdminBookStats>(`/admin/stats/books/${id}/`, { params: params({ region, days }) });
+    return this.http.get<AdminBookStats>(`/admin/stats/books/${id}`, { params: params({ region, days }) });
   }
 }

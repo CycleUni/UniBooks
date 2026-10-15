@@ -20,7 +20,7 @@ describe('public caches never key on unvalidated input', () => {
   it('unknown ad positions and schools answer empty without a cache entry', async () => {
     const before = (await cacheKeys()).length;
     for (const q of ['position=nope-1', 'position=nope-2', 'school=zzz-1', 'school=zzz-2']) {
-      const res = await get(`/api/v1/promotions/active/?region=tw&${q}`);
+      const res = await get(`/api/v1/promotions/active?region=tw&${q}`);
       expect(res.status).toBe(200);
       expect(((await res.json()) as { count: number }).count).toBe(0);
     }
@@ -28,7 +28,7 @@ describe('public caches never key on unvalidated input', () => {
   });
 
   it('metadata for any number of unknown schools shares one cache entry', async () => {
-    for (const s of ['aaa', 'bbb', 'ccc']) expect((await get(`/api/v1/core/metadata/?region=tw&school=${s}`)).status).toBe(200);
+    for (const s of ['aaa', 'bbb', 'ccc']) expect((await get(`/api/v1/core/metadata?region=tw&school=${s}`)).status).toBe(200);
     const meta = (await cacheKeys()).filter((k) => k.includes('metadata:TW'));
     expect(meta.filter((k) => k.endsWith(':unknown'))).toHaveLength(1);
     expect(meta.some((k) => /aaa|bbb|ccc/.test(k))).toBe(false);

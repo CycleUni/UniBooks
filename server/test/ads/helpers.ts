@@ -10,8 +10,8 @@ import { createUser, seedReference } from '../accounts/helpers';
 
 export const app = new Hono<AppEnv>();
 app.onError(errorHandler);
-app.route('/api/v1/admin/', adminRoutes);
-app.route('/api/v1/promotions/', promotionRoutes);
+app.route('/api/v1/admin', adminRoutes);
+app.route('/api/v1/promotions', promotionRoutes);
 
 /** A stand-in for the AD_EVENTS Analytics Engine binding. */
 export function stubAdEvents() {
@@ -41,8 +41,8 @@ export async function call(path: string, init: CallInit = {}): Promise<Response>
 
 export const tokenFor = (userId: string) => signToken('access', { user_id: userId }, env);
 
-export async function staff(email: string, opts: { superuser?: boolean; regions?: string[] } = {}) {
-  const id = await createUser(email, { role: opts.superuser ? 'admin' : 'staff' });
+export async function staff(email: string, opts: { admin?: boolean; regions?: string[] } = {}) {
+  const id = await createUser(email, { role: opts.admin ? 'admin' : 'staff' });
   for (const r of opts.regions ?? []) {
     await env.DB.prepare('INSERT INTO staff_managed_regions (user_id, region_code) VALUES (?, ?)').bind(id, r).run();
   }

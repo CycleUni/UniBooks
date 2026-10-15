@@ -18,6 +18,7 @@ import { ListingService } from '../../core/services/listing.service';
 import { MetadataService } from '../../core/services/metadata.service';
 import { AuthStore } from '../../core/auth.store';
 import { I18nService, TPipe } from '../../core/i18n.service';
+import { translateApiError } from '../../core/api-error.util';
 import { GoogleAnalyticsService } from '../../core/services/google-analytics.service';
 // Type-only: the library (~300 KB of decoders) is pulled in with a dynamic
 // import the first time the camera is opened, not on every visit to /sell.
@@ -820,10 +821,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
           } else {
             // tOrNull, not t: an unrecognised backend code would otherwise be
             // pasted into the sentence verbatim, showing the user a raw key.
-            const detail = this.i18n.tOrNull(code)
-              ?? err.error?.error?.message
-              ?? err.error?.detail
-              ?? this.i18n.t('sell.unknownError');
+            const detail = translateApiError(err, this.i18n) ?? this.i18n.t('sell.unknownError');
             this.apiError = this.i18n.t('sell.listFailed', { msg: detail });
           }
           this.cdr.markForCheck();
@@ -854,13 +852,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
         },
         error: (err) => {
           this.isSubmitting = false;
-          const code = err.error?.error?.code;
-          // tOrNull, not t: an unrecognised backend code would otherwise be
-          // pasted into the sentence verbatim, showing the user a raw key.
-          let details = this.i18n.tOrNull(code) ?? (err.error?.error?.message || err.error?.detail || '');
-          if (!details && err.error) {
-            details = JSON.stringify(err.error);
-          }
+          const details = translateApiError(err, this.i18n) ?? this.i18n.t('sell.unknownError');
           this.apiError = this.i18n.t('sell.createBookFailed', {msg: details});
           this.cdr.markForCheck();
         }

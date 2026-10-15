@@ -5,7 +5,7 @@ import { Hono, type Context } from 'hono';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../env';
 import { createDb, books, listings, regionVerifications, schools, type Listing } from '../db';
-import { afterResponse, apiError, fieldErrors, readJson } from '../lib/http';
+import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
@@ -14,7 +14,7 @@ import { nowIso } from '../lib/time';
 import { resolveLanguage, schoolFilterId, schoolFilterScope } from '../services/listings/places';
 import { serializeListings } from '../services/listings/serialize';
 import { validateListingFields, type FieldErrors } from '../services/listings/validate';
-import { deleteListing, hasActiveOrders, pageFor } from '../services/listings/lifecycle';
+import { deleteListing, hasActiveOrders } from '../services/listings/lifecycle';
 import {
   permanentKeyPrefix,
   PhotoError,
@@ -61,7 +61,7 @@ listingRoutes.get('/', optionalAuthMiddleware(), async (c) => {
     .from(listings)
     .where(and(...where));
   const count = Math.min(Number(n), 4000); // the feed is capped at 4000
-  const p = pageFor(c.req.url, count);
+  const p = pagination(c.req.url);
   const limit = Math.max(0, Math.min(p.limit, count - p.offset));
   const rows = limit
     ? await db
@@ -147,7 +147,7 @@ listingRoutes.post('/', authMiddleware(), async (c) => {
 
 // ------------------------------------------------------------ recent books --
 
-listingRoutes.get('/recent_books/', async (c) => {
+listingRoutes.get('/recent-books', async (c) => {
   const region = await requireRegion(c);
   const limitParam = c.req.query('limit') ?? '200';
   const limit = /^\d+$/.test(limitParam) ? Math.min(Math.max(Number(limitParam), 1), 200) : 200;
@@ -191,7 +191,7 @@ listingRoutes.get('/recent_books/', async (c) => {
   }
   const scopeFields = { scope, city: city?.code ?? null };
 
-  const p = pageFor(c.req.url, count);
+  const p = pagination(c.req.url);
   const { results: bookRows } = await db
     .prepare(
       `SELECT b.id, b.isbn13, b.title, b.authors, b.cover_url, MAX(l.created_at) AS latest
@@ -239,7 +239,7 @@ listingRoutes.get('/recent_books/', async (c) => {
 // ------------------------------------------------------------------ uploads --
 
 /** Step one (lib/upload.ts): photos wait under the uploader's tmp/ folder until a listing is saved. */
-listingRoutes.post('/uploads/', authMiddleware(), async (c) => {
+listingRoutes.post('/uploads', authMiddleware(), async (c) => {
   await checkRate(c, 'upload', RATES.upload);
   const user = c.get('user')!;
   return issueUpload(
@@ -250,13 +250,13 @@ listingRoutes.post('/uploads/', authMiddleware(), async (c) => {
 });
 
 /** Step two: the upload token is the credential. */
-listingRoutes.put('/uploads/file/', (c) => storeUpload(c, { action: 'listing_photo', keyPrefix: tmpKeyPrefix }));
+listingRoutes.put('/uploads/file', (c) => storeUpload(c, { action: 'listing_photo', keyPrefix: tmpKeyPrefix }));
 
 /**
  * Delete an upload the caller owns: their own pending tmp upload, or a
  * permanent photo every listing showing which is theirs. Fail closed.
  */
-listingRoutes.delete('/uploads/', authMiddleware(), async (c) => {
+listingRoutes.delete('/uploads', authMiddleware(), async (c) => {
   await checkRate(c, 'upload', RATES.upload);
   const user = c.get('user')!;
   let url: unknown = c.req.query('url');
@@ -282,7 +282,7 @@ listingRoutes.delete('/uploads/', authMiddleware(), async (c) => {
 
 // ------------------------------------------------------------------ detail --
 
-listingRoutes.get(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c) => {
+listingRoutes.get(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c) => {
   const listing = await loadListing(c, c.req.param('id'));
   if (!listing) return notFound(c);
   const region = await requireRegion(c);
@@ -293,7 +293,7 @@ listingRoutes.get(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c) 
   return c.json(out);
 });
 
-listingRoutes.patch(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c) => {
+listingRoutes.patch(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c) => {
   const userId = c.get('userId');
   const listing = await loadListing(c, c.req.param('id'));
   if (!listing || !userId || listing.sellerId !== userId) return notFound(c);
@@ -397,7 +397,7 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c
   return c.json(out);
 });
 
-listingRoutes.delete(`/:id{${UUID_PATTERN}}/`, optionalAuthMiddleware(), async (c) => {
+listingRoutes.delete(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c) => {
   const userId = c.get('userId');
   const listing = await loadListing(c, c.req.param('id'));
   if (!listing || !userId || listing.sellerId !== userId) return notFound(c);

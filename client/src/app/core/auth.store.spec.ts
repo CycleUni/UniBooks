@@ -213,7 +213,7 @@ describe('AuthStore session expiry', () => {
     const store = build();
     await router.navigateByUrl('/tw/account');
     await settle();
-    httpMock.expectOne('/auth/me/').flush({ id: 1, email: 'a@b.c' });
+    httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
     return store;
   }
   afterEach(() => {
@@ -231,7 +231,7 @@ describe('AuthStore session expiry', () => {
 
     await router.navigateByUrl('/tw');
     await settle();
-    httpMock.expectOne('/auth/me/').flush({ detail: 'expired' }, { status: 401, statusText: 'Unauthorized' });
+    httpMock.expectOne('/auth/me').flush({ detail: 'expired' }, { status: 401, statusText: 'Unauthorized' });
     await settle();
 
     expect(store.isAuthenticated()).toBe(false);
@@ -250,7 +250,7 @@ describe('AuthStore session expiry', () => {
     expect(router.url).toBe('/tw/account');
 
     await settle();
-    httpMock.expectOne('/auth/me/').flush({ detail: 'expired' }, { status: 401, statusText: 'Unauthorized' });
+    httpMock.expectOne('/auth/me').flush({ detail: 'expired' }, { status: 401, statusText: 'Unauthorized' });
     await settle();
 
     expect(store.isAuthenticated()).toBe(false);
@@ -269,7 +269,7 @@ describe('AuthStore session expiry', () => {
     await settle();
     expect(router.currentNavigation()).not.toBeNull();
 
-    httpMock.expectOne('/auth/me/').flush({ detail: 'expired' }, { status: 401, statusText: 'Unauthorized' });
+    httpMock.expectOne('/auth/me').flush({ detail: 'expired' }, { status: 401, statusText: 'Unauthorized' });
     await settle();
     expect(store.isAuthenticated()).toBe(false);
 
@@ -287,7 +287,7 @@ describe('AuthStore session expiry', () => {
 
     await router.navigateByUrl('/tw/account');
     await settle();
-    httpMock.expectOne('/auth/me/').flush({ id: 1, email: 'a@b.c' });
+    httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
 
     // Mid-navigation, routerState still says /tw/account. Deciding from that
     // would pull the visitor back to /login away from the page they chose.
@@ -310,10 +310,10 @@ describe('AuthStore session expiry', () => {
 
     await router.navigateByUrl('/tw');
     await settle();
-    httpMock.expectOne('/auth/me/').flush({ id: 1, email: 'a@b.c' });
+    httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
 
     store.logout().subscribe();
-    httpMock.expectOne('/auth/logout/').flush({});
+    httpMock.expectOne('/auth/logout').flush({});
     await settle();
 
     expect(store.isAuthenticated()).toBe(false);
@@ -326,10 +326,10 @@ describe('AuthStore session expiry', () => {
 
     await router.navigateByUrl('/tw');
     await settle();
-    httpMock.expectOne('/auth/me/').flush({ id: 1, email: 'a@b.c' });
+    httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
 
     store.logout().subscribe();
-    httpMock.expectOne('/auth/logout/').flush({}, { status: 500, statusText: 'Server Error' });
+    httpMock.expectOne('/auth/logout').flush({}, { status: 500, statusText: 'Server Error' });
     await settle();
 
     expect(router.url).toBe('/tw/login');
@@ -454,7 +454,7 @@ describe('AuthStore session expiry', () => {
     await otherTab('login');
 
     expect(store.isAuthenticated()).toBe(true);
-    httpMock.expectOne('/auth/me/').flush({ id: 2, email: 'b@c.d' });
+    httpMock.expectOne('/auth/me').flush({ id: 2, email: 'b@c.d' });
     expect(store.user()?.id).toBe(2);
   });
 
@@ -468,11 +468,11 @@ describe('AuthStore session expiry', () => {
 
       store.login('a@b.c', 'pw').subscribe();
       setSessionHint();   // what the server's Set-Cookie does
-      httpMock.expectOne('/auth/token/').flush({ code: 'auth.loginSuccess', user_id: 1 });
-      httpMock.expectOne('/auth/me/').flush({ id: 1, email: 'a@b.c' });
+      httpMock.expectOne('/auth/login').flush({ code: 'auth.loginSuccess', user_id: 1 });
+      httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
 
       store.logout().subscribe();
-      httpMock.expectOne('/auth/logout/').flush({ code: 'auth.logoutSuccess' });
+      httpMock.expectOne('/auth/logout').flush({ code: 'auth.logoutSuccess' });
       await new Promise(resolve => setTimeout(resolve, 20));
 
       expect(heard).toEqual([{ type: 'login' }, { type: 'logout' }]);
@@ -526,10 +526,10 @@ describe('AuthStore session expiry', () => {
     const store = build();
     await router.navigateByUrl('/tw');
     await settle();
-    const bootstrapProfile = httpMock.expectOne('/auth/me/');
+    const bootstrapProfile = httpMock.expectOne('/auth/me');
 
     store.logout().subscribe();
-    httpMock.expectOne('/auth/logout/').flush({ code: 'auth.logoutSuccess' });
+    httpMock.expectOne('/auth/logout').flush({ code: 'auth.logoutSuccess' });
     await settle();
     bootstrapProfile.flush({ id: 1, email: 'a@b.c' });
 
@@ -552,7 +552,7 @@ describe('AuthStore profile after a transient failure', () => {
   let router: Router;
   let store: AuthStore;
   const settle = () => new Promise(resolve => setTimeout(resolve, 0));
-  const profileRequests = () => httpMock.match('/auth/me/');
+  const profileRequests = () => httpMock.match('/auth/me');
   const unavailable = { status: 503, statusText: 'Service Unavailable' };
 
   /** Signed in (hint cookie present), bootstrap /auth/me/ in the air, fake timers on. */
@@ -596,9 +596,9 @@ describe('AuthStore profile after a transient failure', () => {
     // Nobody clicks anything.
     await vi.advanceTimersByTimeAsync(3000);
     const [second] = profileRequests();
-    second.flush({ id: 1, email: 'staff@x.y', is_staff: true });
+    second.flush({ id: 1, email: 'staff@x.y', role: 'staff' });
 
-    expect(store.user()?.is_staff).toBe(true);
+    expect(store.user()?.role).toBe('staff');
   });
 
   it('keeps trying on a backing-off schedule, then stops', async () => {
@@ -762,7 +762,7 @@ describe('AuthStore cookie session', () => {
     await settle();
 
     expect(store.isAuthenticated()).toBe(false);
-    httpMock.expectNone('/auth/me/');
+    httpMock.expectNone('/auth/me');
   });
 
   it('is signed in once the hint is there and /auth/me/ answers', async () => {
@@ -771,15 +771,15 @@ describe('AuthStore cookie session', () => {
     await router.navigateByUrl('/tw');
     await settle();
 
-    httpMock.expectOne('/auth/me/').flush({ id: 5, email: 'a@b.c' });
+    httpMock.expectOne('/auth/me').flush({ id: 5, email: 'a@b.c' });
     expect(store.isAuthenticated()).toBe(true);
     expect(store.user()?.id).toBe(5);
   });
 
   it.each([
-    ['password', (store: AuthStore) => store.login('a@b.c', 'pw'), '/auth/token/'],
-    ['Google', (store: AuthStore) => store.loginWithGoogle('google-credential'), '/auth/google/'],
-    ['registration link', (store: AuthStore) => store.verifyRegistration('mail-token', 'pw'), '/auth/verify-registration/'],
+    ['password', (store: AuthStore) => store.login('a@b.c', 'pw'), '/auth/login'],
+    ['Google', (store: AuthStore) => store.loginWithGoogle('google-credential'), '/auth/google'],
+    ['registration link', (store: AuthStore) => store.verifyRegistration('mail-token', 'pw'), '/auth/verify-registration'],
   ])('never writes a token to storage on a %s sign-in', async (_how, signIn, url) => {
     const store = build();
     await router.navigateByUrl('/tw');
@@ -791,7 +791,7 @@ describe('AuthStore cookie session', () => {
       code: 'auth.loginSuccess', user_id: 1, user: { is_verified: true },
       access: 'leaked-access', refresh: 'leaked-refresh',
     });
-    httpMock.expectOne('/auth/me/').flush({ id: 1, email: 'a@b.c' });
+    httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
 
     expect(store.isAuthenticated()).toBe(true);
     const stored = storedValues().join('\n');
@@ -807,10 +807,10 @@ describe('AuthStore cookie session', () => {
     await router.navigateByUrl('/tw');
 
     store.login('a@b.c', 'pw').subscribe();
-    httpMock.expectOne('/auth/token/').flush({ code: 'auth.somethingElse' });
+    httpMock.expectOne('/auth/login').flush({ code: 'auth.somethingElse' });
 
     expect(store.isAuthenticated()).toBe(false);
-    httpMock.expectNone('/auth/me/');
+    httpMock.expectNone('/auth/me');
   });
 
   it('logout() revokes on the server and clears every trace here', async () => {
@@ -818,11 +818,11 @@ describe('AuthStore cookie session', () => {
     const store = build();
     await router.navigateByUrl('/tw');
     await settle();
-    httpMock.expectOne('/auth/me/').flush({ id: 1, email: 'a@b.c' });
+    httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
     const generation = store.sessionGeneration;
 
     store.logout().subscribe();
-    const req = httpMock.expectOne('/auth/logout/');
+    const req = httpMock.expectOne('/auth/logout');
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({});
     req.flush({ code: 'auth.logoutSuccess' });
@@ -843,13 +843,13 @@ describe('AuthStore cookie session', () => {
     const store = build();
     await router.navigateByUrl('/tw');
     await settle();
-    httpMock.expectOne('/auth/me/').flush({ id: 1, email: 'a@b.c' });
+    httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
 
     clearSessionHint();
     store.logout().subscribe();
     await settle();
 
-    httpMock.expectNone('/auth/logout/');
+    httpMock.expectNone('/auth/logout');
     expect(store.isAuthenticated()).toBe(false);
     expect(store.user()).toBeNull();
     expect(router.url).toBe('/tw/login');

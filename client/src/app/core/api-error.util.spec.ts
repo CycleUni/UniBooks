@@ -21,17 +21,15 @@ describe('parseApiError', () => {
       .toBe(en['auth.errEmailNotVerified']);
   });
 
-  it('reads the field-error shape validation produces', () => {
-    // The accept-order guard raises ValidationError({'status': ...}), which
-    // never passes through the {"error": {...}} contract.
-    expect(parseApiError({ error: { status: ['checkout.errListingUnavailable'] } }, i18n, 'acct.updateFailed'))
-      .toBe(en['checkout.errListingUnavailable']);
+  it('prefers a field code over the generic validation code', () => {
+    const body = { error: { code: 'common.errValidation', fields: { status: ['order.errInvalidTransition'] } } };
+    expect(parseApiError({ error: body }, i18n, 'acct.updateFailed')).toBe(en['order.errInvalidTransition']);
   });
 
   it('falls back rather than showing the user a raw key', () => {
     expect(parseApiError({ error: { error: { code: 'listing.errNotTranslatedYet' } } }, i18n, 'acct.updateFailed'))
       .toBe(en['acct.updateFailed']);
-    expect(parseApiError({ error: { detail: 'Some untranslated prose' } }, i18n, 'acct.updateFailed'))
+    expect(parseApiError({ error: '<html>Bad gateway</html>' }, i18n, 'acct.updateFailed'))
       .toBe(en['acct.updateFailed']);
     expect(parseApiError({}, i18n, 'acct.updateFailed')).toBe(en['acct.updateFailed']);
   });
@@ -43,18 +41,13 @@ describe('parseApiError', () => {
 });
 
 describe('translateApiError', () => {
-  it('reads a serializer raise on a nested field', () => {
-    // The chat-report check that the reported party is really the other
-    // participant answers {"reported_party": [...]}, which the report modal
-    // was not reading at all.
-    expect(translateApiError({ error: { reported_party: ['moderation.errInvalidReportedParty'] } }, i18n))
-      .toBe(en['moderation.errInvalidReportedParty']);
+  it('reads a field code', () => {
+    const body = { error: { code: 'common.errValidation', fields: { reported_party: ['moderation.errInvalidReportedParty'] } } };
+    expect(translateApiError({ error: body }, i18n)).toBe(en['moderation.errInvalidReportedParty']);
   });
 
   it('answers null so the caller can keep its own fallback', () => {
-    // The report modal still prefers a `detail` prose (a throttle notice,
-    // say) over its generic sentence, which a fallback key would swallow.
-    expect(translateApiError({ error: { detail: 'Request was throttled.' } }, i18n)).toBeNull();
+    expect(translateApiError({ error: { error: { code: 'listing.errNotTranslatedYet' } } }, i18n)).toBeNull();
     expect(translateApiError({}, i18n)).toBeNull();
   });
 });

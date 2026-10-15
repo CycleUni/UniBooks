@@ -120,7 +120,7 @@ export function cacheKey(origin: string, region: string, identity: BookIdentity)
 /** The same-origin book API URL the app itself calls. */
 export function bookApiUrl(origin: string, region: string, identity: BookIdentity): string {
   const params = new URLSearchParams({ [identity.kind]: identity.value, region });
-  return `${origin}/api/v1/books/?${params.toString()}`;
+  return `${origin}/api/v1/books?${params.toString()}`;
 }
 
 /**
