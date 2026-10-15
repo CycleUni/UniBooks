@@ -2,10 +2,20 @@ import { Hono, type Context } from 'hono';
 import { cached } from '../lib/cache';
 import type { Region } from '../db';
 import { rateLimit } from '../middleware/rateLimit';
-import { getTableName, is } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, getTableName, is, isNotNull } from 'drizzle-orm';
 import { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { AppEnv } from '../env';
-import { schema } from '../db';
+import {
+  books,
+  categories,
+  cities,
+  createDb,
+  currencies as currenciesTable,
+  regionVerifications,
+  schema,
+  schools,
+  subscriptions,
+} from '../db';
 import { activeRegions, requireRegion } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { resolveLanguage } from '../services/accounts/i18n';
@@ -24,6 +34,7 @@ const SCHEMA_TABLES = (Object.values(schema) as unknown[]).filter((v): v is SQLi
 
 // Unauthenticated and touches D1 + KV: throttle it like any other public probe.
 coreRoutes.get('/healthz', rateLimit('healthz', '30/min'), async (c) => {
+  // Raw: probes of D1 itself, not of a schema table.
   let dbOk = false;
   try {
     const row = await c.env.DB.prepare('SELECT 1 AS ok').first<{ ok: number }>();
@@ -74,8 +85,8 @@ coreRoutes.get('/regions', async (c) => {
   // Same for every visitor; admin region/currency edits invalidate 'ref'.
   const body = await cached(c.env, 'ref', `regions:${lang}`, 3600, async () => {
     const regions = await activeRegionDetails(c.env);
-    const { results: currencies } = await c.env.DB.prepare('SELECT * FROM currencies').all<Row>();
-    const byCode = new Map(currencies.map((cur) => [String(cur.code), cur]));
+    const currencies = await createDb(c.env.DB).select().from(currenciesTable);
+    const byCode = new Map(currencies.map((cur) => [cur.code, cur]));
     return regions.map((r) => {
       const cur = byCode.get(r.currencyCode);
       return {
@@ -86,8 +97,8 @@ coreRoutes.get('/regions', async (c) => {
         currency: {
           code: r.currencyCode,
           symbol: String(cur?.symbol ?? ''),
-          decimal_places: Number(cur?.decimal_places ?? 2),
-          symbol_position: String(cur?.symbol_position ?? 'prefix'),
+          decimal_places: Number(cur?.decimalPlaces ?? 2),
+          symbol_position: String(cur?.symbolPosition ?? 'prefix'),
         },
         languages: r.languages,
         default_language: r.defaultLanguage,
@@ -151,31 +162,41 @@ coreRoutes.get('/metadata', rateLimit('metadata', '120/min'), optionalAuthMiddle
 });
 
 async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string, schoolParam: string) {
-  const db = c.env.DB;
+  const db = createDb(c.env.DB);
 
-  const [{ results: schoolRows }, { results: cityRows }, { results: categoryRows }] = await Promise.all([
+  const [schoolRows, cityRows, categoryRows] = await Promise.all([
     db
-      .prepare(
-        `SELECT s.*, ci.code AS city_code FROM schools s LEFT JOIN cities ci ON ci.id = s.city_id
-         WHERE s.region_code = ? AND s.is_active = 1 ORDER BY s.id`,
-      )
-      .bind(region.code)
-      .all<Row>(),
-    db.prepare('SELECT * FROM cities WHERE region_code = ? ORDER BY sort_order, code').bind(region.code).all<Row>(),
-    db.prepare('SELECT * FROM categories WHERE region_code = ? AND is_active = 1 ORDER BY sort_order, id').bind(region.code).all<Row>(),
+      .select({
+        id: schools.id,
+        code: schools.code,
+        name: schools.name,
+        translations: schools.translations,
+        emailDomain: schools.emailDomain,
+        cityCode: cities.code,
+      })
+      .from(schools)
+      .leftJoin(cities, eq(cities.id, schools.cityId))
+      .where(and(eq(schools.regionCode, region.code), eq(schools.isActive, 1)))
+      .orderBy(asc(schools.id)),
+    db.select().from(cities).where(eq(cities.regionCode, region.code)).orderBy(asc(cities.sortOrder), asc(cities.code)),
+    db
+      .select()
+      .from(categories)
+      .where(and(eq(categories.regionCode, region.code), eq(categories.isActive, 1)))
+      .orderBy(asc(categories.sortOrder), asc(categories.id)),
   ]);
 
-  const schools = schoolRows.map((s) => ({
+  const schoolList = schoolRows.map((s) => ({
     id: s.id,
     code: s.code,
     name: s.name,
     display_name: localizedName(s, lang),
     names: allNames(s),
-    email_domain: s.email_domain,
-    city: s.city_code ?? null,
+    email_domain: s.emailDomain,
+    city: s.cityCode ?? null,
   }));
-  const cities = cityRows.map((ci) => ({ code: ci.code, name: ci.name, display_name: localizedName(ci, lang) }));
-  const categories = categoryRows.map((cat) => {
+  const cityList = cityRows.map((ci) => ({ code: ci.code, name: ci.name, display_name: localizedName(ci, lang) }));
+  const categoryList = categoryRows.map((cat) => {
     const t = pickTranslation(cat.translations, lang);
     return { slug: cat.slug, title: t.title || cat.title, desc: t.description || cat.description };
   });
@@ -186,23 +207,42 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string, s
   const school = schoolParam ? await resolveSchool(c.env, region, schoolParam) : null;
   if (!schoolParam || school) {
     const bySchool = school
-      ? `AND EXISTS (SELECT 1 FROM region_verifications rv
-           WHERE rv.user_id = s.user_id AND rv.region_code = s.region_code AND rv.school_id = ?
-             AND rv.is_active = 1 AND rv.verified_at IS NOT NULL)`
-      : '';
-    const stmt = db.prepare(
-      `SELECT s.book_id, b.title, b.cover_url, b.isbn13, b.authors, COUNT(s.user_id) AS n
-       FROM subscriptions s JOIN books b ON b.id = s.book_id
-       WHERE s.region_code = ? ${bySchool}
-       GROUP BY s.book_id, b.title, b.cover_url, b.isbn13, b.authors
-       ORDER BY n DESC LIMIT 7`,
-    );
-    const { results } = await (school ? stmt.bind(region.code, Number(school.id)) : stmt.bind(region.code)).all<Row>();
+      ? exists(
+          db
+            .select({ id: regionVerifications.id })
+            .from(regionVerifications)
+            .where(
+              and(
+                eq(regionVerifications.userId, subscriptions.userId),
+                eq(regionVerifications.regionCode, subscriptions.regionCode),
+                eq(regionVerifications.schoolId, Number(school.id)),
+                eq(regionVerifications.isActive, 1),
+                isNotNull(regionVerifications.verifiedAt),
+              ),
+            ),
+        )
+      : undefined;
+    const n = count(subscriptions.userId);
+    const results = await db
+      .select({
+        bookId: subscriptions.bookId,
+        title: books.title,
+        coverUrl: books.coverUrl,
+        isbn13: books.isbn13,
+        authors: books.authors,
+        n,
+      })
+      .from(subscriptions)
+      .innerJoin(books, eq(books.id, subscriptions.bookId))
+      .where(and(eq(subscriptions.regionCode, region.code), bySchool))
+      .groupBy(subscriptions.bookId, books.title, books.coverUrl, books.isbn13, books.authors)
+      .orderBy(desc(n))
+      .limit(7);
     waitlist = results.map((r) => ({
       title: r.title,
       count: Number(r.n),
-      book_id: r.book_id,
-      cover_url: r.cover_url,
+      book_id: r.bookId,
+      cover_url: r.coverUrl,
       isbn: r.isbn13,
       authors: r.authors,
     }));
@@ -211,9 +251,9 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string, s
   return {
     lang,
     region: { code: region.code, currency: region.defaultCurrency },
-    schools,
-    cities,
-    categories,
+    schools: schoolList,
+    cities: cityList,
+    categories: categoryList,
     waitlist,
   };
 }
