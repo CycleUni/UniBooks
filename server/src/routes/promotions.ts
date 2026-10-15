@@ -9,7 +9,8 @@ import { optionalAuthMiddleware } from '../middleware/auth';
 import { takePlatformRate } from '../middleware/rateLimit';
 import { parseJsonArray } from '../lib/json';
 import { schoolFilterId } from '../services/admin/schoolCodes';
-import { ADS_VERSION_KEY, cachedJson, versionedKey } from '../services/admin/adCache';
+import { ADS_VERSION_KEY, cacheVersion, cachedJson, versionedKey } from '../services/admin/adCache';
+import { edgeCache } from '../lib/cache';
 import { isSafeTargetUrl } from './admin/ads';
 
 /**
@@ -40,6 +41,17 @@ promotionRoutes.get('/active', async (c) => {
   if (!(await takePlatformRate(c, c.env.AD_LIST_LIMIT, 'ads_active', AD_LIST_RATE))) {
     return c.json({ error: { code: 'common.errThrottled' } }, 429);
   }
+  const region = await getRegion(c);
+  // Same for every visitor of the region the URL names: the edge keeps it
+  // under the ads version, so admin edits still show at once. Browsers do
+  // not keep it (an edit would wait for their copy to expire).
+  if (region && c.req.query('region')?.toUpperCase() === region.code) {
+    return edgeCache(c, await cacheVersion(c.env.KV, ADS_VERSION_KEY), () => activeAds(c), { edgeTtl: ACTIVE_TTL });
+  }
+  return activeAds(c);
+});
+
+async function activeAds(c: Context<AppEnv>): Promise<Response> {
   const region = await getRegion(c);
   const page = pagination(c.req.url, { allowPageSize: true, maxPageSize: 100 });
   if (!region) return c.json(page.wrap([], 0));
@@ -97,7 +109,7 @@ promotionRoutes.get('/active', async (c) => {
     return { results, count: n };
   });
   return c.json(page.wrap(cachedPage?.results ?? [], cachedPage?.count ?? 0));
-});
+}
 
 /**
  * A short, non-reversible per-day client id: SHA-256 of the signed-in user id

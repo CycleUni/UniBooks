@@ -100,14 +100,48 @@ export function invalidates(...namespaces: CacheNamespace[]): MiddlewareHandler<
 
 /**
  * A viewer-independent GET answered from the edge cache (caches.default),
- * built on a miss. The key is the URL with `v` set to `ns`'s current
- * version, so an invalidation switches every location to fresh entries, and
- * an entry lives as long as the response's own Cache-Control max-age. Only
- * public answers that vary on nothing outside the URL are stored.
+ * built on a miss. The key is the URL with `v` set to `version`, so bumping
+ * the version switches every location to fresh entries. Only public answers
+ * that vary on nothing outside the URL are stored, for their own
+ * Cache-Control max-age — or for `edgeTtl` seconds when given, which keeps
+ * the edge copy without letting browsers keep one.
  *
- * A `?v=` this location has not caught up with (KV still propagating) is
- * answered from the source with no-store, so neither the edge nor the
- * browser keeps it under the newer URL.
+ * This saves the KV and D1 reads and the CPU of building the answer; the
+ * Worker still runs. Workers Cache (which would skip it) bills every static
+ * asset request too, so it is not used.
+ */
+export async function edgeCache(
+  c: Context<AppEnv>,
+  version: string,
+  build: () => Promise<Response>,
+  { edgeTtl }: { edgeTtl?: number } = {},
+): Promise<Response> {
+  const url = new URL(c.req.url);
+  url.searchParams.set('v', version);
+  const key = new Request(url.toString(), { method: 'GET' });
+  const hit = await caches.default.match(key);
+  if (hit) {
+    // A copy: the cache's Response has immutable headers, and middleware adds some.
+    const res = new Response(hit.body, hit);
+    if (edgeTtl) res.headers.delete('Cache-Control');
+    return res;
+  }
+  const res = await build();
+  const cacheControl = edgeTtl ? `public, max-age=${edgeTtl}` : (res.headers.get('Cache-Control') ?? '');
+  if (res.ok && !res.headers.has('Vary') && /^public\b/.test(cacheControl) && /max-age=[1-9]/.test(cacheControl)) {
+    const stored = new Response(res.clone().body, res);
+    stored.headers.set('Cache-Control', cacheControl);
+    const put = caches.default.put(key, stored).catch((e) => console.warn('[cache] edge put failed', e));
+    await afterResponse(c, put);
+  }
+  return res;
+}
+
+/**
+ * edgeCache() under `ns`'s version, for the public lists the SPA asks for
+ * with the `?v=` an admin write reported. A `?v=` this location has not
+ * caught up with (KV still propagating) is answered from the source with
+ * no-store, so neither the edge nor the browser keeps it under the newer URL.
  */
 export async function versionedEdgeCache(c: Context<AppEnv>, ns: CacheNamespace, build: () => Promise<Response>): Promise<Response> {
   const want = c.req.query('v') || undefined;
@@ -123,17 +157,5 @@ export async function versionedEdgeCache(c: Context<AppEnv>, ns: CacheNamespace,
     res.headers.set('Cache-Control', 'no-store');
     return res;
   }
-  const url = new URL(c.req.url);
-  url.searchParams.set('v', current);
-  const key = new Request(url.toString(), { method: 'GET' });
-  const hit = await caches.default.match(key);
-  // A copy: the cache's Response has immutable headers, and middleware adds some.
-  if (hit) return new Response(hit.body, hit);
-  const res = await build();
-  const cacheControl = res.headers.get('Cache-Control') ?? '';
-  if (res.ok && !res.headers.has('Vary') && /^public\b/.test(cacheControl) && /max-age=[1-9]/.test(cacheControl)) {
-    const put = caches.default.put(key, res.clone()).catch((e) => console.warn(`[cache] edge put failed for ${ns}`, e));
-    await afterResponse(c, put);
-  }
-  return res;
+  return edgeCache(c, current, build);
 }

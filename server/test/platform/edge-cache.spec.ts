@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { call, seedReference } from '../accounts/helpers';
-import { staff } from '../ads/helpers';
+import { ad, advertiser, staff } from '../ads/helpers';
+import { ADS_VERSION_KEY, bumpVersion } from '../../src/services/admin/adCache';
 
 let root: { id: string; token: string };
 
@@ -45,5 +46,26 @@ describe('versioned edge cache for public lists', () => {
     const res = await call('/api/v1/admin/categories', { token: root.token, body: { title: 'No slug', region: 'TW' } });
     expect(res.status).toBe(400);
     expect(res.headers.get('X-Cache-Version')).toBeNull();
+  });
+});
+
+describe('edge cache for the public ad list', () => {
+  const ACTIVE = '/api/v1/promotions/active?region=TW&position=home_banner';
+  const titles = async (res: Response) => ((await res.json()) as { results: { title: string }[] }).results.map((a) => a.title);
+
+  it('keeps the list at the edge until the ads version moves, never in the browser', async () => {
+    const adv = await advertiser({ allRegions: true });
+    await ad(adv, { title: 'Edge first' });
+    const first = await call(ACTIVE);
+    expect(first.headers.get('Cache-Control')).toBeNull();
+    expect(await titles(first)).toContain('Edge first');
+
+    await ad(adv, { title: 'Edge second' });
+    const cachedRes = await call(ACTIVE);
+    expect(cachedRes.headers.get('Cache-Control')).toBeNull();
+    expect(await titles(cachedRes)).not.toContain('Edge second');
+
+    await bumpVersion(env.KV, ADS_VERSION_KEY);
+    expect(await titles(await call(ACTIVE))).toContain('Edge second');
   });
 });
