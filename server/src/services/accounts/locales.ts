@@ -20,6 +20,8 @@ export const CATALOGS: Record<string, Record<string, string>> = {
     'email.emailChanged.intro': 'The sign-in email for your UniBooks account was just changed from this address to {email}.',
     'email.emailChanged.noAccess': 'This address can no longer be used to sign in or to reset your password.',
     'email.emailChanged.notYou':
+      'If you did not make this change, someone else may be using your account. Contact the UniBooks team right away at {contact} (or reply to this email).',
+    'email.emailChanged.notYouNoContact':
       'If you did not make this change, someone else may be using your account. Contact the UniBooks team right away.',
     'email.emailChanged.wasYou': 'If it was you, there is nothing else to do. You can check your account settings here:',
     'email.chatMessage.subject': 'New message from {sender} on UniBooks',
@@ -74,7 +76,9 @@ export const CATALOGS: Record<string, Record<string, string>> = {
     'email.emailChanged.subject': 'UniBooks：你嘅登入電郵已經更改',
     'email.emailChanged.intro': '你嘅 UniBooks 帳戶登入電郵啱啱由呢個地址改咗做 {email}。',
     'email.emailChanged.noAccess': '呢個地址已經唔可以再用嚟登入或者重設密碼。',
-    'email.emailChanged.notYou': '如果唔係你改嘅，可能有其他人用緊你嘅帳戶，請即刻聯絡 UniBooks 團隊。',
+    'email.emailChanged.notYou':
+      '如果唔係你改嘅，可能有其他人用緊你嘅帳戶，請即刻寫信去 {contact} 聯絡 UniBooks 團隊（直接回覆呢封電郵都得）。',
+    'email.emailChanged.notYouNoContact': '如果唔係你改嘅，可能有其他人用緊你嘅帳戶，請即刻聯絡 UniBooks 團隊。',
     'email.emailChanged.wasYou': '如果係你自己改嘅，就唔使再做任何嘢。你可以喺呢度睇返帳戶設定：',
     'email.chatMessage.subject': 'UniBooks：{sender} 向你傳送了新訊息',
     'email.chatMessage.intro': '{sender} 在 UniBooks 向你傳送了新訊息。',
@@ -127,7 +131,9 @@ export const CATALOGS: Record<string, Record<string, string>> = {
     'email.emailChanged.subject': 'UniBooks：您的登入信箱已變更',
     'email.emailChanged.intro': '您的 UniBooks 帳號登入信箱剛剛從這個地址改為 {email}。',
     'email.emailChanged.noAccess': '這個地址已無法再用來登入或重設密碼。',
-    'email.emailChanged.notYou': '如果這不是您本人的操作，可能有其他人正在使用您的帳號，請立即聯絡 UniBooks 團隊。',
+    'email.emailChanged.notYou':
+      '如果這不是您本人的操作，可能有其他人正在使用您的帳號，請立即寫信至 {contact} 聯絡 UniBooks 團隊（直接回覆這封信也可以）。',
+    'email.emailChanged.notYouNoContact': '如果這不是您本人的操作，可能有其他人正在使用您的帳號，請立即聯絡 UniBooks 團隊。',
     'email.emailChanged.wasYou': '如果是您本人變更的，就不需要再做任何事。您可以在這裡查看帳號設定：',
     'email.chatMessage.subject': 'UniBooks：{sender} 傳送了新訊息給您',
     'email.chatMessage.intro': '{sender} 在 UniBooks 傳送了新訊息給您。',

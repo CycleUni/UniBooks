@@ -128,12 +128,14 @@ async function emailChanged(env: Env, msg: Extract<EmailMessage, { type: 'email_
   if (!user || !msg.to) return null;
   const lang = await languageFor(env, user, null);
   const settingsLink = `${frontend(env)}/account/settings`;
+  // The sender address is the team's inbox, so a reply reaches someone; unset, mail goes out from no-reply.
+  const contact = (env.DEFAULT_FROM_EMAIL ?? '').trim();
   return render(msg.to, displayName(user.first_name, user.last_name), t(lang, 'email.emailChanged.subject'), [
     t(lang, 'email.emailChanged.intro', { email: maskEmail(msg.new_email) }),
     '',
     t(lang, 'email.emailChanged.noAccess'),
     '',
-    t(lang, 'email.emailChanged.notYou'),
+    contact ? t(lang, 'email.emailChanged.notYou', { contact }) : t(lang, 'email.emailChanged.notYouNoContact'),
     '',
     t(lang, 'email.emailChanged.wasYou'),
     { link: settingsLink },

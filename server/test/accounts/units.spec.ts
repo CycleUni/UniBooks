@@ -73,6 +73,10 @@ describe('emails', () => {
     expect(mail?.text).toContain('m***@example.com');
     expect(mail?.text).not.toContain('moved-to@example.com');
     expect(mail?.text).toContain(BASE + '/account/settings');
+    // The way to reach the team is the sender address, when one is configured.
+    const msg = { type: 'email_changed' as const, user_id: id, to: 'old@example.com', new_email: 'moved-to@example.com' };
+    expect((await buildEmail(msg, { ...env, DEFAULT_FROM_EMAIL: 'team@example.com' }))?.text).toContain('寫信去 team@example.com');
+    expect((await buildEmail(msg, { ...env, DEFAULT_FROM_EMAIL: '' }))?.text).toContain('請即刻聯絡 UniBooks 團隊。');
     expect(maskEmail('a@b.c')).toBe('a***@b.c');
     expect(maskEmail('nope')).toBe('***');
   });
