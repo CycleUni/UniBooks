@@ -46,7 +46,7 @@ export const appConfig: ApplicationConfig = {
       multi: true
     },
     // Unhandled errors and route changes go to Sentry (a no-op until
-    // Sentry.init runs in main.ts, which needs NG_APP_SENTRY_DSN).
+    // Sentry.init runs in main.ts, which needs SENTRY_DSN).
     { provide: ErrorHandler, useValue: Sentry.createErrorHandler() },
     { provide: Sentry.TraceService, deps: [Router] },
     provideAppInitializer(() => { inject(Sentry.TraceService); }),

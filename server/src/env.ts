@@ -37,6 +37,8 @@ export interface Env {
   ISBNNET_RESOLVER_URL?: string;
   /** Account id for the Analytics Engine SQL API (admin ad statistics). */
   CF_ACCOUNT_ID?: string;
+  /** Sentry DSN (public), shared with the app build (client/scripts/set-env.js). */
+  SENTRY_DSN?: string;
 
   // Secrets (`wrangler secret put`)
   /** Master secret (32+ characters); every signing key is derived from it (lib/jwt.ts). */
@@ -59,7 +61,6 @@ export interface Env {
   FCM_WEB_APP_ID?: string;
   FCM_MESSAGING_SENDER_ID?: string;
   FCM_VAPID_KEY?: string;
-  SENTRY_DSN?: string;
   ISBNNET_RESOLVER_SECRET?: string;
   /** API token with Account Analytics:Read, for the Analytics Engine SQL API. */
   CF_ANALYTICS_TOKEN?: string;

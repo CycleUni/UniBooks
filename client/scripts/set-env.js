@@ -10,7 +10,7 @@ const envDir = path.join(__dirname, '../src/environments');
 // `wrangler dev` reads. A variable already set in the environment (CI) wins.
 // Only public values are read; secrets never reach this bundle.
 // ---------------------------------------------------------------------------
-const SHARED_KEYS = ['R2_PUBLIC_URL', 'GOOGLE_CLIENT_ID'];
+const SHARED_KEYS = ['R2_PUBLIC_URL', 'GOOGLE_CLIENT_ID', 'SENTRY_DSN'];
 const SERVER_DIR = path.join(__dirname, '../../server');
 const PRODUCTION = process.argv.includes('--production');
 
@@ -53,7 +53,7 @@ export const environment = {
   production: false,
   backendUrl: '${backendUrl}',
   gaMeasurementId: '${process.env.NG_APP_GA_MEASUREMENT_ID || ''}',
-  sentryDsn: '${process.env.NG_APP_SENTRY_DSN || ''}',
+  sentryDsn: '${process.env.SENTRY_DSN || ''}',
   googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}'
 };
 `;
@@ -63,7 +63,7 @@ export const environment = {
   production: true,
   backendUrl: '${backendUrl}',
   gaMeasurementId: '${process.env.NG_APP_GA_MEASUREMENT_ID || ''}',
-  sentryDsn: '${process.env.NG_APP_SENTRY_DSN || ''}',
+  sentryDsn: '${process.env.SENTRY_DSN || ''}',
   googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}'
 };
 `;
@@ -163,7 +163,7 @@ const FIREBASE_REGISTRATION = ['https://fcmregistrations.googleapis.com', 'https
 // Sentry error reports and replays are POSTed to the project's ingest host,
 // named exactly (from the DSN): a wildcard would let injected code report to
 // any Sentry project, an attacker's included.
-const SENTRY_INGEST = originOf(process.env.NG_APP_SENTRY_DSN);
+const SENTRY_INGEST = originOf(process.env.SENTRY_DSN);
 
 // Google Analytics 4: gtag.js (script-src googletagmanager.com) sends its hits
 // to these hosts, by fetch/sendBeacon and as image pixels — Google's own CSP

@@ -19,9 +19,11 @@ if (environment.sentryDsn) {
     environment: environment.production ? 'production' : 'development',
     integrations: [Sentry.browserTracingIntegration(), Sentry.replayIntegration()],
     tracesSampleRate: environment.production ? 0.1 : 1.0,
-    // Empty on purpose: trace headers on API calls would need the backend's
-    // CORS allow-list to accept sentry-trace and baggage.
-    tracePropagationTargets: [],
+    // sentry-trace and baggage go on this origin's API calls only, so the
+    // Worker (same origin, same Sentry project) continues the page's trace.
+    // A regex on the path: for a same-origin request the SDK also matches
+    // the pathname, and no cross-origin URL starts with /api/.
+    tracePropagationTargets: [/^\/api\//],
     // Replays mask all text and block media by default; chats and order
     // details stay masked. Sample sessions lightly, but keep every error.
     replaysSessionSampleRate: 0.05,

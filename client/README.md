@@ -132,9 +132,12 @@ export const REGION_TO_LANG: Record<string, Lang> = {
 
 ### Sentry 錯誤回報
 
-在 `.env` 填入 `NG_APP_SENTRY_DSN`（公開的上報位址，非機密）。留空時 Sentry 不啟用。
+前後端共用同一個 Sentry 專案，DSN（公開的上報位址，非機密）只寫在 `../server/wrangler.jsonc`
+的 `vars.SENTRY_DSN`，`scripts/set-env.js` 建置時讀取；本地以 `../server/.dev.vars` 的 `SENTRY_DSN=`（留空）
+關閉。留空時 Sentry 不啟用。
 初始化在 `src/main.ts`，未處理的錯誤與路由效能由 `app.config.ts` 的 ErrorHandler / TraceService 回報；
-CSP 的 `connect-src` 已由 `scripts/set-env.js` 放行 `*.ingest.us.sentry.io`。
+呼叫本站 `/api/` 時會帶上 `sentry-trace`／`baggage`，Worker 接續同一條 trace。
+CSP 的 `connect-src` 由 `scripts/set-env.js` 放行該 DSN 的 ingest 主機。
 
 ### 送出的事件
 
@@ -289,9 +292,9 @@ npm run e2e           # Playwright
 1. **部署**：`cd ../server && npm run deploy`（先跑 `npm run build:fe` = 本專案的
    `npm run build`，產生 `dist/unibooks/browser/`，再套用 D1 migration 並 `wrangler deploy`；
    `wrangler.jsonc` 的 `assets.directory` 指向這個資料夾）。
-2. **建置設定**：前後端共用的公開值（`R2_PUBLIC_URL`、`GOOGLE_CLIENT_ID`）只寫在
+2. **建置設定**：前後端共用的公開值（`R2_PUBLIC_URL`、`GOOGLE_CLIENT_ID`、`SENTRY_DSN`）只寫在
    `../server/wrangler.jsonc` 的 `vars`，`scripts/set-env.js` 直接讀取（本地 `npm start`／`npm test`
-   再疊上 `../server/.dev.vars`），兩邊不會不一致。只有前端用的值（GA、Sentry、CSP 是否強制）
+   再疊上 `../server/.dev.vars`），兩邊不會不一致。只有前端用的值（GA、CSP 是否強制）
    在 `production.env`；正式建置不讀 `.env`。不需要 `NG_APP_BACKEND_URL`：預設就是同源的 `/api/v1`。
    `public/_headers`、`public/_redirects` 由 Workers Static Assets 照舊套用。
 3. **安全設定**：`angular.json` production 中 `security.allowedHosts` 必須空白，避免跨域 400 錯誤。

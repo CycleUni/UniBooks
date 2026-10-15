@@ -96,7 +96,7 @@
 - 不要在 `src/app` 寫死任何 API 或聊天室的絕對網址；API 一律走 `environment.backendUrl`
   （預設 `/api/v1`），聊天室網址一律用 `core/chat-urls.ts` 以本頁 origin 組出。
 - 圖片上傳（刊登照片、聊天圖片、廣告圖）一律走 `core/upload.ts` 的兩段式：`POST <base>/uploads` 拿 `{upload_url, photo_url}`，再 PUT 檔案到 `upload_url`。
-- 與後端共用的公開值（`R2_PUBLIC_URL`、`GOOGLE_CLIENT_ID`）只有一個來源：`../server/wrangler.jsonc`
+- 與後端共用的公開值（`R2_PUBLIC_URL`、`GOOGLE_CLIENT_ID`、`SENTRY_DSN`）只有一個來源：`../server/wrangler.jsonc`
   的 `vars`（本地再疊 `../server/.dev.vars`），由 `scripts/set-env.js` 讀取，不要在前端另寫一份。
   只有前端用的值放 `production.env`（只放會進到公開 bundle 或 header 的值，不放機密）；
   CSP 由 `scripts/set-env.js --production --headers` 寫進 `dist` 裡的 `_headers`。

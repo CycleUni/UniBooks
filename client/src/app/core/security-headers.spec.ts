@@ -126,7 +126,7 @@ describe('public/_headers', () => {
 
     it("lets Sentry post error reports to this project's ingest host only", () => {
       const setEnv = fs.readFileSync(path.join(process.cwd(), 'scripts/set-env.js'), 'utf-8');
-      expect(setEnv).toContain('const SENTRY_INGEST = originOf(process.env.NG_APP_SENTRY_DSN);');
+      expect(setEnv).toContain('const SENTRY_INGEST = originOf(process.env.SENTRY_DSN);');
       expect(setEnv).toMatch(/const connect = \[[^\]]*SENTRY_INGEST\]/);
       expect(setEnv).not.toContain('*.ingest.us.sentry.io');
     });

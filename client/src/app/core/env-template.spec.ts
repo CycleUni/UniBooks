@@ -34,7 +34,7 @@ describe('.env.template', () => {
     // Guards the regex above: if it silently matched nothing, the test before
     // this one would pass no matter what the template omitted.
     expect(read).toContain('NG_APP_BACKEND_URL');
-    expect(read.length).toBeGreaterThanOrEqual(5);
+    expect(read.length).toBeGreaterThanOrEqual(4);
   });
 
   it('lists key names without values, as its own header says', () => {
@@ -54,7 +54,7 @@ describe('.env.template', () => {
   it('takes shared settings from the server config instead of repeating them', () => {
     // One source for values both halves need: a copy here drifted once
     // (GOOGLE_CLIENT_ID), which breaks Google sign-in outright.
-    expect([...shared].sort()).toEqual(['GOOGLE_CLIENT_ID', 'R2_PUBLIC_URL']);
+    expect([...shared].sort()).toEqual(['GOOGLE_CLIENT_ID', 'R2_PUBLIC_URL', 'SENTRY_DSN']);
     for (const key of shared) {
       expect(declared.has(key), `${key} must not be in .env.template`).toBe(false);
       expect(SERVER_VARS[key], `${key} must be in server/wrangler.jsonc vars`).toBeTruthy();

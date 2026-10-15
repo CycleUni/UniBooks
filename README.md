@@ -117,7 +117,7 @@ npm run db:seed:remote         # 可選，首次部署後一次：香港地區�
 
 非機密設定（R2 公開網址、寄件者、Google Client ID、預設地區）在 `server/wrangler.jsonc` 的 `vars`，
 這也是前後端共用值的唯一來源：前端建置（`client/scripts/set-env.js`）直接讀這裡的 `R2_PUBLIC_URL`、
-`GOOGLE_CLIENT_ID`；本地開發則以 `server/.dev.vars` 覆蓋。只有前端用的值（GA、Sentry、CSP 是否強制）在
+`GOOGLE_CLIENT_ID`、`SENTRY_DSN`；本地開發則以 `server/.dev.vars` 覆蓋。只有前端用的值（GA、CSP 是否強制）在
 `client/production.env`。
 `CF_ACCOUNT_ID`（廣告統計查詢用）可放在 `vars` 或 secret。
 自訂網域：在 Cloudflare 後台把 `unibooks.app` 綁到 Worker `unibooks`。
