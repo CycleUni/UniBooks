@@ -85,7 +85,7 @@
     // secret, repeated wrong passwords on one account ask for a challenge
     // instead of locking the account; the key reaches the app with the
     // challenge request (no client build setting). Empty: off.
-    "TURNSTILE_SITE_KEY": ""
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFXU0IYptAGunf16"
   },
 
   "observability": { "enabled": true }
