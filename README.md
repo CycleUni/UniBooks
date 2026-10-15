@@ -56,8 +56,8 @@ npm --prefix server run start    # 建置前端（套用 server/.dev.vars）+ �
 
 改前端時想要熱重載：另開終端機在 `client/` 執行 `npm start`（`ng serve` :4200，`/api` 由 `proxy.conf.json` 轉到 :8787，聊天 WebSocket 一併轉送）。
 
-台灣地區（含幣別 TWD、語言 zh-TW / en）由 migration `0002_reference_data` 建立，部署時自動套用。
-其餘初始資料（香港地區、城市、學校、分類）：
+台灣地區（含幣別 TWD、語言 zh-TW / en）與台灣的縣市由 migration `0002_reference_data`、`0003_tw_cities` 建立，部署時自動套用
+（後台沒有新增縣市的頁面，學校匯入時的 `city` 必須是已存在的縣市代碼）。其餘初始資料（香港地區與縣市、學校、分類）：
 
 ```bash
 npm --prefix server run db:seed
@@ -108,7 +108,7 @@ npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON   # 推播（可選）
 npx wrangler secret put CF_ANALYTICS_TOKEN       # 廣告統計：Account Analytics Read 權限的 API token（可選）
 npx wrangler secret put TURNSTILE_SECRET_KEY     # 登入人機驗證（可選；site key 填在 wrangler.jsonc vars 的 TURNSTILE_SITE_KEY）
 npm run deploy    # 建置前端 → wrangler deploy（首次自動建立資源）→ 套用遠端 D1 migration
-npm run db:seed:remote         # 可選，首次部署後一次：香港地區、城市、學校、分類
+npm run db:seed:remote         # 可選，首次部署後一次：香港地區與縣市、學校、分類
 ```
 
 主金鑰之外的密鑰請貼上各服務核發的值。輪替主金鑰時再執行一次上面的 `openssl rand … | wrangler secret put SECRET_KEY`
