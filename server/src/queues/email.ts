@@ -67,6 +67,7 @@ interface UserRow {
   first_name: string;
   last_name: string;
   is_active: number;
+  is_banned: number;
   deleted_at: string | null;
   notify_new_message_email: number;
   email_language: string;
@@ -76,15 +77,16 @@ interface UserRow {
 async function loadUser(env: Env, id: string | undefined | null): Promise<UserRow | null> {
   if (!id) return null;
   return env.DB.prepare(
-    `SELECT id, email, first_name, last_name, is_active, deleted_at, notify_new_message_email, email_language, site_language
+    `SELECT id, email, first_name, last_name, is_active, is_banned, deleted_at, notify_new_message_email, email_language, site_language
      FROM users WHERE id = ?`,
   )
     .bind(id)
     .first<UserRow>();
 }
 
+/** Active, not banned, not deleted, with an address (the same rule as push: messaging/people.ts). */
 function reachable(user: UserRow | null): user is UserRow {
-  return !!user && !!user.is_active && !user.deleted_at && !!user.email;
+  return !!user && !!user.is_active && !user.is_banned && !user.deleted_at && !!user.email;
 }
 
 async function languageFor(env: Env, user: UserRow, region: string | null | undefined): Promise<string> {

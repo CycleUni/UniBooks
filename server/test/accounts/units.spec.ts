@@ -131,6 +131,23 @@ describe('emails', () => {
     expect(mail?.html).toContain('A &amp; B');
   });
 
+  it('a banned user is not emailed notifications', async () => {
+    const id = await createUser('banned-mail@example.com');
+    await env.DB.prepare('UPDATE users SET is_banned = 1 WHERE id = ?').bind(id).run();
+    const reminder = {
+      type: 'meetup_reminder' as const,
+      user_id: id,
+      email: 'banned-mail@example.com',
+      order_id: 'o1',
+      book_title: 'B',
+      meetup_time: '2026-01-01T10:30:00Z',
+      meetup_location: '',
+    };
+    expect(await buildEmail(reminder, env)).toBeNull();
+    const waitlist = { type: 'waitlist_notification' as const, user_id: id, email: '', book_title: 'B', listing_count: 1, region: 'TW' };
+    expect(await buildEmail(waitlist, env)).toBeNull();
+  });
+
   it('meetup reminder in the given timezone', async () => {
     const id = await createUser('meet@example.com');
     const mail = await buildEmail(

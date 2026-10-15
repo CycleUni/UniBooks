@@ -341,6 +341,60 @@ describe.skipIf(!schemaReady)('cron jobs', () => {
     expect(second.reminded_orders).toBe(0);
   });
 
+  it('a banned user gets neither meetup reminders nor waitlist emails', async () => {
+    const seller = await makeUser('seller');
+    const buyer = await makeUser('buyer');
+    await db.update(users).set({ isBanned: 1 }).where(eq(users.id, buyer.id));
+    const l = await makeListing(seller.id);
+    const id = crypto.randomUUID();
+    await db.insert(orders).values({
+      id,
+      regionCode: 'TW',
+      currencyCode: 'TWD',
+      listingId: l.id,
+      listingRef: l.id,
+      bookTitle: 'Book',
+      buyerId: buyer.id,
+      sellerId: seller.id,
+      status: 'accepted',
+      totalAmount: 100,
+      meetupTime: new Date(Date.now() + 30 * 60_000).toISOString(),
+      createdAt: now(),
+      updatedAt: now(),
+    });
+    const bookId = crypto.randomUUID();
+    await db.insert(books).values({ id: bookId, regionCode: 'TW', title: 'Banned wants', source: 'manual', createdAt: now() });
+    await db.insert(subscriptions).values({
+      id: crypto.randomUUID(),
+      regionCode: 'TW',
+      userId: buyer.id,
+      bookId,
+      createdAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    await db.insert(listings).values({
+      id: crypto.randomUUID(),
+      regionCode: 'TW',
+      currencyCode: 'TWD',
+      bookId,
+      sellerId: seller.id,
+      price: 1,
+      condition: 'new',
+      createdAt: now(),
+      updatedAt: now(),
+    });
+
+    const sent: { user_id?: string }[] = [];
+    const recorder = { send: async (m: { user_id?: string }) => void sent.push(m) };
+    const jobEnv = { ...env, EMAIL_QUEUE: recorder, PUSH_QUEUE: recorder } as unknown as typeof env;
+    await runMeetupReminder(jobEnv);
+    await runWaitlistNotify(jobEnv);
+    expect(sent.some((m) => m.user_id === seller.id)).toBe(true);
+    expect(sent.filter((m) => m.user_id === buyer.id)).toEqual([]);
+    // Settled for the order all the same, so it is not picked up again.
+    const [row] = await db.select().from(orders).where(eq(orders.id, id));
+    expect(row.meetupReminderSentAt).toBeTruthy();
+  });
+
   it('notifies a waitlist once per new listing', async () => {
     const seller = await makeUser('seller');
     const watcher = await makeUser('watcher');

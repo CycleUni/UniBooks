@@ -59,6 +59,7 @@ export async function runWaitlistNotify(env: Env) {
       AND l.created_at > MAX(${subscriptions.createdAt}, COALESCE(${subscriptions.notifiedAt}, ${subscriptions.createdAt})))`,
     // Nobody to mail: left due, they would hold batch slots forever.
     eq(users.isActive, 1),
+    eq(users.isBanned, 0),
     isNull(users.deletedAt),
     sql`${users.email} <> ''`,
   );
@@ -174,8 +175,14 @@ export async function runMeetupReminder(env: Env) {
       .select({
         order: orders,
         timezone: regions.timezone,
-        buyer: { id: buyerU.id, email: buyerU.email, isActive: buyerU.isActive, deletedAt: buyerU.deletedAt },
-        seller: { id: sellerU.id, email: sellerU.email, isActive: sellerU.isActive, deletedAt: sellerU.deletedAt },
+        buyer: { id: buyerU.id, email: buyerU.email, isActive: buyerU.isActive, isBanned: buyerU.isBanned, deletedAt: buyerU.deletedAt },
+        seller: {
+          id: sellerU.id,
+          email: sellerU.email,
+          isActive: sellerU.isActive,
+          isBanned: sellerU.isBanned,
+          deletedAt: sellerU.deletedAt,
+        },
       })
       .from(orders)
       .innerJoin(regions, eq(regions.code, orders.regionCode))
@@ -204,8 +211,8 @@ export async function runMeetupReminder(env: Env) {
     ];
     for (const { user, field, done } of parties) {
       if (done !== null) continue;
-      // Inactive/deleted accounts or accounts with no email are skipped (and marked).
-      if (!user.isActive || user.deletedAt !== null || !user.email) {
+      // Inactive/banned/deleted accounts or accounts with no email are skipped (and marked).
+      if (!user.isActive || user.isBanned || user.deletedAt !== null || !user.email) {
         updates[field] = now;
         continue;
       }
