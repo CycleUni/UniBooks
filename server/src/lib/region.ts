@@ -115,3 +115,22 @@ export const requireVerifiedInRequestRegion = (): MiddlewareHandler<AppEnv> => a
   }
   await next();
 };
+
+/**
+ * Cache headers for a viewer-independent answer that depends on the region
+ * (and, with `lang`, the language). When the URL alone names both — ?region=
+ * is the region resolved and ?lang= is present, as every SPA request has — no
+ * Vary is needed, so the browser reuses it across pages. `Vary: Cookie` would
+ * defeat that: analytics cookies change on every page view.
+ * Otherwise it keeps varying on every input the fallbacks read.
+ */
+export async function setSharedCache(
+  c: Context<AppEnv>,
+  { maxAge, staleWhileRevalidate = 0, lang = false }: { maxAge: number; staleWhileRevalidate?: number; lang?: boolean },
+): Promise<void> {
+  const region = await getRegion(c);
+  const urlNamesAll = !!region && c.req.query('region')?.toUpperCase() === region.code && (!lang || !!c.req.query('lang'));
+  const swr = staleWhileRevalidate ? `, stale-while-revalidate=${staleWhileRevalidate}` : '';
+  c.header('Cache-Control', `public, max-age=${maxAge}${swr}`);
+  if (!urlNamesAll) c.header('Vary', lang ? 'Accept-Language, X-Region, Cookie' : 'X-Region, Cookie');
+}

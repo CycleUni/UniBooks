@@ -13,14 +13,21 @@ import { apiError } from './http';
  *                  never on cross-site requests (SameSite=Strict).
  *   ub_session     "1" while signed in: not a credential, just tells the SPA
  *                  whether to bother asking /auth/me/.
+ *   ub_access      "1" while the access cookie is good, expiring a little
+ *                  before it on the browser's own clock: its absence tells the
+ *                  SPA to refresh before calling the API, instead of after a
+ *                  401 on every request in flight.
  *
  * Non-browser clients may still send `Authorization: Bearer <access>`.
  */
 export const ACCESS_COOKIE = '__Host-ub_at';
 export const REFRESH_COOKIE = '__Secure-ub_rt';
 export const HINT_COOKIE = 'ub_session';
+export const ACCESS_HINT_COOKIE = 'ub_access';
 
 const ACCESS_MAX_AGE = 15 * 60;
+/** Refresh this long before the access cookie lapses, so no request races it. */
+const ACCESS_HINT_MARGIN = 30;
 const REFRESH_MAX_AGE = 14 * 24 * 60 * 60;
 const REFRESH_PATH = '/api/v1/auth/';
 
@@ -34,12 +41,14 @@ export function setSession(c: Context<AppEnv>, pair: { access: string; refresh: 
     maxAge: REFRESH_MAX_AGE,
   });
   setCookie(c, HINT_COOKIE, '1', { secure: true, sameSite: 'Lax', path: '/', maxAge: REFRESH_MAX_AGE });
+  setCookie(c, ACCESS_HINT_COOKIE, '1', { secure: true, sameSite: 'Lax', path: '/', maxAge: ACCESS_MAX_AGE - ACCESS_HINT_MARGIN });
 }
 
 export function clearSession(c: Context<AppEnv>): void {
   deleteCookie(c, ACCESS_COOKIE, { path: '/', secure: true });
   deleteCookie(c, REFRESH_COOKIE, { path: REFRESH_PATH, secure: true });
   deleteCookie(c, HINT_COOKIE, { path: '/', secure: true });
+  deleteCookie(c, ACCESS_HINT_COOKIE, { path: '/', secure: true });
 }
 
 /**
@@ -52,6 +61,7 @@ export function withClearedSession(res: Response): Response {
   out.headers.append('Set-Cookie', `${ACCESS_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`);
   out.headers.append('Set-Cookie', `${REFRESH_COOKIE}=; Max-Age=0; Path=${REFRESH_PATH}; HttpOnly; Secure; SameSite=Strict`);
   out.headers.append('Set-Cookie', `${HINT_COOKIE}=; Max-Age=0; Path=/; Secure; SameSite=Lax`);
+  out.headers.append('Set-Cookie', `${ACCESS_HINT_COOKIE}=; Max-Age=0; Path=/; Secure; SameSite=Lax`);
   return out;
 }
 

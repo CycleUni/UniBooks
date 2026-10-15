@@ -13,7 +13,7 @@ import { SignJWT, jwtVerify } from 'jose';
  * and there is only one secret to set and rotate (rotating it signs
  * everyone out).
  */
-export type TokenType = 'access' | 'refresh' | 'chat' | 'hub' | 'upload';
+export type TokenType = 'access' | 'refresh' | 'chat' | 'upload';
 
 export interface AccessTokenPayload {
   user_id: string;
@@ -34,10 +34,6 @@ export interface ChatTokenPayload {
   role: 'user' | 'observer' | 'system';
 }
 
-export interface HubTokenPayload {
-  user_id: string;
-}
-
 export interface UploadTokenPayload {
   user_id: string;
   /** What the upload is for; each upload endpoint accepts exactly one. */
@@ -55,15 +51,12 @@ type PayloadFor<T extends TokenType> = T extends 'access'
     ? RefreshTokenPayload
     : T extends 'chat'
       ? ChatTokenPayload
-      : T extends 'hub'
-        ? HubTokenPayload
-        : UploadTokenPayload;
+      : UploadTokenPayload;
 
 export const TOKEN_LIFETIMES: Record<TokenType, string> = {
   access: '15m',
   refresh: '14d',
   chat: '1h',
-  hub: '24h',
   upload: '15m',
 };
 

@@ -2,25 +2,14 @@ import { Hono, type Context } from 'hono';
 import { cached } from '../lib/cache';
 import type { Region } from '../db';
 import { rateLimit } from '../middleware/rateLimit';
-import { and, asc, count, desc, eq, exists, getTableName, is, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, getTableName, is } from 'drizzle-orm';
 import { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { AppEnv } from '../env';
-import {
-  books,
-  categories,
-  cities,
-  createDb,
-  currencies as currenciesTable,
-  regionVerifications,
-  schema,
-  schools,
-  subscriptions,
-} from '../db';
-import { activeRegions, requireRegion } from '../lib/region';
+import { categories, cities, createDb, currencies as currenciesTable, schema, schools } from '../db';
+import { activeRegions, requireRegion, setSharedCache } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { resolveLanguage } from '../services/accounts/i18n';
 import { activeRegionDetails, localizedName, pickTranslation, type Row } from '../services/accounts/regionData';
-import { resolveSchool } from '../services/listings/places';
 import { parseJson } from '../lib/json';
 
 /**
@@ -108,9 +97,8 @@ coreRoutes.get('/regions', async (c) => {
       };
     });
   });
-  // Viewer-independent: let browsers and the service worker reuse it.
-  c.header('Cache-Control', 'public, max-age=300');
-  c.header('Vary', 'Accept-Language, X-Region, Cookie');
+  // Viewer-independent and rarely edited: let browsers reuse it for an hour.
+  await setSharedCache(c, { maxAge: 3600, staleWhileRevalidate: 86400, lang: true });
   return c.json(body);
 });
 
@@ -145,23 +133,15 @@ function allNames(row: Row): string[] {
 
 coreRoutes.get('/metadata', rateLimit('metadata', '120/min'), optionalAuthMiddleware(), async (c) => {
   const [lang, region] = await Promise.all([resolveLanguage(c), requireRegion(c)]);
-  const schoolParam = c.req.query('school') ?? '';
-  // The key holds only validated values (a school id, or one shared marker
-  // for "names no school"), so arbitrary ?school= values cannot each mint a
-  // KV entry. Reference rows invalidate 'ref' on admin edits; the waitlist
-  // counts may lag 5 minutes.
-  const school = schoolParam ? await resolveSchool(c.env, region, schoolParam) : null;
-  const schoolKey = school ? String(school.id) : schoolParam ? 'unknown' : '';
-  const body = await cached(c.env, 'ref', `metadata:${region.code}:${lang}:${schoolKey}`, 300, () =>
-    buildMetadata(c, region, lang, schoolParam),
-  );
-  // Viewer-independent: let browsers and the service worker reuse it.
-  c.header('Cache-Control', 'public, max-age=300');
-  c.header('Vary', 'Accept-Language, X-Region, Cookie');
+  // Reference rows only (the most-wanted list rides on recent-books):
+  // admin edits invalidate 'ref'.
+  const body = await cached(c.env, 'ref', `metadata:${region.code}:${lang}`, 3600, () => buildMetadata(c, region, lang));
+  // Viewer-independent: let browsers reuse it.
+  await setSharedCache(c, { maxAge: 900, staleWhileRevalidate: 86400, lang: true });
   return c.json(body);
 });
 
-async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string, schoolParam: string) {
+async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string) {
   const db = createDb(c.env.DB);
 
   const [schoolRows, cityRows, categoryRows] = await Promise.all([
@@ -201,59 +181,11 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string, s
     return { slug: cat.slug, title: t.title || cat.title, desc: t.description || cat.description };
   });
 
-  // Most wanted. A ?school= that names no school here means an empty list,
-  // never "every school".
-  let waitlist: { title: unknown; count: number; book_id: unknown; cover_url: unknown; isbn: unknown; authors: unknown }[] = [];
-  const school = schoolParam ? await resolveSchool(c.env, region, schoolParam) : null;
-  if (!schoolParam || school) {
-    const bySchool = school
-      ? exists(
-          db
-            .select({ id: regionVerifications.id })
-            .from(regionVerifications)
-            .where(
-              and(
-                eq(regionVerifications.userId, subscriptions.userId),
-                eq(regionVerifications.regionCode, subscriptions.regionCode),
-                eq(regionVerifications.schoolId, Number(school.id)),
-                eq(regionVerifications.isActive, 1),
-                isNotNull(regionVerifications.verifiedAt),
-              ),
-            ),
-        )
-      : undefined;
-    const n = count(subscriptions.userId);
-    const results = await db
-      .select({
-        bookId: subscriptions.bookId,
-        title: books.title,
-        coverUrl: books.coverUrl,
-        isbn13: books.isbn13,
-        authors: books.authors,
-        n,
-      })
-      .from(subscriptions)
-      .innerJoin(books, eq(books.id, subscriptions.bookId))
-      .where(and(eq(subscriptions.regionCode, region.code), bySchool))
-      .groupBy(subscriptions.bookId, books.title, books.coverUrl, books.isbn13, books.authors)
-      .orderBy(desc(n))
-      .limit(7);
-    waitlist = results.map((r) => ({
-      title: r.title,
-      count: Number(r.n),
-      book_id: r.bookId,
-      cover_url: r.coverUrl,
-      isbn: r.isbn13,
-      authors: r.authors,
-    }));
-  }
-
   return {
     lang,
     region: { code: region.code, currency: region.defaultCurrency },
     schools: schoolList,
     cities: cityList,
     categories: categoryList,
-    waitlist,
   };
 }

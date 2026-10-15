@@ -197,8 +197,13 @@ describe('core', () => {
     expect(meta.region).toEqual({ code: 'TW', currency: 'TWD' });
     expect(meta.schools[0]).toMatchObject({ code: 'NTU', display_name: '國立臺灣大學', email_domain: 'ntu.edu.tw' });
     expect(meta.schools[0].names).toEqual(['National Taiwan University', '國立臺灣大學']);
-    expect(meta.waitlist).toEqual([]);
-    const unknown = (await (await call('/api/v1/core/metadata?region=TW&school=NOPE')).json()) as any;
+    expect(meta.waitlist).toBeUndefined();
+    // The most-wanted list rides on recent-books page 1 instead.
+    const recent = (await (await call('/api/v1/listings/recent-books?region=TW')).json()) as any;
+    expect(recent.waitlist).toEqual([]);
+    const unknown = (await (await call('/api/v1/listings/recent-books?region=TW&school=NOPE')).json()) as any;
     expect(unknown.waitlist).toEqual([]);
+    const page2 = (await (await call('/api/v1/listings/recent-books?region=TW&page=2')).json()) as any;
+    expect(page2.waitlist).toBeUndefined();
   });
 });

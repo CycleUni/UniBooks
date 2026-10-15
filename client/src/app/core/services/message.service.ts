@@ -7,6 +7,7 @@ import { uploadImage } from '../upload';
 import { environment } from '../../../environments/environment';
 import { isTransientHttpFailure } from '../http-failure';
 import { decodeJwtPayload } from '../jwt';
+import { SessionRefreshService } from '../session-refresh.service';
 import { chatHubSocketUrl, chatRoomMessagesUrl, chatRoomReadUrl, chatRoomSocketUrl } from '../chat-urls';
 import { importOrReload } from '../chunk-recovery';
 
@@ -68,6 +69,7 @@ export class MessageService {
   private currentToken: string | null = null;
   private currentUserId: string | null = null;
   private platformId = inject(PLATFORM_ID);
+  private sessionRefresh = inject(SessionRefreshService);
 
   private reconnectAttempts = 0;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -92,7 +94,7 @@ export class MessageService {
    * against a broken server otherwise kept dialing every 30s all night.
    */
   private static readonly MAX_RECONNECT_ATTEMPTS = 8;
-  /** A hub token with more left than this is reused for a reconnect. */
+  /** A room token with more left than this is reused for a reconnect. */
   private static readonly TOKEN_REUSE_MIN_SECONDS = 60;
   /** Mark-reads for a burst of live messages collapse into one. */
   private static readonly READ_DEBOUNCE_MS = 1_500;
@@ -118,8 +120,11 @@ export class MessageService {
   // Covers every conversation the user is part of, so the inbox can show
   // live previews/unread badges without opening one socket per conversation.
   private hubWs: WebSocket | null = null;
-  private currentHubToken: string | null = null;
-  private currentHubUserId: string | null = null;
+  // Whether a hub connection is wanted and set up (open or reconnecting), and
+  // which one: disconnectHub() moves the generation on, so a reconnect that
+  // was waiting on a session refresh can tell it has been superseded.
+  private hubActive = false;
+  private hubGeneration = 0;
   private hubReconnectAttempts = 0;
   private hubReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private hubStableTimer: ReturnType<typeof setTimeout> | null = null;
@@ -130,7 +135,7 @@ export class MessageService {
   // reconnecting one that dropped (scheduleHubReconnect).
   private hubOpenWanted = false;
   private hubOpenOwed = false;
-  private hubTokenRequest: Subscription | null = null;
+  private hubAccessRequest: Subscription | null = null;
   private hubOpenRetryTimeout: ReturnType<typeof setTimeout> | null = null;
   private hubOpenRetryIndex = 0;
   /** Same schedule as AuthStore's profile retry, for the same cold start. */
@@ -176,9 +181,6 @@ export class MessageService {
 
   // User-scoped, not room-scoped: proves identity for the single hub
   // connection but grants no access to any conversation's content on its own.
-  getHubToken(): Observable<{token: string}> {
-    return this.http.get<{token: string}>('/messaging/hub-token');
-  }
 
   markConversationRead(conversationId: string): Observable<void> {
     return this.http.post<void>(`/messaging/conversations/${conversationId}/read`, {});
@@ -527,7 +529,7 @@ export class MessageService {
       this.reconnectAttempts = 0;
       this.scheduleReconnect();
     }
-    if (this.hubReconnectOwed && !this.hubWs && this.currentHubUserId) {
+    if (this.hubReconnectOwed && !this.hubWs && this.hubActive) {
       this.hubReconnectOwed = false;
       this.hubReconnectAttempts = 0;
       this.scheduleHubReconnect();
@@ -538,15 +540,16 @@ export class MessageService {
   }
 
   /**
-   * Open the hub for the signed-in visitor: fetch a hub token, then connect.
+   * Open the hub for the signed-in visitor. The socket signs in with the
+   * session cookie, so this costs no request of its own — only a session
+   * refresh first when the access cookie has lapsed (shared with the API).
    *
    * The hub is the only thing that tells the chat server the visitor is on the site;
    * with no socket on it they count as away and get emailed about new
    * messages. scheduleHubReconnect brings back a hub that *dropped*, but
-   * nothing brought back one that never opened: the token request ran once,
-   * when the session became authenticated, and a failure — a cold serverless
-   * start, or the token refresh behind it — went unhandled (logged by Angular
-   * as an uncaught ERROR) and left the visitor without a hub until a reload.
+   * nothing brought back one that never opened: a refresh failing for a
+   * transient reason (a cold serverless start) left the visitor without a hub
+   * until a reload.
    *
    * A transient failure is now retried on a schedule, and again on
    * retryHubIfOwed() (the layout calls it on navigation and on returning to
@@ -555,19 +558,16 @@ export class MessageService {
   openHub(): void {
     if (!isPlatformBrowser(this.platformId)) return;
     this.hubOpenWanted = true;
-    // Already open (or reconnecting), or a token request is already out.
-    if (this.currentHubUserId) return;
-    if (this.hubTokenRequest && !this.hubTokenRequest.closed) return;
+    // Already open (or reconnecting), or a refresh for it is already out.
+    if (this.hubActive) return;
+    if (this.hubAccessRequest && !this.hubAccessRequest.closed) return;
 
-    this.hubTokenRequest = this.getHubToken().subscribe({
-      next: (res) => {
+    this.hubAccessRequest = this.sessionRefresh.ensureAccess().subscribe({
+      next: () => {
         if (!this.hubOpenWanted) return;
         this.hubOpenOwed = false;
         this.cancelHubOpenRetry();
-        // Unreadable token: nothing to connect as.
-        const userId = String(decodeJwtPayload(res.token)?.['user_id'] ?? '');
-        if (!userId) return;
-        this.connectHub(res.token, userId);
+        this.connectHub();
       },
       error: (err: unknown) => {
         if (!this.hubOpenWanted || !isTransientHttpFailure(err)) return;
@@ -579,7 +579,7 @@ export class MessageService {
 
   /** Open the hub if an earlier attempt failed for a reason worth retrying. */
   retryHubIfOwed(): void {
-    if (this.hubOpenOwed && this.hubOpenWanted && !this.currentHubUserId) {
+    if (this.hubOpenOwed && this.hubOpenWanted && !this.hubActive) {
       this.openHub();
     }
   }
@@ -589,8 +589,8 @@ export class MessageService {
     this.hubOpenWanted = false;
     this.hubOpenOwed = false;
     this.cancelHubOpenRetry();
-    this.hubTokenRequest?.unsubscribe();
-    this.hubTokenRequest = null;
+    this.hubAccessRequest?.unsubscribe();
+    this.hubAccessRequest = null;
     this.disconnectHub();
   }
 
@@ -614,9 +614,9 @@ export class MessageService {
     this.hubOpenRetryIndex = 0;
   }
 
-  connectHub(token: string, userId: string) {
+  connectHub() {
     if (!isPlatformBrowser(this.platformId)) return;
-    if (this.hubWs && this.currentHubUserId === userId) return;
+    if (this.hubWs) return;
     this.disconnectHub();
     // disconnectHub() raises the "this close was deliberate" flag for the
     // socket it is tearing down. Lower it again for the one about to be
@@ -626,14 +626,13 @@ export class MessageService {
     // would then email them) until the next login or page load.
     this.hubClosingIntentionally = false;
 
-    this.currentHubToken = token;
-    this.currentHubUserId = userId;
+    this.hubActive = true;
     this.hubReconnectAttempts = 0;
 
-    // The hub token names the user; the path no longer does.
+    // The session cookie names the user: no token, no subprotocol.
     const wsUrl = chatHubSocketUrl();
     // Same superseded-socket guard as connectRoom — see its comment.
-    const hubWs = new WebSocket(wsUrl, [token]);
+    const hubWs = new WebSocket(wsUrl);
     this.hubWs = hubWs;
 
     hubWs.onopen = () => {
@@ -719,40 +718,27 @@ export class MessageService {
         return;
       }
       this.hubReconnectAttempts++;
-      const userId = this.currentHubUserId;
-      const staleToken = this.currentHubToken;
-      if (!userId || !staleToken) return;
+      if (!this.hubActive) return;
+      const generation = this.hubGeneration;
 
-      // Mint a fresh token rather than replaying the cached one: the hub
-      // token expires after two hours, so a tab left open past that could
-      // never reconnect — every attempt 401s and the retry loop just keeps
-      // backing off. That is not only a dead badge: with nothing connected
-      // to the hub, the chat server counts the user as away and starts emailing
-      // them about messages arriving in a page they are looking at.
-      //
-      // But only when it is close to expiring. Minting on every attempt
-      // meant a chat outage cost a backend request per retry, on top of the
-      // retry itself.
-      if (tokenSecondsLeft(staleToken) > MessageService.TOKEN_REUSE_MIN_SECONDS) {
-        this.reconnectHub(staleToken, userId);
-        return;
-      }
-      this.getHubToken().subscribe({
-        next: (res) => this.reconnectHub(res.token, userId, ),
+      // The socket's 24-hour life ends with a close (4001), and a drop can
+      // come after the 15-minute access cookie has lapsed: either way the
+      // upgrade needs a live cookie, so refresh first when its hint is gone
+      // (no request at all when it is not).
+      this.sessionRefresh.ensureAccess().subscribe({
+        next: () => this.reconnectHub(generation),
         error: (err: unknown) => {
           // Only a failure that says nothing about the session is worth
-          // retrying with the cached token: the backend unreachable (status
-          // 0), throttled, or erroring. Anything else means the session is
-          // gone — a 401/403 arrives here only after AuthInterceptor tried to
-          // refresh and failed (including when no refresh token was left,
-          // which it reports as a 401 too). Treating those as transient
-          // turned every signed-out tab into a request to the backend every
-          // couple of seconds, forever. Stop; signing in again reconnects the
-          // hub from the layout.
+          // retrying: the backend unreachable (status 0), throttled, or
+          // erroring. A 401/403 means the session is gone (the refresh was
+          // refused, or no refresh cookie was left). Treating those as
+          // transient turned every signed-out tab into a request to the
+          // backend every couple of seconds, forever. Stop; signing in again
+          // reconnects the hub from the layout.
           const transient = err instanceof HttpErrorResponse &&
             (err.status === 0 || err.status === 429 || err.status >= 500);
           if (!transient) return;
-          this.reconnectHub(staleToken, userId);
+          this.reconnectHub(generation);
         },
       });
     }, delay);
@@ -764,12 +750,12 @@ export class MessageService {
   //    and again itself), so the delay above was 1s on every attempt and
   //    never backed off at all; onopen resets it once a connection succeeds.
   //  - it does nothing if the hub was deliberately disconnected while the
-  //    token request was in flight (sign-out clears currentHubUserId),
+  //    session refresh was in flight (sign-out moves hubGeneration on),
   //    which would otherwise reopen a hub the layout had just closed.
-  private reconnectHub(token: string, userId: string) {
-    if (this.currentHubUserId !== userId) return;
+  private reconnectHub(generation: number) {
+    if (!this.hubActive || this.hubGeneration !== generation) return;
     const attempts = this.hubReconnectAttempts;
-    this.connectHub(token, userId);
+    this.connectHub();
     this.hubReconnectAttempts = attempts;
   }
 
@@ -781,8 +767,8 @@ export class MessageService {
       this.hubReconnectTimeout = null;
     }
     this.hubReconnectAttempts = 0;
-    this.currentHubToken = null;
-    this.currentHubUserId = null;
+    this.hubActive = false;
+    this.hubGeneration++;
     this.hubClosingIntentionally = true;
     this.unreadCount$.next(0);
     this.conversationUnreadState$.next(new Map());

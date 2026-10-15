@@ -5,8 +5,6 @@ import {
   HttpHandler,
   HttpEvent,
   HttpErrorResponse,
-  HttpBackend,
-  HttpClient,
   HttpContextToken,
 } from '@angular/common/http';
 
@@ -15,10 +13,11 @@ import {
  * session cookie still travels with them — the browser attaches it to every
  * same-origin request — and the server treats a stale one as anonymous. */
 export const SKIP_AUTH = new HttpContextToken<boolean>(() => false);
-import { Observable, throwError, timer } from 'rxjs';
-import { catchError, switchMap, finalize, shareReplay, retry } from 'rxjs/operators';
+import { Observable, of, throwError } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 import { isPlatformBrowser } from '@angular/common';
-import { AuthStore, hasSessionHint } from './auth.store';
+import { AuthStore, hasAccessHint, hasSessionHint } from './auth.store';
+import { SessionRefreshService } from './session-refresh.service';
 import { environment } from '../../environments/environment';
 
 /**
@@ -27,27 +26,18 @@ import { environment } from '../../environments/environment';
  * the expired access cookie — on a 401 from the API it asks /auth/refresh/
  * (which reads the refresh cookie and sets a fresh pair) once, shared by every
  * request that failed meanwhile, and replays the original request.
+ *
+ * It also refreshes *before* a request when the readable `ub_access` hint has
+ * lapsed (the access cookie is gone or about to be): otherwise a returning
+ * visitor's first page sends every call twice, once for a 401 and once again.
  */
 @Injectable()
 export class AuthInterceptor implements HttpInterceptor {
-  // In-flight refresh request; concurrent 401s within this tab share it so the
-  // one-time-use refresh cookie is not sent to /auth/refresh/ twice.
-  private refreshInProgress$: Observable<unknown> | null = null;
-
-  // Use HttpBackend directly for the refresh so we don't create a circular
-  // dependency: AuthInterceptor → HttpClient → HTTP_INTERCEPTORS → AuthInterceptor.
-  // HttpBackend is the raw XHR/fetch layer; it skips the entire interceptor chain.
-  private http: HttpClient;
-
-  private readonly refreshBackendUrl = `${environment.backendUrl}/auth/refresh`;
-
   constructor(
     private authStore: AuthStore,
-    backend: HttpBackend,
+    private sessionRefresh: SessionRefreshService,
     @Inject(PLATFORM_ID) private platformId: Object,
-  ) {
-    this.http = new HttpClient(backend);
-  }
+  ) {}
 
   intercept(request: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
     // Chat (/api/chat) carries its own room- or hub-scoped bearer token set by
@@ -61,7 +51,14 @@ export class AuthInterceptor implements HttpInterceptor {
       !request.context.get(SKIP_AUTH) &&
       isPlatformBrowser(this.platformId);
 
-    return next.handle(request).pipe(
+    // Signed in but the access cookie has lapsed: refresh first (shared with
+    // every other request doing the same). A refresh that fails leaves the
+    // request to the 401 path below, which owns the sign-out.
+    const send$ = shouldHandle401 && hasSessionHint() && !hasAccessHint()
+      ? this.sessionRefresh.refresh().pipe(catchError(() => of(null)), switchMap(() => next.handle(request)))
+      : next.handle(request);
+
+    return send$.pipe(
       catchError((error) => {
         if (error instanceof HttpErrorResponse && error.status === 401 && shouldHandle401) {
           return this.refreshAndRetry(request, next, error);
@@ -94,58 +91,7 @@ export class AuthInterceptor implements HttpInterceptor {
       return throwError(() => original);
     }
     // Replayed once: a 401 on the retry is the answer, not another refresh.
-    return this.refreshSession().pipe(switchMap(() => next.handle(request)));
+    return this.sessionRefresh.refresh().pipe(switchMap(() => next.handle(request)));
   }
 
-  private refreshSession(): Observable<unknown> {
-    if (!this.refreshInProgress$) {
-      this.refreshInProgress$ = this.http.post(this.refreshBackendUrl, null).pipe(
-        // A refresh that fails for a reason unrelated to the session is retried
-        // straight away, not left for "a later request". Two cases matter:
-        //  - status 0 / 502 / 504: the response was lost, often after the
-        //    server had already rotated the token. The rotated pair is handed
-        //    back for the same refresh token only inside the backend's grace
-        //    window, so waiting for the visitor's next click would usually
-        //    miss it and turn a network blip into a sign-out.
-        //  - 503: the backend could not reach its token store, and says so
-        //    instead of pretending the token is unknown.
-        retry({
-          count: AuthInterceptor.REFRESH_RETRY_DELAYS_MS.length,
-          delay: (err, attempt) =>
-            AuthInterceptor.isTransient(err)
-              ? timer(AuthInterceptor.REFRESH_RETRY_DELAYS_MS[attempt - 1])
-              : throwError(() => err),
-        }),
-        catchError((err) => {
-          if (err instanceof HttpErrorResponse && (err.status === 401 || err.status === 403)) {
-            // The session is gone (the server cleared the cookies with this
-            // answer): sign out here and send the visitor where the page's
-            // guard would.
-            this.authStore.endSession();
-          }
-          // Transient failures keep the session so a later request can try again.
-          return throwError(() => err);
-        }),
-        finalize(() => {
-          this.refreshInProgress$ = null;
-        }),
-        // refCount: false — with refCount:true, the last subscriber going away
-        // (a component torn down by navigation, say) unsubscribes the shared
-        // source and ABORTS the in-flight POST /auth/refresh/. The server may
-        // already have rotated the token by then, so the browser never stores
-        // the new cookies and the next refresh replays a dead one. Letting the
-        // request run to completion costs nothing: finalize still clears the
-        // field when it settles.
-        shareReplay({ bufferSize: 1, refCount: false }),
-      );
-    }
-    return this.refreshInProgress$;
-  }
-
-  /** Both well inside the backend's refresh rotation grace window. */
-  private static readonly REFRESH_RETRY_DELAYS_MS = [1000, 2000];
-
-  private static isTransient(err: unknown): boolean {
-    return err instanceof HttpErrorResponse && (err.status === 0 || err.status >= 500);
-  }
 }

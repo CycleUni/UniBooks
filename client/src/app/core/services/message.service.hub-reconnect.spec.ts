@@ -1,16 +1,18 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Subject, of, throwError } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 import { MessageService } from './message.service';
+import { SessionRefreshService } from '../session-refresh.service';
 
-// A hub token is valid for two hours. Reconnecting with the cached copy of it
-// therefore stops working on any tab left open longer than that: every retry
-// 401s, the hub stays down, and the chat server — which decides who is "away" by
-// whether their hub has a socket — starts emailing the user about messages
-// arriving in the page they are currently looking at.
+// The hub signs in with the access cookie, which lapses after 15 minutes. A
+// reconnect after that has to refresh the session first, or every retry is
+// refused, the hub stays down, and the chat server — which decides who is
+// "away" by whether their hub has a socket — starts emailing the user about
+// messages arriving in the page they are currently looking at.
 describe('MessageService hub reconnect', () => {
   let service: MessageService;
   let http: { get: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn> };
+  let ensureAccess: ReturnType<typeof vi.fn>;
   let sockets: FakeWebSocket[];
 
   class FakeWebSocket {
@@ -19,12 +21,20 @@ describe('MessageService hub reconnect', () => {
     onmessage: ((e: MessageEvent) => void) | null = null;
     onerror: (() => void) | null = null;
     readyState = 1;
-    constructor(public url: string, public protocols?: string[]) {
+    constructor(
+      public url: string,
+      public protocols?: string[],
+    ) {
       sockets.push(this);
     }
-    close() { this.readyState = 3; }
+    close() {
+      this.readyState = 3;
+    }
     send() {}
   }
+
+  const accessResponse = (respond: () => Observable<unknown>) =>
+    ensureAccess.mockImplementation(respond);
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -32,21 +42,21 @@ describe('MessageService hub reconnect', () => {
     (globalThis as any).WebSocket = FakeWebSocket;
 
     http = {
-      // The hub snapshot fetched on open, and the fresh hub token below, are
-      // the only two calls this test's paths make.
-      get: vi.fn((url: string) =>
-        url.includes('/messaging/hub-token')
-          ? of({ token: 'fresh-token' })
-          : of({ unread: [], count: 0 })
-      ),
+      get: vi.fn(() => of({ unread: [], count: 0 })),
       post: vi.fn(() => of(undefined)),
     };
+    // A live access cookie unless a test says otherwise.
+    ensureAccess = vi.fn(() => of(undefined));
 
     TestBed.configureTestingModule({
-      providers: [MessageService, { provide: HttpClient, useValue: http }],
+      providers: [
+        MessageService,
+        { provide: HttpClient, useValue: http },
+        { provide: SessionRefreshService, useValue: { ensureAccess } },
+      ],
     });
     service = TestBed.inject(MessageService);
-    service.connectHub('stale-token', '42');
+    service.connectHub();
   });
 
   afterEach(() => {
@@ -58,58 +68,46 @@ describe('MessageService hub reconnect', () => {
     vi.advanceTimersByTime(60_000);
   }
 
-  it('mints a fresh token instead of replaying the expired one', () => {
-    expect(sockets[0].protocols).toEqual(['stale-token']);
-
+  it('makes sure of a live session before reconnecting, with no request of its own', () => {
     dropTheConnection();
 
-    expect(http.get).toHaveBeenCalledWith('/messaging/hub-token');
+    expect(ensureAccess).toHaveBeenCalledTimes(1);
+    expect(http.get).not.toHaveBeenCalled();
     expect(sockets).toHaveLength(2);
-    expect(sockets[1].protocols).toEqual(['fresh-token']);
+    expect(sockets[1].protocols).toBeUndefined();
   });
 
-  it('falls back to the cached token when the token request itself fails', () => {
+  it('reconnects anyway when the refresh could not reach the backend', () => {
     // Backend unreachable is the common case here (the network dropped, which
-    // is why the socket closed) — retry with what we have rather than giving
-    // up on the hub until the next page load.
-    // What HttpClient actually reports when the request never reached a
-    // server: an HttpErrorResponse with status 0.
-    http.get.mockImplementation((url: string) =>
-      url.includes('/messaging/hub-token')
-        ? throwError(() => new HttpErrorResponse({ status: 0, statusText: 'Unknown Error' }))
-        : of({ unread: [], count: 0 })
+    // is why the socket closed) — retry rather than giving up on the hub
+    // until the next page load. What HttpClient reports when the request
+    // never reached a server: an HttpErrorResponse with status 0.
+    accessResponse(() =>
+      throwError(() => new HttpErrorResponse({ status: 0, statusText: 'Unknown Error' })),
     );
 
     dropTheConnection();
 
     expect(sockets).toHaveLength(2);
-    expect(sockets[1].protocols).toEqual(['stale-token']);
   });
 
-  const tokenResponse = (respond: (url: string) => unknown) =>
-    http.get.mockImplementation((url: string) =>
-      url.includes('/messaging/hub-token') ? respond(url) : of({ unread: [], count: 0 })
-    );
-
-  it.each([401, 403])('stops reconnecting once the session is gone (hub-token %i)', (status) => {
-    // AuthInterceptor has already tried to refresh by the time a 401 reaches
-    // here, and cleared the session. Falling back to the cached token made a
-    // signed-out tab call the backend every two seconds, forever.
-    tokenResponse(() => throwError(() => new HttpErrorResponse({ status })));
+  it.each([401, 403])('stops reconnecting once the session is gone (%i)', (status) => {
+    // The refresh was refused (and SessionRefreshService ended the session).
+    // Reconnecting anyway made a signed-out tab call the backend every two
+    // seconds, forever.
+    accessResponse(() => throwError(() => new HttpErrorResponse({ status })));
 
     dropTheConnection();
     vi.advanceTimersByTime(10 * 60_000);
 
-    const tokenCalls = http.get.mock.calls.filter(([url]) => String(url).includes('/messaging/hub-token'));
-    expect(tokenCalls).toHaveLength(1);
+    expect(ensureAccess).toHaveBeenCalledTimes(1);
     expect(sockets).toHaveLength(1);
   });
 
   it('stops reconnecting on a failure that is not an HTTP response at all', () => {
-    // A signed-out tab's token request now fails with a 401 (covered above).
     // Anything that is not an HttpErrorResponse says nothing about the backend
     // being briefly unavailable either, so it must not start a retry loop.
-    tokenResponse(() => throwError(() => new Error('not an HTTP failure')));
+    accessResponse(() => throwError(() => new Error('not an HTTP failure')));
 
     dropTheConnection();
     vi.advanceTimersByTime(10 * 60_000);
@@ -118,12 +116,11 @@ describe('MessageService hub reconnect', () => {
   });
 
   it.each([429, 503])('keeps retrying through a transient backend failure (%i)', (status) => {
-    tokenResponse(() => throwError(() => new HttpErrorResponse({ status })));
+    accessResponse(() => throwError(() => new HttpErrorResponse({ status })));
 
     dropTheConnection();
 
     expect(sockets).toHaveLength(2);
-    expect(sockets[1].protocols).toEqual(['stale-token']);
   });
 
   it('backs off between repeated failures instead of retrying every second', () => {
@@ -180,36 +177,37 @@ describe('MessageService hub reconnect', () => {
     expect(sockets).toHaveLength(4);
   });
 
-  it('does not reopen a hub that was disconnected while the token request was in flight', () => {
-    // Sign-out calls disconnectHub; a token response arriving afterwards used
-    // to open the hub again behind the layout's back.
-    const pending = new Subject<{ token: string }>();
-    tokenResponse(() => pending);
+  it('does not reopen a hub that was disconnected while the refresh was in flight', () => {
+    // Sign-out calls disconnectHub; a refresh settling afterwards must not
+    // open the hub again behind the layout's back.
+    const pending = new Subject<void>();
+    accessResponse(() => pending);
 
     sockets[0].onclose?.();
     vi.advanceTimersByTime(1_000);
     service.disconnectHub();
-    pending.next({ token: 'fresh-token' });
+    pending.next();
     vi.advanceTimersByTime(60_000);
 
     expect(sockets).toHaveLength(1);
   });
 
-  it('leaves alone a connection opened while the token request was in flight', () => {
-    // Sign out and straight back in as the same user: the layout opens a fresh
-    // connection (retry count 0) before the old reconnect's token arrives.
-    // The late reconnect must neither open a second socket nor disturb the
-    // fresh connection's retry count, or its next drop would wait longer.
-    const pending = new Subject<{ token: string }>();
-    tokenResponse(() => pending);
+  it('leaves alone a connection opened while the refresh was in flight', () => {
+    // Sign out and straight back in: the layout opens a fresh connection
+    // (retry count 0) before the old reconnect's refresh settles. The late
+    // reconnect must neither open a second socket nor disturb the fresh
+    // connection's retry count, or its next drop would wait longer.
+    const pending = new Subject<void>();
+    accessResponse(() => pending);
 
     sockets[0].onclose?.();
     vi.advanceTimersByTime(1_000);
-    service.connectHub('new-login-token', '42');
-    pending.next({ token: 'late-token' });
+    service.disconnectHub();
+    service.connectHub();
+    pending.next();
     expect(sockets).toHaveLength(2);
 
-    tokenResponse(() => of({ token: 'fresh-token' }));
+    accessResponse(() => of(undefined));
     sockets[1].onclose?.();
     vi.advanceTimersByTime(1_000);
     expect(sockets).toHaveLength(3);

@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { api, hasMessagingSchema, seedConversation, seedListing, seedRegion, seedUser } from './helpers';
-import { mintChatToken, mintHubToken } from '../../src/services/chatTokens';
+import { mintChatToken } from '../../src/services/chatTokens';
 import { disconnectUser } from '../../src/services/messaging/disconnect';
 
 const ready = await hasMessagingSchema();
 
 /** Open a socket through the Worker and resolve with its close code. */
-async function open(path: string, token: string): Promise<{ closed: Promise<number> }> {
-  const res = await api(path, { headers: { Upgrade: 'websocket', 'Sec-WebSocket-Protocol': token } });
+async function open(path: string, headers: Record<string, string>): Promise<{ closed: Promise<number> }> {
+  const res = await api(path, { headers: { Upgrade: 'websocket', ...headers } });
   expect(res.status).toBe(101);
   const ws = res.webSocket!;
   ws.accept();
@@ -24,15 +24,14 @@ describe.skipIf(!ready)('disabling an account closes its chat sockets', () => {
     const conv = await seedConversation(buyer.id, seller.id, await seedListing(seller.id));
     const participants = [buyer.id, seller.id];
 
-    const hub = await open('/api/chat/hub', await mintHubToken(env, buyer.id));
-    const room = await open(
-      `/api/chat/rooms/${conv}`,
-      await mintChatToken(env, { userId: buyer.id, roomId: conv, participantIds: participants, role: 'user' }),
-    );
-    const other = await open(
-      `/api/chat/rooms/${conv}`,
-      await mintChatToken(env, { userId: seller.id, roomId: conv, participantIds: participants, role: 'user' }),
-    );
+    // The hub signs in with the session cookie; rooms with their own token.
+    const hub = await open('/api/chat/hub', { Cookie: `__Host-ub_at=${buyer.token}` });
+    const room = await open(`/api/chat/rooms/${conv}`, {
+      'Sec-WebSocket-Protocol': await mintChatToken(env, { userId: buyer.id, roomId: conv, participantIds: participants, role: 'user' }),
+    });
+    const other = await open(`/api/chat/rooms/${conv}`, {
+      'Sec-WebSocket-Protocol': await mintChatToken(env, { userId: seller.id, roomId: conv, participantIds: participants, role: 'user' }),
+    });
 
     await disconnectUser(env, buyer.id);
     expect(await hub.closed).toBe(4003);

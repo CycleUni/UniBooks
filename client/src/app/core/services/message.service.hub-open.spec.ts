@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { MessageService } from './message.service';
+import { SessionRefreshService } from '../session-refresh.service';
 
 const wsOrigin = location.origin.replace(/^http/, 'ws');
 
@@ -15,8 +16,10 @@ const wsOrigin = location.origin.replace(/^http/, 'ws');
 describe('MessageService opening the hub', () => {
   let service: MessageService;
   let sockets: FakeWebSocket[];
-  let tokenResponses: Array<() => Observable<unknown>>;
-  let tokenRequests: number;
+  /** What each SessionRefreshService.ensureAccess() answers, in turn. */
+  let accessResponses: Array<() => Observable<unknown>>;
+  let accessRequests: number;
+  let http: { get: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn> };
 
   class FakeWebSocket {
     onopen: (() => void) | null = null;
@@ -31,141 +34,148 @@ describe('MessageService opening the hub', () => {
     send() {}
   }
 
-  const hubToken = (uid: string) => `h.${btoa(JSON.stringify({ user_id: uid }))}.s`;
-  const ok = (uid = '42') => () => of({ token: hubToken(uid) });
+  const ok = () => () => of(undefined);
   const failing = (status: number) => () => throwError(() => new HttpErrorResponse({ status }));
 
   beforeEach(() => {
     vi.useFakeTimers();
     sockets = [];
-    tokenRequests = 0;
-    tokenResponses = [];
+    accessRequests = 0;
+    accessResponses = [];
     (globalThis as any).WebSocket = FakeWebSocket;
 
-    const http = {
-      get: vi.fn((url: string) => {
-        if (!url.includes('/messaging/hub-token')) return of({ unread: [], count: 0 });
-        tokenRequests++;
-        const next = tokenResponses.length > 1 ? tokenResponses.shift()! : tokenResponses[0];
-        return next();
-      }),
+    http = {
+      get: vi.fn(() => of({ unread: [], count: 0 })),
       post: vi.fn(() => of(undefined)),
     };
+    const sessionRefresh = {
+      ensureAccess: vi.fn(() => {
+        accessRequests++;
+        const next = accessResponses.length > 1 ? accessResponses.shift()! : accessResponses[0];
+        return next();
+      }),
+    };
     TestBed.configureTestingModule({
-      providers: [MessageService, { provide: HttpClient, useValue: http }],
+      providers: [
+        MessageService,
+        { provide: HttpClient, useValue: http },
+        { provide: SessionRefreshService, useValue: sessionRefresh },
+      ],
     });
     service = TestBed.inject(MessageService);
   });
 
   afterEach(() => vi.useRealTimers());
 
-  it('fetches a hub token and connects to the hub on this origin', () => {
-    tokenResponses = [ok('42')];
+  it('connects to the hub on this origin with the session cookie, at no request of its own', () => {
+    accessResponses = [ok()];
 
     service.openHub();
 
     expect(sockets).toHaveLength(1);
-    // The token names the user (and is the subprotocol); the path does not.
+    // The cookie names the user: no token, no subprotocol, nothing in the path.
     expect(sockets[0].url).toBe(`${wsOrigin}/api/chat/hub`);
-    expect(sockets[0].protocols).toEqual([hubToken('42')]);
+    expect(sockets[0].protocols).toBeUndefined();
+    expect(http.get).not.toHaveBeenCalled();
+    expect(http.post).not.toHaveBeenCalled();
   });
 
 
   it('asks again after a transient failure and connects, rather than giving up', () => {
     // An error with no handler would be rethrown on a timer by RxJS and fail
     // this test when the clock is advanced.
-    tokenResponses = [failing(503), ok('42')];
+    accessResponses = [failing(503), ok()];
 
     service.openHub();
     expect(sockets).toHaveLength(0);
 
     vi.advanceTimersByTime(3000);
 
-    expect(tokenRequests).toBe(2);
+    expect(accessRequests).toBe(2);
     expect(sockets).toHaveLength(1);
   });
 
   it('does not ask again when the session is over (401)', () => {
-    tokenResponses = [failing(401)];
+    accessResponses = [failing(401)];
 
     service.openHub();
     vi.advanceTimersByTime(120_000);
     service.retryHubIfOwed();
 
-    expect(tokenRequests).toBe(1);
+    expect(accessRequests).toBe(1);
     expect(sockets).toHaveLength(0);
   });
 
   it('keeps to a bounded schedule, then asks again when told to retry', () => {
-    tokenResponses = [failing(0)];
+    accessResponses = [failing(0)];
 
     service.openHub();
     vi.advanceTimersByTime(120_000);
-    expect(tokenRequests).toBe(4);   // first try + 3 scheduled
+    expect(accessRequests).toBe(4);   // first try + 3 scheduled
 
-    tokenResponses = [ok('42')];
+    accessResponses = [ok()];
     service.retryHubIfOwed();
 
-    expect(tokenRequests).toBe(5);
+    expect(accessRequests).toBe(5);
     expect(sockets).toHaveLength(1);
   });
 
   it('does not retry an answer that waiting would not change', () => {
-    tokenResponses = [failing(404)];
+    accessResponses = [failing(404)];
 
     service.openHub();
     vi.advanceTimersByTime(120_000);
     service.retryHubIfOwed();
 
-    expect(tokenRequests).toBe(1);
+    expect(accessRequests).toBe(1);
   });
 
-  it('never has two token requests out at once', () => {
+  it('never has two session checks out at once', () => {
     const pending = new Subject<unknown>();
-    tokenResponses = [() => pending];
+    accessResponses = [() => pending];
 
     service.openHub();
     service.openHub();
     service.retryHubIfOwed();
 
-    expect(tokenRequests).toBe(1);
+    expect(accessRequests).toBe(1);
   });
 
-  it('does not fetch a token for a hub that is already open', () => {
-    tokenResponses = [ok('42')];
+  it('does not check the session again for a hub that is already open', () => {
+    accessResponses = [ok()];
     service.openHub();
 
     service.openHub();
 
-    expect(tokenRequests).toBe(1);
+    expect(accessRequests).toBe(1);
     expect(sockets).toHaveLength(1);
   });
 
-  it('stops trying once the visitor signs out, and ignores a token that arrives late', () => {
+  it('stops trying once the visitor signs out, and ignores a refresh that settles late', () => {
     const pending = new Subject<unknown>();
-    tokenResponses = [failing(503), () => pending];
+    accessResponses = [failing(503), () => pending];
 
     service.openHub();
     vi.advanceTimersByTime(3000);          // the retry goes out and waits
     service.closeHub();
-    pending.next({ token: hubToken('42') });
+    pending.next(undefined);
     vi.advanceTimersByTime(120_000);
     service.retryHubIfOwed();
 
-    expect(tokenRequests).toBe(2);
+    expect(accessRequests).toBe(2);
     expect(sockets).toHaveLength(0);
   });
 
   it('gives the next sign-in a full schedule of its own', () => {
-    tokenResponses = [failing(503)];
+    accessResponses = [failing(503)];
     service.openHub();
     vi.advanceTimersByTime(3000);          // first session is one retry in
     service.closeHub();
 
-    const before = tokenRequests;
+    const before = accessRequests;
     service.openHub();
     vi.advanceTimersByTime(120_000);
 
-    expect(tokenRequests - before).toBe(4);
+    expect(accessRequests - before).toBe(4);
   });
 });

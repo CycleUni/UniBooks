@@ -3,9 +3,10 @@
  * /api/chat (server/src/routes/chat.ts), so every URL is built on this
  * page's own origin and nothing here hard-codes a host.
  *
- * Every endpoint authenticates with the room- or hub-scoped token the caller
- * holds: as `Authorization: Bearer` over HTTP, as the WebSocket subprotocol
- * on a socket (the WebSocket API cannot set headers). Never in the URL.
+ * The hub signs in with the session cookie. Room endpoints authenticate with
+ * the room-scoped token the caller holds: as `Authorization: Bearer` over
+ * HTTP, as the WebSocket subprotocol on a socket (the WebSocket API cannot
+ * set headers). Never in the URL.
  */
 
 function base(): string {

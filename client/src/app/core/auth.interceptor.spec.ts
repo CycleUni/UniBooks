@@ -14,9 +14,13 @@ import { I18nService } from './i18n.service';
 import { authGuard } from './auth.guard';
 import { environment } from '../../environments/environment';
 
-/** The server's readable "signed in" hint; the session itself is HttpOnly. */
-const setSessionHint = () => { document.cookie = 'ub_session=1; Path=/'; };
-const clearSessionHint = () => { document.cookie = 'ub_session=; Max-Age=0; Path=/'; };
+/** The server's readable "signed in" hint; the session itself is HttpOnly.
+ * With the access hint too, as while the access cookie is still good: these
+ * tests are about the server refusing it anyway (a 401). */
+const setSessionHint = () => { document.cookie = 'ub_session=1; Path=/'; setAccessHint(); };
+const setAccessHint = () => { document.cookie = 'ub_access=1; Path=/'; };
+const clearAccessHint = () => { document.cookie = 'ub_access=; Max-Age=0; Path=/'; };
+const clearSessionHint = () => { document.cookie = 'ub_session=; Max-Age=0; Path=/'; clearAccessHint(); };
 const hasSessionHint = () => document.cookie.split(';').some(c => c.trim() === 'ub_session=1');
 const UNAUTHORIZED = { status: 401, statusText: 'Unauthorized' };
 
@@ -200,6 +204,47 @@ describe('AuthInterceptor refresh refusal', () => {
 
     expect(httpMock.match(REFRESH_URL)).toEqual([]);
     expect(store.isAuthenticated()).toBe(false);
+    drain();
+  });
+
+  it('refreshes before sending when the access hint has lapsed, once for every request', async () => {
+    setSessionHint();
+    clearAccessHint();
+    build();
+    await router.navigateByUrl('/tw');
+
+    // The store's own GET /auth/me waits on the same refresh as these.
+    const results: string[] = [];
+    for (const path of ['/listings', '/orders']) {
+      http.get<{ path: string }>(path).subscribe({ next: v => results.push(v.path), error: () => results.push('error') });
+    }
+    // Nothing goes out before the refresh, so no request earns a 401.
+    expect(httpMock.match(listings)).toEqual([]);
+    const refreshes = httpMock.match(REFRESH_URL);
+    expect(refreshes.length).toBe(1);
+    setAccessHint();   // the refresh's Set-Cookie
+    refreshes[0].flush({ code: 'auth.refreshed' });
+    await settle();
+
+    for (const path of ['/listings', '/orders']) {
+      httpMock.expectOne(req => req.url.endsWith(path)).flush({ path });
+    }
+    expect(results.sort()).toEqual(['/listings', '/orders']);
+    expect(store.isAuthenticated()).toBe(true);
+    expect(httpMock.match(REFRESH_URL)).toEqual([]);
+    drain();
+  });
+
+  it('does not refresh first for a SKIP_AUTH request', async () => {
+    setSessionHint();
+    clearAccessHint();
+    build();
+    await router.navigateByUrl('/tw');
+    drain();
+
+    http.get('/listings', { context: new HttpContext().set(SKIP_AUTH, true) }).subscribe();
+    httpMock.expectOne(listings).flush([]);
+    expect(httpMock.match(REFRESH_URL)).toEqual([]);
     drain();
   });
 

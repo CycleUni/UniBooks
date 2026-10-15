@@ -4,19 +4,23 @@ import { managedRegionCodes } from '../services/messaging/staffScope';
 import { readCapped } from '../lib/body';
 import { CHAT_APP_ID, chatRoomStub } from '../lib/chat';
 import { verifyToken, InvalidTokenError, type ChatTokenPayload } from '../lib/jwt';
+import { accessTokenFrom } from '../lib/session';
 import { getConversation, isParticipant, listingDeleted } from '../services/messaging/conversations';
 import { isUsable, loadPerson } from '../services/messaging/people';
 
 /**
  * Chat transport, mounted at /api/chat (same origin as the app):
  *
- *   GET  /hub                     per-user hub WebSocket        (hub token)
- *   GET  /hub/snapshot            unread state                  (hub token)
+ *   GET  /hub                     per-user hub WebSocket        (session)
+ *   GET  /hub/snapshot            unread state                  (session)
  *   GET  /rooms/<roomId>          room WebSocket                (chat token)
  *   GET  /rooms/<roomId>/messages history; POST sends one       (chat token)
  *   POST /rooms/<roomId>/read     mark the room read            (chat token)
  *
- * Tokens are minted by /api/v1/messaging/{hub,chat}-token/ (cookie-authenticated)
+ * The hub is the signed-in user's own: it authenticates with the session (the
+ * access cookie the browser sends on the upgrade, or `Authorization: Bearer`
+ * <access> from API clients), so opening it costs no token request first.
+ * Room tokens are minted by /api/v1/messaging/chat-token (cookie-authenticated)
  * and arrive as `Authorization: Bearer` (REST) or as the first
  * Sec-WebSocket-Protocol entry (a browser WebSocket cannot set headers);
  * never in the query string. The hub's own /push and /read are reachable only
@@ -84,20 +88,29 @@ const MAX_CHAT_BODY_BYTES = 16 * 1024;
 
 // ─── Per-user hub ─────────────────────────────────────────────────────────
 
+/** A hub socket's life: the app reconnects (re-checking the session) after it. */
+const HUB_SOCKET_SECONDS = 24 * 60 * 60;
+
 async function hubUser(c: Context<AppEnv>): Promise<{ userId: string; exp: number } | Response> {
-  const token = extractToken(c.req.raw);
-  if (!token) return text('Unauthorized: Missing token', 401);
+  // Cookies ride on a cross-site WebSocket upgrade too, and sameOriginGuard
+  // only covers unsafe methods: refuse another site's page here.
+  const origin = c.req.header('Origin');
+  const site = c.req.header('Sec-Fetch-Site');
+  if ((origin && origin !== new URL(c.req.url).origin) || (site && site !== 'same-origin' && site !== 'none')) {
+    return text('Forbidden: Cross-site request', 403);
+  }
+  const token = accessTokenFrom(c);
+  if (!token) return text('Unauthorized: Not signed in', 401);
   let userId: string;
-  let exp: number;
   try {
-    ({ user_id: userId, exp } = await verifyToken('hub', token, c.env));
+    ({ user_id: userId } = await verifyToken('access', token, c.env));
   } catch (e) {
     if (e instanceof InvalidTokenError) return text('Unauthorized: Invalid token', 401);
     throw e;
   }
   if (!ID_SEGMENT.test(userId)) return text('Bad Request: invalid user id', 400);
   if (!(await accountAllowed(c, userId))) return text('Forbidden: Account not active', 403);
-  return { userId, exp };
+  return { userId, exp: Math.floor(Date.now() / 1000) + HUB_SOCKET_SECONDS };
 }
 
 const hubStub = (c: Context<AppEnv>, userId: string) => c.env.USER_HUB.get(c.env.USER_HUB.idFromName(userId));

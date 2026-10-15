@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { of } from 'rxjs';
 import { MessageService } from './message.service';
+import { SessionRefreshService } from '../session-refresh.service';
 
 // The hub sends a room_update to every participant of a room, the sender
 // included (so their own inbox preview moves), and tells the sender's copy
@@ -26,10 +27,11 @@ describe('MessageService hub room_update unread state', () => {
       providers: [
         MessageService,
         { provide: HttpClient, useValue: { get: vi.fn(() => of({ unread: [], count: 0 })), post: vi.fn() } },
+        { provide: SessionRefreshService, useValue: { ensureAccess: () => of(undefined) } },
       ],
     });
     service = TestBed.inject(MessageService);
-    service.connectHub('token', '42');
+    service.connectHub();
   });
 
   const push = (payload: Record<string, unknown>) =>

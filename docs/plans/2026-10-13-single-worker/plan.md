@@ -126,3 +126,16 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
   limit + current password, staff is_active scope, no activating unconfirmed sign-ups.
   Gates: server tsc / prettier / 278 tests / import self-test, client 1063 tests + build,
   wrangler dry-run; browser smoke (login error, admin managers grant/revoke).
+- 2026-10-15: fewer Worker invocations per page view. Region-scoped public answers
+  (regions, metadata, search courses) drop `Vary: Cookie` when ?region=&lang= name
+  everything (analytics cookies change per page view and defeated the browser
+  cache); regions max-age 1 h, metadata 15 min (+ stale-while-revalidate). The
+  most-wanted list moved from metadata to recent-books page 1, so layout and home
+  share one metadata request and the home page shares the grid's recent-books
+  request. `ub_access` hint lapses 30 s before the access cookie: the SPA refreshes
+  first instead of collecting a 401 per request (core/session-refresh.service.ts).
+  Chat hub WebSocket signs in with the session cookie (Origin/Sec-Fetch-Site
+  checked; 24 h socket life); /messaging/hub-token and the `hub` token type removed.
+  Measured locally, signed in: home landing 12 → 5 (expired access) Worker requests,
+  book landing 7 → 4. Gates: server tsc / prettier / 289 tests / import self-test,
+  client 1068 tests + build, wrangler dry-run.

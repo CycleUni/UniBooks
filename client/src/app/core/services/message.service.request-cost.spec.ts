@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { of } from 'rxjs';
 import { MessageService } from './message.service';
+import { SessionRefreshService } from '../session-refresh.service';
 
 const wsOrigin = location.origin.replace(/^http/, 'ws');
 
@@ -40,7 +41,11 @@ describe('MessageService request cost', () => {
       post: vi.fn(() => of(undefined)),
     };
     TestBed.configureTestingModule({
-      providers: [MessageService, { provide: HttpClient, useValue: http }],
+      providers: [
+        MessageService,
+        { provide: HttpClient, useValue: http },
+        { provide: SessionRefreshService, useValue: { ensureAccess: () => of(undefined) } },
+      ],
     });
     service = TestBed.inject(MessageService);
   });
@@ -57,7 +62,7 @@ describe('MessageService request cost', () => {
   };
 
   describe('hub', () => {
-    beforeEach(() => service.connectHub('token', '42'));
+    beforeEach(() => service.connectHub());
 
     it('takes the unread snapshot from the socket instead of fetching it', () => {
       latest().onopen?.();

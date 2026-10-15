@@ -24,7 +24,3 @@ export async function mintChatToken(
     env,
   );
 }
-
-export async function mintHubToken(env: Env, userId: string): Promise<string> {
-  return signToken('hub', { user_id: userId }, env);
-}

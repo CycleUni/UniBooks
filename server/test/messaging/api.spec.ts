@@ -161,13 +161,27 @@ describe.skipIf(!ready)('messaging API', () => {
     expect(streamed.status).toBe(413);
   });
 
-  it('a hub token opens only its own hub; the hub push path is not reachable', async () => {
+  it('the hub opens with the session, never from another site; the hub push path is not reachable', async () => {
     const a = await seedUser();
-    const hub = await signToken('hub', { user_id: a.id }, env);
-    const own = await api(`/api/chat/hub/snapshot`, { headers: { Authorization: `Bearer ${hub}` } });
-    expect(own.status).toBe(200);
+    const cookie = { Cookie: `__Host-ub_at=${a.token}` };
+    expect((await api(`/api/chat/hub/snapshot`, { headers: cookie })).status).toBe(200);
+    expect((await api(`/api/chat/hub/snapshot`, { token: a.token })).status).toBe(200);
     expect((await api(`/api/chat/hub/snapshot`)).status).toBe(401);
-    expect((await api(`/api/chat/hub/push`, { method: 'POST', headers: { Authorization: `Bearer ${hub}` } })).status).toBe(404);
+    // A room token is not a session.
+    const room = await signToken('chat', { user_id: a.id, room_id: 'r', app_id: 'x', participant_ids: [a.id], role: 'user' }, env);
+    expect((await api(`/api/chat/hub/snapshot`, { token: room })).status).toBe(401);
+    // Cross-site WebSocket hijacking: the cookie rides along, the upgrade is refused.
+    const hijack = await api(`/api/chat/hub`, {
+      headers: { ...cookie, Upgrade: 'websocket', Origin: 'https://evil.example', 'Sec-Fetch-Site': 'cross-site' },
+    });
+    expect(hijack.status).toBe(403);
+    const own = await api(`/api/chat/hub`, {
+      headers: { ...cookie, Upgrade: 'websocket', Origin: 'http://x', 'Sec-Fetch-Site': 'same-origin' },
+    });
+    expect(own.status).toBe(101);
+    own.webSocket!.accept();
+    own.webSocket!.close();
+    expect((await api(`/api/chat/hub/push`, { method: 'POST', token: a.token })).status).toBe(404);
   });
 
   it('upload: refuses non-images and non-participants', async () => {

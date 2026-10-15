@@ -78,6 +78,22 @@ export function hasSessionHint(): boolean {
   }
 }
 
+/**
+ * The readable `ub_access=1` cookie, which lapses on the browser's clock just
+ * before the HttpOnly access cookie. Signed in without it means the access
+ * cookie is gone or about to be: refresh before calling the API.
+ */
+export const ACCESS_HINT_COOKIE = 'ub_access';
+
+export function hasAccessHint(): boolean {
+  if (typeof document === 'undefined') return false;
+  try {
+    return document.cookie.split(';').some(c => c.trim() === `${ACCESS_HINT_COOKIE}=1`);
+  } catch {
+    return false;
+  }
+}
+
 /** Drop the hint cookie on this side too, so a sign-out whose request never
  *  reached the server does not come back as "signed in" on the next load. */
 function clearSessionHint(): void {
@@ -85,6 +101,8 @@ function clearSessionHint(): void {
   try {
     document.cookie = `${SESSION_HINT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
     document.cookie = `${SESSION_HINT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax; Secure`;
+    document.cookie = `${ACCESS_HINT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
+    document.cookie = `${ACCESS_HINT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax; Secure`;
   } catch {
     // Cookies disabled: nothing was there to clear.
   }

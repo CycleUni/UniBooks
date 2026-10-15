@@ -38,13 +38,13 @@ describe('HomeComponent', () => {
 
     mockListingService = {
       getListings: vi.fn().mockReturnValue(of([])),
-      getRecentBooks: vi.fn().mockReturnValue(of([]))
+      getRecentBooks: vi.fn().mockReturnValue(of({ results: [], waitlist: [{ title: 'Wait 1', count: 5 }] })),
+      clearRecentBooks: vi.fn()
     };
 
     mockMetadataService = {
       getMetadata: vi.fn().mockReturnValue(of({
         categories: [{ slug: 'cat1', title: 'Cat 1', desc: 'Cat 1 desc' }],
-        waitlist: [{ title: 'Wait 1', count: 5 }]
       })),
       getActiveAds: vi.fn().mockReturnValue(of({ results: [] })),
       recordAdView: vi.fn().mockReturnValue(of({})),
@@ -79,9 +79,20 @@ describe('HomeComponent', () => {
 
   // The metadata endpoint already slices to 7, but the page must not depend
   // on that — this section is a demand signal for sellers, not a directory.
+  it('reads categories from the region metadata and the waitlist from recent-books page 1', () => {
+    mockMetadataService.getMetadata.mockClear();
+    mockListingService.getRecentBooks.mockClear();
+    component.currentSchool = 'NTU';
+    component.loadMetadata();
+    expect(mockMetadataService.getMetadata).toHaveBeenCalledWith();
+    expect(mockListingService.getRecentBooks).toHaveBeenCalledWith('NTU', 1, 20);
+    expect(component.categories.length).toBe(1);
+    expect(component.waitlist[0].title).toBe('Wait 1');
+  });
+
   it('caps the waitlist at seven entries even when the API returns more', () => {
     const many = Array.from({ length: 20 }, (_, i) => ({ title: `Book ${i}`, count: 20 - i }));
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist: many }));
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist: many }));
 
     component.loadMetadata();
 
@@ -93,7 +104,7 @@ describe('HomeComponent', () => {
   // fourth cover would wrap onto the first one's coordinates and vanish.
   it('caps the hero cover stack at three', () => {
     const many = Array.from({ length: 20 }, (_, i) => ({ title: `Book ${i}`, count: 20 - i }));
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist: many }));
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist: many }));
 
     component.loadMetadata();
 
@@ -106,7 +117,7 @@ describe('HomeComponent', () => {
   });
 
   it('leaves hero covers empty when there is no waitlist and no hero ad', () => {
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist: [] }));
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist: [] }));
     mockMetadataService.getActiveAds.mockReturnValue(of({ results: [] }));
 
     component.loadAds();
@@ -122,7 +133,7 @@ describe('HomeComponent', () => {
       { book_id: 2, title: 'Book 2', cover_url: 'http://b2.png', count: 3 },
       { book_id: 3, title: 'Book 3', cover_url: 'http://b3.png', count: 2 },
     ];
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist }));
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist }));
     mockMetadataService.getActiveAds.mockReturnValue(of({ results: [heroAd] }));
 
     component.loadAds();
@@ -143,7 +154,7 @@ describe('HomeComponent', () => {
 
   it('shows the hero ad alone when there is no waitlist', () => {
     const heroAd: any = { id: 99, title: 'Ad Title', image_url: 'http://img.png', target_url: 'http://link.com', show_in_hero: true, slot_index: 1 };
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist: [] }));
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist: [] }));
     mockMetadataService.getActiveAds.mockReturnValue(of({ results: [heroAd] }));
 
     component.loadAds();
@@ -158,7 +169,7 @@ describe('HomeComponent', () => {
       { book_id: 1, title: 'Book 1', cover_url: '', count: 50 },
       { book_id: 2, title: 'Book 2', cover_url: '', count: 12000 }
     ];
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist }));
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist }));
 
     component.loadMetadata();
     fixture.detectChanges();
@@ -173,7 +184,7 @@ describe('HomeComponent', () => {
     // The thumbnails used the raw catalogue URL, so a book in both the hero
     // and the waitlist was fetched twice — once bypassing the proxy.
     const cover = 'https://books.google.com/books/content?id=VXeyEAAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api';
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist: [
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist: [
       { book_id: 1, title: 'Book 1', cover_url: cover, count: 9 },
     ] }));
     component.loadMetadata();
@@ -193,7 +204,7 @@ describe('HomeComponent', () => {
       { book_id: 4, title: 'Book 4', cover_url: '', count: 6 },
       { book_id: 5, title: 'Book 5', cover_url: '', count: 5 }
     ];
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist }));
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist }));
 
     component.loadAds();
     component.loadMetadata();
@@ -215,7 +226,7 @@ describe('HomeComponent', () => {
       { book_id: 2, title: 'Book 2', cover_url: '', count: 8 },
       { book_id: 3, title: 'Book 3', cover_url: '', count: 7 }
     ];
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist }));
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist }));
     mockMetadataService.getActiveAds.mockReturnValue(of({ results: [heroAd] }));
 
     component.loadAds();
@@ -233,7 +244,7 @@ describe('HomeComponent', () => {
       { book_id: 1, title: 'Book 1', cover_url: '', count: 9 },
       { book_id: 2, title: 'Book 2', cover_url: '', count: 8 }
     ];
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist }));
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist }));
 
     component.loadAds();
     component.loadMetadata();
@@ -246,7 +257,7 @@ describe('HomeComponent', () => {
   });
 
   it('does not flag an empty waitlist as hero-covered', () => {
-    mockMetadataService.getMetadata.mockReturnValue(of({ categories: [], waitlist: [] }));
+    mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist: [] }));
 
     component.loadAds();
     component.loadMetadata();
@@ -421,6 +432,7 @@ describe('HomeComponent', () => {
       component.onRefresh();
 
       expect(component.refreshing).toBe(false);
+      expect(mockListingService.clearRecentBooks).toHaveBeenCalled();
       expect(metadataSpy).toHaveBeenCalled();
       expect(adsSpy).toHaveBeenCalled();
     });

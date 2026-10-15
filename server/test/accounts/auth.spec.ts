@@ -178,6 +178,10 @@ describe('refresh rotation', () => {
     expect(rt).toMatch(/HttpOnly/i);
     expect(rt).toMatch(/SameSite=Strict/i);
     expect(rt).toMatch(/Path=\/api\/v1\/auth\//);
+    // A readable hint that lapses just before the access cookie does.
+    const hint = cookies.find((l) => l.startsWith('ub_access=1'))!;
+    expect(hint).not.toMatch(/HttpOnly/i);
+    expect(Number(/Max-Age=(\d+)/i.exec(hint)![1])).toBeLessThan(Number(/Max-Age=(\d+)/i.exec(at)![1]));
     const { access, refresh } = sessionOf(res);
     const me = await call('/api/v1/auth/me', { headers: { Cookie: `__Host-ub_at=${access}` } });
     expect(me.status).toBe(200);
@@ -219,7 +223,7 @@ describe('refresh rotation', () => {
     const res = await call('/api/v1/auth/refresh', { method: 'POST', headers: { Cookie: '__Secure-ub_rt=not-a-token' } });
     expect(res.status).toBe(401);
     const cleared = res.headers.getSetCookie();
-    for (const name of ['__Host-ub_at', '__Secure-ub_rt', 'ub_session']) {
+    for (const name of ['__Host-ub_at', '__Secure-ub_rt', 'ub_session', 'ub_access']) {
       expect(
         cleared.some((l) => l.startsWith(`${name}=;`) && /Max-Age=0/i.test(l)),
         name,

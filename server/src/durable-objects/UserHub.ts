@@ -69,8 +69,8 @@ export class UserHub extends DurableObject<Env> {
       const [client, server] = Object.values(pair);
 
       this.ctx.acceptWebSocket(server);
-      // The hub token's expiry: the socket closes then (TOKEN_EXPIRED_CLOSE_CODE)
-      // and the app reconnects with a fresh token, re-checking the account.
+      // The socket's expiry: it closes then (TOKEN_EXPIRED_CLOSE_CODE) and the
+      // app reconnects, re-checking the session and the account.
       const expSeconds = Number(url.searchParams.get('exp'));
       const expiresAt = Number.isFinite(expSeconds) && expSeconds > 0 ? expSeconds * 1000 : Date.now() + HUB_MAX_SOCKET_MS;
       server.serializeAttachment({ userId, expiresAt });

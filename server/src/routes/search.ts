@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { cached } from '../lib/cache';
 import { validateBookIsbn } from '../services/catalog/isbn';
 import type { AppEnv, Env } from '../env';
-import { requireRegion } from '../lib/region';
+import { requireRegion, setSharedCache } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { cleanPublisher, describeSource, type Engine } from '../services/catalog/common';
@@ -512,7 +512,6 @@ searchRoutes.get('/courses', async (c) => {
     );
     return rows.map((r) => ({ value: r.course_name, count: Number(r.n) }));
   });
-  c.header('Cache-Control', 'public, max-age=300');
-  c.header('Vary', 'X-Region, Cookie');
+  await setSharedCache(c, { maxAge: 300 });
   return c.json(body);
 });

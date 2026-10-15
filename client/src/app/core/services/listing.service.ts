@@ -4,6 +4,7 @@ import { Observable, from, throwError } from 'rxjs';
 import { shareReplay, catchError, switchMap } from 'rxjs/operators';
 import { uploadImage } from '../upload';
 import { I18nService } from '../i18n.service';
+import { RegionService } from '../region.service';
 import { SKIP_AUTH } from '../auth.interceptor';
 import { importOrReload } from '../chunk-recovery';
 
@@ -21,12 +22,16 @@ export class ListingService {
   private readonly CACHE_TTL_MS = 60_000;
   private cache = new Map<string, Observable<any[]>>();
   private cacheTimestamps = new Map<string, number>();
+  private readonly RECENT_TTL_MS = 30_000;
+  private recentCache = new Map<string, { at: number; request$: Observable<any> }>();
   private i18n = inject(I18nService);
+  private regionService = inject(RegionService);
 
   constructor() {
     effect(() => {
       this.i18n.lang();
       this.clearCache();
+      this.clearRecentBooks();
     });
   }
 
@@ -67,12 +72,36 @@ export class ListingService {
     return this.cache.get(key)!;
   }
 
+  /**
+   * A page of recent books. Page 1 also carries the most-wanted list, which
+   * the home page reads from the same request the listing grid makes: it is
+   * shared while in flight and for a short while after, so the two cost one
+   * Worker request. clearRecentBooks() forces the next call to refetch.
+   */
   getRecentBooks(school?: string, page: number = 1, limit: number = 20): Observable<any> {
+    // Region too: ApiUrlInterceptor adds it to the request.
+    const key = `${this.regionService.region()}|${school || ''}|${page}|${limit}`;
+    const hit = this.recentCache.get(key);
+    if (hit && Date.now() - hit.at < this.RECENT_TTL_MS) return hit.request$;
+
     let params = new HttpParams().set('page', page.toString()).set('limit', limit.toString());
     if (school) {
       params = params.set('school', school);
     }
-    return this.http.get<any>(`${this.apiUrl}/recent-books`, { params, context: this.publicCtx });
+    const request$ = this.http.get<any>(`${this.apiUrl}/recent-books`, { params, context: this.publicCtx }).pipe(
+      catchError(err => {
+        // Never cache a failure: the next caller retries.
+        this.recentCache.delete(key);
+        return throwError(() => err);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.recentCache.set(key, { at: Date.now(), request$ });
+    return request$;
+  }
+
+  clearRecentBooks() {
+    this.recentCache.clear();
   }
 
   clearCache(school?: string) {

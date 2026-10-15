@@ -4,7 +4,7 @@ import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { RegionService } from '../../core/region.service';
 import { UiButton } from '../../shared/ui/button.component';
-import { UiRecentListings } from '../../shared/ui/recent-listings.component';
+import { UiRecentListings, RECENT_BOOKS_PAGE_SIZE } from '../../shared/ui/recent-listings.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { HomeHero, HeroCover } from './home-hero.component';
@@ -66,7 +66,7 @@ import { hasCoverFailed, markCoverFailed } from '../../shared/ui/book-cover.comp
         </nav>
       </div>
 
-      <app-home-hero *ngIf="!(isPhone && seenHero)" [covers]="heroCovers" [loading]="metadataLoading" (adClick)="onAdClick($event)"></app-home-hero>
+      <app-home-hero *ngIf="!(isPhone && seenHero)" [covers]="heroCovers" [loading]="waitlistLoading" (adClick)="onAdClick($event)"></app-home-hero>
       <h1 *ngIf="isPhone && seenHero" class="sr-only">{{ 'home.heroTitle' | t }}</h1>
 
       <!-- Categories: show skeleton during load, then the real content, never blank -->
@@ -89,16 +89,16 @@ import { hasCoverFailed, markCoverFailed } from '../../shared/ui/book-cover.comp
           aria-labelledby="waitlist-heading"
         >
           <h2 class="section-heading" id="waitlist-heading">{{ 'home.waitlistTitle' | t }}</h2>
-          <ui-skeleton *ngIf="metadataLoading && !metadataError" variant="row" [count]="4"></ui-skeleton>
+          <ui-skeleton *ngIf="waitlistLoading && !waitlistError" variant="row" [count]="4"></ui-skeleton>
           <!-- This branch used to contain only a spinner guarded by
-               '!metadataError', so a failed load rendered the heading above
+               '!waitlistError', so a failed load rendered the heading above
                and then nothing whatsoever. -->
           <ui-error-state
-            *ngIf="metadataError"
+            *ngIf="waitlistError"
             [message]="'home.waitlistError' | t"
             (retry)="loadMetadata()"
           ></ui-error-state>
-          <ng-container *ngIf="!metadataLoading && !metadataError">
+          <ng-container *ngIf="!waitlistLoading && !waitlistError">
             <div class="waitlist-card" *ngIf="waitlist?.length">
               <a
                 class="waitlist-row"
@@ -447,9 +447,9 @@ export class Home implements OnInit, OnDestroy {
   // starting false rendered "no categories" / "nobody waiting" before the
   // request had even been sent (it waits for the school to resolve).
   categoriesLoading = true;
-  metadataLoading = true;
+  waitlistLoading = true;
   categoriesError = false;
-  metadataError = false;
+  waitlistError = false;
 
   /**
    * Whether the waitlist panel has nothing but its empty note to render.
@@ -458,7 +458,7 @@ export class Home implements OnInit, OnDestroy {
    * fails silently on desktop is how the retry button went missing before.
    */
   get waitlistBandEmpty(): boolean {
-    return !this.metadataLoading && !this.metadataError && this.waitlist?.length === 0;
+    return !this.waitlistLoading && !this.waitlistError && this.waitlist?.length === 0;
   }
 
   /**
@@ -479,6 +479,7 @@ export class Home implements OnInit, OnDestroy {
   }
 
   private metadataService = inject(MetadataService);
+  private listingService = inject(ListingService);
   private schoolStateService = inject(SchoolStateService);
   private cdr = inject(ChangeDetectorRef);
   private destroy$ = new Subject<void>();
@@ -507,37 +508,55 @@ export class Home implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * The categories and the most-wanted list. Neither costs a request of its
+   * own: categories come from the region metadata the layout already asked
+   * for, and the most-wanted list from page 1 of recent-books, which the
+   * listing grid below asks for too (both requests are shared).
+   */
   loadMetadata(onComplete?: () => void) {
     this.categoriesLoading = true;
-    this.metadataLoading = true;
-    this.metadataError = false;
+    this.waitlistLoading = true;
+    this.waitlistError = false;
     this.categoriesError = false;
 
-    this.metadataService.getMetadata(this.currentSchool).subscribe({
+    let pending = 2;
+    const settle = () => {
+      if (--pending === 0) onComplete?.();
+      this.cdr.markForCheck();
+    };
+
+    this.metadataService.getMetadata().subscribe({
       next: (data) => {
         if (data.categories) {
           this.categories = data.categories;
         }
-        if (data.waitlist !== undefined) {
-          this.waitlist = (data.waitlist || []).slice(0, Home.WAITLIST_MAX);
-          this.updateHeroCovers();
-        }
         this.categoriesLoading = false;
-        this.metadataLoading = false;
-        this.metadataError = false;
-        onComplete?.();
-        this.cdr.markForCheck();
+        this.categoriesError = false;
+        settle();
       },
       error: () => {
         this.categoriesLoading = false;
-        this.metadataLoading = false;
-        this.metadataError = true;
         // Categories already on screen stay; only a first load that failed
         // gets the retry state instead of a misleading "no categories".
         this.categoriesError = this.categories.length === 0;
         console.error('Failed to load metadata — will retry on next interaction');
-        onComplete?.();
-        this.cdr.markForCheck();
+        settle();
+      }
+    });
+
+    this.listingService.getRecentBooks(this.currentSchool, 1, RECENT_BOOKS_PAGE_SIZE).subscribe({
+      next: (data) => {
+        this.waitlist = (data?.waitlist || []).slice(0, Home.WAITLIST_MAX);
+        this.updateHeroCovers();
+        this.waitlistLoading = false;
+        this.waitlistError = false;
+        settle();
+      },
+      error: () => {
+        this.waitlistLoading = false;
+        this.waitlistError = true;
+        settle();
       }
     });
   }
@@ -589,6 +608,8 @@ export class Home implements OnInit, OnDestroy {
   onRefresh(): void {
     this.refreshing = true;
     this.cdr.markForCheck();
+    // Pull to refresh means fresh data: drop the shared recent-books page.
+    this.listingService.clearRecentBooks();
     this.recentListings?.reload();
 
     let pending = 2;

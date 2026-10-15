@@ -13,6 +13,7 @@ import { validateBookIsbn } from '../services/catalog/isbn';
 import { nowIso } from '../lib/time';
 import { resolveLanguage, schoolFilterId, schoolFilterScope } from '../services/listings/places';
 import { serializeListings } from '../services/listings/serialize';
+import { mostWanted } from '../services/listings/waitlist';
 import { validateListingFields, type FieldErrors } from '../services/listings/validate';
 import { deleteListing, hasActiveOrders } from '../services/listings/lifecycle';
 import {
@@ -189,9 +190,15 @@ listingRoutes.get('/recent-books', async (c) => {
       scope = 'city';
     }
   }
-  const scopeFields = { scope, city: city?.code ?? null };
-
   const p = pagination(c.req.url);
+  // Page 1 also carries the most-wanted list for the same ?school=, which the
+  // home page shows beside it: one request instead of two.
+  const scopeFields = {
+    scope,
+    city: city?.code ?? null,
+    ...(p.offset === 0 ? { waitlist: await mostWanted(c.env, region.code, schoolId) } : {}),
+  };
+
   const { results: bookRows } = await db
     .prepare(
       `SELECT b.id, b.isbn13, b.title, b.authors, b.cover_url, MAX(l.created_at) AS latest

@@ -6,7 +6,7 @@ import { authMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { apiError, notFound, pagination, readJson } from '../lib/http';
 import { requireRegion, isVerifiedIn } from '../lib/region';
-import { mintChatToken, mintHubToken } from '../services/chatTokens';
+import { mintChatToken } from '../services/chatTokens';
 import {
   getConversation,
   isParticipant,
@@ -204,12 +204,6 @@ authed.get('/chat-token', async (c) => {
     participantIds: [conv.buyer_id, conv.seller_id],
     role: listingDeleted(conv) ? 'observer' : 'user',
   });
-  return c.json({ token });
-});
-
-authed.get('/hub-token', async (c) => {
-  const user = c.get('user')!;
-  const token = await mintHubToken(c.env, user.id);
   return c.json({ token });
 });
 
