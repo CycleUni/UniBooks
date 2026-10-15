@@ -89,6 +89,12 @@ npm --prefix client test -- --watch=false   # 含前後端錯誤碼 i18n 契約�
 
 ## 部署
 
+登入的 Cloudflare 帳號底下若有多個 account，`wrangler` 會沿用快取的那一個（`server/node_modules/.cache/wrangler/wrangler-account.json`），
+不一定是部署 UniBooks 的那個；這時 `--remote` 指令會回報 `Couldn't find a D1 DB named 'unibooks'`。用
+`npx --prefix server wrangler whoami` 查到正確的 Account ID，在本節所有指令（`secret put`、`deploy`、`db:seed:remote`、
+`user:create … --remote`、`d1 execute --remote`）前加上 `CLOUDFLARE_ACCOUNT_ID=<Account ID>`，或先在 shell 裡
+`export CLOUDFLARE_ACCOUNT_ID=<Account ID>`。
+
 ```bash
 npx --prefix server wrangler login
 # 一次性設定密鑰（每個各輸入一次）
