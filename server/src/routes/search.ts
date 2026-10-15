@@ -486,32 +486,40 @@ searchRoutes.get('/books', optionalAuthMiddleware(), async (c) => {
   });
 });
 
-searchRoutes.get('/courses', (c) => versionedEdgeCache(c, 'search', async () => {
-  await checkRate(c, 'search', SEARCH_RATE);
-  const region = await requireRegion(c);
-  const category = (c.req.query('category') ?? '').slice(0, 64);
-  const schoolId = await schoolFilterId(c.env, region, c.req.query('school') ?? '');
-  // Resolve the slug first: an unknown category is an empty answer, never a cache entry.
-  const categoryIds = category ? await categoryIdsForSlug(c.env, region.code, category) : null;
-  if (categoryIds && !categoryIds.length) return c.json([]);
-  // Viewer-independent aggregate over every active listing: cache briefly.
-  const body = await cached(c.env, 'search', `courses:${region.code}:${schoolId ?? ''}:${categoryIds?.join('.') ?? ''}`, 300, async () => {
-    const parts: Frag[] = [frag("l.region_code = ? AND l.status = 'active' AND l.course_name <> ''", region.code)];
-    if (schoolId !== null) parts.push(frag('l.school_id = ?', schoolId));
-    if (category) {
-      parts.push(frag('l.category_id IN (SELECT value FROM json_each(?))', jsonList(categoryIds ?? [])));
-    }
-    const w = join(parts);
-    const rows = await all<{ course_name: string; n: number }>(
+searchRoutes.get('/courses', (c) =>
+  versionedEdgeCache(c, 'search', async () => {
+    await checkRate(c, 'search', SEARCH_RATE);
+    const region = await requireRegion(c);
+    const category = (c.req.query('category') ?? '').slice(0, 64);
+    const schoolId = await schoolFilterId(c.env, region, c.req.query('school') ?? '');
+    // Resolve the slug first: an unknown category is an empty answer, never a cache entry.
+    const categoryIds = category ? await categoryIdsForSlug(c.env, region.code, category) : null;
+    if (categoryIds && !categoryIds.length) return c.json([]);
+    // Viewer-independent aggregate over every active listing: cache briefly.
+    const body = await cached(
       c.env,
-      frag(
-        `SELECT l.course_name, count(l.id) AS n FROM listings l WHERE ${w.sql}
+      'search',
+      `courses:${region.code}:${schoolId ?? ''}:${categoryIds?.join('.') ?? ''}`,
+      300,
+      async () => {
+        const parts: Frag[] = [frag("l.region_code = ? AND l.status = 'active' AND l.course_name <> ''", region.code)];
+        if (schoolId !== null) parts.push(frag('l.school_id = ?', schoolId));
+        if (category) {
+          parts.push(frag('l.category_id IN (SELECT value FROM json_each(?))', jsonList(categoryIds ?? [])));
+        }
+        const w = join(parts);
+        const rows = await all<{ course_name: string; n: number }>(
+          c.env,
+          frag(
+            `SELECT l.course_name, count(l.id) AS n FROM listings l WHERE ${w.sql}
         GROUP BY l.course_name ORDER BY n DESC, l.course_name LIMIT 20`,
-        ...w.args,
-      ),
+            ...w.args,
+          ),
+        );
+        return rows.map((r) => ({ value: r.course_name, count: Number(r.n) }));
+      },
     );
-    return rows.map((r) => ({ value: r.course_name, count: Number(r.n) }));
-  });
-  await setSharedCache(c, { maxAge: 300 });
-  return c.json(body);
-}));
+    await setSharedCache(c, { maxAge: 300 });
+    return c.json(body);
+  }),
+);
