@@ -7,6 +7,8 @@ import { RegionService } from '../region.service';
 import { whenPageSettled } from '../page-settled';
 import { redactSensitiveUrl } from '../sensitive-url';
 
+const GA_GATEWAY_PATH = '/metrics';
+
 @Injectable({
   providedIn: 'root'
 })
@@ -38,7 +40,9 @@ export class GoogleAnalyticsService {
     whenPageSettled(this.appRef).then(() => {
       const script = document.createElement('script');
       script.async = true;
-      script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
+      // Google tag gateway: this site's own /metrics path proxies gtag.js and
+      // the hits, so measurement stays first-party.
+      script.src = `${GA_GATEWAY_PATH}/gtag/js?id=${gaId}`;
       document.head.appendChild(script);
     });
 
@@ -52,7 +56,15 @@ export class GoogleAnalyticsService {
     const gtag = (window as any).gtag;
     gtag('js', new Date());
     // Disable automatic page view so we can track SPA route changes manually
-    gtag('config', gaId, { send_page_view: false });
+    gtag('config', gaId, {
+      send_page_view: false,
+      // /g/s/collect is the advertising-features hit; it goes to Google
+      // directly, bypassing the gateway. UniBooks runs no ads.
+      allow_google_signals: false,
+      allow_ad_personalization_signals: false,
+      // Send hits through the gateway too, not back to google-analytics.com.
+      transport_url: `${window.location.origin}${GA_GATEWAY_PATH}`,
+    });
 
     this.initialized = true;
 
