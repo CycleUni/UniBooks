@@ -2,7 +2,7 @@ import { Injectable, NgZone, PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { PreloadingStrategy, Route } from '@angular/router';
 import { Observable, of } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
+import { catchError, switchMap } from 'rxjs/operators';
 
 /**
  * Loads the code of the pages a visitor is likely to open next, once the
@@ -31,6 +31,12 @@ export class IdlePreloadingStrategy implements PreloadingStrategy {
     return this.startDelay().pipe(
       switchMap(() => whenIdle()),
       switchMap(() => load()),
+      // A preload that fails (usually a chunk a deploy removed under an open
+      // tab) is only a head start lost: the visitor is still on a working
+      // page, and opening the route later imports it again, where a missing
+      // chunk reloads the page (app.ts). Left uncaught it reached Sentry as
+      // an unhandled error for every stale tab.
+      catchError(() => of(null)),
     );
   }
 
@@ -41,21 +47,29 @@ export class IdlePreloadingStrategy implements PreloadingStrategy {
    * the full delay.
    */
   private startDelay(): Observable<void> {
-    return new Observable<void>(subscriber =>
+    return new Observable<void>((subscriber) =>
       this.zone.runOutsideAngular(() => {
         const handle = setTimeout(
-          () => this.zone.run(() => { subscriber.next(); subscriber.complete(); }),
+          () =>
+            this.zone.run(() => {
+              subscriber.next();
+              subscriber.complete();
+            }),
           IdlePreloadingStrategy.START_DELAY_MS,
         );
         return () => clearTimeout(handle);
-      })
+      }),
     );
   }
 }
 
 /** False when the visitor asked to save data, or the link is 2G. */
-export function preloadAllowed(nav: Navigator | undefined = typeof navigator !== 'undefined' ? navigator : undefined): boolean {
-  const connection = (nav as { connection?: { saveData?: boolean; effectiveType?: string } } | undefined)?.connection;
+export function preloadAllowed(
+  nav: Navigator | undefined = typeof navigator !== 'undefined' ? navigator : undefined,
+): boolean {
+  const connection = (
+    nav as { connection?: { saveData?: boolean; effectiveType?: string } } | undefined
+  )?.connection;
   if (!connection) return true;
   if (connection.saveData) return false;
   return !/(^|-)2g$/.test(connection.effectiveType ?? '');
@@ -63,12 +77,18 @@ export function preloadAllowed(nav: Navigator | undefined = typeof navigator !==
 
 /** Resolves when the browser next has idle time (Safari has no requestIdleCallback). */
 function whenIdle(): Observable<void> {
-  return new Observable<void>(subscriber => {
-    const done = () => { subscriber.next(); subscriber.complete(); };
-    const ric = (globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+  return new Observable<void>((subscriber) => {
+    const done = () => {
+      subscriber.next();
+      subscriber.complete();
+    };
+    const ric = (
+      globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }
+    ).requestIdleCallback;
     if (ric) {
       const handle = ric(done, { timeout: 5000 });
-      return () => (globalThis as { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(handle);
+      return () =>
+        (globalThis as { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(handle);
     }
     const handle = setTimeout(done, 0);
     return () => clearTimeout(handle);

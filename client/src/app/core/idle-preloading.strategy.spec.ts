@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { NgZone, PLATFORM_ID } from '@angular/core';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { IdlePreloadingStrategy, preloadAllowed } from './idle-preloading.strategy';
 
 describe('IdlePreloadingStrategy', () => {
@@ -29,6 +29,15 @@ describe('IdlePreloadingStrategy', () => {
     const outside = vi.spyOn(TestBed.inject(NgZone), 'runOutsideAngular');
     strategy.preload({ path: 'search', data: { preload: true } }, () => of('loaded')).subscribe();
     expect(outside).toHaveBeenCalled();
+  });
+
+  it('swallows a failed preload, such as a chunk a deploy removed', async () => {
+    const error = vi.fn();
+    strategy
+      .preload({ path: 'login', data: { preload: true } }, () => throwError(() => new Error('Failed to fetch dynamically imported module')))
+      .subscribe({ error });
+    await vi.advanceTimersByTimeAsync(IdlePreloadingStrategy.START_DELAY_MS + 5000);
+    expect(error).not.toHaveBeenCalled();
   });
 
   it('never loads an unmarked route, such as the admin console', async () => {
