@@ -47,6 +47,37 @@ describe('BookService.searchBooks engine parameter', () => {
   });
 });
 
+/**
+ * The API has no trailing slashes; the book page asked for `/books/?isbn=…`,
+ * which matched no route and showed every book as "not found".
+ */
+describe('BookService.getBook', () => {
+  let service: BookService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(BookService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('asks for a book by ISBN without a trailing slash', () => {
+    service.getBook('9789865027803', 1, 'CHIHLEE').subscribe();
+
+    http.expectOne('/books?isbn=9789865027803&page=1&school=CHIHLEE').flush({});
+  });
+
+  it('asks for a book by id without a trailing slash', () => {
+    service.getBook('ab7493f8-19bb-4fe4-8dc7-dbccf09c91a0').subscribe();
+
+    http.expectOne('/books?id=ab7493f8-19bb-4fe4-8dc7-dbccf09c91a0&page=1').flush({});
+  });
+});
+
 describe('search engine helpers', () => {
   it('maps a result source to the engine that produced it', () => {
     expect(engineForSource('google_api')).toBe('googlebooks');

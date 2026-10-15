@@ -84,7 +84,7 @@ export class BookService {
     if (engine) {
       param += `&engine=${encodeURIComponent(engine)}`;
     }
-    return this.http.get<any>(`/books/${param}`);
+    return this.http.get<any>(`/books${param}`);
   }
 
   createManualBook(bookData: any): Observable<any> {
