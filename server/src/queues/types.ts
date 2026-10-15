@@ -24,6 +24,15 @@ export type EmailMessage =
       path: string;
     }
   | {
+      /** Sent to the address an account just moved away from, once the change is confirmed. */
+      type: 'email_changed';
+      user_id: string;
+      /** The previous sign-in address (the recipient). */
+      to: string;
+      /** The new sign-in address; shown masked. */
+      new_email: string;
+    }
+  | {
       type: 'offline_chat_notification';
       recipient_id: string;
       room_id: string;

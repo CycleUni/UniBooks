@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:workers';
-import { buildEmail, chatEmailPreview } from '../../src/queues/email';
+import { buildEmail, chatEmailPreview, maskEmail } from '../../src/queues/email';
 import { formatMeetupTime } from '../../src/lib/time';
 import { passwordProblems } from '../../src/services/accounts/passwords';
 import { displayName } from '../../src/services/accounts/users';
@@ -62,6 +62,19 @@ describe('emails', () => {
     );
     expect(mail?.text).toContain(BASE + '/forgot-password?token=abc');
     expect(mail?.subject).toBe('UniBooks Password Reset');
+  });
+
+  it("email changed: goes to the old address in the user's language, new address masked", async () => {
+    const id = await createUser('moved-to@example.com');
+    await env.DB.prepare("UPDATE users SET email_language = 'zh-HK' WHERE id = ?").bind(id).run();
+    const mail = await buildEmail({ type: 'email_changed', user_id: id, to: 'old@example.com', new_email: 'moved-to@example.com' }, env);
+    expect(mail?.to).toBe('old@example.com');
+    expect(mail?.subject).toBe('UniBooks：你嘅登入電郵已經更改');
+    expect(mail?.text).toContain('m***@example.com');
+    expect(mail?.text).not.toContain('moved-to@example.com');
+    expect(mail?.text).toContain(BASE + '/account/settings');
+    expect(maskEmail('a@b.c')).toBe('a***@b.c');
+    expect(maskEmail('nope')).toBe('***');
   });
 
   it('chat notification: escaped, region-prefixed link, settings link, recipient language, opt-out', async () => {

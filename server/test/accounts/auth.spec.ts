@@ -1,5 +1,6 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { env } from 'cloudflare:workers';
+import { app } from '../../src/index';
 import * as ott from '../../src/services/accounts/oneTimeTokens';
 import { ROTATION_GRACE_SECONDS } from '../../src/services/accounts/tokens';
 import { PASSWORD, call, createUser, login, seedReference, sessionOf } from './helpers';
@@ -470,8 +471,16 @@ describe('profile', () => {
     expect(await cancel.json()).toEqual({ code: 'acct.emailChangeCancelled' });
 
     const token = await ott.issueEmailChange(env, id, 'moved@example.com');
-    const confirm = await call('/api/v1/auth/email/change/confirm', { body: { token } });
+    // Through the app with a recording queue, so the queued notice can be read back.
+    const send = vi.fn(async () => {});
+    const confirm = await app.request(
+      '/api/v1/auth/email/change/confirm',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) },
+      { ...env, EMAIL_QUEUE: { send } },
+    );
     expect(await confirm.json()).toEqual({ code: 'acct.emailChanged' });
+    // The address it moved away from is told.
+    expect(send).toHaveBeenCalledWith({ type: 'email_changed', user_id: id, to: 'patch@example.com', new_email: 'moved@example.com' });
     expect((await userRow('moved@example.com'))?.id).toBe(id);
     const reuse = await call('/api/v1/auth/email/change/confirm', { body: { token } });
     expect(await reuse.json()).toEqual({ error: { code: 'acct.errEmailChangeTokenInvalid' } });

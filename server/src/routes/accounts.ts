@@ -714,6 +714,14 @@ accountRoutes.post('/email/change/confirm', rateLimit('password_change', RATES.p
     apiError(400, 'acct.errEmailTaken');
   }
   await ott.cancelEmailChange(c.env, user.id);
+  // The old address hears about it: if the change was not the owner's, this
+  // is the only warning that reaches them.
+  const notice: EmailMessage = { type: 'email_changed', user_id: user.id, to: user.email, new_email: newEmail };
+  try {
+    await c.env.EMAIL_QUEUE.send(notice);
+  } catch (e) {
+    console.error(`[accounts] could not queue the email-changed notice for user ${user.id}`, e);
+  }
   return c.json({ code: 'acct.emailChanged' });
 });
 

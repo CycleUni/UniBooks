@@ -114,6 +114,30 @@ function accountLink(env: Env, msg: Extract<EmailMessage, { type: 'account_link'
   ]);
 }
 
+/** a***@example.com: enough for the owner to recognise, not enough to hand the address to whoever reads the old inbox. */
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  if (at < 1) return '***';
+  return `${email[0]}***${email.slice(at)}`;
+}
+
+async function emailChanged(env: Env, msg: Extract<EmailMessage, { type: 'email_changed' }>): Promise<RenderedEmail | null> {
+  const user = await loadUser(env, msg.user_id);
+  if (!user || !msg.to) return null;
+  const lang = await languageFor(env, user, null);
+  const settingsLink = `${frontend(env)}/account/settings`;
+  return render(msg.to, displayName(user.first_name, user.last_name), t(lang, 'email.emailChanged.subject'), [
+    t(lang, 'email.emailChanged.intro', { email: maskEmail(msg.new_email) }),
+    '',
+    t(lang, 'email.emailChanged.noAccess'),
+    '',
+    t(lang, 'email.emailChanged.notYou'),
+    '',
+    t(lang, 'email.emailChanged.wasYou'),
+    { link: settingsLink },
+  ]);
+}
+
 async function chatNotification(
   env: Env,
   msg: Extract<EmailMessage, { type: 'offline_chat_notification' }>,
@@ -223,6 +247,8 @@ export async function buildEmail(msg: EmailMessage, env: Env): Promise<RenderedE
   switch (msg.type) {
     case 'account_link':
       return accountLink(env, msg);
+    case 'email_changed':
+      return emailChanged(env, msg);
     case 'offline_chat_notification':
       return chatNotification(env, msg);
     case 'waitlist_notification':
