@@ -127,6 +127,22 @@ npx --prefix server wrangler r2 bucket lifecycle add unibooks-assets expire-tmp 
 R2；要回收它們，得先改成和刊登照片一樣：上傳到 `tmp/chat/<userId>/`，送出訊息時由 ChatRoom 搬到 `chat/`，
 之後 `tmp/` 的規則就會一併處理。
 
+### 由 Git 自動部署（Workers Builds）
+
+在 Cloudflare 後台 Worker `unibooks` → Settings → Build 設定以下各欄。這些無法寫進 `wrangler.jsonc`：
+Wrangler 要先在根目錄找到設定檔才讀得到它，而部署後套用 D1 migration 也不是設定檔能表達的步驟。
+
+| 欄位 | 值 |
+|---|---|
+| Root directory | `server` |
+| Build command | `npm ci && npm --prefix ../client ci && npm run build:fe` |
+| Deploy command | `npx wrangler deploy && npx wrangler d1 migrations apply unibooks --remote && npx wrangler d1 migrations apply unibooks-ads --remote` |
+| Build variables | `NODE_VERSION` = `24`（與 CI 相同；`.nvmrc` 只在 `client/`，root 為 `server` 時讀不到） |
+
+Root directory 留空（repo 根目錄）時，Wrangler 找不到 `server/wrangler.jsonc`，會改把專案當成純靜態網站，
+並報錯 `Could not detect a directory containing static files`。密鑰仍照上面的 `wrangler secret put` 設定一次；
+Service Binding 指向的 Worker `isbnnet-resolver` 必須已部署在同一個帳號，否則部署會失敗。
+
 ### 超級使用者
 
 權限只看 `users.role`：`user`（一般）、`staff`（區域管理員，只管 `staff_managed_regions` 指定的區域）、
