@@ -70,6 +70,27 @@ describe('H-1: region managers and advertisers they do not own', () => {
     expect((await call('/api/v1/admin/promotions', { token: t, body: await newAd(manager.id, mixed) })).status).toBe(403);
   });
 
+  it('may not link an advertiser to a user account; a superuser may', async () => {
+    const t = (await staff(`mgr-link-${crypto.randomUUID()}@example.com`, { regions: ['TW'] })).token;
+    const root = (await staff(`root-link-${crypto.randomUUID()}@example.com`, { admin: true })).token;
+    const someone = (await staff(`someone-${crypto.randomUUID()}@example.com`, {})).id;
+    const created = await call('/api/v1/admin/sponsors', {
+      token: t,
+      body: { company_name: 'Linked', contact_email: 'a@example.com', regions: ['TW'], user: someone },
+    });
+    expect(created.status).toBe(403);
+    expect(((await created.json()) as any).error.code).toBe('admin.errForbiddenField');
+
+    const own = await advertiser({ name: 'Own link', regions: ['TW'] });
+    const patched = await call(`/api/v1/admin/sponsors/${own}`, { token: t, method: 'PATCH', body: { user: someone } });
+    expect(patched.status).toBe(403);
+    // Echoing the current value back is not a change.
+    expect(
+      (await call(`/api/v1/admin/sponsors/${own}`, { token: t, method: 'PATCH', body: { user: null, company_name: 'Own link 2' } })).status,
+    ).toBe(200);
+    expect((await call(`/api/v1/admin/sponsors/${own}`, { token: root, method: 'PATCH', body: { user: someone } })).status).toBe(200);
+  });
+
   it('may modify an own-region advertiser, but not widen it', async () => {
     const own = await advertiser({ name: 'Own', regions: ['TW'] });
     const oAd = await ad(own);

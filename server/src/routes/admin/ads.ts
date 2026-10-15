@@ -171,6 +171,14 @@ const advertiserCreate = z.object({
 });
 const advertiserUpdate = z.object(advertiserFields).partial();
 
+/**
+ * Linking an advertiser to a user account is a superuser's call: the user
+ * may be anyone, in any region, so a region manager may not set or change it.
+ */
+function assertMayLinkUser(scope: string[] | null, requested: string | null | undefined, current: string | null) {
+  if (scope !== null && requested !== undefined && requested !== current) apiError(403, 'admin.errForbiddenField');
+}
+
 /** Reference checks for regions / schools / user (main DB), user uniqueness (ads DB). */
 async function checkAdvertiserRefs(db: Database, adb: AdsDatabase, body: { regions?: string[]; schools?: number[]; user?: string | null }) {
   const errors: Record<string, string[]> = {};
@@ -230,6 +238,7 @@ adRoutes.post('/sponsors', async (c) => {
   const adb = createAdsDb(c.env.DB_ADS);
   const regionCodes = [...new Set(body.regions ?? [])];
   const schoolIds = [...new Set(body.schools ?? [])];
+  assertMayLinkUser(await scopeOf(c), body.user, null);
   await checkAdvertiserRefs(createDb(c.env.DB), adb, { regions: regionCodes, schools: schoolIds, user: body.user });
   assertCanWrite(await scopeOf(c), body.all_regions ?? false, regionCodes);
   const db = adb;
@@ -282,6 +291,7 @@ async function updateAdvertiser(c: Context<AppEnv>) {
   // Both what the advertiser runs in now and what it would run in after.
   assertCanWrite(scope, !!instance.allRegions, stored);
   const body = validate(advertiserUpdate, await readJson(c.req), INVALID);
+  assertMayLinkUser(scope, body.user, instance.userId);
   const regionCodes = body.regions ? [...new Set(body.regions)] : undefined;
   const schoolIds = body.schools ? [...new Set(body.schools)] : undefined;
   await checkAdvertiserRefs(createDb(c.env.DB), db, {
