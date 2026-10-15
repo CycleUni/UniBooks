@@ -29,6 +29,9 @@ const authed = new Hono<AppEnv>();
 
 const MESSAGING_BASE = '/api/v1/messaging/';
 
+/** New conversations one user may start. */
+export const CONVERSATION_CREATE_RATE = '30/hour';
+
 authed.use('*', authMiddleware());
 
 // ─── Conversations ────────────────────────────────────────────────────────
@@ -95,6 +98,9 @@ authed.post('/conversations', async (c) => {
     // A new conversation starts with its first message; once the listing is
     // taken down or sold there is nothing left to ask about.
     if (listing.status === 'removed' || listing.status === 'sold') apiError(409, 'msg.errListingUnavailable');
+    // Each new conversation is a fresh inbox entry (and notification) for a
+    // seller; reopening an existing one is not counted.
+    await checkRate(c, 'conversation_create', CONVERSATION_CREATE_RATE);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const res = await c.env.DB.prepare(

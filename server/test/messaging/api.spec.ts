@@ -3,6 +3,10 @@ import { env } from 'cloudflare:workers';
 import { api, hasMessagingSchema, seedConversation, seedListing, seedRegion, seedUser } from './helpers';
 import { signToken } from '../../src/lib/jwt';
 import { mintChatToken } from '../../src/services/chatTokens';
+import { app } from '../../src/index';
+import { CONVERSATION_CREATE_RATE } from '../../src/routes/messaging';
+import { parseRate } from '../../src/middleware/rateLimit';
+import type { RateLimiter } from '../../src/durable-objects/RateLimiter';
 
 const ready = await hasMessagingSchema();
 
@@ -36,6 +40,36 @@ describe.skipIf(!ready)('messaging API', () => {
       body: JSON.stringify({ listing_id: listing }),
     });
     expect(self.status).toBe(400);
+  });
+
+  it('limits how many new conversations one user starts; reopening one is not counted', async () => {
+    const seller = await seedUser({ verifiedIn: 'TW' });
+    const buyer = await seedUser({ verifiedIn: 'TW' });
+    const open = await seedListing(seller.id);
+    const fresh = await seedListing(seller.id);
+    const post = (listing: string) =>
+      app.request(
+        '/api/v1/messaging/conversations',
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${buyer.token}`, 'Content-Type': 'application/json', 'X-Region': 'TW' },
+          body: JSON.stringify({ listing_id: listing }),
+        },
+        // Rate limits are off under ENVIRONMENT=test.
+        { ...env, ENVIRONMENT: 'production' },
+      );
+    expect((await post(open)).status).toBe(201);
+
+    // Use up the rest of the hour's allowance.
+    const { limit, window } = parseRate(CONVERSATION_CREATE_RATE);
+    const ns = env.RATE_LIMITER as DurableObjectNamespace<RateLimiter>;
+    const counter = ns.get(ns.idFromName(`conversation_create:${buyer.id}`));
+    for (let i = 1; i < limit; i++) await counter.hit(limit, window);
+
+    const refused = await post(fresh);
+    expect(refused.status).toBe(429);
+    expect(((await refused.json()) as any).error.code).toBe('common.errThrottled');
+    expect((await post(open)).status).toBe(200);
   });
 
   it('requires verification in the listing region', async () => {

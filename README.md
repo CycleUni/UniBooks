@@ -115,6 +115,18 @@ npm run db:seed:remote         # 首次部署後一次：地區、學校、分�
 `CF_ACCOUNT_ID`（廣告統計查詢用）可放在 `vars` 或 secret。
 自訂網域：在 Cloudflare 後台把 `unibooks.app` 綁到 Worker `unibooks`。
 
+R2 生命週期規則（`wrangler.jsonc` 沒有這項設定，首次部署後設定一次）：刊登照片與廣告圖片先上傳到
+`tmp/`，儲存刊登或廣告時才搬到正式位置；沒被用到的上傳靠這條規則清掉。
+
+```bash
+npx --prefix server wrangler r2 bucket lifecycle add unibooks-assets expire-tmp tmp/ --expire-days 1 --config server/wrangler.jsonc
+```
+
+聊天圖片（`chat/<userId>/`）不能套用這種前綴規則：上傳後直接就是訊息裡的網址，沒有「附加」這一步，
+同一個前綴下已送出的圖片和沒送出的上傳無法區分，設了會把對話裡的圖片一起刪掉。沒送出的聊天上傳目前會留在
+R2；要回收它們，得先改成和刊登照片一樣：上傳到 `tmp/chat/<userId>/`，送出訊息時由 ChatRoom 搬到 `chat/`，
+之後 `tmp/` 的規則就會一併處理。
+
 ### 超級使用者
 
 權限只看 `users.role`：`user`（一般）、`staff`（區域管理員，只管 `staff_managed_regions` 指定的區域）、
