@@ -130,6 +130,46 @@ describe('scope is checked before anything reveals another region', () => {
   });
 });
 
+describe("a region manager's school domains stay clear of other regions' schools", () => {
+  // HKU (hku.hk) is an HK school; campus matching picks the most specific domain in any region.
+  it("create and patch refuse a domain under or above another region's school", async () => {
+    for (const email_domain of ['connect.hku.hk', 'mail.connect.hku.hk']) {
+      const res = await call('/api/v1/admin/schools', { token: twManager.token, body: { name: 'Grab', email_domain, region: 'TW' } });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as any).error.fields).toEqual({ email_domain: ['admin.errSchoolDomainOverlaps'] });
+    }
+    const ok = await call('/api/v1/admin/schools', {
+      token: twManager.token,
+      body: { name: 'Own', email_domain: 'own-scope.edu.tw', region: 'TW' },
+    });
+    expect(ok.status).toBe(201);
+    const { id } = (await ok.json()) as { id: number };
+    const moved = await call(`/api/v1/admin/schools/${id}`, {
+      method: 'PATCH',
+      token: twManager.token,
+      body: { email_domain: 'staff.hku.hk' },
+    });
+    expect(moved.status).toBe(400);
+    expect(((await moved.json()) as any).error.fields).toEqual({ email_domain: ['admin.errSchoolDomainOverlaps'] });
+
+    // A superuser is not limited.
+    const root_ = await call('/api/v1/admin/schools', {
+      token: root.token,
+      body: { name: 'Root', email_domain: 'connect.hku.hk', region: 'TW' },
+    });
+    expect(root_.status).toBe(201);
+  });
+
+  it('bulk reports an overlapping item by index', async () => {
+    const res = await call('/api/v1/admin/schools/bulk?region=TW', {
+      token: twManager.token,
+      body: { action: 'preview', items: [{ email_domain: 'alumni.hku.hk', name: 'Grab' }] },
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as any).error.code).toBe('admin.errAllRegionsForbidden');
+  });
+});
+
 describe('bulk import validation', () => {
   const bulk = (path: string, items: unknown) =>
     call(`/api/v1/admin/${path}/bulk?region=TW`, { token: root.token, body: { action: 'preview', items } });

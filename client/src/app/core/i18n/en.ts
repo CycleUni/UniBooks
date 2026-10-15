@@ -956,6 +956,7 @@ export const en: Record<string, string> = {
   'admin.errAllRegionsForbidden': 'None of these schools are in a region you manage. Nothing was imported.',
   'admin.errMissingRegion': 'Region is missing.',
   'admin.errSchoolCodeTaken': 'Another school in this region already uses this code.',
+  'admin.errSchoolDomainOverlaps': "Another region's school uses this domain or one under or above it; only a superuser can add it.",
   'admin.errSchoolCityUnknown': 'That city is not in this region. Pick one of this region\'s cities.',
   'admin.errSchoolCodeInvalid': 'Codes may contain only letters, digits and "-", up to 20 characters.',
   'admin.errRegionForbidden': 'You do not have permission for this region.',

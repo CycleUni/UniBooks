@@ -958,6 +958,7 @@ export const zhTW: Record<string, string> = {
   'admin.errAllRegionsForbidden': '這批學校都不屬於你管轄的地區，沒有匯入任何資料。',
   'admin.errMissingRegion': '缺少地區。',
   'admin.errSchoolCodeTaken': '此代碼已被本地區其他學校使用。',
+  'admin.errSchoolDomainOverlaps': '其他地區的學校已使用這個網域，或其上層、下層網域；只有超級使用者可以新增。',
   'admin.errSchoolCityUnknown': '找不到這個城市，請選擇本地區的城市。',
   'admin.errSchoolCodeInvalid': '代碼只能包含英文字母、數字與「-」，最多 20 個字元。',
   'admin.errRegionForbidden': '你沒有該地區的權限。',

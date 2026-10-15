@@ -49,6 +49,40 @@ export function normalizeEmailDomain(raw: unknown): string | null {
 }
 import { auditInsert, changedFields, writeAudit } from '../../services/admin/audit';
 
+/** Whether two domains are the same or one sits under the other (mail.x.edu.tw / x.edu.tw). */
+export function domainsOverlap(a: string, b: string): boolean {
+  return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+}
+
+const DOMAIN_OVERLAP = 'admin.errSchoolDomainOverlaps';
+
+/**
+ * Campus addresses resolve to the most specific matching school domain in
+ * any region (services/accounts/edu.ts), so a domain under or over another
+ * region's school would pull that school's students into this region. A
+ * region manager may only use domains that touch no school outside the
+ * regions they manage; admins (scope null) are not limited.
+ */
+function overlapsUnmanaged(
+  scope: string[] | null,
+  domain: string,
+  all: Pick<School, 'id' | 'regionCode' | 'emailDomain'>[],
+  selfId?: number,
+) {
+  if (scope === null) return false;
+  return all.some((s) => s.id !== selfId && !scope.includes(s.regionCode) && domainsOverlap(domain, s.emailDomain));
+}
+
+async function assertDomainInScope(c: Context<AppEnv>, db: Database, domain: string, selfId?: number): Promise<void> {
+  const scope = await scopeOf(c);
+  if (scope === null) return;
+  const others = await db
+    .select({ id: schools.id, regionCode: schools.regionCode, emailDomain: schools.emailDomain })
+    .from(schools)
+    .where(scope.length ? sql`${schools.regionCode} NOT IN (SELECT value FROM json_each(${JSON.stringify(scope)}))` : undefined);
+  if (overlapsUnmanaged(scope, domain, others, selfId)) fieldErrors({ email_domain: [DOMAIN_OVERLAP] });
+}
+
 /** Schools and school requests. */
 export const schoolRoutes = new Hono<AppEnv>();
 
@@ -194,6 +228,7 @@ schoolRoutes.post('/schools', invalidates('ref'), async (c) => {
   }
   const [dup] = await db.select({ id: schools.id }).from(schools).where(eq(schools.emailDomain, body.email_domain)).limit(1);
   if (dup) fieldErrors({ email_domain: [INVALID] });
+  await assertDomainInScope(c, db, body.email_domain);
 
   if (!code) code = dedupeCode(deriveCode(body.email_domain), taken);
   const [created] = await db
@@ -262,6 +297,7 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
   if (itemErrors.length) apiError(400, INVALID, { items: itemErrors });
 
   const db = createDb(c.env.DB);
+  const scope = await scopeOf(c);
   const allSchools = await db.select().from(schools);
   const existingByDomain = new Map(allSchools.map((s) => [s.emailDomain, s]));
   const regionSchools = allSchools.filter((s) => s.regionCode === currentRegion);
@@ -288,7 +324,11 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
     const domain = data.email_domain;
     const targetRegion = data.region ?? currentRegion;
     const existing = existingByDomain.get(domain);
-    if (targetRegion !== currentRegion || (existing && existing.regionCode !== currentRegion)) {
+    if (
+      targetRegion !== currentRegion ||
+      (existing && existing.regionCode !== currentRegion) ||
+      overlapsUnmanaged(scope, domain, allSchools, existing?.id)
+    ) {
       // By position only: naming the domain would say whether it exists in a region the caller may not manage.
       forbidden.push({ index });
       continue;
@@ -473,6 +513,7 @@ schoolRoutes.patch('/schools/:id', invalidates('ref'), async (c) => {
   if (body.email_domain !== undefined && body.email_domain !== instance.emailDomain) {
     const [dup] = await db.select({ id: schools.id }).from(schools).where(eq(schools.emailDomain, body.email_domain)).limit(1);
     if (dup) fieldErrors({ email_domain: [INVALID] });
+    await assertDomainInScope(c, db, body.email_domain, instance.id);
     set.emailDomain = body.email_domain;
   }
   if (body.name !== undefined) set.name = body.name;

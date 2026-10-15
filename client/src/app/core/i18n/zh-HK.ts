@@ -958,6 +958,7 @@ export const zhHK: Record<string, string> = {
   'admin.errAllRegionsForbidden': '這批學校都不屬於你管轄的地區，沒有匯入任何資料。',
   'admin.errMissingRegion': '缺少地區。',
   'admin.errSchoolCodeTaken': '此代碼已被本地區另一所院校使用。',
+  'admin.errSchoolDomainOverlaps': '其他地區嘅院校已經用緊呢個網域，或者佢嘅上層、下層網域；只有超級用戶先可以加。',
   'admin.errSchoolCityUnknown': '搵唔到呢個分區，請揀本地區入面嘅分區。',
   'admin.errSchoolCodeInvalid': '代碼只可包含英文字母、數字及「-」，最多 20 個字元。',
   'admin.errRegionForbidden': '你沒有該地區的權限。',
