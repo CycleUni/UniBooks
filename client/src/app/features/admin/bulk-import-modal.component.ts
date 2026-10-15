@@ -19,6 +19,9 @@ export function defaultSchoolsJsonUrl(region: string): string {
   return `https://raw.githubusercontent.com/CycleUni/SchoolList/refs/heads/main/schools.${region.toUpperCase()}.json`;
 }
 
+/** The CycleUni/CategoryList fixture; categories are the same in every region. */
+export const DEFAULT_CATEGORIES_JSON_URL = 'https://raw.githubusercontent.com/CycleUni/CategoryList/refs/heads/main/categories.json';
+
 @Component({
   selector: 'app-bulk-import-modal',
   standalone: true,
@@ -182,13 +185,16 @@ export class BulkImportModalComponent implements OnChanges {
   }
 
   /**
-   * Opening the school import fills in this region's SchoolList URL, so
-   * importing the maintained list is Fetch then Preview. A URL the admin typed
-   * is kept; one we filled in earlier follows the region the modal opens in.
+   * Opening the import fills in the maintained list's URL — this region's
+   * SchoolList, or the CategoryList — so importing it is Fetch then Preview.
+   * A URL the admin typed is kept; one we filled in earlier follows the
+   * region and endpoint the modal opens with.
    */
   ngOnChanges(changes: SimpleChanges): void {
-    if (!changes['show'] || !this.show || this.endpoint !== 'schools') return;
-    const url = defaultSchoolsJsonUrl(this.regionService.region());
+    if (!changes['show'] || !this.show) return;
+    const url = this.endpoint === 'schools'
+      ? defaultSchoolsJsonUrl(this.regionService.region())
+      : DEFAULT_CATEGORIES_JSON_URL;
     if (!this.jsonUrl || this.jsonUrl === this.filledUrl) {
       this.jsonUrl = url;
       this.filledUrl = url;

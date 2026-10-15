@@ -150,8 +150,9 @@ const ALWAYS_ENFORCED = [
 ].join('; ');
 
 // The admin bulk import fetches its default lists from the CycleUni GitHub
-// repositories (SchoolList's schools.<REGION>.json). The path keeps it to
-// CycleUni's own files rather than everything raw.githubusercontent.com serves.
+// repositories (SchoolList's schools.<REGION>.json, CategoryList's
+// categories.json). The path keeps it to CycleUni's own files rather than
+// everything raw.githubusercontent.com serves.
 const IMPORT_LIST_SOURCE = 'https://raw.githubusercontent.com/CycleUni/';
 
 // Firebase Cloud Messaging: the SDK registers the browser with these two hosts

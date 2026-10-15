@@ -171,11 +171,11 @@ describe('BulkImportModalComponent', () => {
     expect(component.jsonUrl).toBe('https://example.com/mine.json');
   });
 
-  it('leaves the URL empty for the category import', () => {
+  it('fills in the CategoryList URL when the category import opens', () => {
     component.endpoint = 'categories';
 
     open();
 
-    expect(component.jsonUrl).toBe('');
+    expect(component.jsonUrl).toBe('https://raw.githubusercontent.com/CycleUni/CategoryList/refs/heads/main/categories.json');
   });
 });
