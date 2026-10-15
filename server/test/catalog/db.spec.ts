@@ -139,6 +139,34 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
     expect((await call('/api/v1/books/manual', { method: 'POST', body: '{}', auth: sellerAuth })).status).toBe(400);
   });
 
+  it('manual create: a non-admin cover must come from a catalogue host or our own media', async () => {
+    const coverOf = async (cover_url: string) => {
+      const res = await call('/api/v1/books/manual', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'Cover', cover_url }),
+        auth: sellerAuth,
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as Record<string, unknown>).cover_url;
+    };
+    const google = 'https://books.google.com/books/content?id=abc&printsec=frontcover&img=1&zoom=1';
+    const own = `${env.R2_PUBLIC_URL || 'http://x/api/media'}/books/cover.jpg`;
+    expect(await coverOf(google)).toBe(google);
+    expect(await coverOf('https://covers.openlibrary.org/b/id/1-M.jpg')).toBe('https://covers.openlibrary.org/b/id/1-M.jpg');
+    expect(await coverOf(own)).toBe(own);
+    expect(await coverOf('https://tracker.example.com/pixel.gif')).toBe('');
+    expect(await coverOf('https://books.google.com.evil.example/x.jpg')).toBe('');
+    expect(await coverOf(`${env.R2_PUBLIC_URL || 'http://x/api/media'}.evil.example/x.jpg`)).toBe('');
+
+    // An admin may use any http(s) host.
+    await env.DB.prepare("UPDATE users SET role = 'admin' WHERE id = ?").bind(SELLER).run();
+    try {
+      expect(await coverOf('https://tracker.example.com/pixel.gif')).toBe('https://tracker.example.com/pixel.gif');
+    } finally {
+      await env.DB.prepare("UPDATE users SET role = 'user' WHERE id = ?").bind(SELLER).run();
+    }
+  });
+
   it('subscriptions: create, idempotent, list, delete only own', async () => {
     let res = await call('/api/v1/subscriptions', { method: 'POST', body: JSON.stringify({ book_id: BOOK }), auth: buyerAuth });
     expect(res.status).toBe(201);

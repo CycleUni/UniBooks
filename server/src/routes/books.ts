@@ -10,7 +10,8 @@ import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { cleanAndValidateIsbn, validateBookIsbn } from '../services/catalog/isbn';
-import { cleanCoverUrl, cleanPublisher, describeSource } from '../services/catalog/common';
+import { cleanCoverUrl, cleanPublisher, describeSource, isTrustedCoverUrl } from '../services/catalog/common';
+import { publicBase } from '../lib/media';
 import {
   ISBN_FALLBACK_ORDER,
   ISBN_LOOKUPS,
@@ -184,7 +185,9 @@ bookRoutes.post('/manual', authMiddleware(), async (c) => {
   const body = await readJson(c.req);
   const db = createDb(c.env.DB);
 
-  const coverUrl = 'cover_url' in body ? cleanCoverUrl(body.cover_url) || '' : undefined;
+  let coverUrl = 'cover_url' in body ? cleanCoverUrl(body.cover_url) || '' : undefined;
+  // Only admins may point a shared book at an arbitrary host.
+  if (coverUrl && !c.get('user')!.isAdmin && !isTrustedCoverUrl(coverUrl, publicBase(c.env, new URL(c.req.url).origin))) coverUrl = '';
 
   let isbn13: string | null = null;
   if (body.isbn13 !== undefined && body.isbn13 !== null && body.isbn13 !== '') {

@@ -1,4 +1,5 @@
 import { readCapped } from '../../lib/body';
+import { COVER_PROXY_HOSTS } from '../catalog/common';
 /**
  * The /api/cover proxy (src/routes/frontend.ts). Written against plain
  * Request/Response with the edge cache, fetch and waitUntil passed in, like
@@ -201,7 +202,7 @@ export async function handleCover(request: Request, deps: CoverDeps): Promise<Re
     });
   }
 
-  if (srcUrl.hostname !== 'books.google.com' && srcUrl.hostname !== 'covers.openlibrary.org' && srcUrl.hostname !== 'pdsapp.ncl.edu.tw') {
+  if (!COVER_PROXY_HOSTS.includes(srcUrl.hostname)) {
     return new Response('Invalid "src" query parameter: unsupported host', {
       status: 404,
       headers: {

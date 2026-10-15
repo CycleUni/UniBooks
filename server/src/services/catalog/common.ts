@@ -54,6 +54,26 @@ export function cleanCoverUrl(value: unknown): string | null {
   return v;
 }
 
+/** Where catalogue covers come from; the cover proxy (services/frontend/cover.ts) fetches only these. */
+export const COVER_PROXY_HOSTS: readonly string[] = ['books.google.com', 'covers.openlibrary.org', 'pdsapp.ncl.edu.tw'];
+
+/**
+ * Whether a cleaned cover URL is one a non-admin may store: a catalogue cover
+ * host, or this deployment's own public media (`mediaBase`, lib/media.ts
+ * publicBase). Anything else would have every reader's browser fetch from a
+ * host the seller picked.
+ */
+export function isTrustedCoverUrl(url: string, mediaBase: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (COVER_PROXY_HOSTS.includes(parsed.hostname)) return true;
+  return parsed.href.startsWith(`${mediaBase.replace(/\/+$/, '')}/`);
+}
+
 export type Engine = 'googlebooks' | 'openlibrary' | 'isbnnet';
 
 /** Provenance label for developer monitoring (not shown in the UI). */
