@@ -1,4 +1,7 @@
+import { sql } from 'drizzle-orm';
 import type { Env } from '../../env';
+import { createDb, regionVerifications } from '../../db';
+import { isUniqueViolation } from '../../lib/db';
 import { activeRegionDetails, schoolDomains, type Row } from './regionData';
 
 /**
@@ -23,6 +26,7 @@ export function isPlainEmail(value: string): boolean {
 export async function resolveSchoolFromEmail(env: Env, email: string | null | undefined): Promise<ResolvedSchool | null> {
   if (!email || !email.includes('@')) return null;
   const domain = email.split('@').pop()!.toLowerCase();
+  // Raw: a `SELECT *` row, so the domain columns resolve as regionData.ts reads them.
   const { results } = await env.DB.prepare('SELECT * FROM schools WHERE is_active = 1').all<Row>();
   const byDomain = new Map<string, Row>();
   for (const row of results) for (const d of schoolDomains(row)) if (!byDomain.has(d)) byDomain.set(d, row);
@@ -57,6 +61,7 @@ export async function isValidEduEmail(env: Env, email: string): Promise<boolean>
  */
 export async function emailAlreadyUsed(env: Env, email: string, excludingUserId: string): Promise<boolean> {
   const lower = email.toLowerCase();
+  // Raw: one round trip over two tables (UNION ALL ... LIMIT 1).
   const row = await env.DB.prepare(
     `SELECT 1 AS hit FROM users WHERE lower(email) = ? AND id != ?
      UNION ALL
@@ -82,22 +87,33 @@ export async function upsertVerification(
 ): Promise<boolean> {
   const now = new Date().toISOString();
   try {
-    await env.DB.prepare(
-      `INSERT INTO region_verifications
-         (user_id, region_code, school_id, edu_email, is_manual_verification, verified_at, expires_at, is_active, created_at)
-       VALUES (?, ?, ?, ?, 0, ?, NULL, 1, ?)
-       ON CONFLICT (user_id, region_code) DO UPDATE SET
-         school_id = excluded.school_id,
-         edu_email = excluded.edu_email,
-         verified_at = excluded.verified_at,
-         expires_at = NULL,
-         is_active = 1`,
-    )
-      .bind(userId, regionCode, schoolId, eduEmail.toLowerCase(), now, now)
+    await createDb(env.DB)
+      .insert(regionVerifications)
+      .values({
+        userId,
+        regionCode,
+        schoolId,
+        eduEmail: eduEmail.toLowerCase(),
+        isManualVerification: 0,
+        verifiedAt: now,
+        expiresAt: null,
+        isActive: 1,
+        createdAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [regionVerifications.userId, regionVerifications.regionCode],
+        set: {
+          schoolId: sql`excluded.school_id`,
+          eduEmail: sql`excluded.edu_email`,
+          verifiedAt: sql`excluded.verified_at`,
+          expiresAt: null,
+          isActive: 1,
+        },
+      })
       .run();
     return true;
   } catch (e) {
-    if (String(e).includes('UNIQUE')) return false;
+    if (isUniqueViolation(e)) return false;
     throw e;
   }
 }

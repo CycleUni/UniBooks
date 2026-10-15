@@ -1,4 +1,6 @@
+import { and, eq, gt, isNotNull, isNull, lte } from 'drizzle-orm';
 import type { Env } from '../../env';
+import { createDb, refreshTokens, users, type Database } from '../../db';
 import { apiError } from '../../lib/http';
 import { InvalidTokenError, signToken, verifyToken } from '../../lib/jwt';
 import { newHexId } from '../../lib/uuid';
@@ -62,35 +64,60 @@ async function mintPair(env: Env, userId: string, family: string | null): Promis
   return { jti, family: familyId, pair: { access, refresh } };
 }
 
-function insertStatement(env: Env, jti: string, userId: string, family: string) {
+function insertStatement(db: Database, jti: string, userId: string, family: string) {
   const now = new Date();
-  return env.DB.prepare(
-    'INSERT INTO refresh_tokens (id, jti, user_id, family_id, is_revoked, expires_at, created_at) VALUES (?, ?, ?, ?, 0, ?, ?)',
-  ).bind(jti, jti, userId, family, new Date(now.getTime() + REFRESH_LIFETIME_SECONDS * 1000).toISOString(), now.toISOString());
+  return db.insert(refreshTokens).values({
+    id: jti,
+    jti,
+    userId,
+    familyId: family,
+    isRevoked: 0,
+    expiresAt: new Date(now.getTime() + REFRESH_LIFETIME_SECONDS * 1000).toISOString(),
+    createdAt: now.toISOString(),
+  });
 }
 
 /** Issue a pair and whitelist its refresh token. `family` continues a chain; omitted, a new one starts. */
 export async function issueTokens(env: Env, userId: string, family: string | null = null): Promise<TokenPair> {
   const { jti, family: familyId, pair } = await mintPair(env, userId, family);
-  await strict(() => insertStatement(env, jti, userId, familyId).run());
+  await strict(() => insertStatement(createDb(env.DB), jti, userId, familyId).run());
   return pair;
 }
 
 async function lookup(env: Env, jti: string): Promise<TokenRow | null> {
-  return env.DB.prepare('SELECT jti, user_id, family_id, rotated_at, rotated_tokens FROM refresh_tokens WHERE jti = ? AND expires_at > ?')
-    .bind(jti, nowIso())
-    .first<TokenRow>();
+  const [row] = await createDb(env.DB)
+    .select({
+      jti: refreshTokens.jti,
+      user_id: refreshTokens.userId,
+      family_id: refreshTokens.familyId,
+      rotated_at: refreshTokens.rotatedAt,
+      rotated_tokens: refreshTokens.rotatedTokens,
+    })
+    .from(refreshTokens)
+    .where(and(eq(refreshTokens.jti, jti), gt(refreshTokens.expiresAt, nowIso())))
+    .limit(1);
+  return row ?? null;
 }
 
 /** "Log out all devices" / password change / reset: every live token the user has. */
 export async function revokeAllTokensForUser(env: Env, userId: string): Promise<void> {
-  await safe(() => env.DB.prepare('DELETE FROM refresh_tokens WHERE user_id = ? AND rotated_at IS NULL').bind(userId).run(), null);
+  await safe(
+    () =>
+      createDb(env.DB)
+        .delete(refreshTokens)
+        .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.rotatedAt)))
+        .run(),
+    null,
+  );
 }
 
 async function revokeFamily(env: Env, family: string, userId: string): Promise<void> {
   await safe(
     () =>
-      env.DB.prepare('DELETE FROM refresh_tokens WHERE family_id = ? AND user_id = ? AND rotated_at IS NULL').bind(family, userId).run(),
+      createDb(env.DB)
+        .delete(refreshTokens)
+        .where(and(eq(refreshTokens.familyId, family), eq(refreshTokens.userId, userId), isNull(refreshTokens.rotatedAt)))
+        .run(),
     null,
   );
 }
@@ -109,7 +136,14 @@ export async function verifyAndRevokeRefreshToken(env: Env, jti: string, userId:
     return false;
   }
   if (row.rotated_at) return false;
-  await safe(() => env.DB.prepare('DELETE FROM refresh_tokens WHERE jti = ? AND rotated_at IS NULL').bind(jti).run(), null);
+  await safe(
+    () =>
+      createDb(env.DB)
+        .delete(refreshTokens)
+        .where(and(eq(refreshTokens.jti, jti), isNull(refreshTokens.rotatedAt)))
+        .run(),
+    null,
+  );
   return true;
 }
 
@@ -157,13 +191,12 @@ export async function rotateRefreshToken(env: Env, raw: string): Promise<TokenPa
     apiError(401, 'auth.errTokenRevoked');
   }
 
-  const user = await strict(() =>
-    env.DB.prepare('SELECT id, is_active, is_banned FROM users WHERE id = ?')
-      .bind(userId)
-      .first<{ id: string; is_active: number; is_banned: number }>(),
+  const db = createDb(env.DB);
+  const [user] = await strict(() =>
+    db.select({ id: users.id, isActive: users.isActive, isBanned: users.isBanned }).from(users).where(eq(users.id, userId)).limit(1),
   );
   if (!user) apiError(401, 'auth.errInvalidToken');
-  if (!user.is_active || user.is_banned) {
+  if (!user.isActive || user.isBanned) {
     await verifyAndRevokeRefreshToken(env, jti, userId);
     apiError(403, 'auth.errAccountDisabled');
   }
@@ -171,20 +204,19 @@ export async function rotateRefreshToken(env: Env, raw: string): Promise<TokenPa
   // Record the new pair and retire the old token in one transaction; the
   // retirement is conditional, so of two concurrent rotations exactly one wins.
   const minted = await mintPair(env, userId, row.family_id || row.jti);
-  const results = await strict(() =>
-    env.DB.batch([
-      insertStatement(env, minted.jti, userId, minted.family),
-      env.DB.prepare('UPDATE refresh_tokens SET rotated_at = ?, rotated_tokens = ? WHERE jti = ? AND rotated_at IS NULL').bind(
-        nowIso(),
-        JSON.stringify(minted.pair),
-        jti,
-      ),
+  const [, retired] = await strict(() =>
+    db.batch([
+      insertStatement(db, minted.jti, userId, minted.family),
+      db
+        .update(refreshTokens)
+        .set({ rotatedAt: nowIso(), rotatedTokens: JSON.stringify(minted.pair) })
+        .where(and(eq(refreshTokens.jti, jti), isNull(refreshTokens.rotatedAt))),
     ]),
   );
-  if ((results[1]?.meta?.changes ?? 0) === 1) return minted.pair;
+  if ((retired.meta?.changes ?? 0) === 1) return minted.pair;
 
   // Lost the race: drop our pair and hand back the one the winner stored.
-  await safe(() => env.DB.prepare('DELETE FROM refresh_tokens WHERE jti = ?').bind(minted.jti).run(), null);
+  await safe(() => db.delete(refreshTokens).where(eq(refreshTokens.jti, minted.jti)).run(), null);
   const winner = await strict(() => lookup(env, jti));
   const pair = winner ? graceTokens(winner) : null;
   if (pair) return pair;
@@ -195,11 +227,13 @@ export async function rotateRefreshToken(env: Env, raw: string): Promise<TokenPa
 export async function purgeTokenStore(env: Env): Promise<number> {
   const now = nowIso();
   const graceCutoff = new Date(Date.now() - ROTATION_GRACE_SECONDS * 1000).toISOString();
-  const [deleted, blanked] = await env.DB.batch([
-    env.DB.prepare('DELETE FROM refresh_tokens WHERE expires_at <= ?').bind(now),
-    env.DB.prepare('UPDATE refresh_tokens SET rotated_tokens = NULL WHERE rotated_at <= ? AND rotated_tokens IS NOT NULL').bind(
-      graceCutoff,
-    ),
+  const db = createDb(env.DB);
+  const [deleted, blanked] = await db.batch([
+    db.delete(refreshTokens).where(lte(refreshTokens.expiresAt, now)),
+    db
+      .update(refreshTokens)
+      .set({ rotatedTokens: null })
+      .where(and(lte(refreshTokens.rotatedAt, graceCutoff), isNotNull(refreshTokens.rotatedTokens))),
   ]);
   return (deleted.meta.changes ?? 0) + (blanked.meta.changes ?? 0);
 }

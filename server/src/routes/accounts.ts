@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { clearSession, refreshTokenFrom, setSession, withClearedSession } from '../lib/session';
 import { HTTPException } from 'hono/http-exception';
-import { and, asc, desc, eq, like, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, like, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../env';
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { getRegion, isVerifiedIn } from '../lib/region';
@@ -9,7 +9,19 @@ import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { outcomeLimit, rateLimit, takeRate } from '../middleware/rateLimit';
 import { turnstileEnabled, verifyTurnstile } from '../lib/turnstile';
 import { InvalidTokenError, verifyToken } from '../lib/jwt';
-import { books, createDb, listings, type Listing, type User } from '../db';
+import {
+  books,
+  createDb,
+  listings,
+  pushDevices,
+  regionVerifications,
+  schoolRequests,
+  subscriptions,
+  users,
+  type InsertUser,
+  type Listing,
+  type User,
+} from '../db';
 import { serializeListings } from '../services/listings/serialize';
 import type { AccountLinkKind, EmailMessage } from '../queues/types';
 import * as ott from '../services/accounts/oneTimeTokens';
@@ -37,6 +49,16 @@ import { isUniqueViolation } from '../lib/db';
 export const accountRoutes = new Hono<AppEnv>();
 
 type C = Context<AppEnv>;
+
+/** Whether an account other than `userId` signs in with `email` (already lower-cased). */
+async function emailTakenByOther(c: C, email: string, userId: string): Promise<boolean> {
+  const [row] = await createDb(c.env.DB)
+    .select({ id: users.id })
+    .from(users)
+    .where(and(sql`lower(${users.email}) = ${email}`, ne(users.id, userId)))
+    .limit(1);
+  return !!row;
+}
 
 // Rate limits per scope.
 /**
@@ -159,10 +181,10 @@ accountRoutes.post('/register', rateLimit('register', RATES.register), async (c)
   const { firstName: fn, lastName: ln, name: nm } = nameColumns(names.first_name, names.last_name);
   if (existing && supersede) {
     await ott.voidRegistrationLinks(c.env, existing.id);
-    await c.env.DB.prepare(
-      'UPDATE users SET name = ?, first_name = ?, last_name = ?, password_hash = NULL, updated_at = ? WHERE id = ? AND is_active = 0',
-    )
-      .bind(nm, fn, ln, nowIso(), existing.id)
+    await createDb(c.env.DB)
+      .update(users)
+      .set({ name: nm, firstName: fn, lastName: ln, passwordHash: null, updatedAt: nowIso() })
+      .where(and(eq(users.id, existing.id), eq(users.isActive, 0)))
       .run();
     const token = await ott.issue(c.env, ott.REGISTER, existing.id, ott.REGISTER_TTL, { password_hash: passwordHash });
     await sendLinkEmail(
@@ -181,11 +203,21 @@ accountRoutes.post('/register', rateLimit('register', RATES.register), async (c)
   const now = nowIso();
   const { firstName, lastName, name } = nameColumns(names.first_name, names.last_name);
   try {
-    await c.env.DB.prepare(
-      `INSERT INTO users (id, email, name, first_name, last_name, password_hash, role, is_active, is_banned, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, NULL, 'user', 0, 0, ?, ?)`,
-    )
-      .bind(id, email, name, firstName, lastName, now, now)
+    await createDb(c.env.DB)
+      .insert(users)
+      .values({
+        id,
+        email,
+        name,
+        firstName,
+        lastName,
+        passwordHash: null,
+        role: 'user',
+        isActive: 0,
+        isBanned: 0,
+        createdAt: now,
+        updatedAt: now,
+      })
       .run();
   } catch (e) {
     if (isUniqueViolation(e)) fieldErrors({ email: ['acct.errEmailTaken'] });
@@ -224,10 +256,14 @@ accountRoutes.post('/verify-registration', rateLimit('activate', RATES.login), a
   if (!(await ott.consume(c.env, record.id))) apiError(400, 'auth.errInvalidToken');
   try {
     if (!user.isActive) {
-      await c.env.DB.prepare(
-        'UPDATE users SET is_active = 1, password_hash = COALESCE(?, password_hash), updated_at = ? WHERE id = ? AND is_active = 0 AND deleted_at IS NULL',
-      )
-        .bind(record.payload.password_hash ?? null, nowIso(), user.id)
+      await createDb(c.env.DB)
+        .update(users)
+        .set({
+          isActive: 1,
+          passwordHash: sql`COALESCE(${record.payload.password_hash ?? null}, ${users.passwordHash})`,
+          updatedAt: nowIso(),
+        })
+        .where(and(eq(users.id, user.id), eq(users.isActive, 0), isNull(users.deletedAt)))
         .run();
       await ott.voidRegistrationLinks(c.env, user.id);
     }
@@ -304,10 +340,16 @@ accountRoutes.post('/verify/auto', authMiddleware(), rateLimit('verify-request',
 accountRoutes.post('/verify/unbind', authMiddleware(), async (c) => {
   const region = await getRegion(c);
   if (!region) apiError(400, 'sys.errUnknownRegion');
-  const res = await c.env.DB.prepare(
-    'UPDATE region_verifications SET is_active = 0 WHERE user_id = ? AND region_code = ? AND is_active = 1',
-  )
-    .bind(c.get('user')!.id, region.code)
+  const res = await createDb(c.env.DB)
+    .update(regionVerifications)
+    .set({ isActive: 0 })
+    .where(
+      and(
+        eq(regionVerifications.userId, c.get('user')!.id),
+        eq(regionVerifications.regionCode, region.code),
+        eq(regionVerifications.isActive, 1),
+      ),
+    )
     .run();
   if (!res.meta.changes) apiError(400, 'acct.errNotVerified');
   return c.json({ code: 'acct.unbindSuccess' });
@@ -332,13 +374,30 @@ interface SchoolRequestRow {
   created_at: string;
 }
 
-function pendingSchoolRequest(c: C, userId: string, region: string, name: string) {
-  return c.env.DB.prepare(
-    `SELECT id, school_name, school_website, edu_email, status, created_at FROM school_requests
-     WHERE user_id = ? AND region_code = ? AND lower(school_name) = lower(?) AND status = 'pending' LIMIT 1`,
-  )
-    .bind(userId, region, name)
-    .first<SchoolRequestRow>();
+/** The columns a school request answers with. */
+const schoolRequestColumns = {
+  id: schoolRequests.id,
+  school_name: schoolRequests.schoolName,
+  school_website: schoolRequests.schoolWebsite,
+  edu_email: schoolRequests.eduEmail,
+  status: schoolRequests.status,
+  created_at: schoolRequests.createdAt,
+};
+
+async function pendingSchoolRequest(c: C, userId: string, region: string, name: string): Promise<SchoolRequestRow | null> {
+  const [row] = await createDb(c.env.DB)
+    .select(schoolRequestColumns)
+    .from(schoolRequests)
+    .where(
+      and(
+        eq(schoolRequests.userId, userId),
+        eq(schoolRequests.regionCode, region),
+        sql`lower(${schoolRequests.schoolName}) = lower(${name})`,
+        eq(schoolRequests.status, 'pending'),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 accountRoutes.post('/school-requests', authMiddleware(), rateLimit('school-request', RATES.schoolRequest), async (c) => {
@@ -367,13 +426,20 @@ accountRoutes.post('/school-requests', authMiddleware(), rateLimit('school-reque
   if (existing) return c.json(existing, 200);
   const now = nowIso();
   try {
-    const row = await c.env.DB.prepare(
-      `INSERT INTO school_requests (region_code, user_id, school_name, school_website, edu_email, status, admin_note, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', '', ?, ?)
-       RETURNING id, school_name, school_website, edu_email, status, created_at`,
-    )
-      .bind(region.code, userId, name, website, eduEmail, now, now)
-      .first<SchoolRequestRow>();
+    const [row] = await createDb(c.env.DB)
+      .insert(schoolRequests)
+      .values({
+        regionCode: region.code,
+        userId,
+        schoolName: name,
+        schoolWebsite: website,
+        eduEmail,
+        status: 'pending',
+        adminNote: '',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning(schoolRequestColumns);
     return c.json(row, 201);
   } catch (e) {
     // Lost the race to an identical submit; the unique index kept it to one row.
@@ -435,15 +501,28 @@ accountRoutes.post('/login', rateLimit('login', RATES.login), async (c) => {
     await afterResponse(
       c,
       hashPassword(password).then((h) =>
-        c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?').bind(h, user.id, user.passwordHash).run(),
+        createDb(c.env.DB)
+          .update(users)
+          .set({ passwordHash: h })
+          .where(and(eq(users.id, user.id), eq(users.passwordHash, user.passwordHash!)))
+          .run(),
       ),
     );
   }
 
   setSession(c, await issueTokens(c.env, user.id));
-  await c.env.DB.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').bind(nowIso(), user.id).run();
+  await touchLastLogin(c, user.id);
   return c.json({ code: 'auth.loginSuccess', user_id: user.id });
 });
+
+async function touchLastLogin(c: C, userId: string): Promise<void> {
+  await createDb(c.env.DB).update(users).set({ lastLoginAt: nowIso() }).where(eq(users.id, userId)).run();
+}
+
+async function setPassword(c: C, userId: string, password: string): Promise<void> {
+  const passwordHash = await hashPassword(password);
+  await createDb(c.env.DB).update(users).set({ passwordHash, updatedAt: nowIso() }).where(eq(users.id, userId)).run();
+}
 
 accountRoutes.post('/refresh', rateLimit('refresh_token', RATES.refresh), async (c) => {
   const refresh = refreshTokenFrom(c, await readJson(c.req));
@@ -493,11 +572,20 @@ accountRoutes.post('/google', rateLimit('login', RATES.login), async (c) => {
     const now = nowIso();
     const cols = nameColumns(String(claims.given_name ?? ''), String(claims.family_name ?? ''));
     try {
-      await c.env.DB.prepare(
-        `INSERT INTO users (id, email, name, first_name, last_name, password_hash, avatar_url, role, is_active, is_banned, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, 'user', 1, 0, ?, ?)`,
-      )
-        .bind(id, email, cols.name, cols.firstName, cols.lastName, avatarUrl, now, now)
+      await createDb(c.env.DB)
+        .insert(users)
+        .values({
+          id,
+          email,
+          ...cols,
+          passwordHash: null,
+          avatarUrl,
+          role: 'user',
+          isActive: 1,
+          isBanned: 0,
+          createdAt: now,
+          updatedAt: now,
+        })
         .run();
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;
@@ -505,7 +593,7 @@ accountRoutes.post('/google', rateLimit('login', RATES.login), async (c) => {
     user = await getUserByEmail(c.env, email);
     if (!user) throw new Error('google sign-in: user row missing after insert');
   } else if (avatarUrl && user.avatarUrl !== avatarUrl) {
-    await c.env.DB.prepare('UPDATE users SET avatar_url = ?, updated_at = ? WHERE id = ?').bind(avatarUrl, nowIso(), user.id).run();
+    await createDb(c.env.DB).update(users).set({ avatarUrl, updatedAt: nowIso() }).where(eq(users.id, user.id)).run();
   }
 
   // The address may have been recycled to a different Google account (e.g. a
@@ -519,8 +607,10 @@ accountRoutes.post('/google', rateLimit('login', RATES.login), async (c) => {
   // pending and stays disabled below.)
   if (await ott.isPendingRegistration(c.env, user)) {
     await ott.voidRegistrationLinks(c.env, user.id);
-    await c.env.DB.prepare('UPDATE users SET is_active = 1, password_hash = NULL, updated_at = ? WHERE id = ? AND is_active = 0')
-      .bind(nowIso(), user.id)
+    await createDb(c.env.DB)
+      .update(users)
+      .set({ isActive: 1, passwordHash: null, updatedAt: nowIso() })
+      .where(and(eq(users.id, user.id), eq(users.isActive, 0)))
       .run();
     user = (await getUser(c.env, user.id)) ?? user;
   }
@@ -540,7 +630,11 @@ accountRoutes.post('/google', rateLimit('login', RATES.login), async (c) => {
   // `sub` already linked elsewhere is left where it is.
   if (!user.googleId) {
     try {
-      await c.env.DB.prepare('UPDATE users SET google_id = ? WHERE id = ? AND google_id IS NULL').bind(claims.sub, user.id).run();
+      await createDb(c.env.DB)
+        .update(users)
+        .set({ googleId: claims.sub })
+        .where(and(eq(users.id, user.id), isNull(users.googleId)))
+        .run();
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;
       console.warn(`[accounts] Google account already linked to another user; not linking to ${user.id}`);
@@ -548,7 +642,7 @@ accountRoutes.post('/google', rateLimit('login', RATES.login), async (c) => {
   }
 
   setSession(c, await issueTokens(c.env, user.id));
-  await c.env.DB.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').bind(nowIso(), user.id).run();
+  await touchLastLogin(c, user.id);
   const region = await getRegion(c);
   const isVerified = region ? await isVerifiedIn(c.env, user.id, region.code) : false;
   return c.json({ code: 'auth.loginSuccess', user_id: user.id, user: { is_verified: isVerified } });
@@ -608,9 +702,7 @@ accountRoutes.post('/password', authMiddleware(), rateLimit('password_change', R
   const problems = passwordProblems(newPassword, user);
   if (problems.length) fieldErrors({ new_password: problems });
 
-  await c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
-    .bind(await hashPassword(newPassword), nowIso(), user.id)
-    .run();
+  await setPassword(c, user.id, newPassword);
   // Every other session ends; this device gets a fresh pair.
   await revokeAllTokensForUser(c.env, user.id);
   setSession(c, await issueTokens(c.env, user.id));
@@ -625,7 +717,7 @@ accountRoutes.post('/password/remove', authMiddleware(), rateLimit('password_cha
   if (isStaffRole(user.role)) apiError(400, 'auth.errStaffCannotRemovePassword');
   if (!user.passwordHash) apiError(400, 'auth.errNoUsablePassword');
   if (!(await checkPassword(password, user.passwordHash))) apiError(400, 'auth.errInvalidPassword');
-  await c.env.DB.prepare('UPDATE users SET password_hash = NULL, updated_at = ? WHERE id = ?').bind(nowIso(), user.id).run();
+  await createDb(c.env.DB).update(users).set({ passwordHash: null, updatedAt: nowIso() }).where(eq(users.id, user.id)).run();
   return c.json({ code: 'acct.passwordRemoved' });
 });
 
@@ -669,9 +761,7 @@ accountRoutes.post('/password/reset/confirm', async (c) => {
   if (problems.length) fieldErrors({ new_password: problems });
   if (!(await ott.consume(c.env, record.id))) apiError(400, 'auth.errInvalidToken');
 
-  await c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
-    .bind(await hashPassword(newPassword), nowIso(), user.id)
-    .run();
+  await setPassword(c, user.id, newPassword);
   // Any existing session may be the compromised credential this reset fixes.
   await revokeAllTokensForUser(c.env, user.id);
   return c.json({ code: 'acct.passwordResetSuccess' });
@@ -695,10 +785,7 @@ accountRoutes.post('/email/change/confirm', rateLimit('password_change', RATES.p
   if (!newEmail) apiError(400, 'acct.errEmailChangeTokenInvalid');
   // Re-checked at confirm time: an hour is long enough for the address to be
   // taken, or for its domain to become a supported campus.
-  const taken = await c.env.DB.prepare('SELECT 1 AS hit FROM users WHERE lower(email) = ? AND id != ? LIMIT 1')
-    .bind(newEmail, user.id)
-    .first();
-  if (taken) {
+  if (await emailTakenByOther(c, newEmail, user.id)) {
     await ott.cancelEmailChange(c.env, user.id);
     apiError(400, 'acct.errEmailTaken');
   }
@@ -707,7 +794,7 @@ accountRoutes.post('/email/change/confirm', rateLimit('password_change', RATES.p
     apiError(400, 'acct.errEduEmailChangeNotAllowed');
   }
   try {
-    await c.env.DB.prepare('UPDATE users SET email = ?, updated_at = ? WHERE id = ?').bind(newEmail, nowIso(), user.id).run();
+    await createDb(c.env.DB).update(users).set({ email: newEmail, updatedAt: nowIso() }).where(eq(users.id, user.id)).run();
   } catch (e) {
     if (!isUniqueViolation(e)) throw e;
     await ott.cancelEmailChange(c.env, user.id);
@@ -805,24 +892,21 @@ async function myListingsBlock(c: C, userId: string, regionCode: string | null, 
 
 async function mySubscriptions(c: C, userId: string, regionCode: string | null) {
   if (!regionCode) return [];
-  const { results } = await c.env.DB.prepare(
-    `SELECT s.id, s.book_id, s.created_at, b.title, b.isbn13, b.cover_url,
-       (SELECT COUNT(DISTINCT l.id) FROM listings l
-         WHERE l.book_id = s.book_id AND l.status = 'active' AND l.created_at > s.created_at) AS new_count
-     FROM subscriptions s JOIN books b ON b.id = s.book_id
-     WHERE s.user_id = ? AND s.region_code = ?
-     ORDER BY s.created_at DESC`,
-  )
-    .bind(userId, regionCode)
-    .all<{
-      id: string;
-      book_id: string;
-      created_at: string;
-      title: string;
-      isbn13: string | null;
-      cover_url: string | null;
-      new_count: number;
-    }>();
+  const results = await createDb(c.env.DB)
+    .select({
+      id: subscriptions.id,
+      book_id: subscriptions.bookId,
+      created_at: subscriptions.createdAt,
+      title: books.title,
+      isbn13: books.isbn13,
+      cover_url: books.coverUrl,
+      new_count: sql<number>`(SELECT COUNT(DISTINCT ${listings.id}) FROM ${listings}
+        WHERE ${listings.bookId} = ${subscriptions.bookId} AND ${listings.status} = 'active' AND ${listings.createdAt} > ${subscriptions.createdAt})`,
+    })
+    .from(subscriptions)
+    .innerJoin(books, eq(books.id, subscriptions.bookId))
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.regionCode, regionCode)))
+    .orderBy(desc(subscriptions.createdAt));
   return results.map((s) => ({
     id: s.id,
     book: s.book_id,
@@ -877,29 +961,25 @@ accountRoutes.patch('/me', authMiddleware(), async (c) => {
   }
   if (email !== undefined && email !== null && typeof email !== 'string') fieldErrors({ email: ['common.errValidation'] });
 
-  const sets: string[] = [];
-  const binds: unknown[] = [];
-  const set = (column: string, value: unknown) => {
-    sets.push(`${column} = ?`);
-    binds.push(value);
-  };
-  if (typeof showAvatar === 'boolean' && showAvatar !== !!user.showAvatar) set('show_avatar', showAvatar ? 1 : 0);
+  let sets: Partial<InsertUser> = {};
+  if (typeof showAvatar === 'boolean' && showAvatar !== !!user.showAvatar) sets.showAvatar = showAvatar ? 1 : 0;
   if (typeof firstName === 'string' || typeof lastName === 'string') {
-    const cols = nameColumns(
-      typeof firstName === 'string' ? firstName.trim() : user.firstName,
-      typeof lastName === 'string' ? lastName.trim() : user.lastName,
+    Object.assign(
+      sets,
+      nameColumns(
+        typeof firstName === 'string' ? firstName.trim() : user.firstName,
+        typeof lastName === 'string' ? lastName.trim() : user.lastName,
+      ),
     );
-    set('first_name', cols.firstName);
-    set('last_name', cols.lastName);
-    set('name', cols.name);
   }
   const saveFields = async () => {
-    if (!sets.length) return;
-    await c.env.DB.prepare(`UPDATE users SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`)
-      .bind(...binds, nowIso(), user.id)
+    if (!Object.keys(sets).length) return;
+    await createDb(c.env.DB)
+      .update(users)
+      .set({ ...sets, updatedAt: nowIso() })
+      .where(eq(users.id, user.id))
       .run();
-    sets.length = 0;
-    binds.length = 0;
+    sets = {};
   };
 
   if (typeof email === 'string') {
@@ -907,10 +987,7 @@ accountRoutes.patch('/me', authMiddleware(), async (c) => {
     if (newEmail !== user.email) {
       if (user.googleId) fieldErrors({ email: ['acct.errGoogleEmailLocked'] });
       if (!isPlainEmail(newEmail)) fieldErrors({ email: ['common.errEmailInvalid'] });
-      const taken = await c.env.DB.prepare('SELECT 1 AS hit FROM users WHERE lower(email) = ? AND id != ? LIMIT 1')
-        .bind(newEmail, user.id)
-        .first();
-      if (taken) fieldErrors({ email: ['acct.errEmailTaken'] });
+      if (await emailTakenByOther(c, newEmail, user.id)) fieldErrors({ email: ['acct.errEmailTaken'] });
       // A campus address as the sign-in email is what auto-verify trusts; it
       // is only ever set by registration or Google, never edited in.
       if (await isValidEduEmail(c.env, newEmail)) apiError(400, 'acct.errEduEmailChangeNotAllowed');
@@ -937,12 +1014,12 @@ accountRoutes.patch('/me', authMiddleware(), async (c) => {
   }
 
   for (const [key, column] of [
-    ['last_seen_bought_orders_at', 'last_seen_bought_orders_at'],
-    ['last_seen_sold_orders_at', 'last_seen_sold_orders_at'],
+    ['last_seen_bought_orders_at', 'lastSeenBoughtOrdersAt'],
+    ['last_seen_sold_orders_at', 'lastSeenSoldOrdersAt'],
   ] as const) {
     const v = body[key];
-    if (typeof v === 'string') set(column, v ? parseDateTime(v) : null);
-    else if (v === null) set(column, null);
+    if (typeof v === 'string') sets[column] = v ? parseDateTime(v) : null;
+    else if (v === null) sets[column] = null;
   }
   await saveFields();
   const fresh = await currentUser(c);
@@ -972,28 +1049,27 @@ accountRoutes.get('/me/notifications', authMiddleware(), async (c) => {
 accountRoutes.patch('/me/notifications', authMiddleware(), async (c) => {
   const user = await currentUser(c);
   const body = await readJson(c.req);
-  const sets: string[] = [];
-  const binds: unknown[] = [];
+  const sets: Partial<InsertUser> = {};
   for (const [key, column] of [
-    ['new_message_email', 'notify_new_message_email'],
-    ['push', 'notify_push'],
+    ['new_message_email', 'notifyNewMessageEmail'],
+    ['push', 'notifyPush'],
   ] as const) {
     if (!(key in body)) continue;
     const v = parseBoolField(body[key]);
     if (v === undefined) apiError(400, 'common.errValidation');
-    sets.push(`${column} = ?`);
-    binds.push(v ? 1 : 0);
+    sets[column] = v ? 1 : 0;
   }
   if ('email_language' in body) {
     const v = body.email_language;
     if (typeof v !== 'string' || ![EMAIL_LANGUAGE_AUTO, ...EMAIL_LANGUAGES].includes(v)) apiError(400, 'common.errValidation');
-    sets.push('email_language = ?');
-    binds.push(v);
+    sets.emailLanguage = v;
   }
   // site_language is read-only here (its own endpoint writes it); anything else is ignored.
-  if (sets.length) {
-    await c.env.DB.prepare(`UPDATE users SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`)
-      .bind(...binds, nowIso(), user.id)
+  if (Object.keys(sets).length) {
+    await createDb(c.env.DB)
+      .update(users)
+      .set({ ...sets, updatedAt: nowIso() })
+      .where(eq(users.id, user.id))
       .run();
   }
   return c.json(notificationSettings(await currentUser(c)));
@@ -1010,12 +1086,13 @@ accountRoutes.post('/me/push-devices', authMiddleware(), rateLimit('push_device'
   if (!token) apiError(400, 'common.errValidation');
   const now = nowIso();
   // Keyed on the token alone: registering one another account holds moves it here.
-  await c.env.DB.prepare(
-    `INSERT INTO push_devices (user_id, token, platform, is_active, created_at, updated_at)
-     VALUES (?, ?, 'web', 1, ?, ?)
-     ON CONFLICT (token) DO UPDATE SET user_id = excluded.user_id, is_active = 1, updated_at = excluded.updated_at`,
-  )
-    .bind(c.get('user')!.id, token, now, now)
+  await createDb(c.env.DB)
+    .insert(pushDevices)
+    .values({ userId: c.get('user')!.id, token, platform: 'web', isActive: 1, createdAt: now, updatedAt: now })
+    .onConflictDoUpdate({
+      target: pushDevices.token,
+      set: { userId: sql`excluded.user_id`, isActive: 1, updatedAt: sql`excluded.updated_at` },
+    })
     .run();
   return c.body(null, 204);
 });
@@ -1024,15 +1101,20 @@ accountRoutes.delete('/me/push-devices', authMiddleware(), rateLimit('push_devic
   const token = pushToken(await readJson(c.req));
   if (!token) apiError(400, 'common.errValidation');
   // Only ever the caller's own device.
-  await c.env.DB.prepare('DELETE FROM push_devices WHERE user_id = ? AND token = ?').bind(c.get('user')!.id, token).run();
+  await createDb(c.env.DB)
+    .delete(pushDevices)
+    .where(and(eq(pushDevices.userId, c.get('user')!.id), eq(pushDevices.token, token)))
+    .run();
   return c.body(null, 204);
 });
 
 accountRoutes.put('/me/site-language', authMiddleware(), async (c) => {
   const { language } = await readJson(c.req);
   if (typeof language !== 'string' || !EMAIL_LANGUAGES.includes(language)) apiError(400, 'common.errValidation');
-  await c.env.DB.prepare('UPDATE users SET site_language = ? WHERE id = ? AND site_language != ?')
-    .bind(language, c.get('user')!.id, language)
+  await createDb(c.env.DB)
+    .update(users)
+    .set({ siteLanguage: language })
+    .where(and(eq(users.id, c.get('user')!.id), ne(users.siteLanguage, language)))
     .run();
   return c.body(null, 204);
 });
@@ -1044,7 +1126,11 @@ accountRoutes.put('/me/site-region', authMiddleware(), async (c) => {
     apiError(400, 'common.errValidation');
   }
   const code = region.toUpperCase();
-  await c.env.DB.prepare('UPDATE users SET site_region = ? WHERE id = ? AND site_region != ?').bind(code, userId, code).run();
+  await createDb(c.env.DB)
+    .update(users)
+    .set({ siteRegion: code })
+    .where(and(eq(users.id, userId), ne(users.siteRegion, code)))
+    .run();
   return c.body(null, 204);
 });
 
