@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { cached } from '../lib/cache';
+import { cached, versionedEdgeCache } from '../lib/cache';
 import type { Region } from '../db';
 import { rateLimit } from '../middleware/rateLimit';
 import { and, asc, eq, getTableName, is } from 'drizzle-orm';
@@ -69,7 +69,7 @@ coreRoutes.get('/healthz', rateLimit('healthz', '30/min'), async (c) => {
   );
 });
 
-coreRoutes.get('/regions', async (c) => {
+coreRoutes.get('/regions', (c) => versionedEdgeCache(c, 'ref', async () => {
   const lang = await resolveLanguage(c);
   // Same for every visitor; admin region/currency edits invalidate 'ref'.
   const body = await cached(c.env, 'ref', `regions:${lang}`, 3600, async () => {
@@ -100,7 +100,7 @@ coreRoutes.get('/regions', async (c) => {
   // Viewer-independent and rarely edited: let browsers reuse it for an hour.
   await setSharedCache(c, { maxAge: 3600, staleWhileRevalidate: 86400, lang: true });
   return c.json(body);
-});
+}));
 
 coreRoutes.get('/geo', async (c) => {
   // Only the CDN's country header: ?region=/X-Region/cookie would just echo
@@ -131,7 +131,7 @@ function allNames(row: Row): string[] {
   return names;
 }
 
-coreRoutes.get('/metadata', rateLimit('metadata', '120/min'), optionalAuthMiddleware(), async (c) => {
+coreRoutes.get('/metadata', rateLimit('metadata', '120/min'), optionalAuthMiddleware(), (c) => versionedEdgeCache(c, 'ref', async () => {
   const [lang, region] = await Promise.all([resolveLanguage(c), requireRegion(c)]);
   // Reference rows only (the most-wanted list rides on recent-books):
   // admin edits invalidate 'ref'.
@@ -139,7 +139,7 @@ coreRoutes.get('/metadata', rateLimit('metadata', '120/min'), optionalAuthMiddle
   // Viewer-independent: let browsers reuse it.
   await setSharedCache(c, { maxAge: 900, staleWhileRevalidate: 86400, lang: true });
   return c.json(body);
-});
+}));
 
 async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string) {
   const db = createDb(c.env.DB);

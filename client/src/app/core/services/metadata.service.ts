@@ -6,6 +6,7 @@ import { SKIP_AUTH } from '../auth.interceptor';
 import { I18nService } from '../i18n.service';
 import { isTransientHttpFailure } from '../http-failure';
 import { RegionService } from '../region.service';
+import { CacheVersionService } from '../cache-version.interceptor';
 
 export interface PublicAd {
   id: number;
@@ -27,18 +28,20 @@ export class MetadataService {
   private http = inject(HttpClient);
   private i18n = inject(I18nService);
   private regionService = inject(RegionService);
+  private cacheVersions = inject(CacheVersionService);
 
   // The layout shell and the home page both ask for the homepage metadata on
   // load, so without this every visit fired the same request twice. Entries
   // are keyed by school and dropped after a minute (the backend caches the
-  // same payload far longer) or when the language changes, since the
-  // response is localized.
+  // same payload far longer), when the language changes, since the
+  // response is localized, or when an admin write reports new reference data.
   private static readonly METADATA_TTL_MS = 60_000;
   private metadataCache = new Map<string, { at: number; request$: Observable<any> }>();
 
   constructor() {
     effect(() => {
       this.i18n.lang();
+      this.cacheVersions.versions().ref;
       this.metadataCache.clear();
     });
   }

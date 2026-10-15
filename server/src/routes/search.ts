@@ -2,7 +2,7 @@
  * /api/v1/search/
  */
 import { Hono } from 'hono';
-import { cached } from '../lib/cache';
+import { cached, versionedEdgeCache } from '../lib/cache';
 import { validateBookIsbn } from '../services/catalog/isbn';
 import type { AppEnv, Env } from '../env';
 import { requireRegion, setSharedCache } from '../lib/region';
@@ -486,7 +486,7 @@ searchRoutes.get('/books', optionalAuthMiddleware(), async (c) => {
   });
 });
 
-searchRoutes.get('/courses', async (c) => {
+searchRoutes.get('/courses', (c) => versionedEdgeCache(c, 'search', async () => {
   await checkRate(c, 'search', SEARCH_RATE);
   const region = await requireRegion(c);
   const category = (c.req.query('category') ?? '').slice(0, 64);
@@ -514,4 +514,4 @@ searchRoutes.get('/courses', async (c) => {
   });
   await setSharedCache(c, { maxAge: 300 });
   return c.json(body);
-});
+}));
