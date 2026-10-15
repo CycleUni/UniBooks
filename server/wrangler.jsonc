@@ -55,7 +55,7 @@
       { "binding": "PUSH_QUEUE", "queue": "unibooks-push" }
     ],
     "consumers": [
-      { "queue": "unibooks-email", "max_batch_size": 10, "max_batch_timeout": 30, "max_retries": 5 },
+      { "queue": "unibooks-email", "max_batch_size": 10, "max_batch_timeout": 2, "max_retries": 5 },
       { "queue": "unibooks-push", "max_batch_size": 20, "max_batch_timeout": 10, "max_retries": 3 }
     ]
   },

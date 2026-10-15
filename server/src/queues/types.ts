@@ -1,7 +1,7 @@
 /**
  * Queue message payload definitions for UniBooks.
  *
- * EMAIL_QUEUE messages are rendered by queues/emailWorker.ts in the
+ * EMAIL_QUEUE messages are rendered by queues/email.ts in the
  * recipient's language, with every
  * interpolated value HTML-escaped and links built against the site origin (lib/origin.ts).
  */
