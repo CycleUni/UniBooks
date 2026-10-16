@@ -164,6 +164,49 @@ describe('AccountService profile cache across sessions', () => {
       last_seen_sold_orders_at: '2026-09-14T00:00:00Z',
     });
   });
+
+  it('sends include=listings,subscriptions when fetching profile', () => {
+    signIn();
+    account.getMyProfile().subscribe();
+    const req = httpMock.expectOne(r => r.url === '/auth/me' && r.params.get('include') === 'listings,subscriptions');
+    expect(req.request.params.get('include')).toBe('listings,subscriptions');
+    expect(req.request.params.get('page')).toBe('1');
+    req.flush({ id: 1, myListingCounts: { all: 0 }, myListings: { results: [] } });
+  });
+
+  it('shares an in-flight AuthStore request that includes listings, sending only one HTTP request', () => {
+    signIn();
+    document.cookie = 'ub_session=1; Path=/';
+    store.requestProfile(true);
+
+    let profileResult: any = null;
+    account.getMyProfile().subscribe(p => (profileResult = p));
+
+    // 只有一個 HTTP 請求發出（AuthStore 與 AccountService 共用同一個 in-flight 請求）
+    const requests = httpMock.match(r => r.url === '/auth/me');
+    expect(requests.length).toBe(1);
+    expect(requests[0].request.params.get('include')).toBe('listings,subscriptions');
+
+    requests[0].flush({ id: 1, myListingCounts: { active: 3, all: 3 } });
+
+    expect(profileResult).toEqual({ id: 1, myListingCounts: { active: 3, all: 3 } });
+    expect(account.profileCache()).toEqual({ id: 1, myListingCounts: { active: 3, all: 3 } });
+
+    document.cookie = 'ub_session=; Max-Age=0; Path=/';
+  });
+
+  it('does not reuse a bare profile from AuthStore that lacks listings', () => {
+    (store as any)._user.set({ id: 1, email: 'user@test.com' });
+    (store as any).profileFetchedAt = Date.now();
+    (store as any).profileHasLists = false;
+    signIn();
+
+    account.getMyProfile().subscribe();
+    const req = httpMock.expectOne(r => r.url === '/auth/me' && r.params.get('include') === 'listings,subscriptions');
+    req.flush({ id: 1, email: 'user@test.com', myListingCounts: { all: 4 } });
+
+    expect(account.profileCache()).toEqual({ id: 1, email: 'user@test.com', myListingCounts: { all: 4 } });
+  });
 });
 
 /**

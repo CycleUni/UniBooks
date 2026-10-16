@@ -840,17 +840,6 @@ async function myListingsBlock(c: C, userId: string, regionCode: string | null, 
     return { counts: { ...counts, all: 0 }, page: page.wrap([], 0) };
   }
 
-  const countRows = await db
-    .select({ status: listings.status, n: sql<number>`count(*)` })
-    .from(listings)
-    .where(and(eq(listings.sellerId, userId), eq(listings.regionCode, regionCode)))
-    .groupBy(listings.status);
-  let all = 0;
-  for (const r of countRows) {
-    counts[r.status] = Number(r.n);
-    all += Number(r.n);
-  }
-
   const conditions: SQL[] = [eq(listings.sellerId, userId), eq(listings.regionCode, regionCode)];
   const status = (c.req.query('status') ?? '').trim();
   if ((LISTING_STATUSES as readonly string[]).includes(status)) conditions.push(eq(listings.status, status as Listing['status']));
@@ -869,12 +858,19 @@ async function myListingsBlock(c: C, userId: string, regionCode: string | null, 
     );
   }
   const where = and(...conditions);
-  const [{ n: total }] = await db
+
+  // 用 D1 batch 將狀態計數、分頁總筆數與分頁資料合併為單次往返
+  const countStmt = db
+    .select({ status: listings.status, n: sql<number>`count(*)` })
+    .from(listings)
+    .where(and(eq(listings.sellerId, userId), eq(listings.regionCode, regionCode)))
+    .groupBy(listings.status);
+  const totalStmt = db
     .select({ n: sql<number>`count(*)` })
     .from(listings)
     .innerJoin(books, eq(books.id, listings.bookId))
     .where(where);
-  const rows = await db
+  const rowsStmt = db
     .select({ listing: listings })
     .from(listings)
     .innerJoin(books, eq(books.id, listings.bookId))
@@ -882,12 +878,21 @@ async function myListingsBlock(c: C, userId: string, regionCode: string | null, 
     .orderBy(...(LISTING_SORTS[c.req.query('sort') ?? ''] ?? LISTING_SORTS.newest))
     .limit(page.limit)
     .offset(page.offset);
+
+  const [countRows, totalRows, rows] = await db.batch([countStmt, totalStmt, rowsStmt]);
+
+  let all = 0;
+  for (const r of countRows) {
+    counts[r.status] = Number(r.n);
+    all += Number(r.n);
+  }
+
   const results = await serializeListings(
     c.env,
     rows.map((r) => r.listing),
     { viewerId: userId, lang },
   );
-  return { counts: { ...counts, all }, page: page.wrap(results, Number(total)) };
+  return { counts: { ...counts, all }, page: page.wrap(results, Number(totalRows[0]?.n ?? 0)) };
 }
 
 async function mySubscriptions(c: C, userId: string, regionCode: string | null) {
@@ -919,18 +924,56 @@ async function mySubscriptions(c: C, userId: string, regionCode: string | null) 
 }
 
 accountRoutes.get('/me', authMiddleware(), async (c) => {
-  const user = await currentUser(c);
-  const [data, region, lang] = await Promise.all([serializeUser(c, user), getRegion(c), resolveLanguage(c)]);
+  const userId = c.get('user')!.id;
+  const includeParam = c.req.query('include') ?? '';
+  const includes = includeParam ? includeParam.split(',').map((s) => s.trim().toLowerCase()) : [];
+  // 保持相容性：若帶有 status/sort/q/page（且非預設 page=1）查詢參數，視同要求刊登清單
+  const hasListingParams =
+    c.req.query('status') !== undefined ||
+    c.req.query('sort') !== undefined ||
+    c.req.query('q') !== undefined ||
+    (c.req.query('page') !== undefined && c.req.query('page') !== '1');
+  const wantListings = includes.includes('listings') || hasListingParams;
+  const wantSubscriptions = includes.includes('subscriptions');
+
+  // 若不需清單（header 與一般頁面用的 bare /me）：只平行查詢 currentUser 與 pending_email
+  if (!wantListings && !wantSubscriptions) {
+    const [user, pendingEmail] = await Promise.all([currentUser(c), ott.pendingEmailChange(c.env, userId)]);
+    const data = await serializeUser(c, user);
+    return c.json({
+      ...data,
+      pending_email: pendingEmail,
+    });
+  }
+
+  // 帶有 include 時：currentUser、pendingEmail、region、lang 先行並行查詢
+  const [user, pendingEmail, region, lang] = await Promise.all([
+    currentUser(c),
+    ott.pendingEmailChange(c.env, userId),
+    getRegion(c),
+    resolveLanguage(c),
+  ]);
   const regionCode = region?.code ?? null;
-  const listingsBlock = await myListingsBlock(c, user.id, regionCode, lang);
-  const [pendingEmail, subs] = await Promise.all([ott.pendingEmailChange(c.env, user.id), mySubscriptions(c, user.id, regionCode)]);
-  return c.json({
+
+  // serializeUser、myListingsBlock 與 mySubscriptions 並行處理
+  const [data, listingsBlock, subs] = await Promise.all([
+    serializeUser(c, user),
+    wantListings ? myListingsBlock(c, userId, regionCode, lang) : Promise.resolve(null),
+    wantSubscriptions ? mySubscriptions(c, userId, regionCode) : Promise.resolve(null),
+  ]);
+
+  const res: Record<string, unknown> = {
     ...data,
-    myListingCounts: listingsBlock.counts,
-    myListings: listingsBlock.page,
     pending_email: pendingEmail,
-    mySubscriptions: subs,
-  });
+  };
+  if (wantListings && listingsBlock) {
+    res.myListingCounts = listingsBlock.counts;
+    res.myListings = listingsBlock.page;
+  }
+  if (wantSubscriptions && subs) {
+    res.mySubscriptions = subs;
+  }
+  return c.json(res);
 });
 
 /** An ISO 8601 date-time, or null when it does not parse. */

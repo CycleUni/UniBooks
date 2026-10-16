@@ -213,7 +213,7 @@ describe('AuthStore session expiry', () => {
     const store = build();
     await router.navigateByUrl('/tw/account');
     await settle();
-    httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
+    httpMock.expectOne('/auth/me?include=listings,subscriptions').flush({ id: 1, email: 'a@b.c' });
     return store;
   }
   afterEach(() => {
@@ -250,7 +250,7 @@ describe('AuthStore session expiry', () => {
     expect(router.url).toBe('/tw/account');
 
     await settle();
-    httpMock.expectOne('/auth/me').flush({ detail: 'expired' }, { status: 401, statusText: 'Unauthorized' });
+    httpMock.expectOne('/auth/me?include=listings,subscriptions').flush({ detail: 'expired' }, { status: 401, statusText: 'Unauthorized' });
     await settle();
 
     expect(store.isAuthenticated()).toBe(false);
@@ -287,7 +287,7 @@ describe('AuthStore session expiry', () => {
 
     await router.navigateByUrl('/tw/account');
     await settle();
-    httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
+    httpMock.expectOne('/auth/me?include=listings,subscriptions').flush({ id: 1, email: 'a@b.c' });
 
     // Mid-navigation, routerState still says /tw/account. Deciding from that
     // would pull the visitor back to /login away from the page they chose.
@@ -853,5 +853,23 @@ describe('AuthStore cookie session', () => {
     expect(store.isAuthenticated()).toBe(false);
     expect(store.user()).toBeNull();
     expect(router.url).toBe('/tw/login');
+  });
+
+  it('fetches bare /auth/me on non-account routes and includes listings/subscriptions on /account', async () => {
+    // 1. 在非 account 頁面啟動：送出無參數的 bare /auth/me
+    setSessionHint();
+    const store = build();
+    await router.navigateByUrl('/tw');
+    await settle();
+    const bareReq = httpMock.expectOne('/auth/me');
+    expect(bareReq.request.params.get('include')).toBeNull();
+    bareReq.flush({ id: 1, email: 'user@example.com' });
+    expect(store.user()?.email).toBe('user@example.com');
+
+    // 2. 在 /tw/account 頁面請求 Profile：送出包含 listings,subscriptions 的請求
+    store.requestProfile(true);
+    const includeReq = httpMock.expectOne('/auth/me?include=listings,subscriptions');
+    expect(includeReq.request.params.get('include')).toBe('listings,subscriptions');
+    includeReq.flush({ id: 1, email: 'user@example.com', myListingCounts: { all: 0 } });
   });
 });

@@ -294,11 +294,11 @@ export class AccountService {
     // cleared the cache still gets a fresh read. A shared request that
     // failed (null) falls back to this service's own fetch.
     if (plain) {
-      let shared = this.authStore.sharedProfile(this.clearedAt, AccountService.PROFILE_CACHE_TTL);
+      let shared = this.authStore.sharedProfile(this.clearedAt, AccountService.PROFILE_CACHE_TTL, true);
       if (!shared && this.authStore.isAuthenticated()) {
         // Nothing to share yet: have AuthStore send the one request both need.
-        this.authStore.requestProfile();
-        shared = this.authStore.sharedProfile(this.clearedAt, AccountService.PROFILE_CACHE_TTL);
+        this.authStore.requestProfile(true);
+        shared = this.authStore.sharedProfile(this.clearedAt, AccountService.PROFILE_CACHE_TTL, true);
       }
       if (shared) {
         return shared.pipe(
@@ -323,7 +323,7 @@ export class AccountService {
     const plain = page === 1 && !q && !opts.status && !opts.sort;
 
     if (plain) this.profileLoading.set(true);
-    let params = new HttpParams().set('page', page.toString());
+    let params = new HttpParams().set('page', page.toString()).set('include', 'listings,subscriptions');
     if (q) params = params.set('q', q);
     if (opts.status) params = params.set('status', opts.status);
     if (opts.sort) params = params.set('sort', opts.sort);

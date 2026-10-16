@@ -122,18 +122,19 @@ export async function managedRegionsOf(env: Env, userId: string): Promise<string
 
 /** The signed-in user's own view of their account. */
 export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Record<string, unknown>> {
-  const [region, lang, verifications, reputation] = await Promise.all([
+  const isStaff = isStaffRole(user.role);
+  const [region, lang, verifications, reputation, managedRegions] = await Promise.all([
     getRegion(c),
     resolveLanguage(c),
     verificationsOf(c.env, user.id),
     reputationOf(c.env, user.id),
+    isStaff ? managedRegionsOf(c.env, user.id) : Promise.resolve([]),
   ]);
   const regions = verifications.map((v) => v.region_code.toUpperCase());
   // The verification in the region being browsed; without a region, the first.
   const current = region
     ? (verifications.find((v) => v.region_code.toUpperCase() === region.code.toUpperCase()) ?? null)
     : (verifications[0] ?? null);
-  const isStaff = isStaffRole(user.role);
 
   return {
     id: user.id,
@@ -155,7 +156,7 @@ export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Rec
     last_seen_bought_orders_at: user.lastSeenBoughtOrdersAt ?? null,
     last_seen_sold_orders_at: user.lastSeenSoldOrdersAt ?? null,
     role: user.role,
-    managed_regions: isStaff ? await managedRegionsOf(c.env, user.id) : [],
+    managed_regions: managedRegions,
     regions,
     verifications: verifications.map((v) => ({
       region: v.region_code.toUpperCase(),

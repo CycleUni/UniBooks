@@ -1,13 +1,13 @@
 import { DestroyRef, Injectable, Injector, signal, inject, untracked, runInInjectionContext, effect } from '@angular/core';
 import * as Sentry from '@sentry/angular';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { tap, catchError, filter, take, finalize, shareReplay } from 'rxjs/operators';
 import { Observable, of, throwError } from 'rxjs';
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
 import { PushService } from './services/push.service';
 import { RegionLinkService } from './region-link.service';
-import { isSameRegion } from './region-path';
+import { isSameRegion, stripRegionPrefix } from './region-path';
 import { isUserVerifiedIn } from './verification';
 import { signedOutRedirectFor } from './signed-out-redirect';
 import { isTransientHttpFailure } from './http-failure';
@@ -263,13 +263,28 @@ export class AuthStore {
   }
 
   /**
+   * 判斷目前網址是否在 /account 底下。
+   */
+  private isAccountUrl(): boolean {
+    const checkPath = (u: string | null | undefined) => {
+      if (!u) return false;
+      const stripped = stripRegionPrefix(u).split(/[?#]/)[0].replace(/\/$/, '') || '/';
+      return stripped === '/account' || stripped.startsWith('/account/');
+    };
+    if (this.router && checkPath(this.router.url)) return true;
+    if (typeof window !== 'undefined' && checkPath(window.location?.pathname)) return true;
+    return false;
+  }
+
+  /**
    * Best-effort profile fetch. Idempotent: once this session's profile is
    * loaded it is not fetched again until a sign-in marks it stale.
    */
-  private fetchUserProfile(): void {
+  private fetchUserProfile(includeLists?: boolean): void {
     // No hint cookie, no session cookies: /auth/me/ could only say 401.
     if (!this._isAuthenticated() || !hasSessionHint()) return;
-    if (!this.profileStale && this._user()) return;
+    const wantLists = includeLists ?? this.isAccountUrl();
+    if (!this.profileStale && this._user() && (!wantLists || this.profileHasLists)) return;
 
     // One profile request per session at a time. The bootstrap fetch, the
     // first NavigationEnd and a sign-in's markSignedIn() can all ask within the
@@ -281,7 +296,13 @@ export class AuthStore {
 
     const generation = this._sessionGeneration;
     this.profileRequestGeneration = generation;
-    const request = this.http.get<AuthUser>('/auth/me').pipe(
+    this.profileInFlightIncludesLists = wantLists;
+
+    let params = new HttpParams();
+    if (wantLists) {
+      params = params.set('include', 'listings,subscriptions');
+    }
+    const request = this.http.get<AuthUser>('/auth/me', { params }).pipe(
       tap(profile => {
         // Signed out while this was in the air (e.g. logout with an expired
         // access token: the refresh fires this fetch, then the retried logout
@@ -292,6 +313,7 @@ export class AuthStore {
         }
         this.cancelProfileRetry();
         this._user.set(profile);
+        this.profileHasLists = wantLists;
         this.profileFetchedAt = Date.now();
         // A week-old push token is sent to the backend again (a no-op for an
         // account that never turned push on in this browser).
@@ -326,7 +348,10 @@ export class AuthStore {
         if (this.profileRequestGeneration === generation) {
           this.profileRequestGeneration = null;
         }
-        if (this.profileInFlight === request) this.profileInFlight = null;
+        if (this.profileInFlight === request) {
+          this.profileInFlight = null;
+          this.profileInFlightIncludesLists = false;
+        }
       }),
       shareReplay({ bufferSize: 1, refCount: false }),
     );
@@ -336,6 +361,10 @@ export class AuthStore {
 
   /** The /auth/me/ request out now, shared; null once it has settled. */
   private profileInFlight: Observable<AuthUser | null> | null = null;
+  /** Whether the profileInFlight request included listings and subscriptions. */
+  private profileInFlightIncludesLists = false;
+  /** Whether the current _user() includes listings and subscriptions. */
+  private profileHasLists = false;
   /** When the current user was last fetched from /auth/me/. */
   private profileFetchedAt = 0;
 
@@ -356,15 +385,21 @@ export class AuthStore {
    * the admin guard runs during the first navigation, before this store has
    * asked — can share that request instead of sending its own.
    */
-  requestProfile(): void {
-    untracked(() => this.fetchUserProfile());
+  requestProfile(includeLists?: boolean): void {
+    untracked(() => this.fetchUserProfile(includeLists));
   }
 
-  sharedProfile(notBefore: number, maxAgeMs: number): Observable<AuthUser | null> | null {
-    if (this.profileInFlight) return this.profileInFlight;
+  sharedProfile(notBefore: number, maxAgeMs: number, requireLists = false): Observable<AuthUser | null> | null {
+    if (this.profileInFlight) {
+      if (!requireLists || this.profileInFlightIncludesLists) {
+        return this.profileInFlight;
+      }
+    }
     const user = this._user();
     if (user && this.profileFetchedAt > notBefore && Date.now() - this.profileFetchedAt < maxAgeMs) {
-      return of(user);
+      if (!requireLists || this.profileHasLists) {
+        return of(user);
+      }
     }
     return null;
   }
@@ -472,6 +507,8 @@ export class AuthStore {
     this.cancelProfileRetry();
     this._isAuthenticated.set(false);
     this._user.set(null);
+    this.profileHasLists = false;
+    this.profileInFlightIncludesLists = false;
     this.profileStale = true;
     this.signInPending = false;
     // Clear GA4 user identity on logout

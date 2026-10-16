@@ -427,7 +427,7 @@ describe('profile', () => {
     expect((await call('/api/v1/auth/me')).status).toBe(401);
     await createUser('profile@example.com');
     const { access } = await login('profile@example.com');
-    const me = (await (await call('/api/v1/auth/me?region=TW', { token: access })).json()) as any;
+    const me = (await (await call('/api/v1/auth/me?region=TW&include=listings,subscriptions', { token: access })).json()) as any;
     expect(me).toMatchObject({
       email: 'profile@example.com',
       is_verified: false,
@@ -582,5 +582,36 @@ describe('config', () => {
     const body = (await (await call('/api/v1/auth/config')).json()) as any;
     expect(body.google_client_id).toBe(env.GOOGLE_CLIENT_ID);
     expect(body.fcm).toBeNull();
+  });
+});
+
+describe('GET /auth/me payload optimization and include parameter', () => {
+  it('bare /me returns user data and pending_email without listings or subscriptions', async () => {
+    await createUser('bare-me@example.com');
+    const { access } = await login('bare-me@example.com');
+    const res = await call('/api/v1/auth/me', { token: access });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.email).toBe('bare-me@example.com');
+    expect('pending_email' in body).toBe(true);
+    expect(body.myListingCounts).toBeUndefined();
+    expect(body.myListings).toBeUndefined();
+    expect(body.mySubscriptions).toBeUndefined();
+  });
+
+  it('include=listings,subscriptions returns listings, counts and subscriptions', async () => {
+    await createUser('include-me@example.com');
+    const { access } = await login('include-me@example.com');
+    const res = await call('/api/v1/auth/me?include=listings,subscriptions&region=TW', { token: access });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.email).toBe('include-me@example.com');
+    expect('pending_email' in body).toBe(true);
+    expect(body.myListingCounts).toBeDefined();
+    expect(body.myListingCounts.all).toBe(0);
+    expect(body.myListings).toBeDefined();
+    expect(Array.isArray(body.myListings.results)).toBe(true);
+    expect(body.mySubscriptions).toBeDefined();
+    expect(Array.isArray(body.mySubscriptions)).toBe(true);
   });
 });
