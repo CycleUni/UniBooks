@@ -5,7 +5,7 @@ import { I18nService } from '../i18n.service';
 import { ThemeService } from './theme.service';
 import { ToastService } from './toast.service';
 import { parseApiError } from '../api-error.util';
-import { whenPageSettled } from '../page-settled';
+import { whenPageStable } from '../page-settled';
 import { environment } from '../../../environments/environment';
 
 
@@ -79,11 +79,11 @@ export class GoogleAuthService {
         }
       }
       
-      // One Tap waits for the first page to be up (see whenPageSettled): it
+      // One Tap waits for the first page to be up (see whenPageStable): it
       // fetches the auth config and Google's script, and a prompt a moment
       // later costs nothing. initializeGoogleAuth checks the session again.
       if (!isAuth && isPlatformBrowser(this.platformId)) {
-        whenPageSettled(this.appRef).then(() => this.initializeGoogleAuth());
+        whenPageStable(this.appRef).then(() => this.initializeGoogleAuth());
       }
     });
   }

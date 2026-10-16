@@ -15,18 +15,27 @@ import { ApplicationRef, NgZone } from '@angular/core';
  * that kept the app from reporting stable, so every wait ran the full cap.
  */
 export function whenPageSettled(appRef: ApplicationRef): Promise<void> {
-  let settled = SETTLED.get(appRef);
-  if (!settled) {
+  return whenPageStable(appRef).then(whenIdle);
+}
+
+/**
+ * Like whenPageSettled, without the idle wait. For the Google One Tap prompt,
+ * which the user is waiting to see: its script is small and it only needs the
+ * first page's requests out of the way, not a quiet main thread.
+ */
+export function whenPageStable(appRef: ApplicationRef): Promise<void> {
+  let stable = STABLE.get(appRef);
+  if (!stable) {
     const cap = appRef.injector.get(NgZone).runOutsideAngular(() => delay(MAX_WAIT_MS));
-    settled = Promise.race([appRef.whenStable(), cap]).then(whenIdle);
-    SETTLED.set(appRef, settled);
+    stable = Promise.race([appRef.whenStable(), cap]);
+    STABLE.set(appRef, stable);
   }
-  return settled;
+  return stable;
 }
 
 export const MAX_WAIT_MS = 10000;
 
-const SETTLED = new WeakMap<ApplicationRef, Promise<void>>();
+const STABLE = new WeakMap<ApplicationRef, Promise<void>>();
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

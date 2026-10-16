@@ -1,5 +1,5 @@
 import { ApplicationRef } from '@angular/core';
-import { MAX_WAIT_MS, whenPageSettled } from './page-settled';
+import { MAX_WAIT_MS, whenPageSettled, whenPageStable } from './page-settled';
 
 const runOutsideAngular = vi.fn((fn: () => unknown) => fn());
 
@@ -43,6 +43,16 @@ describe('whenPageSettled', () => {
 
   it('hands every caller the same moment', () => {
     const appRef = fakeAppRef(Promise.resolve());
-    expect(whenPageSettled(appRef)).toBe(whenPageSettled(appRef));
+    expect(whenPageStable(appRef)).toBe(whenPageStable(appRef));
+  });
+
+  it('whenPageStable resolves as soon as the app is stable, without waiting for idle', async () => {
+    const stable = vi.fn();
+    let markStable!: () => void;
+    whenPageStable(fakeAppRef(new Promise((r) => (markStable = r)))).then(stable);
+    markStable();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(stable).toHaveBeenCalled();
   });
 });

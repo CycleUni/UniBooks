@@ -33,6 +33,9 @@
        sheets below, so the page never asks that origin for anything and a
        preconnect to it was a wasted connection on every load. -->
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- One Tap's script and sign-in dialog come from here; opening the
+       connection now takes its handshake out of the wait for the prompt. -->
+  <link rel="preconnect" href="https://accounts.google.com">
   <!-- Chinese faces on wider screens only. On a phone a page could pull in
        well over half a megabyte of them — every few characters fall in
        another slice — which a slow link takes seconds to deliver, ahead of
