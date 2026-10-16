@@ -133,6 +133,9 @@ export class UiCheckbox implements ControlValueAccessor {
   onTouched = () => {};
 
   onCheckboxChange(event: Event) {
+    // The native change event bubbles to the host, where a parent's (change) would
+    // also hear it next to the emitted one and run its handler twice.
+    event.stopPropagation();
     const isChecked = (event.target as HTMLInputElement).checked;
     this.checked = isChecked;
     this.onChange(isChecked);

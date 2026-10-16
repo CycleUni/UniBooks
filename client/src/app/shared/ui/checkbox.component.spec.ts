@@ -82,3 +82,21 @@ describe('UiCheckbox', () => {
     expect(inputEl.checked).toBe(false);
   });
 });
+
+@Component({
+  template: `<ui-checkbox [checked]="false" (change)="count = count + 1"></ui-checkbox>`,
+  standalone: true,
+  imports: [UiCheckbox]
+})
+class ChangeHostComponent {
+  count = 0;
+}
+
+describe('UiCheckbox (change output)', () => {
+  it('fires a parent (change) handler once per click, not twice', async () => {
+    const fixture = TestBed.createComponent(ChangeHostComponent);
+    fixture.detectChanges();
+    fixture.debugElement.query(By.css('input')).nativeElement.click();
+    expect(fixture.componentInstance.count).toBe(1);
+  });
+});
