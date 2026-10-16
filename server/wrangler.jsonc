@@ -68,11 +68,12 @@
   // MAILJET_API_KEY, MAILJET_SECRET_KEY,
   // GOOGLE_BOOKS_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON, CF_ANALYTICS_TOKEN,
   // ISBNNET_RESOLVER_SECRET (optional).
-  // Ad statistics also need CF_ACCOUNT_ID (add it here or as a secret);
-  // without it and CF_ANALYTICS_TOKEN the admin shows no view/click counts.
+  // Ad statistics also need CF_ANALYTICS_TOKEN (secret); without it the admin
+  // shows no view/click counts. CF_ACCOUNT_ID below is not a secret.
   "vars": {
     "ENVIRONMENT": "production",
     "DEFAULT_REGION": "TW",
+    "CF_ACCOUNT_ID": "b74f839e7706a8d8e249168846802c14",
     "R2_PUBLIC_URL": "https://assets.unibooks.app",
     "ALLOWED_IMAGE_HOSTS": "assets.unibooks.app",
     "DEFAULT_FROM_EMAIL": "services@unibooks.app",

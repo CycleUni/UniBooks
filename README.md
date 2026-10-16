@@ -119,7 +119,16 @@ npm run db:seed:remote         # 可選，首次部署後一次：香港地區�
 這也是前後端共用值的唯一來源：前端建置（`client/scripts/set-env.js`）直接讀這裡的 `R2_PUBLIC_URL`、
 `GOOGLE_CLIENT_ID`、`SENTRY_DSN`；本地開發則以 `server/.dev.vars` 覆蓋。只有前端用的值（GA、CSP 是否強制）在
 `client/production.env`。
-`CF_ACCOUNT_ID`（廣告統計查詢用）可放在 `vars` 或 secret。
+`CF_ACCOUNT_ID`（廣告統計查詢用，非機密）已放在 `vars`；只需另外設定 `CF_ANALYTICS_TOKEN`。
+
+廣告統計的 API token（後台顯示曝光／點擊數用；Worker 的 `AD_EVENTS` binding 只能寫入，讀取要走 Analytics Engine SQL API）：
+
+1. Cloudflare 後台 → My Profile → API Tokens → Create Token → Create Custom Token。
+2. Permissions 只加一列：`Account` ｜ `Account Analytics` ｜ `Read`。不要加其他權限。
+3. Account Resources：`Include` ｜ `Specific account` ｜ 選 UniBooks 所在的帳號。
+4. Zone Resources 不用設；TTL 可不限期，或設到期日並記得輪替；Client IP Filtering 不要設（Worker 的出口 IP 不固定）。
+5. 建立後複製一次性顯示的 token，執行 `npx wrangler secret put CF_ANALYTICS_TOKEN` 貼上。
+6. 驗證：自己點一次線上廣告，等約 6 分鐘（Analytics Engine 寫入延遲加上 5 分鐘 KV 快取）再看後台。token 或帳號 ID 錯誤、或未設定時，後台不會報錯，數字只會維持 0。
 自訂網域：在 Cloudflare 後台把 `unibooks.app` 綁到 Worker `unibooks`。
 
 R2 生命週期規則（`wrangler.jsonc` 沒有這項設定，首次部署後設定一次）：刊登照片與廣告圖片先上傳到
