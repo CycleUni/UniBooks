@@ -158,11 +158,16 @@
      on a slide are genuinely different intents. */
   --motion-fast: 0.15s;
   --motion-base: 0.2s;
+
+  /* Tells the browser which palette to paint its own surfaces in (scrollbars,
+     form controls, the area revealed by overscroll). */
+  color-scheme: light;
 }
 
 /* Dark palette: follows OS/browser preference by default. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --ink:        #EDE8DE; /* warm off-white text */
     --ink-soft:   #C4BDB0;
     --paper:      #181716; /* deep warm charcoal ground (not pure black) */
@@ -237,6 +242,7 @@
 
 /* Dark palette hook for a future explicit theme toggle (not built yet). */
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --ink:        #EDE8DE;
   --ink-soft:   #C4BDB0;
   --paper:      #181716;

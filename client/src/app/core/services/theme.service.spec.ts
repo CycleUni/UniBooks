@@ -126,4 +126,24 @@ describe('ThemeService', () => {
       window.matchMedia = origMatchMedia;
     }
   });
+
+  it('keeps one unconditional theme-color tag in step with the resolved theme', () => {
+    document.head.innerHTML =
+      '<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">' +
+      '<meta name="theme-color" content="#181716" media="(prefers-color-scheme: dark)">';
+    currentMatches = false;
+    const service = createService();
+
+    service.setMode('dark');
+    TestBed.tick();
+
+    const metas = document.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+    expect(metas.length).toBe(1);
+    expect(metas[0].content).toBe('#181716');
+    expect(metas[0].hasAttribute('media')).toBe(false);
+
+    service.setMode('light');
+    TestBed.tick();
+    expect(document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content).toBe('#FFFFFF');
+  });
 });

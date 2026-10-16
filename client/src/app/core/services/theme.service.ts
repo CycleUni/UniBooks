@@ -21,6 +21,7 @@ export class ThemeService {
   constructor() {
     effect(() => this.apply(this.mode()));
     effect(() => this.applyFavicon(this.resolved()));
+    effect(() => this.applyThemeColor(this.resolved()));
     this.listenToSystemTheme();
   }
 
@@ -64,6 +65,26 @@ export class ThemeService {
     if (!link) return;
     const href = theme === 'dark' ? '/icons/favicon-dark.svg' : '/icons/favicon.svg';
     if (link.getAttribute('href') !== href) link.setAttribute('href', href);
+  }
+
+  // The page's own --paper, for the browser / system bars. index.html ships
+  // two tags keyed to the OS preference; an explicit site theme can disagree
+  // with the OS, so they are replaced by one unconditional tag.
+  private applyThemeColor(theme: 'light' | 'dark') {
+    if (typeof document === 'undefined') return;
+    const color = theme === 'dark' ? '#181716' : '#FFFFFF';
+    const metas = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+    let meta = metas[0];
+    metas.forEach((m, i) => {
+      if (i > 0) m.remove();
+    });
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      document.head.appendChild(meta);
+    }
+    meta.removeAttribute('media');
+    meta.content = color;
   }
 
   private getSystemDarkPreference(): boolean {

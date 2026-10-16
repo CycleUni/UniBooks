@@ -24,6 +24,12 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="UniBooks">
+  <!-- The browser / system bars (Android's status and gesture bars) follow
+       this colour; without it they stay white around a dark page. The values
+       are --paper in each palette. ThemeService keeps a single tag in step
+       with the visitor's own choice after the app boots. -->
+  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#181716" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="icon" type="image/png" sizes="48x48" href="/icons/favicon-48x48.png">
   <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
