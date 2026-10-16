@@ -1126,6 +1126,7 @@ export const zhTW: Record<string, string> = {
   'admin.errUrlScheme': '跳轉網址必須以 http:// 或 https:// 開頭',
   'admin.errEndDateBeforeStart': '結束時間必須大於開始時間',
   'admin.errUploadFailed': '圖片上傳失敗，請再試一次。',
+  'admin.errImageFetchFailed': '無法從這個連結取得圖片，請確認是公開的 https JPG、PNG、WebP 或 GIF，且小於 5 MB。',
   'admin.confirmDelete': '確定要刪除此項目嗎？這項操作無法復原。',
   'admin.confirmDeleteAdvertiser': '確定要刪除此廣告商嗎？這可能會連帶影響其下的廣告紀錄。',
   'home.waitlistEmpty': '目前暫無求書紀錄，歡迎隨時上架你的二手書！',

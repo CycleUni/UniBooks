@@ -1124,6 +1124,7 @@ export const en: Record<string, string> = {
   'admin.errUrlScheme': 'URL must start with http:// or https://',
   'admin.errEndDateBeforeStart': 'End date must be after start date',
   'admin.errUploadFailed': 'Failed to upload the image. Please try again.',
+  'admin.errImageFetchFailed': 'Could not fetch an image from that link. Check it is a public https JPG, PNG, WebP or GIF under 5 MB.',
   'admin.confirmDelete': 'Are you sure you want to delete this item? This action cannot be undone.',
   'admin.confirmDeleteAdvertiser': 'Are you sure you want to delete this advertiser? This may affect its associated ads.',
   'home.waitlistEmpty': 'There are currently no book requests. Feel free to list your used books anytime!',

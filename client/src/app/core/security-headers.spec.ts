@@ -144,6 +144,39 @@ describe('public/_headers', () => {
     });
   });
 
+  describe('admin console CSP exception', () => {
+    // The ad form previews foreign image URLs, so the console's pages carry
+    // the site-wide policy with only img-src opened to https:.
+    const rules = source.split(/\n(?=\/)/).filter(r => /^\/:region\/admin(\/\*)?\n/.test(r));
+
+    it('has a rule for the console root and everything below it', () => {
+      expect(rules.map(r => r.split('\n')[0])).toEqual(['/:region/admin', '/:region/admin/*']);
+    });
+
+    it('uses at most one splat per rule: Workers drops a rule with two', () => {
+      for (const r of rules) expect((r.split('\n')[0].match(/\*/g) ?? []).length).toBeLessThanOrEqual(1);
+    });
+
+    it('detaches the site-wide CSP first, since two CSP headers both apply', () => {
+      for (const r of rules) {
+        expect(r).toContain('  ! Content-Security-Policy\n');
+        expect(r).toContain('  ! Content-Security-Policy-Report-Only\n');
+      }
+    });
+
+    it('differs from the site-wide policy in img-src only', () => {
+      const siteWide = headerValue('Content-Security-Policy-Report-Only')!;
+      const strip = (p: string) => p.replace(/img-src [^;]*/, '');
+      for (const r of rules) {
+        const line = r.split('\n').find(l => l.trimStart().startsWith('Content-Security-Policy-Report-Only:'))!;
+        const policy = line.slice(line.indexOf(':') + 1).trim();
+        expect(strip(policy)).toBe(strip(siteWide));
+        expect(policy).toContain("img-src 'self' data: blob: https:");
+        expect(policy).not.toMatch(/script-src[^;]*https:(\s|;|$)/);
+      }
+    });
+  });
+
   describe('what the built page needs from the policy', () => {
     // script-src has no 'unsafe-inline', so anything inline in the shell is a
     // violation today and a broken page the day the policy is enforced.

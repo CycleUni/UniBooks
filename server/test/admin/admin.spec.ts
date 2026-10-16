@@ -84,7 +84,7 @@ describe('ad images and links', () => {
       ok: false,
       code: 'listing.errPhotoNotOwned',
     });
-    await expect(resolveAdImage(e, 'http://x', 'me', `https://cdn.evil.com/tmp/ads/me/${name}`, null)).resolves.toMatchObject({
+    await expect(resolveAdImage(e, 'http://x', 'me', `http://cdn.evil.com/a.png`, null)).resolves.toMatchObject({
       ok: false,
       code: 'listing.errPhotoHostNotAllowed',
     });
@@ -101,6 +101,66 @@ describe('ad images and links', () => {
     expect(res).toMatchObject({ ok: true, url: `https://media.example.com/ads/me/${name}` });
     expect(await env.R2.get(`tmp/ads/me/${name}`)).toBeNull();
     expect(await env.R2.get(`ads/me/${name}`)).not.toBeNull();
+  });
+
+  describe('importing a foreign image URL', () => {
+    const e = { ...env, R2_PUBLIC_URL: 'https://media.example.com' } as any;
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    const ok = () => Promise.resolve(new Response(png, { status: 200 }));
+    const run = (url: string, f: (u: string) => Promise<Response>) =>
+      resolveAdImage(e, 'http://x', 'me', url, null, ((u: string) => f(u)) as any);
+
+    it('stores the fetched image under ads/ and returns our URL', async () => {
+      const res = await run('https://img.example.org/a.png', ok);
+      expect(res).toMatchObject({ ok: true, promoted: true });
+      if (!res.ok) return;
+      expect(res.url).toBe(`https://media.example.com/${res.key}`);
+      expect(res.key).toMatch(/^ads\/me\/[0-9a-f]{32}\.png$/);
+      expect(await env.R2.get(res.key)).not.toBeNull();
+    });
+
+    it('follows a redirect but re-validates every hop', async () => {
+      const hops: string[] = [];
+      const good = await run('https://img.example.org/r', (u) => {
+        hops.push(u);
+        return Promise.resolve(
+          u.endsWith('/r') ? new Response(null, { status: 302, headers: { Location: '/final.png' } }) : new Response(png),
+        );
+      });
+      expect(good.ok).toBe(true);
+      expect(hops).toEqual(['https://img.example.org/r', 'https://img.example.org/final.png']);
+      const bad = await run('https://img.example.org/r', () =>
+        Promise.resolve(new Response(null, { status: 302, headers: { Location: 'https://127.0.0.1/x.png' } })),
+      );
+      expect(bad).toMatchObject({ ok: false, code: 'admin.errImageFetchFailed' });
+    });
+
+    it('refuses non-https, IP, localhost and credentialed URLs without fetching', async () => {
+      const f = () => {
+        throw new Error('must not fetch');
+      };
+      for (const u of [
+        'http://img.example.org/a.png',
+        'https://127.0.0.1/a.png',
+        'https://localhost/a.png',
+        'https://a.internal/a.png',
+        'https://u:p@img.example.org/a.png',
+        'https://img.example.org:8443/a.png',
+        'not a url',
+      ]) {
+        await expect(run(u, f as any)).resolves.toMatchObject({ ok: false, code: 'listing.errPhotoHostNotAllowed' });
+      }
+    });
+
+    it('rejects non-images, errors, and oversized bodies', async () => {
+      const html = () => Promise.resolve(new Response('<html>', { headers: { 'Content-Type': 'image/png' } }));
+      const notFound = () => Promise.resolve(new Response('x', { status: 404 }));
+      const big = () => Promise.resolve(new Response(png, { headers: { 'Content-Length': String(6 * 1024 * 1024) } }));
+      const boom = () => Promise.reject(new Error('network'));
+      for (const f of [html, notFound, big, boom]) {
+        await expect(run('https://img.example.org/a.png', f)).resolves.toMatchObject({ ok: false, code: 'admin.errImageFetchFailed' });
+      }
+    });
   });
 
   it('only lets ads link to http(s) URLs', () => {

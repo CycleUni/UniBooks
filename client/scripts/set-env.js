@@ -197,22 +197,33 @@ function buildCsp({ backendOrigin, mediaOrigin }) {
   ].join('; ');
 }
 
-/** Replace the CSP block (one line or two) of a _headers file's text. */
+/** The console's own policy: the site-wide one with img-src open to https: (see public/_headers). */
+function adminPolicy(policy) {
+  return policy.replace(/img-src [^;]*/, "img-src 'self' data: blob: https:");
+}
+
+/**
+ * Replace the CSP lines of a _headers file's text. The `/*` rule gets the
+ * site-wide policy; the admin console rules (`/:region/admin`, `/:region/admin/*`) keep
+ * their detach lines and get the same policy with an open img-src.
+ */
 function rewriteCsp(original, enforce, policy) {
   const headerName = enforce ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only';
-  const line = `  ${headerName}: ${policy}`;
-  const lines = enforce
+  const linesFor = (p) => {
+    const line = `  ${headerName}: ${p}`;
     // Enforcing the full policy supersedes the always-enforced subset.
-    ? [line]
-    : [`  Content-Security-Policy: ${ALWAYS_ENFORCED}`, line];
-  let replaced = false;
+    return enforce ? [line] : [`  Content-Security-Policy: ${ALWAYS_ENFORCED}`, line];
+  };
+  const replacedIn = new Set();
+  let rule = '';
   return original
     .split('\n')
     .flatMap(l => {
+      if (/^\S/.test(l) && !l.startsWith('#')) rule = l.trim();
       if (!/^ {2}Content-Security-Policy(-Report-Only)?:/.test(l)) return [l];
-      if (replaced) return [];
-      replaced = true;
-      return lines;
+      if (replacedIn.has(rule)) return [];
+      replacedIn.add(rule);
+      return linesFor(/\/admin(\/\*)?$/.test(rule) ? adminPolicy(policy) : policy);
     })
     .join('\n');
 }
