@@ -18,6 +18,7 @@ import { injectIsPhone } from '../../core/viewport';
 import { PhonePager } from '../../core/phone-pager';
 import { UiSearchBarComponent } from '../../shared/ui/search-bar.component';
 import { TPipe, I18nService } from '../../core/i18n.service';
+import { onLanguageChange } from '../../core/on-language-change';
 import { ListingService } from '../../core/services/listing.service';
 import { MetadataService } from '../../core/services/metadata.service';
 
@@ -415,6 +416,19 @@ export class ListingsComponent implements OnInit {
     const pageParam = Math.max(1, Number(qp.get('page')) || 1);
     this.currentPage = this.isPhone ? 1 : pageParam;
 
+    this.loadCategories();
+    this.loadMyListings();
+  }
+
+  constructor() {
+    // School and course names, and the category list, come back localized.
+    onLanguageChange(this.i18n, () => {
+      this.loadCategories();
+      this.loadMyListings();
+    });
+  }
+
+  private loadCategories() {
     this.metadataService.getMetadata().subscribe({
       next: (data) => {
         if (data.categories) {
@@ -430,7 +444,6 @@ export class ListingsComponent implements OnInit {
         console.error('Failed to load metadata', err);
       }
     });
-    this.loadMyListings();
   }
 
   onSearchQuery(query: string) {

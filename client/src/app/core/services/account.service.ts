@@ -134,6 +134,16 @@ export class AccountService {
   private router = inject(Router);
 
   constructor() {
+    // The cached profile carries localized fields (school_name and the like),
+    // so the language switching has to drop it, or the pages that reload on
+    // the switch are served the old language from it.
+    let langSeen = false;
+    effect(() => {
+      this.i18n.lang();
+      if (!langSeen) { langSeen = true; return; }
+      untracked(() => this.clearProfileCache());
+    });
+
     // The AuthStore now manages the lifecycle of /auth/me/ — it fetches on
     // bootstrap (if a token exists) and on every login. That value flows
     // into AuthStore.user. This service's cache merely mirrors it for

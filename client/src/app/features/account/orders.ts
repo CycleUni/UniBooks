@@ -4,6 +4,7 @@ import { RouterModule } from '@angular/router';
 import { OrderService, Order } from '../../core/services/order.service';
 import { AuthStore } from '../../core/auth.store';
 import { TPipe, I18nService } from '../../core/i18n.service';
+import { onLanguageChange } from '../../core/on-language-change';
 import { AccountService } from '../../core/services/account.service';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
@@ -430,6 +431,11 @@ export class OrdersComponent implements OnInit {
   private regionLink = inject(RegionLinkService);
   private route = inject(ActivatedRoute);
   private i18n = inject(I18nService);
+
+  constructor() {
+    // The other party's school name comes back localized.
+    onLanguageChange(this.i18n, () => { if (this.authStore.isLoggedIn()) this.loadOrders(); });
+  }
   private toast = inject(ToastService);
   private ga = inject(GoogleAnalyticsService);
 

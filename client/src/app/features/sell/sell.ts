@@ -16,6 +16,7 @@ import { RegionService } from '../../core/region.service';
 import { BookService } from '../../core/services/book.service';
 import { ListingService } from '../../core/services/listing.service';
 import { MetadataService } from '../../core/services/metadata.service';
+import { onLanguageChange } from '../../core/on-language-change';
 import { AuthStore } from '../../core/auth.store';
 import { I18nService, TPipe } from '../../core/i18n.service';
 import { translateApiError } from '../../core/api-error.util';
@@ -201,6 +202,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
   private cdr = inject(ChangeDetectorRef);
   private metadataSubscription: Subscription | null = null;
   private i18n = inject(I18nService);
+  private _reloadOnLang = onLanguageChange(this.i18n, () => this.loadCategories());
   private ga = inject(GoogleAnalyticsService);
 
   category = '';
@@ -346,17 +348,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
 
     // With retry: this list has no error state, so one failed request used to
     // leave the category dropdown empty for the rest of the visit.
-    this.metadataSubscription = this.metadataService.getMetadataWithRetry().subscribe({
-      next: (data) => {
-        if (data.categories) {
-          this.categoryOptions = [{ label: this.i18n.t('sell.categoryPlaceholder'), value: '' }, ...data.categories.map((c: any) => ({
-            label: c.title,
-            value: c.slug
-          }))];
-        }
-      },
-      error: (err) => console.error('Failed to load categories', err),
-    });
+    this.loadCategories();
 
     if (this.isLoggedIn) {
       this.accountService.getMyProfile().subscribe({
@@ -379,6 +371,22 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
       this.isLoading = false;
       this.cdr.markForCheck();
     }
+  }
+
+  private loadCategories() {
+    this.metadataSubscription?.unsubscribe();
+    this.metadataSubscription = this.metadataService.getMetadataWithRetry().subscribe({
+      next: (data) => {
+        if (data.categories) {
+          this.categoryOptions = [{ label: this.i18n.t('sell.categoryPlaceholder'), value: '' }, ...data.categories.map((c: any) => ({
+            label: c.title,
+            value: c.slug
+          }))];
+          this.cdr.markForCheck();
+        }
+      },
+      error: (err) => console.error('Failed to load categories', err),
+    });
   }
 
   ngOnDestroy() {

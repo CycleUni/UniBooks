@@ -1,7 +1,8 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, effect, untracked } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { finalize, map, shareReplay, tap } from 'rxjs/operators';
 import { Observable, BehaviorSubject, of } from 'rxjs';
+import { I18nService } from '../i18n.service';
 
 export interface Order {
   id?: string;
@@ -40,6 +41,17 @@ export interface Order {
 export class OrderService {
   private http = inject(HttpClient);
   private url = '/orders';
+  private i18n = inject(I18nService);
+
+  constructor() {
+    // Orders carry the other party's school name in the language asked for.
+    let langSeen = false;
+    effect(() => {
+      this.i18n.lang();
+      if (!langSeen) { langSeen = true; return; }
+      untracked(() => { this.recentOrders = null; this.ordersInFlight = null; });
+    });
+  }
 
   public unreadOrders$ = new BehaviorSubject<boolean>(false);
 
