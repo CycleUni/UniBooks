@@ -15,7 +15,10 @@
         <div class="alert-box success mb-4" >
           <div  style="display: flex; justify-content: space-between; align-items: flex-start;">
             <div>
-              <strong>{{ 'acct.verifiedTitle' | t }}</strong>
+              <strong style="display: inline-flex; align-items: center; gap: 8px">
+                <ui-success-check [size]="20"></ui-success-check>
+                {{ 'acct.verifiedTitle' | t }}
+              </strong>
               <p *ngIf="currentVerification.edu_email">{{ 'acct.boundTo' | t:{email: currentVerification.edu_email} }}</p>
               <p  style="font-size: var(--text-xs); margin-top: 4px;">{{ 'acct.verifiedAtPrefix' | t }}{{ currentVerification.verified_at | date:'yyyy/MM/dd HH:mm' }}</p>
             </div>
@@ -175,9 +178,134 @@
       </div>
     </div>
 
-    <div class="form-group danger-zone" *ngIf="isGoogleLinked && hasPassword">
+    <!-- Passkeys Section -->
+  <div
+    class="form-group passkeys-section"
+    *ngIf="supportsPasskeys"
+    style="max-width: 400px; margin-top: 32px; border-top: 1px solid var(--line); padding-top: 32px"
+  >
+    <h3 style="margin-top: 0; margin-bottom: 8px">{{ 'acct.passkeysTitle' | t }}</h3>
+    <p class="text-muted" style="margin-top: 0; margin-bottom: 16px">
+      {{ 'acct.passkeysDesc' | t }}
+    </p>
+
+    <ui-skeleton *ngIf="passkeysLoading" height="60px"></ui-skeleton>
+
+    <div *ngIf="!passkeysLoading && passkeys.length > 0" class="passkey-list">
+      <div *ngFor="let p of passkeys" class="passkey-item">
+        <div *ngIf="editingPasskeyId !== p.id" class="passkey-content">
+          <div class="passkey-icon-col">
+            <picture *ngIf="(p.icon_light || p.icon_dark) && !passkeyIconErrors[p.id]">
+              <source
+                *ngIf="p.icon_dark"
+                [srcset]="p.icon_dark"
+                media="(prefers-color-scheme: dark)"
+              />
+              <img
+                [src]="p.icon_light || p.icon_dark"
+                width="28"
+                height="28"
+                alt=""
+                (error)="onPasskeyIconError(p.id)"
+                class="passkey-icon-img"
+              />
+            </picture>
+            <svg
+              *ngIf="(!p.icon_light && !p.icon_dark) || passkeyIconErrors[p.id]"
+              class="passkey-icon-fallback"
+              viewBox="0 0 24 24"
+              width="28"
+              height="28"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              [attr.aria-label]="'acct.passkeyIconFallback' | t"
+            >
+              <circle cx="7.5" cy="15.5" r="5.5" />
+              <path d="m21 2-9.6 9.6" />
+              <path d="m15.5 7.5 3 3" />
+            </svg>
+          </div>
+          <div class="passkey-info">
+            <div class="passkey-header">
+              <span class="passkey-name">{{ p.name }}</span>
+              <span *ngIf="p.backed_up" class="passkey-badge">{{ 'acct.passkeySynced' | t }}</span>
+            </div>
+            <div *ngIf="p.provider && p.provider !== p.name" class="passkey-provider">
+              {{ p.provider }}
+            </div>
+            <div class="passkey-meta">
+              <span>{{
+                'acct.passkeyCreated' | t: { date: (p.created_at | date: 'yyyy/MM/dd') ?? '' }
+              }}</span>
+              <span *ngIf="p.last_used_at">
+                ·
+                {{
+                  'acct.passkeyLastUsed' | t: { date: (p.last_used_at | date: 'yyyy/MM/dd') ?? '' }
+                }}</span
+              >
+              <span *ngIf="!p.last_used_at"> · {{ 'acct.passkeyNeverUsed' | t }}</span>
+            </div>
+          </div>
+          <div class="passkey-actions">
+            <button
+              type="button"
+              class="passkey-action-btn"
+              (click)="startRenamePasskey(p)"
+              [title]="'acct.renamePasskey' | t"
+            >
+              {{ 'acct.renamePasskey' | t }}
+            </button>
+            <button
+              type="button"
+              class="passkey-action-btn text-danger"
+              (click)="onDeletePasskey(p)"
+              [disabled]="deletingPasskeyId === p.id"
+              [title]="'common.delete' | t"
+            >
+              {{ 'common.delete' | t }}
+            </button>
+          </div>
+        </div>
+
+        <div *ngIf="editingPasskeyId === p.id" class="passkey-rename-form">
+          <ui-input
+            [(ngModel)]="editingPasskeyName"
+            (keyup.enter)="saveRenamePasskey(p.id)"
+            (keyup.escape)="cancelRenamePasskey()"
+          ></ui-input>
+          <div class="passkey-rename-actions">
+            <ui-button
+              size="sm"
+              (onClick)="saveRenamePasskey(p.id)"
+              [disabled]="isSavingPasskeyRename || !editingPasskeyName.trim()"
+            >
+              {{ 'common.save' | t }}
+            </ui-button>
+            <ui-button
+              size="sm"
+              variant="ghost"
+              (onClick)="cancelRenamePasskey()"
+              [disabled]="isSavingPasskeyRename"
+            >
+              {{ 'common.cancel' | t }}
+            </ui-button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <ui-button variant="white" class="mt-4" (onClick)="onAddPasskey()" [disabled]="isAddingPasskey">
+      {{ (isAddingPasskey ? 'acct.addingPasskey' : 'acct.addPasskey') | t }}
+    </ui-button>
+  </div>
+
+  <div class="form-group danger-zone" *ngIf="(isGoogleLinked || passkeys.length > 0) && hasPassword">
       <h3>{{ 'acct.removePasswordBtn' | t }}</h3>
-      <p>{{ 'acct.removePasswordConfirm' | t }}</p>
+      <p>{{ removePasswordConfirmKey | t }}</p>
       
       <div  class="mb-4">
         <label>{{ 'acct.currentPassword' | t }}</label>

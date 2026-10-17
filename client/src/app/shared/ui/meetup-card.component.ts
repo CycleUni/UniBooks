@@ -2,17 +2,21 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TPipe } from '../../core/i18n.service';
 import { UiButton } from './button.component';
+import { UiSuccessCheck } from './success-check.component';
 
 export type MeetupMessageType = 'REQUEST' | 'ACCEPT' | 'UPDATE' | 'DECLINE' | 'CANCEL' | 'COMPLETE' | 'NONE';
 
 @Component({
   selector: 'ui-meetup-card',
   standalone: true,
-  imports: [CommonModule, TPipe, UiButton],
+  imports: [CommonModule, TPipe, UiButton, UiSuccessCheck],
   template: `
     <div class="meetup-card" [ngClass]="typeClass">
       <div class="meetup-card-header">
-        <span class="meetup-icon">{{ icon }}</span>
+        <span class="meetup-icon">
+          <ui-success-check *ngIf="cardType === 'ACCEPT'; else glyph" [size]="20"></ui-success-check>
+          <ng-template #glyph>{{ icon }}</ng-template>
+        </span>
         <span class="meetup-title">{{ headerTitleKey | t }}</span>
         <span class="meetup-status-badge" *ngIf="statusBadgeKey">{{ statusBadgeKey | t }}</span>
       </div>
@@ -231,7 +235,7 @@ export class UiMeetupCard {
   get icon(): string {
     switch (this.cardType) {
       case 'REQUEST': return '🤝';
-      case 'ACCEPT': return '✅';
+      case 'ACCEPT': return ''; // drawn as <ui-success-check> in the template
       case 'UPDATE': return '📍';
       case 'DECLINE': return '❌';
       case 'CANCEL': return '🚫';

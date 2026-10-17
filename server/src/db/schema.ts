@@ -731,3 +731,30 @@ export const staffManagedRegions = sqliteTable(
 );
 
 export type StaffManagedRegion = InferSelectModel<typeof staffManagedRegions>;
+
+// ============================================================================
+// 23. Passkeys (WebAuthn credentials)
+// ============================================================================
+export const passkeys = sqliteTable(
+  'passkeys',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    publicKey: text('public_key').notNull(),
+    counter: integer('counter').notNull().default(0),
+    transports: text('transports'),
+    deviceType: text('device_type').notNull(),
+    backedUp: integer('backed_up').notNull().default(0),
+    name: text('name').notNull(),
+    aaguid: text('aaguid'),
+    createdAt: text('created_at').notNull(),
+    lastUsedAt: text('last_used_at'),
+  },
+  (table) => [index('passkeys_user_idx').on(table.userId)],
+);
+
+export type Passkey = InferSelectModel<typeof passkeys>;
+export type InsertPasskey = InferInsertModel<typeof passkeys>;
+export type NewPasskey = InsertPasskey;

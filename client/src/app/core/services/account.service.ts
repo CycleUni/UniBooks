@@ -4,7 +4,7 @@ import { Observable, of, shareReplay, switchMap, take, tap, catchError, throwErr
 import { Router } from '@angular/router';
 import { I18nService } from '../i18n.service';
 import { Lang, SUPPORTED_LANGS } from '../i18n';
-import { AuthStore, AuthUser, UserRole } from '../auth.store';
+import { AuthStore, AuthUser, PasskeyItem, UserRole } from '../auth.store';
 import { RegionService } from '../region.service';
 import { SKIP_AUTH } from '../auth.interceptor';
 import { isSameRegion, stripRegionPrefix } from '../region-path';
@@ -491,5 +491,25 @@ export class AccountService {
 
   deleteAccount(): Observable<any> {
     return this.http.delete<any>('/auth/me');
+  }
+
+  listPasskeys(): Observable<PasskeyItem[]> {
+    return this.authStore.listPasskeys();
+  }
+
+  renamePasskey(id: string, name: string): Observable<{ id: string; name: string }> {
+    return this.authStore.renamePasskey(id, name);
+  }
+
+  deletePasskey(id: string): Observable<void> {
+    return this.authStore.deletePasskey(id);
+  }
+
+  passkeyRegister(name?: string): Observable<{ id: string; name: string }> {
+    return this.authStore.passkeyRegister(name);
+  }
+
+  passkeyLogin(): Observable<any> {
+    return this.authStore.passkeyLogin();
   }
 }

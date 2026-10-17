@@ -4,6 +4,7 @@ import type { AppEnv, Env } from '../../env';
 import {
   createDb,
   listings,
+  passkeys,
   pushDevices,
   regionVerifications,
   reviews,
@@ -222,6 +223,7 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
     // Ours.
     db.delete(regionVerifications).where(eq(regionVerifications.userId, userId)),
     db.delete(pushDevices).where(eq(pushDevices.userId, userId)),
+    db.delete(passkeys).where(eq(passkeys.userId, userId)),
     db
       .update(schoolRequests)
       .set({ eduEmail: '' })

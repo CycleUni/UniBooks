@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpInterceptor, HttpRequest, HttpHandler, HttpEvent, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import * as Sentry from '@sentry/angular';
+import { sentry } from './sentry';
 import { environment } from '../../environments/environment';
 
 /**
@@ -25,7 +25,7 @@ export class ErrorReportInterceptor implements HttpInterceptor {
       catchError((error: unknown) => {
         if (error instanceof HttpErrorResponse && error.status >= 500 && isOwnBackend(error.url ?? request.url)) {
           const path = routeOf(error.url ?? request.url);
-          Sentry.captureException(error, {
+          sentry.captureException(error, {
             tags: { http_status: String(error.status), http_method: request.method },
             // One issue per route and status, not one per listing id.
             fingerprint: ['http-5xx', request.method, String(error.status), path],

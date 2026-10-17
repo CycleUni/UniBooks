@@ -4,6 +4,7 @@ import { ActivatedRoute, RouterModule, Router } from '@angular/router';
 import { ChangeDetectorRef } from '@angular/core';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiInput } from '../../shared/ui/input.component';
+import { UiSuccessCheck } from '../../shared/ui/success-check.component';
 import { FormsModule } from '@angular/forms';
 import { AuthStore } from '../../core/auth.store';
 import { I18nService, TPipe } from '../../core/i18n.service';
@@ -14,7 +15,7 @@ import { clearSensitiveParams } from '../../core/sensitive-url';
 @Component({
   selector: 'app-verify',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, UiButton, UiInput, TPipe],
+  imports: [CommonModule, RouterModule, FormsModule, UiButton, UiInput, UiSuccessCheck, TPipe],
   template: `
       <div class="verify-container">
         <div class="verify-box">
@@ -40,12 +41,7 @@ import { clearSensitiveParams } from '../../core/sensitive-url';
           </ng-container>
 
           <ng-container *ngIf="status === 'success'">
-            <div class="success-icon">
-              <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="32" cy="32" r="30" stroke="var(--success)" stroke-width="4" fill="none"/>
-                <path d="M20 32 L28 46 L44 20" stroke="var(--success)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-              </svg>
-            </div>
+            <div class="success-icon"><ui-success-check></ui-success-check></div>
             <h2>{{ 'verify.successTitle' | t }}</h2>
             <p>{{ (type === 'register' ? 'verify.successBodyRegister' : 'verify.successBodyEdu') | t }}</p>
             <p  class="mt-4" style="font-size: var(--text-base);">{{ 'verify.redirecting' | t }}</p>

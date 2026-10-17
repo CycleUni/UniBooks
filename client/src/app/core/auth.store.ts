@@ -1,8 +1,14 @@
 import { DestroyRef, Injectable, Injector, signal, inject, untracked, runInInjectionContext, effect } from '@angular/core';
-import * as Sentry from '@sentry/angular';
+import { sentry } from './sentry';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { tap, catchError, filter, take, finalize, shareReplay } from 'rxjs/operators';
+import { tap, catchError, filter, take, finalize, shareReplay, switchMap } from 'rxjs/operators';
 import { Observable, of, throwError } from 'rxjs';
+import {
+  browserSupportsWebAuthn,
+  startAuthentication,
+  startRegistration,
+  WebAuthnAbortService,
+} from '@simplewebauthn/browser';
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
 import { PushService } from './services/push.service';
@@ -21,6 +27,57 @@ export interface RegionVerification {
   edu_email: string;
   verified_at: string | null;
 }
+
+export interface PasskeyItem {
+  id: string;
+  name: string;
+  aaguid?: string | null;
+  provider?: string | null;
+  icon_light?: string | null;
+  icon_dark?: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  device_type: 'singleDevice' | 'multiDevice';
+  backed_up: boolean | number;
+}
+
+export const PASSKEY_FLAG_KEY = 'ub_passkey';
+
+export function hasPasskeyFlag(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(PASSKEY_FLAG_KEY) === '1' || localStorage[PASSKEY_FLAG_KEY] === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setPasskeyFlag(): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(PASSKEY_FLAG_KEY, '1');
+  } catch {
+    // Storage access or quota error in restricted environments
+  }
+}
+
+export function isUserCancellation(err: unknown): boolean {
+  if (!err) return false;
+  const directName = (err as any).name;
+  const directCode = (err as any).code;
+  if (directName === 'NotAllowedError' || directName === 'AbortError' || directCode === 'ERROR_CEREMONY_ABORTED') return true;
+  const causeName = (err as any).cause?.name;
+  const causeCode = (err as any).cause?.code;
+  if (causeName === 'NotAllowedError' || causeName === 'AbortError' || causeCode === 'ERROR_CEREMONY_ABORTED') return true;
+  return false;
+}
+
+export const webauthnBrowser = {
+  browserSupportsWebAuthn,
+  startAuthentication,
+  startRegistration,
+  WebAuthnAbortService,
+};
 
 /** What the account may do: 'staff' reaches the admin area, 'admin' also manages staff and advertisers. */
 export type UserRole = 'user' | 'staff' | 'admin';
@@ -157,7 +214,7 @@ export class AuthStore {
     // name — so we can tell one user hitting a bug ten times from ten users.
     effect(() => {
       const id = this._user()?.id;
-      Sentry.setUser(id == null ? null : { id: String(id) });
+      sentry.setUser(id == null ? null : { id: String(id) });
     });
 
     // An older build kept the JWT pair in localStorage. The session is
@@ -679,6 +736,86 @@ export class AuthStore {
         }
       })
     );
+  }
+
+  supportsPasskeys(): boolean {
+    return typeof window !== 'undefined' && webauthnBrowser.browserSupportsWebAuthn();
+  }
+
+  hasPasskey(): boolean {
+    return hasPasskeyFlag();
+  }
+
+  cancelPasskey(): void {
+    try {
+      webauthnBrowser.WebAuthnAbortService.cancelCeremony();
+    } catch {
+      // ignore
+    }
+  }
+
+  passkeyLogin(opts?: { useBrowserAutofill?: boolean }): Observable<any> {
+    if (!this.supportsPasskeys()) {
+      return throwError(() => new Error('WebAuthn not supported'));
+    }
+    return this.http
+      .post<{ challenge_id: string; options: any }>('/auth/passkeys/login/options', {})
+      .pipe(
+        switchMap(async ({ challenge_id, options }) => {
+          const response = await webauthnBrowser.startAuthentication({
+            optionsJSON: options,
+            ...(opts?.useBrowserAutofill ? { useBrowserAutofill: true } : {}),
+          });
+          return { challenge_id, response };
+        }),
+        switchMap(({ challenge_id, response }) =>
+          this.http.post<any>('/auth/passkeys/login/verify', { challenge_id, response }),
+        ),
+        tap((response) => {
+          if (isLoginSuccess(response)) {
+            setPasskeyFlag();
+            this.signInPending = true;
+            this.markSignedIn();
+            this.ga.trackLogin('Passkey');
+          }
+        }),
+      );
+  }
+
+  passkeyRegister(name?: string): Observable<{ id: string; name: string }> {
+    if (!this.supportsPasskeys()) {
+      return throwError(() => new Error('WebAuthn not supported'));
+    }
+    return this.http
+      .post<{ challenge_id: string; options: any }>('/auth/passkeys/register/options', {})
+      .pipe(
+        switchMap(async ({ challenge_id, options }) => {
+          const response = await webauthnBrowser.startRegistration({ optionsJSON: options });
+          return { challenge_id, response, name };
+        }),
+        switchMap(({ challenge_id, response, name }) =>
+          this.http.post<{ id: string; name: string }>('/auth/passkeys/register/verify', {
+            challenge_id,
+            response,
+            ...(name ? { name } : {}),
+          }),
+        ),
+        tap(() => {
+          setPasskeyFlag();
+        }),
+      );
+  }
+
+  listPasskeys(): Observable<PasskeyItem[]> {
+    return this.http.get<PasskeyItem[]>('/auth/passkeys');
+  }
+
+  renamePasskey(id: string, name: string): Observable<{ id: string; name: string }> {
+    return this.http.patch<{ id: string; name: string }>(`/auth/passkeys/${id}`, { name });
+  }
+
+  deletePasskey(id: string): Observable<void> {
+    return this.http.delete<void>(`/auth/passkeys/${id}`);
   }
 
   register(email: string, password: string, firstName: string, lastName: string): Observable<any> {

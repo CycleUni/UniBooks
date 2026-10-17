@@ -48,7 +48,7 @@ describe('register and activate', () => {
     await call('/api/v1/auth/register', { body: { email: 'pending@example.com', password: PASSWORD, first_name: 'P', last_name: 'U' } });
     const blocked = await call('/api/v1/auth/login', { body: { email: 'pending@example.com', password: PASSWORD } });
     expect(blocked.status).toBe(403);
-    expect(await blocked.json()).toEqual({ error: { code: 'auth.errAccountDisabled' } });
+    expect(await blocked.json()).toEqual({ error: { code: 'auth.errAccountNotActivated' } });
 
     const row = await userRow('pending@example.com');
     const token = await ott.issue(env, ott.REGISTER, String(row!.id), ott.REGISTER_TTL);
@@ -277,6 +277,20 @@ describe('passwords', () => {
     expect((await env.DB.prepare('SELECT password_hash FROM users WHERE id = ?').bind(id).first())?.password_hash).toBeNull();
   });
 
+  it('a Google-only account can get a password through the emailed reset link', async () => {
+    const id = await createUser('google-reset@example.com', { googleId: 'g-reset', password: null });
+    const send = vi.spyOn(env.EMAIL_QUEUE, 'send').mockResolvedValue({ metadata: {} } as never);
+    const res = await call('/api/v1/auth/password/reset/request', { body: { email: 'google-reset@example.com' } });
+    expect(res.status).toBe(200);
+    expect(send).toHaveBeenCalledTimes(1);
+    send.mockRestore();
+
+    const token = await ott.issue(env, ott.PASSWORD_RESET, id, ott.PASSWORD_RESET_TTL);
+    const ok = await call('/api/v1/auth/password/reset/confirm', { body: { token, new_password: 'Brand-New-Pass-42' } });
+    expect(ok.status).toBe(200);
+    await login('google-reset@example.com', 'Brand-New-Pass-42');
+  });
+
   it('change ends other sessions and returns a fresh pair', async () => {
     await createUser('change@example.com');
     const other = await login('change@example.com');
@@ -321,11 +335,11 @@ describe('passwords', () => {
     await login('reset@example.com', 'Brand-New-Pass-42');
   });
 
-  it('remove needs a linked Google account and refuses staff', async () => {
+  it('remove needs a linked Google account or a passkey, and refuses staff', async () => {
     await createUser('nogoogle@example.com');
     const a = await login('nogoogle@example.com');
     const r1 = await call('/api/v1/auth/password/remove', { body: { password: PASSWORD }, token: a.access });
-    expect(await r1.json()).toEqual({ error: { code: 'auth.errNoGoogleLinked' } });
+    expect(await r1.json()).toEqual({ error: { code: 'auth.errNoOtherSignIn' } });
 
     await createUser('staffgoogle@example.com', { role: 'staff', googleId: 'g-staff' });
     const s = await login('staffgoogle@example.com');
@@ -340,6 +354,21 @@ describe('passwords', () => {
     expect(await ok.json()).toEqual({ code: 'acct.passwordRemoved' });
     const me = (await (await call('/api/v1/auth/me', { token: l.access })).json()) as any;
     expect(me.has_password).toBe(false);
+  });
+
+  it('remove also works with a passkey and no Google account', async () => {
+    const id = await createUser('keyonly@example.com');
+    const k = await login('keyonly@example.com');
+    const refused = await call('/api/v1/auth/password/remove', { body: { password: PASSWORD }, token: k.access });
+    expect(await refused.json()).toEqual({ error: { code: 'auth.errNoOtherSignIn' } });
+
+    await env.DB.prepare(
+      "INSERT INTO passkeys (id, user_id, public_key, counter, device_type, backed_up, name, created_at) VALUES ('cred-1', ?, 'pk', 0, 'multiDevice', 1, 'Passkey', '2026-10-17T00:00:00.000Z')",
+    )
+      .bind(id)
+      .run();
+    const ok = await call('/api/v1/auth/password/remove', { body: { password: PASSWORD }, token: k.access });
+    expect(await ok.json()).toEqual({ code: 'acct.passwordRemoved' });
   });
 });
 

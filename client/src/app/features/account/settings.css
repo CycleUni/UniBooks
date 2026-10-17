@@ -128,3 +128,126 @@
   color: var(--muted);
   margin-bottom: 16px;
 }
+
+.passkey-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.passkey-item {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-card);
+}
+
+.passkey-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.passkey-icon-col {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.passkey-icon-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+}
+
+.passkey-icon-fallback {
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.passkey-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.passkey-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.passkey-name {
+  font-weight: 500;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.passkey-badge {
+  font-size: var(--text-xs);
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background-color: var(--paper-warm);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.passkey-provider {
+  font-size: var(--text-xs);
+  color: var(--ink-secondary, var(--muted));
+  margin-top: 2px;
+}
+
+.passkey-meta {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  margin-top: var(--space-1);
+}
+
+.passkey-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.passkey-action-btn {
+  background: none;
+  border: 0;
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--accent);
+  cursor: pointer;
+  border-radius: var(--radius-control);
+}
+
+.passkey-action-btn:hover:not(:disabled) {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+.passkey-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.passkey-rename-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.passkey-rename-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}

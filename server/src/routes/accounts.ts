@@ -39,6 +39,16 @@ import {
   serializePublicUser,
   serializeUser,
 } from '../services/accounts/users';
+import {
+  countUserPasskeys,
+  deleteUserPasskey,
+  getPasskeyLoginOptions,
+  getPasskeyRegistrationOptions,
+  listUserPasskeys,
+  renameUserPasskey,
+  verifyPasskeyLogin,
+  verifyPasskeyRegistration,
+} from '../services/accounts/passkeys';
 import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
 import { isUniqueViolation } from '../lib/db';
@@ -89,6 +99,8 @@ const RATES = {
   emailChange: '5/hour',
   schoolRequest: '5/hour',
   publicProfile: '30/min',
+  passkeyLogin: '10/min',
+  passkeyRegister: '10/hour',
 } as const;
 
 const PUSH_TOKEN_MAX_LENGTH = 512;
@@ -490,7 +502,7 @@ accountRoutes.post('/login', rateLimit('login', RATES.login), async (c) => {
     // Whoever knows it gets the "not active yet" answer; anyone else a
     // plain credentials error.
     for (const hash of await ott.pendingRegistrationHashes(c.env, user.id)) {
-      if (await checkPassword(password, hash)) apiError(403, 'auth.errAccountDisabled');
+      if (await checkPassword(password, hash)) apiError(403, 'auth.errAccountNotActivated');
     }
     return invalid();
   }
@@ -687,6 +699,65 @@ accountRoutes.post('/logout', optionalAuthMiddleware(), async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// Passkeys (WebAuthn)
+// ---------------------------------------------------------------------------
+
+accountRoutes.post('/passkeys/register/options', authMiddleware(), rateLimit('passkey-register', RATES.passkeyRegister), async (c) => {
+  const user = await currentUser(c);
+  return getPasskeyRegistrationOptions(c, user);
+});
+accountRoutes.post('/passkeys/register/options/', authMiddleware(), rateLimit('passkey-register', RATES.passkeyRegister), async (c) => {
+  const user = await currentUser(c);
+  return getPasskeyRegistrationOptions(c, user);
+});
+
+accountRoutes.post('/passkeys/register/verify', authMiddleware(), rateLimit('passkey-register', RATES.passkeyRegister), async (c) => {
+  const user = await currentUser(c);
+  return verifyPasskeyRegistration(c, user);
+});
+accountRoutes.post('/passkeys/register/verify/', authMiddleware(), rateLimit('passkey-register', RATES.passkeyRegister), async (c) => {
+  const user = await currentUser(c);
+  return verifyPasskeyRegistration(c, user);
+});
+
+accountRoutes.post('/passkeys/login/options', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
+  return getPasskeyLoginOptions(c);
+});
+accountRoutes.post('/passkeys/login/options/', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
+  return getPasskeyLoginOptions(c);
+});
+
+accountRoutes.post('/passkeys/login/verify', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
+  return verifyPasskeyLogin(c);
+});
+accountRoutes.post('/passkeys/login/verify/', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
+  return verifyPasskeyLogin(c);
+});
+
+accountRoutes.get('/passkeys', authMiddleware(), async (c) => {
+  return listUserPasskeys(c, c.get('user')!.id);
+});
+accountRoutes.get('/passkeys/', authMiddleware(), async (c) => {
+  return listUserPasskeys(c, c.get('user')!.id);
+});
+
+accountRoutes.patch('/passkeys/:id', authMiddleware(), async (c) => {
+  return renameUserPasskey(c, c.get('user')!.id, c.req.param('id'));
+});
+accountRoutes.patch('/passkeys/:id/', authMiddleware(), async (c) => {
+  return renameUserPasskey(c, c.get('user')!.id, c.req.param('id'));
+});
+
+accountRoutes.delete('/passkeys/:id', authMiddleware(), async (c) => {
+  const user = await currentUser(c);
+  return deleteUserPasskey(c, user, c.req.param('id'));
+});
+accountRoutes.delete('/passkeys/:id/', authMiddleware(), async (c) => {
+  const user = await currentUser(c);
+  return deleteUserPasskey(c, user, c.req.param('id'));
+});
+
+// ---------------------------------------------------------------------------
 // Passwords
 // ---------------------------------------------------------------------------
 
@@ -713,7 +784,8 @@ accountRoutes.post('/password/remove', authMiddleware(), rateLimit('password_cha
   const user = await currentUser(c);
   const { password } = await readJson(c.req);
   if (!password || typeof password !== 'string') apiError(400, 'common.errValidation');
-  if (!user.googleId) apiError(400, 'auth.errNoGoogleLinked');
+  // A password may go only when another way to sign in remains: a linked Google account or a passkey.
+  if (!user.googleId && !(await countUserPasskeys(c.env, user.id))) apiError(400, 'auth.errNoOtherSignIn');
   if (isStaffRole(user.role)) apiError(400, 'auth.errStaffCannotRemovePassword');
   if (!user.passwordHash) apiError(400, 'auth.errNoUsablePassword');
   if (!(await checkPassword(password, user.passwordHash))) apiError(400, 'auth.errInvalidPassword');
@@ -737,7 +809,8 @@ accountRoutes.post('/password/reset/request', rateLimit('password-reset-request'
 
   const user = await getUserByEmail(c.env, email);
   // The same answer whatever happens: no way to probe which addresses exist.
-  if (!user || user.googleId || accountDisabled(user)) return c.json(sent);
+  // Google-linked accounts included: a mailbox link is how a passwordless account gets a password back.
+  if (!user || accountDisabled(user)) return c.json(sent);
 
   const token = await ott.issue(c.env, ott.PASSWORD_RESET, user.id, ott.PASSWORD_RESET_TTL);
   await sendLinkEmail(c, 'passwordReset', user.id, user.email, '', `/forgot-password?token=${token}`);

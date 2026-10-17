@@ -250,4 +250,190 @@ describe('SettingsComponent', () => {
       expect(component.profileLoadFailed).toBe(false);
     });
   });
+
+  describe('passkeys management in SettingsComponent', () => {
+    it('loads passkeys on init when supported', () => {
+      const mockList = [
+        {
+          id: 'p1',
+          name: 'MacBook Touch ID',
+          created_at: '2026-10-17T00:00:00Z',
+          last_used_at: null,
+          device_type: 'singleDevice' as const,
+          backed_up: false,
+        },
+      ];
+      vi.spyOn((component as any).authStore, 'supportsPasskeys').mockReturnValue(true);
+      const listSpy = vi
+        .spyOn((component as any).accountService, 'listPasskeys')
+        .mockReturnValue(of(mockList));
+
+      component.loadPasskeys();
+
+      expect(listSpy).toHaveBeenCalled();
+      expect(component.passkeys).toEqual(mockList);
+      expect(component.passkeysLoading).toBe(false);
+    });
+
+    it('onAddPasskey registers, shows toast, and refreshes list', () => {
+      const regSpy = vi
+        .spyOn((component as any).accountService, 'passkeyRegister')
+        .mockReturnValue(of({ id: 'p2', name: 'Passkey' }));
+      const loadSpy = vi.spyOn(component, 'loadPasskeys').mockImplementation(() => {});
+      const toastSpy = vi.spyOn((component as any).toast, 'success');
+
+      component.onAddPasskey();
+
+      expect(regSpy).toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalled();
+      expect(loadSpy).toHaveBeenCalled();
+      expect(component.isAddingPasskey).toBe(false);
+    });
+
+    it('onAddPasskey suppresses error on user cancellation', () => {
+      const cancelErr = new Error('User cancelled');
+      cancelErr.name = 'NotAllowedError';
+      vi.spyOn((component as any).accountService, 'passkeyRegister').mockReturnValue(
+        throwError(() => cancelErr),
+      );
+      const toastErrorSpy = vi.spyOn((component as any).toast, 'error');
+
+      component.onAddPasskey();
+
+      expect(toastErrorSpy).not.toHaveBeenCalled();
+      expect(component.isAddingPasskey).toBe(false);
+    });
+
+    it('manages rename state and saves valid name', () => {
+      const passkey = {
+        id: 'p1',
+        name: 'Old Name',
+        created_at: '',
+        last_used_at: null,
+        device_type: 'singleDevice' as const,
+        backed_up: false,
+      };
+      component.startRenamePasskey(passkey);
+      expect(component.editingPasskeyId).toBe('p1');
+      expect(component.editingPasskeyName).toBe('Old Name');
+
+      component.cancelRenamePasskey();
+      expect(component.editingPasskeyId).toBeNull();
+      expect(component.editingPasskeyName).toBe('');
+
+      component.startRenamePasskey(passkey);
+      component.editingPasskeyName = '   ';
+      component.saveRenamePasskey('p1'); // should do nothing for empty/whitespace
+
+      component.editingPasskeyName = 'New Name';
+      const renameSpy = vi
+        .spyOn((component as any).accountService, 'renamePasskey')
+        .mockReturnValue(of({ id: 'p1', name: 'New Name' }));
+      const loadSpy = vi.spyOn(component, 'loadPasskeys').mockImplementation(() => {});
+
+      component.saveRenamePasskey('p1');
+
+      expect(renameSpy).toHaveBeenCalledWith('p1', 'New Name');
+      expect(loadSpy).toHaveBeenCalled();
+      expect(component.editingPasskeyId).toBeNull();
+    });
+
+    it('asks danger confirmation and deletes passkey', async () => {
+      const passkey = {
+        id: 'p1',
+        name: 'My Key',
+        created_at: '',
+        last_used_at: null,
+        device_type: 'singleDevice' as const,
+        backed_up: false,
+      };
+      const askSpy = vi.spyOn((component as any).confirms, 'askDanger').mockResolvedValue(true);
+      const deleteSpy = vi
+        .spyOn((component as any).accountService, 'deletePasskey')
+        .mockReturnValue(of(undefined));
+      const loadSpy = vi.spyOn(component, 'loadPasskeys').mockImplementation(() => {});
+
+      await component.onDeletePasskey(passkey);
+
+      expect(askSpy).toHaveBeenCalled();
+      expect(deleteSpy).toHaveBeenCalledWith('p1');
+      expect(loadSpy).toHaveBeenCalled();
+    });
+
+    it('displays provider when different from name, and handles icon rendering and errors', () => {
+      const fixture = TestBed.createComponent(SettingsComponent);
+      const comp = fixture.componentInstance;
+      vi.spyOn(comp, 'loadProfile').mockImplementation(() => {});
+      vi.spyOn(comp, 'loadPasskeys').mockImplementation(() => {});
+      vi.spyOn((comp as any).authStore, 'supportsPasskeys').mockReturnValue(true);
+      comp.profileLoaded = true;
+      comp.passkeysLoading = false;
+
+      comp.passkeys = [
+        {
+          id: 'p1',
+          name: 'My Custom Passkey',
+          provider: 'YubiKey 5 NFC',
+          icon_light: '/passkey-icons/yubi.light.svg',
+          icon_dark: '/passkey-icons/yubi.dark.svg',
+          created_at: '2026-10-17T00:00:00Z',
+          last_used_at: null,
+          device_type: 'singleDevice',
+          backed_up: false,
+        },
+        {
+          id: 'p2',
+          name: 'Passkey (synced)',
+          provider: null,
+          icon_light: null,
+          icon_dark: null,
+          created_at: '2026-10-17T00:00:00Z',
+          last_used_at: null,
+          device_type: 'multiDevice',
+          backed_up: true,
+        },
+        {
+          id: 'p3',
+          name: 'Chrome on Mac',
+          provider: 'Chrome on Mac',
+          icon_light: '/passkey-icons/chrome.light.svg',
+          icon_dark: null,
+          created_at: '2026-10-17T00:00:00Z',
+          last_used_at: null,
+          device_type: 'singleDevice',
+          backed_up: false,
+        },
+      ];
+      fixture.detectChanges();
+
+      const items = fixture.nativeElement.querySelectorAll('.passkey-item');
+      expect(items.length).toBe(3);
+
+      // Item 1: provider differs from name -> .passkey-provider shown, picture shown
+      const p1Provider = items[0].querySelector('.passkey-provider');
+      expect(p1Provider).not.toBeNull();
+      expect(p1Provider.textContent.trim()).toBe('YubiKey 5 NFC');
+      const p1Picture = items[0].querySelector('picture');
+      expect(p1Picture).not.toBeNull();
+      const p1Source = p1Picture.querySelector('source');
+      expect(p1Source.getAttribute('srcset')).toBe('/passkey-icons/yubi.dark.svg');
+      const p1Img = p1Picture.querySelector('img');
+      expect(p1Img.getAttribute('src')).toBe('/passkey-icons/yubi.light.svg');
+
+      // Item 2: provider is null, no icons -> fallback SVG shown, no provider line
+      expect(items[1].querySelector('.passkey-provider')).toBeNull();
+      expect(items[1].querySelector('picture')).toBeNull();
+      expect(items[1].querySelector('.passkey-icon-fallback')).not.toBeNull();
+
+      // Item 3: provider equals name -> no provider line, picture shown
+      expect(items[2].querySelector('.passkey-provider')).toBeNull();
+      expect(items[2].querySelector('picture')).not.toBeNull();
+
+      // Test icon error on Item 1 -> falls back to generic key SVG
+      comp.onPasskeyIconError('p1');
+      fixture.detectChanges();
+      expect(items[0].querySelector('picture')).toBeNull();
+      expect(items[0].querySelector('.passkey-icon-fallback')).not.toBeNull();
+    });
+  });
 });

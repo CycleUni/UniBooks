@@ -38,6 +38,8 @@ describe('AuthFormComponent', () => {
   };
 
   beforeEach(() => {
+    localStorage.clear();
+    delete (window as any).PublicKeyCredential;
     isAuthenticated = signal(false);
     queryParams = {};
     currentRegionObj = signal({ code: 'TW', edu_email_suffix: ['.edu.tw'] });
@@ -45,7 +47,10 @@ describe('AuthFormComponent', () => {
       isAuthenticated,
       isLoggedIn: () => isAuthenticated(),
       login: vi.fn().mockReturnValue(of({})),
-      register: vi.fn().mockReturnValue(of({}))
+      register: vi.fn().mockReturnValue(of({})),
+      supportsPasskeys: vi.fn().mockReturnValue(false),
+      passkeyLogin: vi.fn().mockReturnValue(of({})),
+      cancelPasskey: vi.fn(),
     };
     mockTurnstile = { render: vi.fn().mockResolvedValue('w1'), reset: vi.fn(), remove: vi.fn() };
     mockGoogle = { renderButton: vi.fn(), buttonReady: signal(true), opening: signal(false), signingIn: signal(false) };
@@ -156,7 +161,7 @@ describe('AuthFormComponent', () => {
       const password = field('login-password');
       expect(email.labels?.[0].textContent).toContain('auth.emailLabel');
       expect(email.type).toBe('email');
-      expect(email.getAttribute('autocomplete')).toBe('username');
+      expect(email.getAttribute('autocomplete')).toBe('username webauthn');
       expect(password.labels?.[0].textContent).toContain('auth.passwordLabel');
       expect(password.type).toBe('password');
       expect(password.getAttribute('autocomplete')).toBe('current-password');
@@ -454,5 +459,199 @@ describe('AuthFormComponent', () => {
     component.onLogin();
     component.onLogin();
     expect(mockAuth.login).toHaveBeenCalledTimes(1);
+  });
+
+  describe('Passkey sign-in', () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    afterEach(() => {
+      localStorage.clear();
+      delete (window as any).PublicKeyCredential;
+    });
+
+    it('hides passkey login button by default without the ub_passkey flag, even if supportsPasskeys is true', () => {
+      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
+      build('login');
+      expect(fixture.debugElement.query(By.css('.passkey-btn'))).toBeNull();
+    });
+
+    it('shows passkey login button when ub_passkey is "1" and supportsPasskeys is true', () => {
+      localStorage.setItem('ub_passkey', '1');
+      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
+      build('login');
+      expect(fixture.debugElement.query(By.css('.passkey-btn'))).not.toBeNull();
+    });
+
+    it('hides passkey login button when supportsPasskeys is false even if ub_passkey is "1"', () => {
+      localStorage.setItem('ub_passkey', '1');
+      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(false);
+      build('login');
+      expect(fixture.debugElement.query(By.css('.passkey-btn'))).toBeNull();
+    });
+
+    it('hides passkey login button if localStorage access throws', () => {
+      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
+      const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('Access denied');
+      });
+      build('login');
+      expect(fixture.debugElement.query(By.css('.passkey-btn'))).toBeNull();
+      getItemSpy.mockRestore();
+    });
+
+    it('triggers passkey login on button click and navigates on success', () => {
+      localStorage.setItem('ub_passkey', '1');
+      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
+      mockAuth.passkeyLogin = vi.fn().mockReturnValue(of({ code: 'auth.loginSuccess' }));
+      build('login');
+
+      component.onPasskeyLogin();
+
+      expect(mockAuth.passkeyLogin).toHaveBeenCalled();
+      isAuthenticated.set(true);
+      fixture.detectChanges();
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/', 'tw', 'account'], { replaceUrl: true });
+    });
+
+    it('aborts conditional passkey before manual passkey click', () => {
+      localStorage.setItem('ub_passkey', '1');
+      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
+      mockAuth.cancelPasskey = vi.fn();
+      mockAuth.passkeyLogin = vi.fn().mockReturnValue(of({ code: 'auth.loginSuccess' }));
+      build('login');
+      const abortSpy = vi.spyOn(component as any, 'abortConditionalPasskey');
+
+      component.onPasskeyLogin();
+
+      expect(abortSpy).toHaveBeenCalled();
+      expect(mockAuth.cancelPasskey).toHaveBeenCalled();
+    });
+
+    it('silently ignores NotAllowedError user cancellation', () => {
+      localStorage.setItem('ub_passkey', '1');
+      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
+      const cancelErr = new Error('User cancelled');
+      cancelErr.name = 'NotAllowedError';
+      mockAuth.passkeyLogin = vi.fn().mockReturnValue(throwError(() => cancelErr));
+      build('login');
+
+      component.onPasskeyLogin();
+
+      expect(component.clientAuthError).toBe('');
+      expect(component.lastAuthError).toBeNull();
+      expect(component.isPasskeyLoading).toBe(false);
+    });
+
+    it('silently ignores AbortError cancellation', () => {
+      localStorage.setItem('ub_passkey', '1');
+      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
+      const abortErr = new Error('Aborted');
+      abortErr.name = 'AbortError';
+      mockAuth.passkeyLogin = vi.fn().mockReturnValue(throwError(() => abortErr));
+      build('login');
+
+      component.onPasskeyLogin();
+
+      expect(component.clientAuthError).toBe('');
+      expect(component.lastAuthError).toBeNull();
+      expect(component.isPasskeyLoading).toBe(false);
+    });
+
+    it('displays error on passkey failure other than user cancellation', () => {
+      localStorage.setItem('ub_passkey', '1');
+      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
+      const apiErr = { status: 401, error: { error: { code: 'auth.errPasskeyLogin' } } };
+      mockAuth.passkeyLogin = vi.fn().mockReturnValue(throwError(() => apiErr));
+      build('login');
+
+      component.onPasskeyLogin();
+
+      expect(component.lastAuthError).toEqual(apiErr);
+      expect(component.authIsError).toBe(true);
+      expect(component.isPasskeyLoading).toBe(false);
+    });
+
+    describe('Conditional UI', () => {
+      it('starts conditional authentication flow only when isConditionalMediationAvailable is true', async () => {
+        (window as any).PublicKeyCredential = {
+          isConditionalMediationAvailable: vi.fn().mockResolvedValue(true),
+        };
+        mockAuth.passkeyLogin = vi.fn().mockReturnValue(of({ code: 'auth.loginSuccess' }));
+        build('login');
+
+        await settle();
+
+        expect((window as any).PublicKeyCredential.isConditionalMediationAvailable).toHaveBeenCalled();
+        expect(mockAuth.passkeyLogin).toHaveBeenCalledWith({ useBrowserAutofill: true });
+      });
+
+      it('does not start conditional flow when isConditionalMediationAvailable is false', async () => {
+        (window as any).PublicKeyCredential = {
+          isConditionalMediationAvailable: vi.fn().mockResolvedValue(false),
+        };
+        mockAuth.passkeyLogin = vi.fn().mockReturnValue(of({}));
+        build('login');
+
+        await settle();
+
+        expect((window as any).PublicKeyCredential.isConditionalMediationAvailable).toHaveBeenCalled();
+        expect(mockAuth.passkeyLogin).not.toHaveBeenCalled();
+      });
+
+      it('does not start conditional flow when PublicKeyCredential is not available', async () => {
+        delete (window as any).PublicKeyCredential;
+        mockAuth.passkeyLogin = vi.fn().mockReturnValue(of({}));
+        build('login');
+
+        await settle();
+
+        expect(mockAuth.passkeyLogin).not.toHaveBeenCalled();
+      });
+
+      it('does not start conditional flow on register mode', async () => {
+        (window as any).PublicKeyCredential = {
+          isConditionalMediationAvailable: vi.fn().mockResolvedValue(true),
+        };
+        mockAuth.passkeyLogin = vi.fn().mockReturnValue(of({}));
+        build('register');
+
+        await settle();
+
+        expect(mockAuth.passkeyLogin).not.toHaveBeenCalled();
+      });
+
+      it('aborts conditional flow when component is destroyed', async () => {
+        (window as any).PublicKeyCredential = {
+          isConditionalMediationAvailable: vi.fn().mockResolvedValue(true),
+        };
+        mockAuth.cancelPasskey = vi.fn();
+        const pending = new Subject<any>();
+        mockAuth.passkeyLogin = vi.fn().mockReturnValue(pending);
+        build('login');
+
+        await settle();
+        expect(mockAuth.passkeyLogin).toHaveBeenCalledWith({ useBrowserAutofill: true });
+
+        fixture.destroy();
+        expect(mockAuth.cancelPasskey).toHaveBeenCalled();
+      });
+
+      it('aborts conditional flow when switching to register mode', async () => {
+        (window as any).PublicKeyCredential = {
+          isConditionalMediationAvailable: vi.fn().mockResolvedValue(true),
+        };
+        mockAuth.cancelPasskey = vi.fn();
+        const pending = new Subject<any>();
+        mockAuth.passkeyLogin = vi.fn().mockReturnValue(pending);
+        build('login');
+
+        await settle();
+        expect(mockAuth.passkeyLogin).toHaveBeenCalledWith({ useBrowserAutofill: true });
+
+        component.mode = 'register';
+        fixture.detectChanges();
+        expect(mockAuth.cancelPasskey).toHaveBeenCalled();
+      });
+    });
   });
 });

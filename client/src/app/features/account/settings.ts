@@ -3,10 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiInput } from '../../shared/ui/input.component';
+import { UiSuccessCheck } from '../../shared/ui/success-check.component';
 import { TPipe, I18nService } from '../../core/i18n.service';
 import { RegionService, Region } from '../../core/region.service';
 import { AccountService } from '../../core/services/account.service';
-import { AuthStore } from '../../core/auth.store';
+import { AuthStore, PasskeyItem, isUserCancellation } from '../../core/auth.store';
 import { isSameRegion } from '../../core/region-path';
 import { ToastService } from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
@@ -28,6 +29,7 @@ const SCHOOL_NOT_SUPPORTED = 'acct.errSchoolNotSupported';
     FormsModule,
     UiButton,
     UiInput,
+    UiSuccessCheck,
     TPipe,
     SchoolRequestFormComponent,
     UiSkeleton,
@@ -83,6 +85,30 @@ export class SettingsComponent implements OnInit, OnDestroy {
   confirmPassword = '';
   pwdIsError = false;
   hasPassword = true;
+  passkeys: PasskeyItem[] = [];
+  passkeysLoading = false;
+  isAddingPasskey = false;
+  editingPasskeyId: string | null = null;
+  editingPasskeyName = '';
+  isSavingPasskeyRename = false;
+  deletingPasskeyId: string | null = null;
+  passkeyIconErrors: Record<string, boolean> = {};
+
+  onPasskeyIconError(id: string): void {
+    this.passkeyIconErrors[id] = true;
+    this.cdr.markForCheck();
+  }
+
+  /** Names only the sign-in methods this account really has, so the warning never mentions one it lacks. */
+  get removePasswordConfirmKey(): string {
+    const hasPasskey = this.passkeys.length > 0;
+    if (this.isGoogleLinked && hasPasskey) return 'acct.removePasswordConfirmBoth';
+    return hasPasskey ? 'acct.removePasswordConfirmPasskey' : 'acct.removePasswordConfirmGoogle';
+  }
+
+  get supportsPasskeys(): boolean {
+    return this.authStore.supportsPasskeys();
+  }
 
   clientVerifyMsg = '';
   lastVerifyError: any = null;
@@ -133,7 +159,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
     // translateApiError below.
     const rejected: string[] = err.error?.error?.fields?.new_password ?? [];
     if (rejected.length) {
-      const detail = rejected.map((code: string) => this.i18n.tOrNull(code)).filter(Boolean).join(' ');
+      const detail = rejected
+        .map((code: string) => this.i18n.tOrNull(code))
+        .filter(Boolean)
+        .join(' ');
       return this.i18n.t('acct.errPasswordRejected', { msg: detail });
     }
     return translateApiError(err, this.i18n) ?? this.i18n.t('acct.updateFailed');
@@ -209,6 +238,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.clearLegacyPendingVerificationState();
     this.loadProfile();
+    if (this.supportsPasskeys) {
+      this.loadPasskeys();
+    }
 
     // The confirmation mail links back here with the token on the query
     // string; the address it was sent to may well be open in a browser that
@@ -739,6 +771,106 @@ export class SettingsComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.isLoading = false;
         this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  loadPasskeys(): void {
+    if (!this.supportsPasskeys) return;
+    this.passkeysLoading = true;
+    this.accountService.listPasskeys().subscribe({
+      next: (list) => {
+        this.passkeys = list;
+        this.passkeyIconErrors = {};
+        this.passkeysLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.passkeysLoading = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  onAddPasskey(): void {
+    if (this.isAddingPasskey) return;
+    this.isAddingPasskey = true;
+    this.cdr.markForCheck();
+
+    this.accountService.passkeyRegister().subscribe({
+      next: () => {
+        this.isAddingPasskey = false;
+        this.toast.success(this.i18n.t('acct.passkeyAdded'));
+        this.loadPasskeys();
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.isAddingPasskey = false;
+        this.cdr.markForCheck();
+        if (isUserCancellation(err)) {
+          return;
+        }
+        this.toast.error(parseApiError(err, this.i18n, 'auth.errPasskeyRegistration'));
+      },
+    });
+  }
+
+  startRenamePasskey(passkey: PasskeyItem): void {
+    this.editingPasskeyId = passkey.id;
+    this.editingPasskeyName = passkey.name;
+    this.cdr.markForCheck();
+  }
+
+  cancelRenamePasskey(): void {
+    this.editingPasskeyId = null;
+    this.editingPasskeyName = '';
+    this.cdr.markForCheck();
+  }
+
+  saveRenamePasskey(id: string): void {
+    const trimmed = this.editingPasskeyName.trim();
+    if (!trimmed || this.isSavingPasskeyRename) return;
+    this.isSavingPasskeyRename = true;
+    this.cdr.markForCheck();
+
+    this.accountService.renamePasskey(id, trimmed).subscribe({
+      next: () => {
+        this.isSavingPasskeyRename = false;
+        this.editingPasskeyId = null;
+        this.editingPasskeyName = '';
+        this.toast.success(this.i18n.t('acct.passkeyRenamed'));
+        this.loadPasskeys();
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.isSavingPasskeyRename = false;
+        this.toast.error(parseApiError(err, this.i18n, 'acct.errRenamePasskey'));
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  async onDeletePasskey(passkey: PasskeyItem): Promise<void> {
+    const confirmed = await this.confirms.askDanger(
+      this.i18n.t('acct.deletePasskeyConfirm', { name: passkey.name }),
+      { confirmLabel: this.i18n.t('common.delete') },
+    );
+    if (!confirmed) return;
+
+    this.deletingPasskeyId = passkey.id;
+    this.cdr.markForCheck();
+
+    this.accountService.deletePasskey(passkey.id).subscribe({
+      next: () => {
+        this.deletingPasskeyId = null;
+        this.toast.success(this.i18n.t('acct.passkeyDeleted'));
+        this.loadPasskeys();
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.deletingPasskeyId = null;
+        this.toast.error(parseApiError(err, this.i18n, 'acct.errDeletePasskey'));
         this.cdr.markForCheck();
       },
     });

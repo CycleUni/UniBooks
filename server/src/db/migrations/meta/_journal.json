@@ -29,6 +29,20 @@
       "when": 1792043791826,
       "tag": "0003_tw_cities",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792208215611,
+      "tag": "0004_passkeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792215356163,
+      "tag": "0005_passkey_aaguid",
+      "breakpoints": true
     }
   ]
 }

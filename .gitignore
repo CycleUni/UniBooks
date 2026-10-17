@@ -14,6 +14,8 @@ client/out-tsc/
 client/coverage/
 client/src/environments/environment.ts
 client/src/environments/environment.prod.ts
+client/public/passkey-icons/
+client/.cache/
 
 # editors / local tool state
 .idea/

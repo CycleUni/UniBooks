@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { RouterTestingModule } from '@angular/router/testing';
-import * as Sentry from '@sentry/angular';
+import { sentry } from './sentry';
 import { AuthStore } from './auth.store';
 import { RegionLinkService } from './region-link.service';
 import { RegionService } from './region.service';
@@ -64,13 +64,14 @@ describe('AuthStore', () => {
   });
 
   it('tells Sentry the signed-in user by id only, and clears it on sign-out', () => {
+    vi.spyOn(sentry, 'setUser').mockImplementation(() => undefined);
     (authStore as any)._user.set({ id: 7, email: 'someone@example.edu', display_name: 'Someone' });
     TestBed.tick();
-    expect(Sentry.getIsolationScope().getUser()).toEqual({ id: '7' });
+    expect(sentry.setUser).toHaveBeenLastCalledWith({ id: '7' });
 
     (authStore as any)._user.set(null);
     TestBed.tick();
-    expect(Sentry.getIsolationScope().getUser()).toEqual({});
+    expect(sentry.setUser).toHaveBeenLastCalledWith(null);
   });
 
   describe('isVerifiedIn()', () => {

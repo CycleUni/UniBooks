@@ -1,5 +1,5 @@
-import { ApplicationConfig, provideZoneChangeDetection, isDevMode, APP_INITIALIZER, ErrorHandler, inject, provideAppInitializer } from '@angular/core';
-import * as Sentry from '@sentry/angular';
+import { ApplicationConfig, provideZoneChangeDetection, isDevMode, APP_INITIALIZER, ErrorHandler, Injector, inject, provideAppInitializer } from '@angular/core';
+import { LazySentryErrorHandler, sentry } from './core/sentry';
 import { Router, provideRouter, withInMemoryScrolling, withRouterConfig, withPreloading, withViewTransitions } from '@angular/router';
 import { IdlePreloadingStrategy } from './core/idle-preloading.strategy';
 import { onViewTransitionCreated } from './core/view-transitions';
@@ -48,11 +48,10 @@ export const appConfig: ApplicationConfig = {
       deps: [I18nService],
       multi: true
     },
-    // Unhandled errors and route changes go to Sentry (a no-op until
-    // Sentry.init runs in main.ts, which needs SENTRY_DSN).
-    { provide: ErrorHandler, useValue: Sentry.createErrorHandler() },
-    { provide: Sentry.TraceService, deps: [Router] },
-    provideAppInitializer(() => { inject(Sentry.TraceService); }),
+    // Unhandled errors and route changes go to Sentry (a no-op unless
+    // SENTRY_DSN is set); the SDK loads after startup, see core/sentry.ts.
+    { provide: ErrorHandler, useClass: LazySentryErrorHandler },
+    provideAppInitializer(() => { sentry.traceRouter(inject(Injector)); }),
     // sw.js wraps ngsw-worker.js, leaving other origins to the browser.
     provideServiceWorker('sw.js', {
       enabled: !isDevMode(),

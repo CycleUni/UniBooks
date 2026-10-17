@@ -8,7 +8,7 @@
 
       <div class="form-group">
         <label for="login-email">{{ 'auth.emailLabel' | t }}</label>
-        <ui-input inputId="login-email" type="email" name="email" autocomplete="username" [ariaDescribedby]="messageId" placeholder="your.email@example.com" [(ngModel)]="email" (keyup.enter)="onLogin()" ></ui-input>
+        <ui-input inputId="login-email" type="email" name="email" autocomplete="username webauthn" [ariaDescribedby]="messageId" placeholder="your.email@example.com" [(ngModel)]="email" (keyup.enter)="onLogin()" ></ui-input>
       </div>
 
       <div class="form-group">
@@ -24,6 +24,25 @@
 
       <ui-button  block class="mt-4" (onClick)="onLogin()" [disabled]="isLoading || awaitingChallenge">
         {{ (isLoading ? 'auth.loggingIn' : awaitingChallenge ? 'auth.verifyingChallenge' : 'auth.login') | t }}
+      </ui-button>
+
+      <ui-button
+        *ngIf="showPasskeyButton"
+        variant="white"
+        block
+        class="mt-4 passkey-btn"
+        (onClick)="onPasskeyLogin()"
+        [disabled]="isLoading || isPasskeyLoading || googleBusy"
+      >
+        <span class="passkey-btn-content">
+          <svg class="passkey-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="9" cy="8" r="3.5" />
+            <path d="M3 20c0-3.3 2.7-6 6-6h1.5" />
+            <circle cx="17" cy="14" r="2.5" />
+            <path d="M17 16.5V22M17 19h2M17 21h1.5" />
+          </svg>
+          {{ (isPasskeyLoading ? 'auth.passkeySigningIn' : 'auth.signInWithPasskey') | t }}
+        </span>
       </ui-button>
 
       <ng-container *ngTemplateOutlet="googleTpl"></ng-container>

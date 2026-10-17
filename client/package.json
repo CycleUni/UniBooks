@@ -4,12 +4,12 @@
   "scripts": {
     "ng": "ng",
     "start": "nodemon",
-    "build": "node --env-file-if-exists=production.env scripts/set-env.js --production && ng build --stats-json && ts-node --project scripts/tsconfig.scripts.json scripts/build-region-html.ts && node --env-file-if-exists=production.env scripts/set-env.js --production --headers",
+    "build": "node scripts/fetch-passkey-icons.js && node --env-file-if-exists=production.env scripts/set-env.js --production && ng build --stats-json && ts-node --project scripts/tsconfig.scripts.json scripts/build-region-html.ts && node --env-file-if-exists=production.env scripts/set-env.js --production --headers",
     "watch": "node --env-file-if-exists=.env scripts/set-env.js && ng build --watch --configuration development",
     "test": "node --env-file-if-exists=.env scripts/set-env.js && ng test",
     "icons": "node scripts/generate-icons.js",
-    "smoke": "node --env-file-if-exists=.env scripts/set-env.js && ng build --configuration smoke --stats-json && ts-node --project scripts/tsconfig.scripts.json scripts/build-region-html.ts && node --env-file-if-exists=.env scripts/set-env.js --headers && npm --prefix ../server run dev",
-    "build:local": "node --env-file-if-exists=production.env scripts/set-env.js && ng build --stats-json && ts-node --project scripts/tsconfig.scripts.json scripts/build-region-html.ts && node --env-file-if-exists=production.env scripts/set-env.js --headers"
+    "smoke": "node scripts/fetch-passkey-icons.js && node --env-file-if-exists=.env scripts/set-env.js && ng build --configuration smoke --stats-json && ts-node --project scripts/tsconfig.scripts.json scripts/build-region-html.ts && node --env-file-if-exists=.env scripts/set-env.js --headers && npm --prefix ../server run dev",
+    "build:local": "node scripts/fetch-passkey-icons.js && node --env-file-if-exists=production.env scripts/set-env.js && ng build --stats-json && ts-node --project scripts/tsconfig.scripts.json scripts/build-region-html.ts && node --env-file-if-exists=production.env scripts/set-env.js --headers"
   },
   "private": true,
   "packageManager": "npm@11.16.0",
@@ -22,6 +22,7 @@
     "@angular/router": "^22.2.2",
     "@angular/service-worker": "^22.2.2",
     "@sentry/angular": "^11.4.0",
+    "@simplewebauthn/browser": "^14.0.0",
     "barcode-detector": "^3.2.2",
     "browser-image-compression": "^2.0.2",
     "chart.js": "^4.5.1",

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule, Router } from '@angular/router';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiInput } from '../../shared/ui/input.component';
+import { UiSuccessCheck } from '../../shared/ui/success-check.component';
 import { FormsModule } from '@angular/forms';
 import { AuthStore } from '../../core/auth.store';
 import { I18nService, TPipe } from '../../core/i18n.service';
@@ -13,7 +14,7 @@ import { clearSensitiveParams } from '../../core/sensitive-url';
 @Component({
   selector: 'app-forgot-password',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, UiButton, UiInput, TPipe],
+  imports: [CommonModule, RouterModule, FormsModule, UiButton, UiInput, UiSuccessCheck, TPipe],
   template: `
       <div class="fp-container">
         <div class="fp-box">
@@ -60,6 +61,7 @@ import { clearSensitiveParams } from '../../core/sensitive-url';
             </ng-container>
 
             <ng-container *ngIf="confirmStatus === 'success'">
+              <div class="success-icon"><ui-success-check></ui-success-check></div>
               <h2>{{ 'fp.successTitle' | t }}</h2>
               <p>{{ 'fp.successBody' | t }}</p>
               <ui-button  class="mt-5" (onClick)="goToLogin()">{{ 'verify.goToLogin' | t }}</ui-button>
@@ -69,6 +71,9 @@ import { clearSensitiveParams } from '../../core/sensitive-url';
       </div>
   `,
   styles: [`
+    .success-icon {
+      margin-bottom: 16px;
+    }
     .fp-container {
       display: flex;
       justify-content: center;

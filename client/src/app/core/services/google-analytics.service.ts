@@ -139,7 +139,7 @@ export class GoogleAnalyticsService {
   /**
    * Track user login
    */
-  public trackLogin(method: 'Password' | 'Google' = 'Password'): void {
+  public trackLogin(method: 'Password' | 'Google' | 'Passkey' = 'Password'): void {
     this.trackEvent('login', { method });
   }
 

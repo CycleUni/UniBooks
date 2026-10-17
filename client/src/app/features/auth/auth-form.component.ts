@@ -3,11 +3,14 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 
+import { Subscription } from 'rxjs';
+import { WebAuthnAbortService } from '@simplewebauthn/browser';
+
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { RegionLinkService } from '../../core/region-link.service';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiInput } from '../../shared/ui/input.component';
-import { AuthStore } from '../../core/auth.store';
+import { AuthStore, hasPasskeyFlag, isUserCancellation } from '../../core/auth.store';
 import { GoogleAuthService } from '../../core/services/google-auth.service';
 import { I18nService, TPipe } from '../../core/i18n.service';
 import { ThemeService } from '../../core/services/theme.service';
@@ -45,7 +48,20 @@ export interface RegisterHandoff {
   styleUrls: ['./auth-form.component.css']
 })
 export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
-  @Input() mode: 'login' | 'register' = 'login';
+  private _mode: 'login' | 'register' = 'login';
+  @Input()
+  get mode(): 'login' | 'register' {
+    return this._mode;
+  }
+  set mode(value: 'login' | 'register') {
+    const prev = this._mode;
+    this._mode = value;
+    if (value === 'register') {
+      this.abortConditionalPasskey();
+    } else if (value === 'login' && prev !== 'login') {
+      void this.initConditionalPasskey();
+    }
+  }
 
   email = '';
   password = '';
@@ -55,9 +71,26 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   registerFirstName = '';
   registerLastName = '';
   isLoading = false;
+  isPasskeyLoading = false;
   clientAuthError = '';
   lastAuthError: any = null;
   lastAuthAction: 'login' | 'register' = 'login';
+
+  get supportsPasskeys(): boolean {
+    return typeof this.auth.supportsPasskeys === 'function' ? this.auth.supportsPasskeys() : false;
+  }
+
+  get hasPasskey(): boolean {
+    return hasPasskeyFlag();
+  }
+
+  get showPasskeyButton(): boolean {
+    return this.supportsPasskeys && this.hasPasskey;
+  }
+
+  private conditionalAbortController: AbortController | null = null;
+  private conditionalSub: Subscription | null = null;
+  private conditionalStarted = false;
   authIsError = false;
   returnUrl: string | null = null;
 
@@ -199,6 +232,9 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   // so a handoff left in history.state would be read on the register page too.
   ngOnInit() {
     this.applyRegisterHandoff();
+    if (this.mode === 'login') {
+      void this.initConditionalPasskey();
+    }
   }
 
   ngAfterViewInit() {
@@ -256,6 +292,85 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  onPasskeyLogin() {
+    if (this.isLoading || this.isPasskeyLoading || this.googleBusy) return;
+    this.abortConditionalPasskey();
+    this.clientAuthError = '';
+    this.lastAuthError = null;
+    this.lastAuthAction = 'login';
+    this.isPasskeyLoading = true;
+    this.cdr.markForCheck();
+
+    this.auth.passkeyLogin().subscribe({
+      next: () => {
+        this.isPasskeyLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.isPasskeyLoading = false;
+        if (!isUserCancellation(err)) {
+          this.lastAuthError = err;
+          this.authIsError = true;
+        }
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  private async checkConditionalMediation(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    const pkc = (window as any).PublicKeyCredential;
+    if (!pkc || typeof pkc.isConditionalMediationAvailable !== 'function') {
+      return false;
+    }
+    try {
+      return !!(await pkc.isConditionalMediationAvailable());
+    } catch {
+      return false;
+    }
+  }
+
+  private async initConditionalPasskey(): Promise<void> {
+    if (this.conditionalStarted || this.mode !== 'login') return;
+    const available = await this.checkConditionalMediation();
+    if (!available || this.mode !== 'login' || this.conditionalStarted) return;
+
+    this.conditionalStarted = true;
+    this.conditionalAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+
+    if (typeof this.auth.passkeyLogin === 'function') {
+      this.conditionalSub = this.auth.passkeyLogin({ useBrowserAutofill: true }).subscribe({
+        next: () => {
+          this.conditionalSub = null;
+        },
+        error: () => {
+          this.conditionalSub = null;
+          // NotAllowedError/abort is silent
+        },
+      });
+    }
+  }
+
+  private abortConditionalPasskey(): void {
+    this.conditionalStarted = false;
+    if (this.conditionalSub) {
+      this.conditionalSub.unsubscribe();
+      this.conditionalSub = null;
+    }
+    if (this.conditionalAbortController) {
+      this.conditionalAbortController.abort();
+      this.conditionalAbortController = null;
+    }
+    if (typeof this.auth.cancelPasskey === 'function') {
+      this.auth.cancelPasskey();
+    }
+    try {
+      WebAuthnAbortService.cancelCeremony();
+    } catch {
+      // ignore
+    }
+  }
+
   private async showChallenge(siteKey: unknown): Promise<void> {
     if (typeof siteKey !== 'string' || !siteKey) return;
     this.challengeRequired = true;
@@ -300,6 +415,7 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.abortConditionalPasskey();
     if (this.challengeWidget) this.turnstile.remove(this.challengeWidget);
   }
 

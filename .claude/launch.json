@@ -4,7 +4,7 @@
     {
       "name": "unibooks",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "server", "run", "dev"],
+      "runtimeArgs": ["--prefix", "server", "start"],
       "port": 8787
     }
   ]
