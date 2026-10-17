@@ -296,7 +296,8 @@ export class UiLayout implements OnDestroy {
       // A signed-in visitor's opening school can come from their profile, so
       // the school list alone does not settle it (see loadMetadata). Settled
       // here once both are in.
-      if (profile && this.schoolStateService.hasInitialized) {
+      const settled = this.authStore.profileSettled();
+      if ((profile || settled) && this.schoolStateService.hasInitialized) {
         untracked(() => this.schoolStateService.markReady());
       }
     });
@@ -457,6 +458,14 @@ export class UiLayout implements OnDestroy {
    * a cold backend; the home page should not stay empty that long.
    */
   private static readonly SCHOOL_READY_TIMEOUT_MS = 2500;
+  /**
+   * Signed in, the school comes from the profile, which may sit behind a
+   * token refresh and a cold start. Settling on "all schools" at the short
+   * timeout loaded the home page for every school and again, a moment later,
+   * for the profile's. The profile ending (see AuthStore.profileSettled)
+   * settles it; this is only the backstop for a request that never ends.
+   */
+  private static readonly SIGNED_IN_SCHOOL_READY_TIMEOUT_MS = 10000;
   private schoolReadyTimer: ReturnType<typeof setTimeout> | null = null;
 
   private loadMetadata() {
@@ -474,7 +483,10 @@ export class UiLayout implements OnDestroy {
       this.schoolStateService.markReady();
     }
     if (!this.schoolReadyTimer && !this.schoolStateService.ready) {
-      this.schoolReadyTimer = setTimeout(() => this.schoolStateService.markReady(), UiLayout.SCHOOL_READY_TIMEOUT_MS);
+      const wait = this.authStore.isAuthenticated()
+        ? UiLayout.SIGNED_IN_SCHOOL_READY_TIMEOUT_MS
+        : UiLayout.SCHOOL_READY_TIMEOUT_MS;
+      this.schoolReadyTimer = setTimeout(() => this.schoolStateService.markReady(), wait);
     }
     this.metadataSubscription?.unsubscribe();
     this.metadataSubscription = this.metadataService.getMetadataWithRetry().subscribe({
@@ -538,7 +550,7 @@ export class UiLayout implements OnDestroy {
           // school, and settling on '' now made the pages load for "all
           // schools" and again for that school a moment later. The profile
           // effect above settles it instead (or the timeout, if it never comes).
-          if (!this.authStore.isAuthenticated() || profile) {
+          if (!this.authStore.isAuthenticated() || profile || this.authStore.profileSettled()) {
             this.schoolStateService.markReady();
           }
           this.cdr.markForCheck();

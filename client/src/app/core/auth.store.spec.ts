@@ -458,6 +458,29 @@ describe('AuthStore session expiry', () => {
     expect(store.user()?.id).toBe(2);
   });
 
+  it('reports the profile as settled once the request ends, whether or not it brought a profile', async () => {
+    const store = build();
+    await router.navigateByUrl('/tw');
+    expect(store.profileSettled()).toBe(false);
+
+    setSessionHint();
+    await otherTab('login');
+    expect(store.profileSettled()).toBe(false);
+    httpMock.expectOne('/auth/me').flush({ id: 2, email: 'b@c.d' });
+    expect(store.profileSettled()).toBe(true);
+  });
+
+  it('reports the profile as settled when the request fails with a server error', async () => {
+    const store = build();
+    await router.navigateByUrl('/tw');
+    setSessionHint();
+    await otherTab('login');
+
+    httpMock.expectOne('/auth/me').flush({}, { status: 500, statusText: 'Server Error' });
+    expect(store.user()).toBeNull();
+    expect(store.profileSettled()).toBe(true);
+  });
+
   it('tells other tabs when it signs in and out, with no token in the message', async () => {
     const listener = new BroadcastChannel(AUTH_CHANNEL);
     const heard: unknown[] = [];

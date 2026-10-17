@@ -130,6 +130,12 @@ export class AuthStore {
   private readonly _isAuthenticated = signal<boolean>(false);
   private readonly _user = signal<AuthUser | null>(null);
 
+  /** True once the session's profile request has ended — with the profile, an
+   *  error, or because the session ended. Pages that must not guess at what
+   *  the profile will say (the opening school) wait on this, not on a timer. */
+  private readonly _profileSettled = signal<boolean>(false);
+  readonly profileSettled = this._profileSettled.asReadonly();
+
   readonly isAuthenticated = this._isAuthenticated.asReadonly();
   readonly user = this._user.asReadonly();
 
@@ -313,6 +319,7 @@ export class AuthStore {
         }
         this.cancelProfileRetry();
         this._user.set(profile);
+        this._profileSettled.set(true);
         this.profileHasLists = wantLists;
         this.profileFetchedAt = Date.now();
         // A week-old push token is sent to the backend again (a no-op for an
@@ -327,6 +334,8 @@ export class AuthStore {
         });
       }),
       catchError(err => {
+        // Whatever the failure, no profile is coming from this request.
+        if (generation === this._sessionGeneration) this._profileSettled.set(true);
         if (err.status === 401) {
           this.endSession();
         } else {
@@ -507,6 +516,7 @@ export class AuthStore {
     this.cancelProfileRetry();
     this._isAuthenticated.set(false);
     this._user.set(null);
+    this._profileSettled.set(true);
     this.profileHasLists = false;
     this.profileInFlightIncludesLists = false;
     this.profileStale = true;

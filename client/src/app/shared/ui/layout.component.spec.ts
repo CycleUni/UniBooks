@@ -38,7 +38,7 @@ describe('UiLayout', () => {
           { path: '**', component: DummyRouteComponent }
         ]),
         { provide: MetadataService, useValue: { getMetadata: () => of({ schools: [] }), getMetadataWithRetry: vi.fn(() => of({ schools: [] })) } },
-        { provide: AuthStore, useValue: { isAuthenticated: signal(false), user: signal(null) } },
+        { provide: AuthStore, useValue: { isAuthenticated: signal(false), user: signal(null), profileSettled: signal(false) } },
         { provide: AccountService, useValue: {} },
         { provide: SchoolStateService, useValue: { currentSchool: '', selectedSchool$: of(''), hasInitialized: false, ready: false, markReady: vi.fn(), getManualSchool: () => null, hasManualPick: () => false, setSchools: vi.fn(), setSchool: vi.fn(), clearManualSchool: vi.fn() } },
         { provide: MessageService, useValue: { unreadCount$: of(0), openHub: vi.fn(), closeHub: vi.fn(), retryHubIfOwed: vi.fn() } },
@@ -329,6 +329,13 @@ describe('UiLayout', () => {
         school.hasManualPick = () => true;
         (component as any).loadMetadata();
         expect(school.markReady).not.toHaveBeenCalled();
+      });
+
+      it('settles once the profile request ends without a profile, instead of waiting for a timer', () => {
+        school.hasInitialized = true;
+        (TestBed.inject(AuthStore) as any).profileSettled.set(true);
+        TestBed.tick();
+        expect(school.markReady).toHaveBeenCalled();
       });
 
       it('waits for the list when signed in, since the profile may name a school', () => {
