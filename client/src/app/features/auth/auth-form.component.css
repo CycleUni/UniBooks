@@ -98,6 +98,12 @@
     .google-btn {
       display: flex;
       justify-content: center;
+      /* Google's button iframe is a light-scheme document. Embedded in a page
+         whose color-scheme is dark, the browser paints an opaque white backing
+         behind it — the white box around the dark button. The iframe inherits
+         this, so both sides are 'light' and the backing stays transparent. The
+         button draws its own dark variant (theme: filled_black). */
+      color-scheme: light;
     }
     .google-placeholder {
       position: absolute;
