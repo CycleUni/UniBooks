@@ -191,15 +191,6 @@
   word-break: break-word;
 }
 
-.passkey-badge {
-  font-size: var(--text-xs);
-  padding: 2px 6px;
-  border-radius: var(--radius-pill);
-  background-color: var(--paper-warm);
-  color: var(--muted);
-  border: 1px solid var(--line);
-}
-
 .passkey-provider {
   font-size: var(--text-xs);
   color: var(--ink-secondary, var(--muted));

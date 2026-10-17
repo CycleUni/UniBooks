@@ -397,7 +397,6 @@ export const zhTW: Record<string, string> = {
   'acct.passkeyCreated': '建立於：{date}',
   'acct.passkeyLastUsed': '上次使用：{date}',
   'acct.passkeyNeverUsed': '從未使用',
-  'acct.passkeySynced': '已跨裝置同步',
   'acct.errDeletePasskey': '刪除通行密鑰失敗，請再試一次。',
   'acct.errRenamePasskey': '重新命名通行密鑰失敗，請再試一次。',
   'acct.renamePasskey': '重新命名',

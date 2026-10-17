@@ -189,7 +189,7 @@
       {{ 'acct.passkeysDesc' | t }}
     </p>
 
-    <ui-skeleton *ngIf="passkeysLoading" height="60px"></ui-skeleton>
+    <ui-skeleton *ngIf="passkeysLoading" variant="item-row" [count]="1"></ui-skeleton>
 
     <div *ngIf="!passkeysLoading && passkeys.length > 0" class="passkey-list">
       <div *ngFor="let p of passkeys" class="passkey-item">
@@ -232,7 +232,6 @@
           <div class="passkey-info">
             <div class="passkey-header">
               <span class="passkey-name">{{ p.name }}</span>
-              <span *ngIf="p.backed_up" class="passkey-badge">{{ 'acct.passkeySynced' | t }}</span>
             </div>
             <div *ngIf="p.provider && p.provider !== p.name" class="passkey-provider">
               {{ p.provider }}

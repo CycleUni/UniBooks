@@ -31,7 +31,7 @@ import { isUserVerifiedIn } from '../../core/verification';
          rendering nothing and then snapping the header in. -->
     <div class="container container--narrow seller-page" *ngIf="!seller && !error && !loadFailed">
       <ui-skeleton variant="row" [count]="1"></ui-skeleton>
-      <ui-skeleton [count]="5"></ui-skeleton>
+      <ui-skeleton variant="list" [count]="5"></ui-skeleton>
     </div>
 
     <div class="container container--narrow seller-page" *ngIf="seller">
@@ -94,7 +94,7 @@ import { isUserVerifiedIn } from '../../core/verification';
           <p>{{ 'seller.noListings' | t }}</p>
         </div>
         
-        <ui-skeleton *ngIf="loadingListings" [count]="5"></ui-skeleton>
+        <ui-skeleton *ngIf="loadingListings" variant="list" [count]="5"></ui-skeleton>
       </div>
     </div>
     

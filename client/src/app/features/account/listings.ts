@@ -104,7 +104,7 @@ const PAGE_SIZE = 20;
       {{ 'acct.listingCount' | t:{ n: totalListings } }}
     </p>
 
-    <ui-skeleton *ngIf="loading" [count]="3"></ui-skeleton>
+    <ui-skeleton *ngIf="loading" variant="list" [count]="3"></ui-skeleton>
 
     <div class="list-container" *ngIf="!loading && myListings.length > 0">
       <ui-listing-row

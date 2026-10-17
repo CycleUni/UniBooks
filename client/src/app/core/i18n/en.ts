@@ -405,7 +405,6 @@ export const en: Record<string, string> = {
   'acct.passkeyCreated': 'Created: {date}',
   'acct.passkeyLastUsed': 'Last used: {date}',
   'acct.passkeyNeverUsed': 'Never used',
-  'acct.passkeySynced': 'Synced across devices',
   'acct.errDeletePasskey': 'Failed to delete passkey. Please try again.',
   'acct.errRenamePasskey': 'Failed to rename passkey. Please try again.',
   'acct.renamePasskey': 'Rename',

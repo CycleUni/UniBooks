@@ -148,13 +148,34 @@ import { TPipe } from '../../core/i18n.service';
           </div>
         </ng-container>
 
-        <ng-container *ngSwitchDefault>
+        <!-- Icon plus two lines, for compact item rows that are not books
+             (passkeys). -->
+        <ng-container *ngSwitchCase="'item-row'">
+          <div class="s-item" *ngFor="let i of slots">
+            <div class="s-item-icon pulse"></div>
+            <div class="s-setting-text">
+              <div class="s-bar pulse w-40"></div>
+              <div class="s-bar pulse w-60 s-desc"></div>
+            </div>
+          </div>
+        </ng-container>
+
+        <ng-container *ngSwitchCase="'list'">
           <div class="skeleton-row" *ngFor="let i of slots">
             <div class="s-cover pulse"></div>
             <div class="s-info">
               <div class="s-bar pulse w-60 h-24"></div>
               <div class="s-bar pulse w-40"></div>
             </div>
+          </div>
+        </ng-container>
+
+        <!-- Default: shape-neutral text lines, so a call site that names no
+             variant never gets a book cover it did not ask for. -->
+        <ng-container *ngSwitchDefault>
+          <div class="s-lines" *ngFor="let i of slots">
+            <div class="s-bar pulse w-60"></div>
+            <div class="s-bar pulse w-80 s-desc"></div>
           </div>
         </ng-container>
 
@@ -345,6 +366,9 @@ import { TPipe } from '../../core/i18n.service';
     .s-setting + .s-setting { border-top: 1px solid var(--line); }
     .s-setting-text { flex: 1; display: flex; flex-direction: column; gap: var(--space-2); }
     .s-desc { height: 12px; }
+    .s-lines { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) 0; }
+    .s-item { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) 0; }
+    .s-item-icon { width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; }
     .s-control { width: 44px; height: 24px; flex-shrink: 0; border-radius: 12px; }
 
     @keyframes pulse {
@@ -356,7 +380,7 @@ import { TPipe } from '../../core/i18n.service';
 })
 export class UiSkeleton {
   @Input() count: number = 3;
-  @Input() variant: 'list' | 'row' | 'card-row' | 'discover-grid' | 'report' | 'order' | 'table' | 'detail' | 'chat-list' | 'chat-bubbles' | 'form' | 'settings-rows' = 'list';
+  @Input() variant: 'list' | 'row' | 'card-row' | 'discover-grid' | 'report' | 'order' | 'table' | 'detail' | 'chat-list' | 'chat-bubbles' | 'form' | 'settings-rows' | 'item-row' | 'lines' = 'lines';
 
   readonly bubbleWidths = [55, 40, 65, 35, 50];
 

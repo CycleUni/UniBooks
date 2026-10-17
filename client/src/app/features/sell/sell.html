@@ -62,7 +62,7 @@
           <ui-barcode-scanner *ngIf="isScanning" class="mt-4" (decoded)="handleScanResult($event)" (failed)="onScannerFailed()"></ui-barcode-scanner>
           <div *ngIf="cameraError" class="inline-msg error">{{ cameraError }}</div>
           <!-- Shaped like the result rows below: a cover beside two lines. -->
-          <ui-skeleton *ngIf="isCheckingIsbn" class="results-container" [count]="2"></ui-skeleton>
+          <ui-skeleton *ngIf="isCheckingIsbn" class="results-container" variant="list" [count]="2"></ui-skeleton>
           <!-- Search Results List. Hidden while the camera is open; the results
                are kept, so stopping the scan brings them back. -->
           <div *ngIf="searchResults.length > 0 && !bookPreview && !isCheckingIsbn && !isScanning" class="results-container">
