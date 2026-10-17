@@ -5,6 +5,7 @@ import type { AppEnv, Env } from './env';
 import { rememberOrigin } from './lib/origin';
 import { sameOriginGuard } from './lib/session';
 import { errorHandler } from './middleware/error';
+import { apiThrottle } from './middleware/rateLimit';
 import { notFound } from './lib/http';
 import { accountRoutes } from './routes/accounts';
 import { coreRoutes } from './routes/core';
@@ -47,6 +48,8 @@ export const app = new Hono<AppEnv>();
 
 // One origin for app, API and chat: no CORS. Remember it for links in
 // emails and pushes sent from queue consumers and cron jobs.
+// First, so a refused client costs no more than the check itself.
+app.use('/api/*', apiThrottle());
 app.use('/api/*', rememberOrigin());
 // Session cookies ride along automatically, so state changes must be same-origin.
 app.use('/api/*', sameOriginGuard());

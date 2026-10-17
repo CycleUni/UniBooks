@@ -92,3 +92,27 @@ export const rateLimit =
     await checkRate(c, scope, rate, keyFn?.(c));
     await next();
   };
+
+/**
+ * A loose last resort under every /api route: a client stuck in a request loop
+ * is refused before a route touches D1 or a Durable Object. A refused request
+ * has already run the Worker, so this does not save Worker requests (the
+ * Cloudflare rules in front of the Worker do that); it only saves the work
+ * behind it. Platform rate-limiting bindings, counted per colo, no Durable
+ * Object call; one budget for reads, a tighter one for writes. Generous on
+ * purpose: students share campus Wi-Fi addresses, and routes keep their own,
+ * stricter limits.
+ */
+export const apiThrottle = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+  if (c.env.ENVIRONMENT === 'test') return next();
+  const safe = c.req.method === 'GET' || c.req.method === 'HEAD' || c.req.method === 'OPTIONS';
+  const binding = safe ? c.env.API_READ_LIMIT : c.env.API_WRITE_LIMIT;
+  if (binding) {
+    const ip = c.req.header('CF-Connecting-IP') ?? 'local';
+    if (!(await binding.limit({ key: ip })).success) await throttled(API_THROTTLE_WAIT);
+  }
+  await next();
+};
+
+/** Seconds a refused client is told to wait; the bindings' windows are 60 s, this just spaces retries. */
+const API_THROTTLE_WAIT = 10;

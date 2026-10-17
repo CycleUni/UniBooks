@@ -28,12 +28,19 @@
   // Ad impressions and clicks: append-only events, queried via the SQL API.
   "analytics_engine_datasets": [{ "binding": "AD_EVENTS", "dataset": "unibooks_ad_events" }],
 
-  // Per-client caps on the public ad endpoints (list; view/click events): the
+  // Per-client caps on the public ad endpoints (list; view/click events) and on
+  // all of /api: the
   // platform's own counters, so a hit costs no Durable Object call. namespace_id is a label chosen here
   // (unique per account), not a provisioned resource id.
   "ratelimits": [
     { "name": "AD_STATS_LIMIT", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
-    { "name": "AD_LIST_LIMIT", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } }
+    { "name": "AD_LIST_LIMIT", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } },
+    // Loose last resort under every /api route (middleware/rateLimit.ts apiThrottle),
+    // per client address. A refused request already ran the Worker, so this saves
+    // D1 and Durable Object work, not requests; the Cloudflare rules in front are
+    // the real limit (100 per 10 s), and routes keep their own, stricter ones.
+    { "name": "API_READ_LIMIT", "namespace_id": "1003", "simple": { "limit": 1500, "period": 60 } },
+    { "name": "API_WRITE_LIMIT", "namespace_id": "1004", "simple": { "limit": 300, "period": 60 } }
   ],
 
   // The ISBNnet resolver Worker, called in-process instead of over the internet.

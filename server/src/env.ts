@@ -14,6 +14,10 @@ export interface Env {
   AD_STATS_LIMIT?: RateLimit;
   /** Per-client cap on the public ad list (Workers rate limiting). */
   AD_LIST_LIMIT?: RateLimit;
+  /** Per-client cap on all /api reads (Workers rate limiting; see apiThrottle). */
+  API_READ_LIMIT?: RateLimit;
+  /** Per-client cap on all /api writes (Workers rate limiting; see apiThrottle). */
+  API_WRITE_LIMIT?: RateLimit;
   /** The ISBNnet resolver Worker (service binding); falls back to ISBNNET_RESOLVER_URL. */
   ISBNNET?: Fetcher;
   CHAT_ROOM: DurableObjectNamespace;

@@ -12,7 +12,7 @@ import { environment } from '../../environments/environment';
  * - Only intercepts requests to our own backend API (/api/v1). Absolute URLs
  *   (chat under /api/chat, Google sign-in) are left untouched.
  * - Retries ONLY on transient errors: HTTP 5xx (server fault, likely cold
- *   start timeout from Vercel Lambda), 429 with retry-after, or status 0
+ *   start timeout from Vercel Lambda), or status 0
  *   (browser network-level DNS/TCP failure — very common after idle).
  * - Does NOT retry 4xx: 401 is already handled by AuthInterceptor (session
  *   refresh flow), and 400/403/404 are permanent.
@@ -100,11 +100,8 @@ export class RetryInterceptor implements HttpInterceptor {
     if (is5xx) {
       return true;
     }
-    // 429 with Retry-After is explicitly documented that the client should
-    // honour it (we just retry once regardless)
-    if (error.status === 429) {
-      return true;
-    }
+    // 429 is not retried here: the backend asked us to slow down, and
+    // RequestGuardInterceptor holds the endpoint off until its Retry-After.
     // status 0: CORS failure, network timeout, or the server forcibly closed
     // the connection before responding — common from overloaded Lambda
     return error.status === 0;
