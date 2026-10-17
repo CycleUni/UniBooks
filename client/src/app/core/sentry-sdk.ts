@@ -33,6 +33,10 @@ export function initSentry(): void {
     // details stay masked. Sample sessions lightly, but keep every error.
     replaysSessionSampleRate: 0.05,
     replaysOnErrorSampleRate: 1.0,
+    // Google Identity Services throws minified errors (e.g. "pa") from its
+    // own event handlers when the account chooser is closed or blocked. They
+    // are not ours to fix and reach Sentry through Angular's error handler.
+    denyUrls: [/\/gsi\/client/],
     // Reset and email-change links carry their token in the address, and
     // every event records the page URL; see core/sensitive-url.
     beforeSend: (event) => scrubEventUrls(event),
