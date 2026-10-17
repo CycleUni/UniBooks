@@ -31,6 +31,7 @@ import { cancelOpenOrdersForListing } from '../services/orders/cancel';
 import { UUID_PATTERN } from '../lib/uuid';
 import { parsePhotos } from '../lib/json';
 import { UPLOAD_RATE } from '../lib/upload';
+import { publicEdgeCache } from '../lib/cache';
 
 export const listingRoutes = new Hono<AppEnv>();
 
@@ -46,7 +47,15 @@ async function loadListing(c: Context<AppEnv>, id: string): Promise<Listing | un
 
 // ------------------------------------------------------------- list/create --
 
-listingRoutes.get('/', optionalAuthMiddleware(), async (c) => {
+// Seconds the public feed may be a little behind new listings. A seller's own
+// page (?seller_id=) is never cached: they expect a listing they just posted.
+const FEED_EDGE_TTL = 300;
+
+listingRoutes.get('/', optionalAuthMiddleware(), (c) =>
+  publicEdgeCache(c, FEED_EDGE_TTL, () => listFeed(c), { viewerFree: !c.req.query('seller_id') }),
+);
+
+async function listFeed(c: Context<AppEnv>): Promise<Response> {
   await checkRate(c, 'search', RATES.search);
   const region = await requireRegion(c);
   const lang = resolveLanguage(c, region);
@@ -76,7 +85,7 @@ listingRoutes.get('/', optionalAuthMiddleware(), async (c) => {
   // A public body: seller-only fields stay out whoever asks.
   const results = await serializeListings(c.env, rows, { stripPrivateNote: true, lang });
   return c.json(p.wrap(results, count));
-});
+}
 
 listingRoutes.post('/', authMiddleware(), async (c) => {
   const region = await requireRegion(c);
@@ -148,7 +157,21 @@ listingRoutes.post('/', authMiddleware(), async (c) => {
 
 // ------------------------------------------------------------ recent books --
 
-listingRoutes.get('/recent-books', async (c) => {
+// The home page's list: the same for every visitor and slow to change, so the
+// edge keeps it for minutes. An empty one (a school nobody has listed at yet)
+// only briefly.
+const RECENT_BOOKS_EDGE_TTL = 300;
+const RECENT_BOOKS_EMPTY_EDGE_TTL = 30;
+
+listingRoutes.get('/recent-books', (c) =>
+  publicEdgeCache(
+    c,
+    async (res) => (((await res.clone().json()) as { count?: number }).count ? RECENT_BOOKS_EDGE_TTL : RECENT_BOOKS_EMPTY_EDGE_TTL),
+    () => recentBooks(c),
+  ),
+);
+
+async function recentBooks(c: Context<AppEnv>): Promise<Response> {
   const region = await requireRegion(c);
   const limitParam = c.req.query('limit') ?? '200';
   const limit = /^\d+$/.test(limitParam) ? Math.min(Math.max(Number(limitParam), 1), 200) : 200;
@@ -241,7 +264,7 @@ listingRoutes.get('/recent-books', async (c) => {
     };
   });
   return c.json({ ...p.wrap(results, count), ...scopeFields });
-});
+}
 
 // ------------------------------------------------------------------ uploads --
 

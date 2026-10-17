@@ -1,8 +1,8 @@
 /**
  * /api/v1/search/
  */
-import { Hono } from 'hono';
-import { cached, versionedEdgeCache } from '../lib/cache';
+import { Hono, type Context } from 'hono';
+import { publicEdgeCache, versionedEdgeCache } from '../lib/cache';
 import { validateBookIsbn } from '../services/catalog/isbn';
 import type { AppEnv, Env } from '../env';
 import { requireRegion, setSharedCache } from '../lib/region';
@@ -102,7 +102,30 @@ async function categoryIdsForSlug(env: Env, regionCode: string, slug: string): P
   return ids.length ? ids : [-1];
 }
 
-searchRoutes.get('/books', optionalAuthMiddleware(), async (c) => {
+// How long the edge keeps a search answer. The answer mixes catalogue data
+// (kept for a day or more in KV, lib services/catalog/lookups.ts) with counts
+// and prices from D1, which change as listings do and are not invalidated: a
+// short copy. One that found nothing, or that a catalogue failed to answer
+// (any attempt that timed out, errored or was rate limited), is kept shorter
+// still, so a book listed a moment later is not hidden behind it. Signed-in
+// answers (they carry the visitor's subscriptions) are never cached.
+const SEARCH_HIT_EDGE_TTL = 300;
+const SEARCH_MISS_EDGE_TTL = 30;
+
+/** Responses built while a catalogue failed to answer (see searchEdgeTtl). */
+const incomplete = new WeakSet<Response>();
+
+const searchEdgeTtl = async (res: Response): Promise<number> => {
+  if (incomplete.has(res)) return SEARCH_MISS_EDGE_TTL;
+  const body = (await res.clone().json()) as { count?: number };
+  return body.count ? SEARCH_HIT_EDGE_TTL : SEARCH_MISS_EDGE_TTL;
+};
+
+searchRoutes.get('/books', optionalAuthMiddleware(), (c) =>
+  publicEdgeCache(c, searchEdgeTtl, () => searchBooks(c), { viewerFree: !c.get('userId') }),
+);
+
+async function searchBooks(c: Context<AppEnv>): Promise<Response> {
   await checkRate(c, 'search', SEARCH_RATE);
   const env = c.env;
   // Bounded: every distinct query is a DB scan plus an external lookup.
@@ -137,6 +160,8 @@ searchRoutes.get('/books', optionalAuthMiddleware(), async (c) => {
   const schoolFrag = (alias = 'l') => (schoolId !== null ? frag(`${alias}.school_id = ?`, schoolId) : EMPTY);
   const cityFrag = (cityId: number, alias = 'l') => frag(`${alias}.school_id IN (SELECT id FROM schools WHERE city_id = ?)`, cityId);
 
+  // One entry per catalogue asked (Google Books, ISBNnet, Open Library), with how it went.
+  const attempts: Attempt[] = [];
   let googleUnavailable = false;
   let resultsTruncated = false;
   let results: Item[] = [];
@@ -173,7 +198,6 @@ searchRoutes.get('/books', optionalAuthMiddleware(), async (c) => {
     resultsTruncated = rows.length === LOCAL_BROWSE_LIMIT;
     results = rows.map(toItem);
   } else {
-    const attempts: Attempt[] = [];
     let external: Item[] = [];
     let localRows: LocalBook[];
 
@@ -474,7 +498,7 @@ searchRoutes.get('/books', optionalAuthMiddleware(), async (c) => {
 
   const p = pagination(c.req.url);
   const page = p.wrap(filtered.slice(p.offset, p.offset + p.limit), filtered.length);
-  return c.json({
+  const res = c.json({
     ...page,
     google_unavailable: googleUnavailable,
     results_truncated: resultsTruncated,
@@ -484,7 +508,9 @@ searchRoutes.get('/books', optionalAuthMiddleware(), async (c) => {
     city: city?.code ?? null,
     city_count: cityCount,
   });
-});
+  if (attempts.some((a) => a.status === 'timeout' || a.status === 'error' || a.status === 'rate_limited')) incomplete.add(res);
+  return res;
+}
 
 searchRoutes.get('/courses', (c) =>
   versionedEdgeCache(c, 'search', async () => {
@@ -495,30 +521,26 @@ searchRoutes.get('/courses', (c) =>
     // Resolve the slug first: an unknown category is an empty answer, never a cache entry.
     const categoryIds = category ? await categoryIdsForSlug(c.env, region.code, category) : null;
     if (categoryIds && !categoryIds.length) return c.json([]);
-    // Viewer-independent aggregate over every active listing: cache briefly.
-    const body = await cached(
-      c.env,
-      'search',
-      `courses:${region.code}:${schoolId ?? ''}:${categoryIds?.join('.') ?? ''}`,
-      300,
-      async () => {
-        const parts: Frag[] = [frag("l.region_code = ? AND l.status = 'active' AND l.course_name <> ''", region.code)];
-        if (schoolId !== null) parts.push(frag('l.school_id = ?', schoolId));
-        if (category) {
-          parts.push(frag('l.category_id IN (SELECT value FROM json_each(?))', jsonList(categoryIds ?? [])));
-        }
-        const w = join(parts);
-        const rows = await all<{ course_name: string; n: number }>(
-          c.env,
-          frag(
-            `SELECT l.course_name, count(l.id) AS n FROM listings l WHERE ${w.sql}
+    // Viewer-independent aggregate over every active listing; the edge cache
+    // around this route keeps it (no KV copy: the keys multiply with every
+    // school and category, and KV's free plan allows 1000 writes a day).
+    const body = await (async () => {
+      const parts: Frag[] = [frag("l.region_code = ? AND l.status = 'active' AND l.course_name <> ''", region.code)];
+      if (schoolId !== null) parts.push(frag('l.school_id = ?', schoolId));
+      if (category) {
+        parts.push(frag('l.category_id IN (SELECT value FROM json_each(?))', jsonList(categoryIds ?? [])));
+      }
+      const w = join(parts);
+      const rows = await all<{ course_name: string; n: number }>(
+        c.env,
+        frag(
+          `SELECT l.course_name, count(l.id) AS n FROM listings l WHERE ${w.sql}
         GROUP BY l.course_name ORDER BY n DESC, l.course_name LIMIT 20`,
-            ...w.args,
-          ),
-        );
-        return rows.map((r) => ({ value: r.course_name, count: Number(r.n) }));
-      },
-    );
+          ...w.args,
+        ),
+      );
+      return rows.map((r) => ({ value: r.course_name, count: Number(r.n) }));
+    })();
     await setSharedCache(c, { maxAge: 300 });
     return c.json(body);
   }),

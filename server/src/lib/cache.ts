@@ -103,18 +103,22 @@ export function invalidates(...namespaces: CacheNamespace[]): MiddlewareHandler<
  * built on a miss. The key is the URL with `v` set to `version`, so bumping
  * the version switches every location to fresh entries. Only public answers
  * that vary on nothing outside the URL are stored, for their own
- * Cache-Control max-age — or for `edgeTtl` seconds when given, which keeps
- * the edge copy without letting browsers keep one.
+ * Cache-Control max-age — or for `edgeTtl` seconds when given (or what the
+ * function returns for the answer built), which keeps the edge copy without
+ * letting browsers keep one.
  *
  * This saves the KV and D1 reads and the CPU of building the answer; the
  * Worker still runs. Workers Cache (which would skip it) bills every static
  * asset request too, so it is not used.
  */
+/** Seconds the edge keeps an answer; a function decides from the answer built. */
+type EdgeTtl = number | ((res: Response) => number | Promise<number>);
+
 export async function edgeCache(
   c: Context<AppEnv>,
   version: string,
   build: () => Promise<Response>,
-  { edgeTtl }: { edgeTtl?: number } = {},
+  { edgeTtl }: { edgeTtl?: EdgeTtl } = {},
 ): Promise<Response> {
   const url = new URL(c.req.url);
   url.searchParams.set('v', version);
@@ -127,7 +131,8 @@ export async function edgeCache(
     return res;
   }
   const res = await build();
-  const cacheControl = edgeTtl ? `public, max-age=${edgeTtl}` : (res.headers.get('Cache-Control') ?? '');
+  const ttl = typeof edgeTtl === 'function' ? await edgeTtl(res) : edgeTtl;
+  const cacheControl = ttl ? `public, max-age=${ttl}` : (res.headers.get('Cache-Control') ?? '');
   if (res.ok && !res.headers.has('Vary') && /^public\b/.test(cacheControl) && /max-age=[1-9]/.test(cacheControl)) {
     const stored = new Response(res.clone().body, res);
     stored.headers.set('Cache-Control', cacheControl);
@@ -158,4 +163,46 @@ export async function versionedEdgeCache(c: Context<AppEnv>, ns: CacheNamespace,
     return res;
   }
   return edgeCache(c, current, build);
+}
+
+/**
+ * A few seconds of edge cache for a public, viewer-independent GET that no
+ * write invalidates (search results, the listing feed): a burst of identical
+ * requests costs D1 once per location instead of once per request, and a new
+ * listing shows up within `ttlSeconds`.
+ *
+ * Cached only when the URL itself names everything the answer depends on:
+ * `region` and `lang` (the SPA always sends both; without them the region
+ * could come from a header or the visitor's country, which the key does not
+ * see). Otherwise, and when `viewerFree` is false (a signed-in visitor's
+ * answer carries their own state), the answer is built every time.
+ */
+export function publicEdgeCache(
+  c: Context<AppEnv>,
+  ttlSeconds: EdgeTtl,
+  build: () => Promise<Response>,
+  { viewerFree = true }: { viewerFree?: boolean } = {},
+): Promise<Response> {
+  if (c.req.method !== 'GET' || !viewerFree || !c.req.query('region') || !c.req.query('lang')) return build();
+  return edgeCache(c, 'public', build, { edgeTtl: ttlSeconds });
+}
+
+/**
+ * A small key/value store in the edge cache (caches.default) for caches whose
+ * keys a visitor can multiply, such as search text or ISBNs. Writes are free
+ * and unlimited, where KV's free plan allows 1000 a day, a budget a script
+ * could spend in minutes and take the version and e-mail de-duplication keys
+ * down with it. Entries live per location and may be evicted early: a miss
+ * only costs the work again.
+ */
+const storeRequest = (key: string) => new Request(`https://cache.internal/${encodeURIComponent(key)}`);
+
+export async function storeGet(key: string): Promise<string | null> {
+  const hit = await caches.default.match(storeRequest(key));
+  return hit ? hit.text() : null;
+}
+
+export async function storePut(key: string, value: string, ttlSeconds: number): Promise<void> {
+  const headers = { 'Cache-Control': `public, max-age=${Math.max(1, ttlSeconds)}` };
+  await caches.default.put(storeRequest(key), new Response(value, { headers }));
 }

@@ -8,6 +8,7 @@ import type { Env } from '../../env';
 import type { Region } from '../../db';
 import { cleanPublisher, type Engine, cleanCoverUrl } from './common';
 import { isbnForms } from './isbn';
+import { storeGet, storePut } from '../../lib/cache';
 import type { RateLimiter } from '../../durable-objects/RateLimiter';
 
 export interface BookRecord {
@@ -37,7 +38,7 @@ const OPEN_LIBRARY_COVER_URL = (id: number | string) => `https://covers.openlibr
 
 const EXTERNAL_API_TIMEOUT_MS = 5000;
 const NOT_FOUND_SENTINEL = '__gb_not_found__';
-const NOT_FOUND_TTL = 3600;
+const NOT_FOUND_TTL = 86400;
 const ISBN_HIT_TTL = 86400 * 30;
 const QUERY_HIT_TTL = 86400;
 const GOOGLE_RATE_LIMIT_KEY = 'gb:rate_limited';
@@ -46,19 +47,20 @@ const USER_AGENT = 'UniBooks Backend Service';
 
 // ---------------------------------------------------------------- cache ----
 
-async function cacheGet(env: Env, key: string): Promise<string | null> {
+// Kept in the edge cache, not KV: every ISBN and search text is a new key a
+// visitor can make up, and KV's free plan allows only 1000 writes a day.
+async function cacheGet(_env: Env, key: string): Promise<string | null> {
   try {
-    return (await env.KV?.get(`catalog:${key}`)) ?? null;
+    return await storeGet(`catalog:${key}`);
   } catch (e) {
     console.warn('[catalog] cache get failed; treating as a miss', key, e);
     return null;
   }
 }
 
-async function cacheSet(env: Env, key: string, value: string, ttlSeconds: number): Promise<void> {
+async function cacheSet(_env: Env, key: string, value: string, ttlSeconds: number): Promise<void> {
   try {
-    // KV's minimum TTL is 60 s.
-    await env.KV?.put(`catalog:${key}`, value, { expirationTtl: Math.max(60, ttlSeconds) });
+    await storePut(`catalog:${key}`, value, ttlSeconds);
   } catch (e) {
     console.warn('[catalog] cache set failed; continuing uncached', key, e);
   }
@@ -70,7 +72,7 @@ async function googleRateLimited(env: Env): Promise<boolean> {
 }
 
 async function markGoogleRateLimited(env: Env): Promise<void> {
-  // Stored as an expiry timestamp: KV cannot hold a 10-second TTL itself.
+  // Stored as an expiry timestamp, so a copy that outlives its TTL still reads as expired.
   await cacheSet(env, GOOGLE_RATE_LIMIT_KEY, String(Date.now() + GOOGLE_RATE_LIMIT_TTL_MS), 60);
 }
 

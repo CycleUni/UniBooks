@@ -1,7 +1,6 @@
 import { and, count, desc, eq, exists, isNotNull } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { books, createDb, regionVerifications, subscriptions } from '../../db';
-import { cached } from '../../lib/cache';
 import { NO_SCHOOL_ID } from './places';
 
 export interface WaitlistEntry {
@@ -16,12 +15,14 @@ export interface WaitlistEntry {
 /**
  * The most-wanted books of a region: those with the most subscribers, counting
  * only subscribers verified at `schoolId` when one is given. Counts may lag
- * five minutes.
+ * as long as the home list is cached.
  */
 export async function mostWanted(env: Env, regionCode: string, schoolId: number | null): Promise<WaitlistEntry[]> {
   // A ?school= that names no school here: an empty list, never "every school".
   if (schoolId === NO_SCHOOL_ID) return [];
-  return cached(env, 'ref', `waitlist:${regionCode}:${schoolId ?? ''}`, 300, async () => {
+  // Not cached here: the home list that carries it is cached at the edge (a
+  // KV copy per school would spend KV's free 1000 writes a day).
+  return (async () => {
     const bySchool =
       schoolId === null
         ? undefined
@@ -63,5 +64,5 @@ export async function mostWanted(env: Env, regionCode: string, schoolId: number 
       isbn: r.isbn13,
       authors: r.authors,
     }));
-  });
+  })();
 }
