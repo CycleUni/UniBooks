@@ -10,7 +10,7 @@ const envDir = path.join(__dirname, '../src/environments');
 // `wrangler dev` reads. A variable already set in the environment (CI) wins.
 // Only public values are read; secrets never reach this bundle.
 // ---------------------------------------------------------------------------
-const SHARED_KEYS = ['R2_PUBLIC_URL', 'GOOGLE_CLIENT_ID', 'SENTRY_DSN'];
+const SHARED_KEYS = ['R2_PUBLIC_URL', 'GOOGLE_CLIENT_ID', 'SENTRY_DSN', 'TURNSTILE_SITE_KEY'];
 const SERVER_DIR = path.join(__dirname, '../../server');
 const PRODUCTION = process.argv.includes('--production');
 
@@ -54,7 +54,8 @@ export const environment = {
   backendUrl: '${backendUrl}',
   gaMeasurementId: '${process.env.NG_APP_GA_MEASUREMENT_ID || ''}',
   sentryDsn: '${process.env.SENTRY_DSN || ''}',
-  googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}'
+  googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}',
+  turnstileSiteKey: '${process.env.TURNSTILE_SITE_KEY || ''}'
 };
 `;
 
@@ -64,7 +65,8 @@ export const environment = {
   backendUrl: '${backendUrl}',
   gaMeasurementId: '${process.env.NG_APP_GA_MEASUREMENT_ID || ''}',
   sentryDsn: '${process.env.SENTRY_DSN || ''}',
-  googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}'
+  googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}',
+  turnstileSiteKey: '${process.env.TURNSTILE_SITE_KEY || ''}'
 };
 `;
 

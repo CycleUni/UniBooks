@@ -41,26 +41,6 @@ export interface PasskeyItem {
   backed_up: boolean | number;
 }
 
-export const PASSKEY_FLAG_KEY = 'ub_passkey';
-
-export function hasPasskeyFlag(): boolean {
-  if (typeof localStorage === 'undefined') return false;
-  try {
-    return localStorage.getItem(PASSKEY_FLAG_KEY) === '1' || localStorage[PASSKEY_FLAG_KEY] === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function setPasskeyFlag(): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(PASSKEY_FLAG_KEY, '1');
-  } catch {
-    // Storage access or quota error in restricted environments
-  }
-}
-
 export function isUserCancellation(err: unknown): boolean {
   if (!err) return false;
   const directName = (err as any).name;
@@ -742,10 +722,6 @@ export class AuthStore {
     return typeof window !== 'undefined' && webauthnBrowser.browserSupportsWebAuthn();
   }
 
-  hasPasskey(): boolean {
-    return hasPasskeyFlag();
-  }
-
   cancelPasskey(): void {
     try {
       webauthnBrowser.WebAuthnAbortService.cancelCeremony();
@@ -773,7 +749,6 @@ export class AuthStore {
         ),
         tap((response) => {
           if (isLoginSuccess(response)) {
-            setPasskeyFlag();
             this.signInPending = true;
             this.markSignedIn();
             this.ga.trackLogin('Passkey');
@@ -800,9 +775,6 @@ export class AuthStore {
             ...(name ? { name } : {}),
           }),
         ),
-        tap(() => {
-          setPasskeyFlag();
-        }),
       );
   }
 
@@ -818,12 +790,14 @@ export class AuthStore {
     return this.http.delete<void>(`/auth/passkeys/${id}`);
   }
 
-  register(email: string, password: string, firstName: string, lastName: string): Observable<any> {
+  /** `challenge`: a Turnstile token, when the server asked for one. */
+  register(email: string, password: string, firstName: string, lastName: string, challenge?: string): Observable<any> {
     return this.http.post<any>('/auth/register', {
       email,
       password,
       first_name: firstName,
-      last_name: lastName
+      last_name: lastName,
+      ...(challenge ? { cf_turnstile_response: challenge } : {})
     }).pipe(
       tap(() => {
         this.ga.trackSignUp('Email');
@@ -857,8 +831,9 @@ export class AuthStore {
     );
   }
 
-  requestPasswordReset(email: string): Observable<any> {
-    return this.http.post<any>('/auth/password/reset/request', { email });
+  /** `challenge`: a Turnstile token, when the server asked for one. */
+  requestPasswordReset(email: string, challenge?: string): Observable<any> {
+    return this.http.post<any>('/auth/password/reset/request', challenge ? { email, cf_turnstile_response: challenge } : { email });
   }
 
   confirmPasswordReset(token: string, newPassword: string): Observable<any> {

@@ -10,7 +10,7 @@ import { RegionLinkDirective } from '../../core/region-link.directive';
 import { RegionLinkService } from '../../core/region-link.service';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiInput } from '../../shared/ui/input.component';
-import { AuthStore, hasPasskeyFlag, isUserCancellation } from '../../core/auth.store';
+import { AuthStore } from '../../core/auth.store';
 import { GoogleAuthService } from '../../core/services/google-auth.service';
 import { I18nService, TPipe } from '../../core/i18n.service';
 import { ThemeService } from '../../core/services/theme.service';
@@ -71,22 +71,9 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   registerFirstName = '';
   registerLastName = '';
   isLoading = false;
-  isPasskeyLoading = false;
   clientAuthError = '';
   lastAuthError: any = null;
   lastAuthAction: 'login' | 'register' = 'login';
-
-  get supportsPasskeys(): boolean {
-    return typeof this.auth.supportsPasskeys === 'function' ? this.auth.supportsPasskeys() : false;
-  }
-
-  get hasPasskey(): boolean {
-    return hasPasskeyFlag();
-  }
-
-  get showPasskeyButton(): boolean {
-    return this.supportsPasskeys && this.hasPasskey;
-  }
 
   private conditionalAbortController: AbortController | null = null;
   private conditionalSub: Subscription | null = null;
@@ -94,10 +81,14 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   authIsError = false;
   returnUrl: string | null = null;
 
-  /** Sign-in asked for a Turnstile challenge (repeated wrong passwords on this account). */
+  /** A Turnstile challenge is shown: the page always needs one (sign-in and registration). */
   challengeRequired = false;
+  /** The check needs the visitor (a checkbox or puzzle): until then it shows nothing. */
+  challengeInteractive = false;
   private challengeToken = '';
   private challengeWidget: string | null = null;
+  private challengeSiteKey = '';
+  private challengeRendering = false;
   /**
    * The visitor submitted and the challenge has no token yet: the attempt
    * is sent once, when it is solved. While true the button is disabled and
@@ -172,7 +163,13 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.googleAuth.opening() || this.googleAuth.signingIn();
   }
 
+  /** The visitor submitted and the check needs them: only then does the form say so. */
+  get challengePrompting(): boolean {
+    return this.challengeInteractive && this.awaitingChallenge;
+  }
+
   get authMessage(): string {
+    if (this.challengePrompting) return this.i18n.t('auth.challengePrompt');
     if (this.clientAuthError) return this.i18n.t(this.clientAuthError);
     if (!this.lastAuthError) return '';
     const err = this.lastAuthError;
@@ -239,6 +236,8 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngAfterViewInit() {
     this.renderGoogleButton();
+    // Sign-in and registration always need a challenge: solve it while the form is filled in.
+    if (this.turnstile.siteKey) this.showChallenge(this.turnstile.siteKey);
   }
 
   onLogin() {
@@ -257,17 +256,17 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     // widget's callback signs in again with the token).
     if (this.challengeRequired && !this.challengeToken) {
       // The widget is still working on a fresh token: send when it has one.
-      this.awaitingChallenge = true;
+      this.awaitChallenge();
       return;
     }
 
     this.isLoading = true;
-    // Single-use: whatever the answer, a later attempt needs a fresh token.
-    // Reset the widget now so one is ready by the next submit; it is only
-    // stored, never sent by itself (see onToken).
+    // Single-use: a later attempt needs a fresh token. The widget is reset
+    // only once the answer is a failure (resetChallenge): resetting it now
+    // would rerun the challenge on screen while a sign-in that already has
+    // its token goes through.
     const token = this.challengeToken;
     this.challengeToken = '';
-    if (token && this.challengeWidget) this.turnstile.reset(this.challengeWidget);
     this.auth.login(this.email, this.password, token || undefined).subscribe({
       // No navigation here: the leave-effect above owns that, so the password
       // and Google paths cannot disagree about where a login lands.
@@ -282,6 +281,7 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
         this.isLoading = false;
         this.lastAuthError = err;
         this.authIsError = true;
+        if (token) this.resetChallenge();
         const code = err?.error?.error?.code;
         if (code === 'auth.errChallengeRequired' || code === 'auth.errChallengeFailed') {
           this.awaitingChallenge = true;
@@ -292,29 +292,14 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  onPasskeyLogin() {
-    if (this.isLoading || this.isPasskeyLoading || this.googleBusy) return;
-    this.abortConditionalPasskey();
-    this.clientAuthError = '';
-    this.lastAuthError = null;
-    this.lastAuthAction = 'login';
-    this.isPasskeyLoading = true;
-    this.cdr.markForCheck();
+  /** Below the fold on a phone, the visitor would not see they are asked. */
+  private revealChallenge(): void {
+    this.challengeBox?.nativeElement.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }
 
-    this.auth.passkeyLogin().subscribe({
-      next: () => {
-        this.isPasskeyLoading = false;
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.isPasskeyLoading = false;
-        if (!isUserCancellation(err)) {
-          this.lastAuthError = err;
-          this.authIsError = true;
-        }
-        this.cdr.markForCheck();
-      },
-    });
+  /** Ask the widget for a new token: the last one was spent on a request that failed. */
+  private resetChallenge(): void {
+    if (this.challengeWidget) this.turnstile.reset(this.challengeWidget);
   }
 
   private async checkConditionalMediation(): Promise<boolean> {
@@ -373,12 +358,14 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private async showChallenge(siteKey: unknown): Promise<void> {
     if (typeof siteKey !== 'string' || !siteKey) return;
+    this.challengeSiteKey = siteKey;
     this.challengeRequired = true;
     this.cdr.detectChanges();
     // Shown already: it was reset when its last token was sent, and the
-    // fresh token resubmits this attempt (submitWhenSolved).
-    if (this.challengeWidget) return;
+    // fresh token resubmits this attempt (submitWhenSolved). Or on its way.
+    if (this.challengeWidget || this.challengeRendering) return;
     if (!this.challengeBox) return;
+    this.challengeRendering = true;
     try {
       this.challengeWidget = await this.turnstile.render(this.challengeBox.nativeElement, {
         siteKey,
@@ -391,13 +378,19 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
           // away in non-interactive mode), which must not sign in again.
           if (this.awaitingChallenge) {
             this.awaitingChallenge = false;
-            this.onLogin();
+            if (this.mode === 'register') this.onRegister();
+            else this.onLogin();
           }
           this.cdr.markForCheck();
         },
+        onInteractive: (needed) => {
+          this.challengeInteractive = needed;
+          this.cdr.detectChanges();
+          if (needed && this.awaitingChallenge) this.revealChallenge();
+        },
         onError: () => {
-          // Failed or expired: Turnstile retries by itself; the button is
-          // usable again so the visitor is not left waiting on nothing.
+          // Failed, expired or timed out: Turnstile retries by itself; the
+          // button is usable again so the visitor is not left waiting on nothing.
           this.challengeToken = '';
           if (this.awaitingChallenge) {
             this.awaitingChallenge = false;
@@ -408,10 +401,26 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
         },
       });
     } catch {
-      this.clientAuthError = 'auth.errChallengeUnavailable';
-      this.authIsError = true;
+      // The script did not load (a blocker, or no route to Cloudflare), so
+      // there will be no token. Silent on opening the page; but a visitor who
+      // submitted must not be left on "verifying" for good.
+      if (this.awaitingChallenge) {
+        this.awaitingChallenge = false;
+        this.clientAuthError = 'auth.errChallengeUnavailable';
+        this.authIsError = true;
+      }
       this.cdr.markForCheck();
+    } finally {
+      this.challengeRendering = false;
     }
+  }
+
+  /** Waiting for a token the widget has not got: load it again if it never came up. */
+  private awaitChallenge(): void {
+    this.awaitingChallenge = true;
+    if (!this.challengeWidget && !this.challengeRendering) void this.showChallenge(this.challengeSiteKey);
+    else if (this.challengeInteractive) this.revealChallenge();
+    this.cdr.markForCheck();
   }
 
   ngOnDestroy() {
@@ -435,8 +444,17 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
+    if (this.isLoading || this.awaitingChallenge) return;
+    // Asked for before: wait for the widget's token (see onLogin).
+    if (this.challengeRequired && !this.challengeToken) {
+      this.awaitChallenge();
+      return;
+    }
+
     this.isLoading = true;
-    this.auth.register(this.registerEmail, this.registerPassword, this.registerFirstName, this.registerLastName).subscribe({
+    const token = this.challengeToken;
+    this.challengeToken = '';
+    this.auth.register(this.registerEmail, this.registerPassword, this.registerFirstName, this.registerLastName, token || undefined).subscribe({
       next: () => {
         // New accounts start inactive — login is blocked until the emailed
         // activation link is clicked, so there's no account to auto-login
@@ -456,6 +474,12 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
         this.isLoading = false;
         this.lastAuthError = err;
         this.authIsError = true;
+        if (token) this.resetChallenge();
+        const code = err?.error?.error?.code;
+        if (code === 'auth.errChallengeRequired' || code === 'auth.errChallengeFailed') {
+          this.awaitingChallenge = true;
+          this.showChallenge(err.error.error.site_key);
+        }
         this.cdr.markForCheck();
       }
     });

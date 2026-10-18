@@ -61,11 +61,6 @@ export function outcomeLimit(c: Context<AppEnv>, scope: string, rate: string, ke
       const retryAfter = await limiter(c, scope, key).peek(limit, window);
       if (retryAfter) await throttled(retryAfter);
     },
-    /** Whether at least `atLeast` outcomes (default: the limit) were counted in this window. */
-    async reached(atLeast = limit): Promise<boolean> {
-      if (off) return false;
-      return (await limiter(c, scope, key).peek(atLeast, window)) > 0;
-    },
     async count(): Promise<void> {
       if (!off) await limiter(c, scope, key).hit(limit, window);
     },

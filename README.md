@@ -106,7 +106,7 @@ npx wrangler secret put MAILJET_SECRET_KEY
 npx wrangler secret put GOOGLE_BOOKS_API_KEY
 npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON   # 推播（可選）
 npx wrangler secret put CF_ANALYTICS_TOKEN       # 廣告統計：Account Analytics Read 權限的 API token（可選）
-npx wrangler secret put TURNSTILE_SECRET_KEY     # 登入人機驗證（可選；site key 填在 wrangler.jsonc vars 的 TURNSTILE_SITE_KEY）
+npx wrangler secret put TURNSTILE_SECRET_KEY     # 登入／註冊／忘記密碼人機驗證（可選；site key 填在 wrangler.jsonc vars 的 TURNSTILE_SITE_KEY）
 npm run deploy    # 建置前端 → wrangler deploy（首次自動建立資源）→ 套用遠端 D1 migration
 npm run db:seed:remote         # 可選，首次部署後一次：香港地區與縣市、學校、分類
 ```

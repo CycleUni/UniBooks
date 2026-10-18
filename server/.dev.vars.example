@@ -41,7 +41,7 @@ CF_ANALYTICS_TOKEN=
 # too. Keep this line empty so local runs report nothing; put a DSN here to try it.
 SENTRY_DSN=
 
-# Cloudflare Turnstile (optional): a challenge after repeated wrong passwords instead of a lockout.
+# Cloudflare Turnstile (optional): sign-in, registration and password reset requests always need a challenge.
 # These are Cloudflare's public test keys (always pass). Production: a real widget's keys,
 # the site key in wrangler.jsonc vars and the secret via `wrangler secret put TURNSTILE_SECRET_KEY`.
 TURNSTILE_SITE_KEY=1x00000000000000000000AA

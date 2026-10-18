@@ -142,7 +142,6 @@ describe('AuthStore Passkey API', () => {
       expect(result).toEqual({ code: 'auth.loginSuccess', user_id: 'user-1' });
       expect(mockGa.trackLogin).toHaveBeenCalledWith('Passkey');
       expect(authStore.isAuthenticated()).toBe(true);
-      expect(localStorage.getItem('ub_passkey')).toBe('1');
     });
 
     it('supports useBrowserAutofill option in passkeyLogin', async () => {
@@ -173,7 +172,7 @@ describe('AuthStore Passkey API', () => {
       const verifyReq = httpMock.expectOne('/auth/passkeys/login/verify');
       verifyReq.flush({ code: 'auth.loginSuccess', user_id: 'user-auto' });
 
-      expect(localStorage.getItem('ub_passkey')).toBe('1');
+      expect(authStore.isAuthenticated()).toBe(true);
     });
   });
 
@@ -224,7 +223,6 @@ describe('AuthStore Passkey API', () => {
       verifyReq.flush({ id: 'new-cred-id', name: 'My MacBook' });
 
       expect(result).toEqual({ id: 'new-cred-id', name: 'My MacBook' });
-      expect(localStorage.getItem('ub_passkey')).toBe('1');
     });
   });
 

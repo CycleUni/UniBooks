@@ -90,9 +90,9 @@
     // API it calls; client/scripts/set-env.js reads it from here. Empty: off.
     "SENTRY_DSN": "https://b5fe34378b4c674ee433d8e672dedaae@o4512117291876352.ingest.us.sentry.io/4512259160801280",
     // Cloudflare Turnstile site key (public). With it and the TURNSTILE_SECRET_KEY
-    // secret, repeated wrong passwords on one account ask for a challenge
-    // instead of locking the account; the key reaches the app with the
-    // challenge request (no client build setting). Empty: off.
+    // secret, sign-in, registration and asking for a password reset link always
+    // need a challenge (sign-in no longer locks an account after wrong
+    // passwords); client/scripts/set-env.js reads the key from here. Empty: off.
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFXU0IYptAGunf16"
   },
 

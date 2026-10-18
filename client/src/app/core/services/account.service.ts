@@ -508,8 +508,4 @@ export class AccountService {
   passkeyRegister(name?: string): Observable<{ id: string; name: string }> {
     return this.authStore.passkeyRegister(name);
   }
-
-  passkeyLogin(): Observable<any> {
-    return this.authStore.passkeyLogin();
-  }
 }

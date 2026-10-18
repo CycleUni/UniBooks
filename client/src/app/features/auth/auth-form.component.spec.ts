@@ -52,7 +52,7 @@ describe('AuthFormComponent', () => {
       passkeyLogin: vi.fn().mockReturnValue(of({})),
       cancelPasskey: vi.fn(),
     };
-    mockTurnstile = { render: vi.fn().mockResolvedValue('w1'), reset: vi.fn(), remove: vi.fn() };
+    mockTurnstile = { siteKey: '', render: vi.fn().mockResolvedValue('w1'), reset: vi.fn(), remove: vi.fn() };
     mockGoogle = { renderButton: vi.fn(), buttonReady: signal(true), opening: signal(false), signingIn: signal(false) };
     mockRouter = {
       navigate: vi.fn().mockResolvedValue(true),
@@ -395,6 +395,168 @@ describe('AuthFormComponent', () => {
     expect(mockAuth.login).toHaveBeenCalledTimes(2);
   });
 
+  it('shows the challenge as soon as the register page opens and registers with its token without a retry', async () => {
+    mockTurnstile.siteKey = 'build-site-key';
+    build('register');
+    await fixture.whenStable();
+    expect(component.challengeRequired).toBe(true);
+    expect(mockTurnstile.render).toHaveBeenCalledOnce();
+    expect(mockTurnstile.render.mock.calls[0][1].siteKey).toBe('build-site-key');
+
+    mockTurnstile.render.mock.calls[0][1].onToken('tok-1'); // solved while the form is filled in
+    component.registerEmail = 'new@example.com';
+    component.registerPassword = 'Str0ng-passphrase-9';
+    component.registerConfirmPassword = 'Str0ng-passphrase-9';
+    component.registerFirstName = 'A';
+    component.registerLastName = 'B';
+    component.onRegister();
+    expect(mockAuth.register).toHaveBeenCalledTimes(1);
+    expect(mockAuth.register).toHaveBeenLastCalledWith('new@example.com', 'Str0ng-passphrase-9', 'A', 'B', 'tok-1');
+  });
+
+  it('shows the challenge as soon as the login page opens and signs in with its token without a retry', async () => {
+    mockTurnstile.siteKey = 'build-site-key';
+    build('login');
+    await fixture.whenStable();
+    expect(component.challengeRequired).toBe(true);
+    expect(mockTurnstile.render).toHaveBeenCalledOnce();
+
+    mockTurnstile.render.mock.calls[0][1].onToken('tok-1');
+    component.email = 'a@example.com';
+    component.password = 'pw';
+    component.onLogin();
+    expect(mockAuth.login).toHaveBeenCalledTimes(1);
+    expect(mockAuth.login).toHaveBeenLastCalledWith('a@example.com', 'pw', 'tok-1');
+  });
+
+  it('leaves the solved challenge alone while a sign-in with its token goes through', async () => {
+    mockTurnstile.siteKey = 'build-site-key';
+    const pending = new Subject<any>();
+    mockAuth.login = vi.fn().mockReturnValue(pending);
+    build('login');
+    await fixture.whenStable();
+    mockTurnstile.render.mock.calls[0][1].onToken('tok-1');
+    component.email = 'a@example.com';
+    component.password = 'pw';
+    component.onLogin();
+    // In flight, and after success: no rerun of the challenge on screen.
+    expect(mockTurnstile.reset).not.toHaveBeenCalled();
+    pending.next({});
+    pending.complete();
+    expect(mockTurnstile.reset).not.toHaveBeenCalled();
+  });
+
+  it('asks the widget for a new token once a sign-in with the old one fails', async () => {
+    mockTurnstile.siteKey = 'build-site-key';
+    mockAuth.login = vi.fn().mockReturnValue(throwError(() => ({ status: 401, error: { error: { code: 'auth.errInvalidCredentials' } } })));
+    build('login');
+    await fixture.whenStable();
+    mockTurnstile.render.mock.calls[0][1].onToken('tok-1');
+    component.email = 'a@example.com';
+    component.password = 'pw';
+    component.onLogin();
+    expect(mockTurnstile.reset).toHaveBeenCalledWith('w1');
+  });
+
+  it('says the check needs them only once they submitted and it asks for them, not when the page opens', async () => {
+    mockTurnstile.siteKey = 'build-site-key';
+    build('login');
+    await fixture.whenStable();
+    const box = fixture.nativeElement.querySelector('.challenge-box');
+    expect(fixture.nativeElement.querySelector('.inline-msg')).toBeNull();
+    expect(box.classList.contains('interactive')).toBe(false);
+
+    // The check asks for the visitor on load: the box shows, the form says nothing yet.
+    const { onInteractive } = mockTurnstile.render.mock.calls[0][1];
+    onInteractive(true);
+    fixture.detectChanges();
+    expect(box.classList.contains('interactive')).toBe(true);
+    expect(fixture.nativeElement.querySelector('.inline-msg')).toBeNull();
+
+    // They submit before solving it: now the message slot says why they wait, as an alert.
+    component.email = 'a@example.com';
+    component.password = 'pw';
+    component.onLogin();
+    fixture.detectChanges();
+    const msg = fixture.nativeElement.querySelector('.inline-msg');
+    expect(msg.textContent).toContain('auth.challengePrompt');
+    expect(msg.classList.contains('error')).toBe(true);
+
+    // Solved: it signs in and the message goes.
+    mockTurnstile.render.mock.calls[0][1].onToken('tok-1');
+    onInteractive(false);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.inline-msg')).toBeNull();
+  });
+
+  it('when the check cannot load, says nothing on opening the page but does not leave a submit waiting for good', async () => {
+    mockTurnstile.siteKey = 'build-site-key';
+    mockTurnstile.render = vi.fn().mockRejectedValue(new Error('Turnstile did not load'));
+    build('login');
+    await fixture.whenStable();
+    expect(component.authMessage).toBe('');
+
+    component.email = 'a@example.com';
+    component.password = 'pw';
+    component.onLogin();
+    await fixture.whenStable();
+    // It tried to load again, and told them why nothing happens instead of "verifying" for good.
+    expect(mockTurnstile.render).toHaveBeenCalledTimes(2);
+    expect(component.awaitingChallenge).toBe(false);
+    expect(component.authMessage).toContain('auth.errChallengeUnavailable');
+    expect(mockAuth.login).not.toHaveBeenCalled();
+  });
+
+  it('signs in once the check loads on that second try', async () => {
+    mockTurnstile.siteKey = 'build-site-key';
+    mockTurnstile.render = vi.fn().mockRejectedValueOnce(new Error('Turnstile did not load')).mockResolvedValue('w1');
+    build('login');
+    await fixture.whenStable();
+
+    component.email = 'a@example.com';
+    component.password = 'pw';
+    component.onLogin();
+    await fixture.whenStable();
+    expect(component.awaitingChallenge).toBe(true);
+    mockTurnstile.render.mock.calls[1][1].onToken('tok-1');
+    expect(mockAuth.login).toHaveBeenCalledWith('a@example.com', 'pw', 'tok-1');
+  });
+
+  it('shows no challenge when the build has no site key', async () => {
+    build('login');
+    await fixture.whenStable();
+    expect(component.challengeRequired).toBe(false);
+    expect(mockTurnstile.render).not.toHaveBeenCalled();
+  });
+
+  it('asks for a Turnstile challenge when registering, then registers once with its token', async () => {
+    const challenge = { status: 403, error: { error: { code: 'auth.errChallengeRequired', site_key: 'site-key-2' } } };
+    mockAuth.register = vi.fn().mockReturnValueOnce(throwError(() => challenge)).mockReturnValue(of({}));
+    build('register');
+    component.registerEmail = 'new@example.com';
+    component.registerPassword = 'Str0ng-passphrase-9';
+    component.registerConfirmPassword = 'Str0ng-passphrase-9';
+    component.registerFirstName = 'A';
+    component.registerLastName = 'B';
+    component.onRegister();
+    await fixture.whenStable();
+    expect(component.challengeRequired).toBe(true);
+    expect(mockTurnstile.render.mock.calls[0][1].siteKey).toBe('site-key-2');
+
+    // Submitting again before solving it sends nothing.
+    component.onRegister();
+    expect(mockAuth.register).toHaveBeenCalledTimes(1);
+
+    const { onToken } = mockTurnstile.render.mock.calls[0][1];
+    onToken('tok-1');
+    expect(mockAuth.register).toHaveBeenLastCalledWith('new@example.com', 'Str0ng-passphrase-9', 'A', 'B', 'tok-1');
+    expect(mockAuth.register).toHaveBeenCalledTimes(2);
+
+    // A token the widget hands out by itself later does not register again.
+    onToken('tok-2');
+    expect(mockAuth.register).toHaveBeenCalledTimes(2);
+  });
+
   it('readies a fresh token after each attempt, so the next submit is not stuck', async () => {
     const challenge = { status: 403, error: { error: { code: 'auth.errChallengeRequired', site_key: 'k' } } };
     const wrong = { status: 401, error: { error: { code: 'auth.errInvalidCredentials' } } };
@@ -467,108 +629,6 @@ describe('AuthFormComponent', () => {
     afterEach(() => {
       localStorage.clear();
       delete (window as any).PublicKeyCredential;
-    });
-
-    it('hides passkey login button by default without the ub_passkey flag, even if supportsPasskeys is true', () => {
-      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
-      build('login');
-      expect(fixture.debugElement.query(By.css('.passkey-btn'))).toBeNull();
-    });
-
-    it('shows passkey login button when ub_passkey is "1" and supportsPasskeys is true', () => {
-      localStorage.setItem('ub_passkey', '1');
-      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
-      build('login');
-      expect(fixture.debugElement.query(By.css('.passkey-btn'))).not.toBeNull();
-    });
-
-    it('hides passkey login button when supportsPasskeys is false even if ub_passkey is "1"', () => {
-      localStorage.setItem('ub_passkey', '1');
-      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(false);
-      build('login');
-      expect(fixture.debugElement.query(By.css('.passkey-btn'))).toBeNull();
-    });
-
-    it('hides passkey login button if localStorage access throws', () => {
-      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
-      const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-        throw new Error('Access denied');
-      });
-      build('login');
-      expect(fixture.debugElement.query(By.css('.passkey-btn'))).toBeNull();
-      getItemSpy.mockRestore();
-    });
-
-    it('triggers passkey login on button click and navigates on success', () => {
-      localStorage.setItem('ub_passkey', '1');
-      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
-      mockAuth.passkeyLogin = vi.fn().mockReturnValue(of({ code: 'auth.loginSuccess' }));
-      build('login');
-
-      component.onPasskeyLogin();
-
-      expect(mockAuth.passkeyLogin).toHaveBeenCalled();
-      isAuthenticated.set(true);
-      fixture.detectChanges();
-      expect(mockRouter.navigate).toHaveBeenCalledWith(['/', 'tw', 'account'], { replaceUrl: true });
-    });
-
-    it('aborts conditional passkey before manual passkey click', () => {
-      localStorage.setItem('ub_passkey', '1');
-      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
-      mockAuth.cancelPasskey = vi.fn();
-      mockAuth.passkeyLogin = vi.fn().mockReturnValue(of({ code: 'auth.loginSuccess' }));
-      build('login');
-      const abortSpy = vi.spyOn(component as any, 'abortConditionalPasskey');
-
-      component.onPasskeyLogin();
-
-      expect(abortSpy).toHaveBeenCalled();
-      expect(mockAuth.cancelPasskey).toHaveBeenCalled();
-    });
-
-    it('silently ignores NotAllowedError user cancellation', () => {
-      localStorage.setItem('ub_passkey', '1');
-      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
-      const cancelErr = new Error('User cancelled');
-      cancelErr.name = 'NotAllowedError';
-      mockAuth.passkeyLogin = vi.fn().mockReturnValue(throwError(() => cancelErr));
-      build('login');
-
-      component.onPasskeyLogin();
-
-      expect(component.clientAuthError).toBe('');
-      expect(component.lastAuthError).toBeNull();
-      expect(component.isPasskeyLoading).toBe(false);
-    });
-
-    it('silently ignores AbortError cancellation', () => {
-      localStorage.setItem('ub_passkey', '1');
-      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
-      const abortErr = new Error('Aborted');
-      abortErr.name = 'AbortError';
-      mockAuth.passkeyLogin = vi.fn().mockReturnValue(throwError(() => abortErr));
-      build('login');
-
-      component.onPasskeyLogin();
-
-      expect(component.clientAuthError).toBe('');
-      expect(component.lastAuthError).toBeNull();
-      expect(component.isPasskeyLoading).toBe(false);
-    });
-
-    it('displays error on passkey failure other than user cancellation', () => {
-      localStorage.setItem('ub_passkey', '1');
-      mockAuth.supportsPasskeys = vi.fn().mockReturnValue(true);
-      const apiErr = { status: 401, error: { error: { code: 'auth.errPasskeyLogin' } } };
-      mockAuth.passkeyLogin = vi.fn().mockReturnValue(throwError(() => apiErr));
-      build('login');
-
-      component.onPasskeyLogin();
-
-      expect(component.lastAuthError).toEqual(apiErr);
-      expect(component.authIsError).toBe(true);
-      expect(component.isPasskeyLoading).toBe(false);
     });
 
     describe('Conditional UI', () => {

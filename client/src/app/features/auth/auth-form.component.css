@@ -169,9 +169,17 @@
       border: 0;
     }
 
+/* Takes no room until Cloudflare needs the visitor: clipped to nothing, so
+   whatever the widget keeps inside it while hidden cannot push the form apart. */
 .challenge-box {
   display: flex;
   justify-content: center;
+  height: 0;
+  overflow: hidden;
+}
+.challenge-box.interactive {
+  height: auto;
+  overflow: visible;
   margin-top: 12px;
   min-height: 65px;
 }
@@ -179,19 +187,3 @@
 .challenge-box[hidden] {
   display: none;
 }
-
-.passkey-btn {
-  display: block;
-}
-.passkey-btn-content {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-}
-.passkey-icon {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-

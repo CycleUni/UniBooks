@@ -71,24 +71,9 @@ async function emailTakenByOther(c: C, email: string, userId: string): Promise<b
 }
 
 // Rate limits per scope.
-/**
- * With Turnstile configured: wrong passwords on one account, per hour,
- * before sign-in asks for a challenge. Below the per-IP sign-in limit
- * (RATES.login, 5/min) on purpose: at the same number, someone retrying at
- * a normal pace hit that limit's 429 first and never saw the challenge.
- */
-const LOGIN_CHALLENGE_AFTER_FAILURES = 3;
-/**
- * Wrong passwords from one IP, across all accounts, per hour, before sign-in
- * asks for a challenge. The per-account count never fires for credential
- * stuffing (one try per account); this one does.
- */
-const LOGIN_CHALLENGE_AFTER_IP_FAILURES = 4;
-
 const RATES = {
   login: '5/min',
   loginAccountFailures: '20/hour',
-  loginIpFailures: '100/hour',
 
   register: '10/hour',
   verifyRequest: '3/hour',
@@ -152,8 +137,23 @@ function parseBoolField(value: unknown): boolean | undefined {
 // Registration and verification
 // ---------------------------------------------------------------------------
 
+/**
+ * Sign-in, registration and asking for a reset link always need a Turnstile
+ * token: a script posting to the API directly would otherwise get a few free
+ * guesses or mail sends per IP before any challenge. Without Turnstile
+ * configured this does nothing. Without a token the answer carries the site key, so the app
+ * can show the widget and send the request again.
+ */
+async function assertChallenge(c: C, token: unknown): Promise<void> {
+  if (!turnstileEnabled(c.env)) return;
+  const site = { site_key: c.env.TURNSTILE_SITE_KEY };
+  if (!token) apiError(403, 'auth.errChallengeRequired', site);
+  if (!(await verifyTurnstile(c.env, token, c.req.header('CF-Connecting-IP')))) apiError(403, 'auth.errChallengeFailed', site);
+}
+
 accountRoutes.post('/register', rateLimit('register', RATES.register), async (c) => {
   const body = await readJson(c.req);
+  await assertChallenge(c, body.cf_turnstile_response);
   const fields: Record<string, string[]> = {};
 
   const rawEmail = body.email;
@@ -473,22 +473,16 @@ accountRoutes.post('/login', rateLimit('login', RATES.login), async (c) => {
   // Per account too, not only per IP: a password guessed from many IPs.
   // Only wrong passwords count, so the owner's own sign-ins never use it up.
   const failures = outcomeLimit(c, 'login_account_failures', RATES.loginAccountFailures, email.trim().toLowerCase());
-  const ipFailures = outcomeLimit(c, 'login_ip_failures', RATES.loginIpFailures, c.req.header('CF-Connecting-IP') ?? 'local');
   if (turnstileEnabled(c.env)) {
-    // With Turnstile, a few failures ask for a human check instead of
-    // locking the account: a stranger's guesses can no longer keep the
-    // owner out, and a guessing script has to solve every challenge.
-    if ((await failures.reached(LOGIN_CHALLENGE_AFTER_FAILURES)) || (await ipFailures.reached(LOGIN_CHALLENGE_AFTER_IP_FAILURES))) {
-      // The site key rides along, so the app needs no build-time setting to render the widget.
-      const site = { site_key: c.env.TURNSTILE_SITE_KEY };
-      if (!challenge) apiError(403, 'auth.errChallengeRequired', site);
-      if (!(await verifyTurnstile(c.env, challenge, c.req.header('CF-Connecting-IP')))) apiError(403, 'auth.errChallengeFailed', site);
-    }
+    // With Turnstile, every sign-in needs a human check instead of the
+    // account locking after failures: a stranger's guesses can no longer
+    // keep the owner out, and a guessing script has to solve every challenge.
+    await assertChallenge(c, challenge);
   } else {
     await failures.assertUnder();
   }
   const invalid = async (): Promise<never> => {
-    await Promise.all([failures.count(), ipFailures.count()]);
+    await failures.count();
     apiError(401, 'auth.errInvalidCredentials');
   };
   const user = await getUserByEmail(c.env, email);
@@ -794,8 +788,9 @@ accountRoutes.post('/password/remove', authMiddleware(), rateLimit('password_cha
 });
 
 accountRoutes.post('/password/reset/request', rateLimit('password-reset-request', RATES.passwordResetRequest), async (c) => {
-  const { email: raw } = await readJson(c.req);
+  const { email: raw, cf_turnstile_response: challenge } = await readJson(c.req);
   if (!raw || typeof raw !== 'string') apiError(400, 'common.errValidation');
+  await assertChallenge(c, challenge);
   const email = raw.trim();
   const sent = { code: 'acct.passwordResetSent' };
   // Per address as well as per caller, so one mailbox cannot be flooded
