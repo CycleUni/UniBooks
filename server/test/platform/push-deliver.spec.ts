@@ -17,6 +17,15 @@ function answer(...statuses: number[]) {
 describe('push delivery', () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it('sends the image only when there is one', async () => {
+    const spy = answer(200);
+    await deliver(env, URL_, 'tok', [devices[0]], { ...push, image: 'https://x.test/a.jpg' });
+    await deliver(env, URL_, 'tok', [devices[0]], push);
+    const sent = spy.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)).message.data);
+    expect(sent[0].image).toBe('https://x.test/a.jpg');
+    expect('image' in sent[1]).toBe(false);
+  });
+
   it('throws (so the queue retries) when every device failed transiently', async () => {
     answer(503, 429);
     await expect(deliver(env, URL_, 'tok', devices, push)).rejects.toThrow();

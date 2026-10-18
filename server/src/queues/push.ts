@@ -1,6 +1,8 @@
 import { and, eq } from 'drizzle-orm';
 import type { Env } from '../env';
-import { createDb, orders, pushDevices, regions } from '../db';
+import { books, createDb, listings, orders, pushDevices, regions } from '../db';
+import { parsePhotos } from '../lib/json';
+import { coverImageUrl } from '../services/frontend/bookMeta';
 import { siteOrigin } from '../lib/origin';
 import { formatMeetupTime } from '../lib/time';
 import type { PushMessage } from './types';
@@ -125,6 +127,47 @@ export interface RenderedPush {
   title: string;
   body: string;
   link: string;
+  /** Absolute https URL of the listing photo, else the book cover; absent when there is neither. */
+  image?: string;
+}
+
+/** The book's cover as a full URL, looked up by ISBN within its region. */
+async function bookCoverImage(env: Env, origin: string, region: string | null | undefined, isbn: string | null | undefined) {
+  if (!region || !isbn) return undefined;
+  const [row] = await createDb(env.DB)
+    .select({ coverUrl: books.coverUrl })
+    .from(books)
+    .where(and(eq(books.regionCode, region), eq(books.isbn13, isbn)))
+    .limit(1);
+  return (row && coverImageUrl(origin, row.coverUrl)) || undefined;
+}
+
+/** The listing's first photo, else its book's cover; undefined when it has neither (or the listing is gone). */
+async function listingImage(env: Env, origin: string, listingId: string | null | undefined) {
+  if (!listingId) return undefined;
+  const [row] = await createDb(env.DB)
+    .select({ photos: listings.photos, coverUrl: books.coverUrl })
+    .from(listings)
+    .innerJoin(books, eq(books.id, listings.bookId))
+    .where(eq(listings.id, listingId))
+    .limit(1);
+  if (!row) return undefined;
+  const photo = parsePhotos(row.photos).find((u) => /^https?:\/\//i.test(u));
+  return photo || coverImageUrl(origin, row.coverUrl) || undefined;
+}
+
+/** Listing photo, else cover, falling back to the book's cover by ISBN once the listing is deleted. */
+async function pushImage(env: Env, origin: string, src: { listingId?: string | null; region?: string | null; isbn?: string | null }) {
+  return (await listingImage(env, origin, src.listingId)) ?? (await bookCoverImage(env, origin, src.region, src.isbn));
+}
+
+async function orderImage(env: Env, origin: string, orderId: string) {
+  const [row] = await createDb(env.DB)
+    .select({ listingId: orders.listingId, region: orders.regionCode, isbn: orders.bookIsbn })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+  return row ? pushImage(env, origin, row) : undefined;
 }
 
 async function regionInfo(env: Env, code: string | null | undefined) {
@@ -196,6 +239,7 @@ export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPu
         title,
         body,
         link: `${frontend}/${conv.region_code.toLowerCase()}/messages?chat=${encodeURIComponent(conv.id)}`,
+        image: await pushImage(env, frontend, { listingId: conv.listing_id, region: conv.region_code, isbn: conv.book_isbn }),
       };
     }
 
@@ -213,6 +257,7 @@ export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPu
         title: pushT(lang, 'push.orderNotify.title', { title: msg.book_title || 'UniBooks' }),
         body: pushT(lang, `push.orderNotify.${event}`),
         link: `${frontend}/account/orders`,
+        image: await orderImage(env, frontend, msg.order_id),
       };
     }
 
@@ -229,6 +274,7 @@ export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPu
             ? pushT(lang, 'push.waitlist.many', { title: msg.book_title, count: others })
             : pushT(lang, 'push.waitlist.one', { title: msg.book_title }),
         link: `${frontend}/account/subscriptions`,
+        image: await bookCoverImage(env, frontend, msg.region, msg.book_isbn),
       };
     }
 
@@ -245,6 +291,7 @@ export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPu
           time: formatMeetupTime(msg.meetup_time, region?.timezone || 'UTC'),
         }),
         link: `${frontend}/account/orders`,
+        image: await orderImage(env, frontend, msg.order_id),
       };
     }
   }
@@ -282,7 +329,7 @@ export async function deliver(
   url: string,
   accessToken: string,
   devices: { id: number; token: string }[],
-  push: Pick<RenderedPush, 'title' | 'body' | 'link'>,
+  push: Pick<RenderedPush, 'title' | 'body' | 'link' | 'image'>,
 ): Promise<number> {
   let sent = 0;
   let transient = 0;
@@ -298,7 +345,7 @@ export async function deliver(
           body: JSON.stringify({
             message: {
               token: device.token,
-              data: { title: push.title, body: push.body, link: push.link },
+              data: { title: push.title, body: push.body, link: push.link, ...(push.image ? { image: push.image } : {}) },
               webpush: { headers: { TTL: String(MESSAGE_TTL_SECONDS) } },
             },
           }),

@@ -39,11 +39,16 @@ self.addEventListener('push', (event) => {
   const data = payload && (payload.data || payload);
   if (!data || !data.title) return;
 
+  // Listing photo or book cover, when the server found one, replaces the app
+  // icon (the thumbnail beside the text). https only: the URL comes from a
+  // push payload.
+  const image = typeof data.image === 'string' && data.image.startsWith('https://') ? data.image : undefined;
+
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body || '',
-      icon: '/icons/icon-192x192.png',
-      badge: '/icons/icon-96x96.png',
+      icon: image || '/icons/icon-192x192.png',
+      badge: '/icons/badge-96x96.png',
       // One notification per conversation: a second message replaces the
       // first instead of stacking.
       tag: data.link || 'unibooks',

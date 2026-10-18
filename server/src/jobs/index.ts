@@ -125,7 +125,14 @@ export async function runWaitlistNotify(env: Env) {
     }
     // Best effort, after the email that decides whether this user is retried.
     try {
-      const push: PushMessage = { type: 'waitlist_match', user_id: first.userId, book_title: first.title, listing_count: subs.length };
+      const push: PushMessage = {
+        type: 'waitlist_match',
+        user_id: first.userId,
+        book_title: first.title,
+        listing_count: subs.length,
+        book_isbn: first.isbn13,
+        region: first.regionCode,
+      };
       await env.PUSH_QUEUE.send(push);
     } catch (e) {
       console.error(`[WaitlistNotify] push enqueue failed for user ${first.userId}`, e);

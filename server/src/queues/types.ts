@@ -88,5 +88,13 @@ export type PushMessage =
       /** Optional order.notify.<event> key for exact wording (see services/messaging/pushText ORDER_PUSH_EVENTS). */
       event?: string;
     }
-  | { type: 'waitlist_match'; user_id: string; book_title: string; listing_count: number }
+  | {
+      type: 'waitlist_match';
+      user_id: string;
+      book_title: string;
+      listing_count: number;
+      /** Locates the cover shown in the push. */
+      book_isbn?: string | null;
+      region?: string;
+    }
   | { type: 'meetup_reminder'; user_id: string; order_id: string; book_title: string; meetup_time: string };
