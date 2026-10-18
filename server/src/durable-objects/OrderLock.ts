@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env';
-import { applyOrderUpdate, applyPlatformCancel } from '../services/orders/transitions';
+import { applyAutoComplete, applyOrderUpdate, applyPlatformCancel } from '../services/orders/transitions';
 
 /**
  * Per-listing mutex for order state changes — the Worker's row lock on
@@ -33,6 +33,10 @@ export class OrderLock extends DurableObject<Env> {
 
   platformCancel(args: Parameters<typeof applyPlatformCancel>[1]) {
     return this.exclusive(() => applyPlatformCancel(this.env, args));
+  }
+
+  autoComplete(args: Parameters<typeof applyAutoComplete>[1]) {
+    return this.exclusive(() => applyAutoComplete(this.env, args));
   }
 
   /** Take the run lock unless a live one is held; it lapses after ttlMs. */

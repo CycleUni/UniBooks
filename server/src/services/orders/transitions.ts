@@ -262,6 +262,61 @@ export async function applyOrderUpdate(
   return { ok: true, order: toNotice(after), notices };
 }
 
+/** How long after the agreed meetup (or the handover mark, if later) a silent buyer's order completes by itself. */
+export const AUTO_COMPLETE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The instant an order in `handed_over` becomes due to auto-complete, as an ISO string. */
+export function autoCompleteDueAt(order: { meetupTime: string | null; updatedAt: string }): string {
+  // Whichever is later, so a handover marked long after the meetup still
+  // leaves the buyer the full window to object.
+  const base = Math.max(order.meetupTime ? Date.parse(order.meetupTime) : 0, Date.parse(order.updatedAt));
+  return new Date(base + AUTO_COMPLETE_AFTER_MS).toISOString();
+}
+
+/**
+ * Complete a `handed_over` order the buyer never confirmed, once it is past
+ * its auto-complete deadline. Same writes as the buyer's own confirm, on the
+ * system's authority. `skipped` when the order moved on or is not yet due.
+ */
+export async function applyAutoComplete(
+  env: Env,
+  args: { orderId: string },
+): Promise<{ ok: true; order: NoticeOrder; notices: OrderNotice[] } | { ok: false }> {
+  const db = createDb(env.DB);
+  const [order] = await db.select().from(orders).where(eq(orders.id, args.orderId)).limit(1);
+  if (!order || order.status !== 'handed_over') return { ok: false };
+  const now = new Date().toISOString();
+  if (autoCompleteDueAt(order) > now) return { ok: false };
+
+  const stmts = [
+    db
+      .update(orders)
+      .set({ status: 'completed', completedAt: order.completedAt ?? now, updatedAt: now })
+      .where(and(eq(orders.id, order.id), eq(orders.status, 'handed_over'), eq(orders.updatedAt, order.updatedAt)))
+      .returning({ id: orders.id }),
+  ] as const;
+  const listingStmt = order.listingId
+    ? db
+        .update(listings)
+        .set({ status: 'sold' })
+        .where(
+          and(
+            eq(listings.id, order.listingId),
+            eq(listings.status, 'reserved'),
+            sql`EXISTS (SELECT 1 FROM ${orders} WHERE ${orders.id} = ${order.id} AND ${orders.status} = 'completed' AND ${orders.updatedAt} = ${now})`,
+          ),
+        )
+    : null;
+  const results = listingStmt ? await db.batch([stmts[0], listingStmt]) : await db.batch([stmts[0]]);
+  if (!(results[0] as { id: string }[]).length) return { ok: false };
+  return {
+    ok: true,
+    order: toNotice({ ...order, status: 'completed', completedAt: order.completedAt ?? now, updatedAt: now }),
+    // As if the buyer had confirmed: the same notice, from the buyer's side.
+    notices: [{ key: 'order.notify.delivered', senderId: order.buyerId, push: true }],
+  };
+}
+
 /**
  * Cancel an order on the platform's (or the removed listing's) authority.
  * `final: true` when the

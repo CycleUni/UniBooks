@@ -16,7 +16,7 @@ import {
 } from '../../src/db';
 import { signToken } from '../../src/lib/jwt';
 import { forceCancelOrder, cancelOpenOrdersForListing } from '../../src/services/orders/cancel';
-import { runMeetupReminder, runWaitlistNotify } from '../../src/jobs/index';
+import { runAutoComplete, runMeetupReminder, runWaitlistNotify } from '../../src/jobs/index';
 
 /**
  * Integration tests: they need the orders schema this module defines
@@ -339,6 +339,35 @@ describe.skipIf(!schemaReady)('cron jobs', () => {
     expect(row.sellerReminderSentAt).toBeTruthy();
     const second = await runMeetupReminder(env);
     expect(second.reminded_orders).toBe(0);
+  });
+
+  it('completes an unconfirmed handed_over order 7 days after the meetup, not before', async () => {
+    const seller = await makeUser('seller');
+    const buyer = await makeUser('buyer');
+    const day = 24 * 60 * 60_000;
+    const mk = async (meetupAgoDays: number, updatedAgoDays: number) => {
+      const l = await makeListing(seller.id);
+      await db.update(listings).set({ status: 'reserved' }).where(eq(listings.id, l.id));
+      const id = crypto.randomUUID();
+      await db.insert(orders).values({
+        id, regionCode: 'TW', currencyCode: 'TWD', listingId: l.id, listingRef: l.id, bookTitle: 'Book',
+        buyerId: buyer.id, sellerId: seller.id, status: 'handed_over', totalAmount: 100,
+        meetupTime: new Date(Date.now() - meetupAgoDays * day).toISOString(),
+        createdAt: now(), updatedAt: new Date(Date.now() - updatedAgoDays * day).toISOString(),
+      });
+      return { id, listingId: l.id };
+    };
+    const due = await mk(8, 8);
+    const early = await mk(6, 6);
+    const lateMark = await mk(10, 1); // meetup long ago, handover marked yesterday
+    await runAutoComplete(env);
+    const status = async (id: string) => (await db.select().from(orders).where(eq(orders.id, id)))[0];
+    expect((await status(due.id)).status).toBe('completed');
+    expect((await status(due.id)).completedAt).toBeTruthy();
+    expect(await listingStatus(due.listingId)).toBe('sold');
+    expect((await status(early.id)).status).toBe('handed_over');
+    expect((await status(lateMark.id)).status).toBe('handed_over');
+    expect((await runAutoComplete(env)).completed_orders).toBe(0);
   });
 
   it('hands the push the raw meetup time, which the push formats once in the region timezone', async () => {

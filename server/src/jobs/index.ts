@@ -4,6 +4,8 @@ import type { Env } from '../env';
 import { createDb, subscriptions, books, users, orders, regions, listings } from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
 import { orderLock } from '../services/orders/lock';
+import { AUTO_COMPLETE_AFTER_MS, lockKeyFor } from '../services/orders/transitions';
+import { deliverNotices } from '../services/orders/notify';
 import { purgeTokenStore } from '../services/accounts/tokens';
 import { purgeOneTimeTokens } from '../services/accounts/oneTimeTokens';
 
@@ -283,6 +285,44 @@ export async function runMeetupReminder(env: Env) {
 }
 
 // ---------------------------------------------------------------------------
+// Auto-complete ('*/30 * * * *')
+// ---------------------------------------------------------------------------
+
+export const MAX_AUTO_COMPLETE_ORDERS_PER_RUN = 50;
+
+/**
+ * Complete `handed_over` orders the buyer never confirmed, 7 days after the
+ * agreed meetup (or after the handover mark, if that came later). The exact
+ * deadline is re-checked under the order lock.
+ */
+export async function runAutoComplete(env: Env) {
+  const db = createDb(env.DB);
+  // Cheap prefilter on the earlier of the two bases; the lock re-checks the real deadline.
+  const cutoff = new Date(Date.now() - AUTO_COMPLETE_AFTER_MS).toISOString();
+  const rows = await db
+    .select({ id: orders.id, listingId: orders.listingId })
+    .from(orders)
+    .where(and(eq(orders.status, 'handed_over'), lte(orders.updatedAt, cutoff), sql`COALESCE(${orders.meetupTime}, ${orders.updatedAt}) <= ${cutoff}`))
+    .orderBy(asc(orders.updatedAt))
+    .limit(MAX_AUTO_COMPLETE_ORDERS_PER_RUN);
+
+  let completed = 0;
+  for (const o of rows) {
+    try {
+      const res = await orderLock(env, lockKeyFor(o)).autoComplete({ orderId: o.id });
+      if (!res.ok) continue;
+      completed++;
+      await deliverNotices(env, res.order, res.notices);
+    } catch (e) {
+      console.error(`[AutoComplete] failed for order ${o.id}`, e);
+    }
+  }
+  const result = { completed_orders: completed, scanned_orders: rows.length };
+  console.log('[AutoComplete]', JSON.stringify(result));
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Cleanup ('0 3 * * *')
 // ---------------------------------------------------------------------------
 
@@ -327,6 +367,7 @@ export async function handleScheduled(controller: Pick<ScheduledController, 'cro
         break;
       case '*/30 * * * *':
         await runAlone(env, 'MeetupReminder', () => runMeetupReminder(env));
+        await runAlone(env, 'AutoComplete', () => runAutoComplete(env));
         break;
       case '0 3 * * *':
         await runCleanup(env);
