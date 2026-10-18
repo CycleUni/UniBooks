@@ -217,6 +217,7 @@
       display: inline-flex;
     }
     .main-content {
+      position: relative;
       flex: 1;
       width: 100%;
       overflow-x: hidden; /* Prevent horizontal overflow from content */
@@ -235,6 +236,27 @@
        overflow:hidden ancestors clipping /messages' position:fixed input
        area; removing only the outer one on .layout-wrapper left this one
        still cutting it off one layer down. */
+    .page-loading {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-3);
+      padding-top: 30vh;
+      background: var(--paper);
+      color: var(--muted);
+    }
+    .page-loading-spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid var(--line-strong);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: page-loading-spin 0.8s linear infinite;
+    }
+    @keyframes page-loading-spin { to { transform: rotate(360deg); } }
     .main-content.full-bleed {
       display: flex;
       min-height: 0;

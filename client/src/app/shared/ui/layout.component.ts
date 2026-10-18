@@ -2,9 +2,26 @@ import { RegionLinkDirective } from '../../core/region-link.directive';
 import { stripRegionPrefix, isSameRegion } from '../../core/region-path';
 import { injectIsPhone, isPhoneViewport } from '../../core/viewport';
 import { isBottomSheetOpen } from './bottom-sheet.component';
-import { Component, effect, inject, ChangeDetectorRef, NgZone, OnDestroy, untracked } from '@angular/core';
+import {
+  Component,
+  effect,
+  inject,
+  ChangeDetectorRef,
+  NgZone,
+  OnDestroy,
+  untracked,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule, Router, NavigationEnd } from '@angular/router';
+import {
+  RouterModule,
+  Router,
+  NavigationEnd,
+  NavigationCancel,
+  NavigationError,
+  RouteConfigLoadStart,
+  NavigationStart,
+  NavigationSkipped,
+} from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { UiDropdown, DropdownOption } from './dropdown.component';
 import { UiPrefsSelector } from './prefs-selector.component';
@@ -12,7 +29,11 @@ import { RegionService } from '../../core/region.service';
 import { MetadataService } from '../../core/services/metadata.service';
 import { AuthStore, hasStaffAccess } from '../../core/auth.store';
 import { AccountService } from '../../core/services/account.service';
-import { SchoolStateService, SchoolOption, CityOption } from '../../core/services/school-state.service';
+import {
+  SchoolStateService,
+  SchoolOption,
+  CityOption,
+} from '../../core/services/school-state.service';
 import { MessageService } from '../../core/services/message.service';
 import { I18nService, TPipe } from '../../core/i18n.service';
 import { Lang } from '../../core/i18n';
@@ -29,9 +50,19 @@ import { schoolKeywords } from '../../core/school-search';
 @Component({
   selector: 'ui-layout',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, UiDropdown, TPipe, UiPrefsSelector, UiAppBar, UiLangSuggestion],
+  imports: [
+    RegionLinkDirective,
+    CommonModule,
+    RouterModule,
+    FormsModule,
+    UiDropdown,
+    TPipe,
+    UiPrefsSelector,
+    UiAppBar,
+    UiLangSuggestion,
+  ],
   templateUrl: './layout.component.html',
-  styleUrls: ['./layout.component.css']
+  styleUrls: ['./layout.component.css'],
 })
 export class UiLayout implements OnDestroy {
   /** The selected school's code ('' = all schools). */
@@ -41,6 +72,13 @@ export class UiLayout implements OnDestroy {
   unreadCount = 0;
   readonly theme = inject(ThemeService);
   readonly mobileLayout = inject(MobileLayoutService);
+
+  /** True while a page's code is still downloading after a click. The router
+   *  keeps the old page until that finishes, so this covers it with a
+   *  placeholder instead of leaving the click looking ignored. */
+  loadingPage = false;
+  private loadingTimer: ReturnType<typeof setTimeout> | undefined;
+  private navigating = false;
 
   /** Whether the mobile top header is translated offscreen while scrolling down. */
   appBarHidden = false;
@@ -62,7 +100,7 @@ export class UiLayout implements OnDestroy {
     return [
       { value: 'system', label: this.i18n.t('nav.themeSystem') || 'System' },
       { value: 'light', label: this.i18n.t('nav.themeLight') || 'Light' },
-      { value: 'dark', label: this.i18n.t('nav.themeDark') || 'Dark' }
+      { value: 'dark', label: this.i18n.t('nav.themeDark') || 'Dark' },
     ];
   }
 
@@ -144,7 +182,6 @@ export class UiLayout implements OnDestroy {
     return UiLayout.PHONE_PREFS_ROUTES.includes(path);
   }
 
-
   private unreadCountSubscription: Subscription;
   /** Route of the page on screen, so query-only navigations are not page changes. */
   private currentPath = '';
@@ -153,7 +190,7 @@ export class UiLayout implements OnDestroy {
   private selectedSchoolSubscription?: Subscription;
 
   get selectedSchoolLabel(): string {
-    const found = this.schools.find(s => s.value === this.selectedSchool);
+    const found = this.schools.find((s) => s.value === this.selectedSchool);
     return found?.label || this.i18n.t('layout.allSchools') || '全部大學';
   }
 
@@ -189,13 +226,39 @@ export class UiLayout implements OnDestroy {
     // A school picked somewhere other than this selector — the home page's
     // "see all universities" under a city fallback — must show here too, or
     // the header keeps naming the school the page has stopped filtering by.
-    this.selectedSchoolSubscription = this.schoolStateService.selectedSchool$.subscribe(code => {
+    this.selectedSchoolSubscription = this.schoolStateService.selectedSchool$.subscribe((code) => {
       if (code !== this.selectedSchool) {
         this.selectedSchool = code;
         this.cdr.markForCheck();
       }
     });
-    this.routerSubscription = this.router.events.subscribe(event => {
+    this.routerSubscription = this.router.events.subscribe((event) => {
+      if (event instanceof NavigationStart) {
+        this.navigating = true;
+      } else if (event instanceof RouteConfigLoadStart && this.navigating) {
+        // Only for a click: idle preloading emits this event too, with no
+        // navigation after it to ever clear the placeholder again.
+        // Not at once: a chunk already in cache resolves in a few ms, and a
+        // placeholder flashing for that long is worse than none.
+        this.loadingTimer ??= setTimeout(() => {
+          this.loadingPage = true;
+          this.cdr.markForCheck();
+        }, 150);
+      }
+      if (
+        event instanceof NavigationEnd ||
+        event instanceof NavigationCancel ||
+        event instanceof NavigationError ||
+        event instanceof NavigationSkipped
+      ) {
+        this.navigating = false;
+        clearTimeout(this.loadingTimer);
+        this.loadingTimer = undefined;
+        if (this.loadingPage) {
+          this.loadingPage = false;
+          this.cdr.markForCheck();
+        }
+      }
       if (event instanceof NavigationEnd) {
         this.applyFullBleed();
         this.applyFooterVisibility();
@@ -225,7 +288,9 @@ export class UiLayout implements OnDestroy {
     // the whole app at every frame of a scroll. setAppBarHidden() comes back
     // in only when the bar actually changes.
     if (typeof window !== 'undefined') {
-      this.zone.runOutsideAngular(() => window.addEventListener('scroll', this.onScroll, { passive: true }));
+      this.zone.runOutsideAngular(() =>
+        window.addEventListener('scroll', this.onScroll, { passive: true }),
+      );
     }
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -250,7 +315,7 @@ export class UiLayout implements OnDestroy {
           // this region's saved or verified school afresh.
           this.schoolStateService.hasInitialized = false;
           this.rawSchools = [];
-          this.schools = this.schools.filter(s => s.value === '');
+          this.schools = this.schools.filter((s) => s.value === '');
           this.selectedSchool = '';
         }
         this.loadMetadata();
@@ -273,7 +338,7 @@ export class UiLayout implements OnDestroy {
       }
     });
 
-    this.unreadCountSubscription = this.messageService.unreadCount$.subscribe(count => {
+    this.unreadCountSubscription = this.messageService.unreadCount$.subscribe((count) => {
       this.unreadCount = count;
       this.cdr.markForCheck();
     });
@@ -283,10 +348,16 @@ export class UiLayout implements OnDestroy {
     effect(() => {
       const profile = this.authStore.user();
       const region = this.regionService.region();
-      const verification = profile?.verifications?.find(v => isSameRegion(v.region, region) && !!v.verified_at);
+      const verification = profile?.verifications?.find(
+        (v) => isSameRegion(v.region, region) && !!v.verified_at,
+      );
       const userSchoolId = verification?.school;
-      if (userSchoolId && this.rawSchools.length > 0 && this.schoolStateService.getManualSchool() === null) {
-        const userSchool = this.rawSchools.find(s => s.id === userSchoolId);
+      if (
+        userSchoolId &&
+        this.rawSchools.length > 0 &&
+        this.schoolStateService.getManualSchool() === null
+      ) {
+        const userSchool = this.rawSchools.find((s) => s.id === userSchoolId);
         if (userSchool && this.selectedSchool !== userSchool.code) {
           this.selectedSchool = userSchool.code;
           this.schoolStateService.setSchool(this.selectedSchool);
@@ -305,7 +376,7 @@ export class UiLayout implements OnDestroy {
 
   private applyFullBleed() {
     const url = stripRegionPrefix(this.router.url);
-    this.fullBleed = UiLayout.FULL_BLEED_ROUTES.some(r => url === r || url.startsWith(r + '/'));
+    this.fullBleed = UiLayout.FULL_BLEED_ROUTES.some((r) => url === r || url.startsWith(r + '/'));
   }
 
   /** The route part of a URL: no query string, no fragment, no region prefix. */
@@ -328,10 +399,13 @@ export class UiLayout implements OnDestroy {
 
   private applyFooterVisibility() {
     const url = stripRegionPrefix(this.router.url);
-    this.showFooter = UiLayout.FOOTER_ROUTES.some(r => url === r || (r !== '/' && url.startsWith(r + '/')));
+    this.showFooter = UiLayout.FOOTER_ROUTES.some(
+      (r) => url === r || (r !== '/' && url.startsWith(r + '/')),
+    );
   }
 
   ngOnDestroy() {
+    clearTimeout(this.loadingTimer);
     this.routerSubscription?.unsubscribe();
     this.selectedSchoolSubscription?.unsubscribe();
     this.unreadCountSubscription.unsubscribe();
@@ -432,7 +506,12 @@ export class UiLayout implements OnDestroy {
     const el = document.activeElement;
     if (!el) return false;
     const tag = el.tagName;
-    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (el as HTMLElement).isContentEditable;
+    return (
+      tag === 'INPUT' ||
+      tag === 'TEXTAREA' ||
+      tag === 'SELECT' ||
+      (el as HTMLElement).isContentEditable
+    );
   }
 
   /** A hub that failed to open gets another chance when the visitor returns. */
@@ -511,7 +590,7 @@ export class UiLayout implements OnDestroy {
           // Keep the user's current selection across language switches
           const current = this.schoolStateService.currentSchool;
           if (this.schoolStateService.hasInitialized) {
-            if (this.schools.some(s => s.value === current)) {
+            if (this.schools.some((s) => s.value === current)) {
               this.selectedSchool = current;
               this.cdr.markForCheck();
             }
@@ -524,7 +603,7 @@ export class UiLayout implements OnDestroy {
           // memory, per region). getManualSchool() has already turned a
           // full name saved before codes into its code, or dropped it.
           const manualSchool = this.schoolStateService.getManualSchool();
-          if (manualSchool !== null && this.schools.some(s => s.value === manualSchool)) {
+          if (manualSchool !== null && this.schools.some((s) => s.value === manualSchool)) {
             this.selectedSchool = manualSchool;
             this.schoolStateService.setSchool(this.selectedSchool);
             this.schoolStateService.markReady();
@@ -541,9 +620,13 @@ export class UiLayout implements OnDestroy {
           // regardless of which of the two requests happens to resolve first.
           const profile = this.authStore.user();
           const region = this.regionService.region();
-          const verification = profile?.verifications?.find(v => isSameRegion(v.region, region) && !!v.verified_at);
+          const verification = profile?.verifications?.find(
+            (v) => isSameRegion(v.region, region) && !!v.verified_at,
+          );
           const userSchoolId = verification?.school;
-          const userSchool = userSchoolId ? this.rawSchools.find(s => s.id === userSchoolId) : undefined;
+          const userSchool = userSchoolId
+            ? this.rawSchools.find((s) => s.id === userSchoolId)
+            : undefined;
           this.selectedSchool = userSchool ? userSchool.code : '';
           this.schoolStateService.setSchool(this.selectedSchool);
           // Signed in but the profile not back yet: it may name a verified
@@ -558,7 +641,7 @@ export class UiLayout implements OnDestroy {
           // A region with no schools has nothing to select.
           this.schoolStateService.markReady();
         }
-      }
+      },
     });
   }
 
@@ -568,16 +651,20 @@ export class UiLayout implements OnDestroy {
    * is what goes out as ?school= and into sessionStorage.
    */
   private schoolOptionsByCity(schools: SchoolOption[], cities: CityOption[]): DropdownOption[] {
-    const option = (s: SchoolOption, group?: string): DropdownOption =>
-      ({ value: s.code, label: s.display_name || s.name, group, keywords: schoolKeywords(s) });
+    const option = (s: SchoolOption, group?: string): DropdownOption => ({
+      value: s.code,
+      label: s.display_name || s.name,
+      group,
+      keywords: schoolKeywords(s),
+    });
     // A payload from before cities: nothing to group by.
-    if (cities.length === 0) return schools.map(s => option(s));
-    const known = new Set(cities.map(c => c.code));
-    const grouped = cities.flatMap(c => schools
-      .filter(s => s.city === c.code)
-      .map(s => option(s, c.display_name || c.name)));
+    if (cities.length === 0) return schools.map((s) => option(s));
+    const known = new Set(cities.map((c) => c.code));
+    const grouped = cities.flatMap((c) =>
+      schools.filter((s) => s.city === c.code).map((s) => option(s, c.display_name || c.name)),
+    );
     const other = this.i18n.t('layout.otherCity');
-    const rest = schools.filter(s => !s.city || !known.has(s.city)).map(s => option(s, other));
+    const rest = schools.filter((s) => !s.city || !known.has(s.city)).map((s) => option(s, other));
     return [...grouped, ...rest];
   }
 

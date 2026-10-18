@@ -51,6 +51,14 @@ function browserAnimatesBack(): boolean {
   return isIos && !window.matchMedia('(display-mode: standalone)').matches;
 }
 
+/**
+ * How long the browser may take to start a transition before it is dropped.
+ * The page only swaps once the browser has captured the old one (a rendered
+ * frame), so a slow or throttled render held every navigation for seconds.
+ * Skipping runs the swap at once; the animation is lost, the page is not.
+ */
+export const TRANSITION_START_BUDGET_MS = 250;
+
 export function onViewTransitionCreated({ transition, from, to }: ViewTransitionInfo): void {
   const router = inject(Router);
   const before = segments(from);
@@ -78,6 +86,9 @@ export function onViewTransitionCreated({ transition, from, to }: ViewTransition
   const toSection = section(after);
   const tabSwitch = fromSection !== toSection && TAB_SECTIONS.has(toSection) && (TAB_SECTIONS.has(fromSection) || !isBack);
   const kind = regionChanged || tabSwitch ? 'fade' : isBack ? 'back' : 'forward';
+
+  const swapped = setTimeout(() => transition.skipTransition(), TRANSITION_START_BUDGET_MS);
+  transition.updateCallbackDone.finally(() => clearTimeout(swapped));
 
   const root = document.documentElement;
   root.dataset['navTransition'] = kind;

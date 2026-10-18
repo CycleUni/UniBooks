@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { NAV_UP_STATE, onViewTransitionCreated } from './view-transitions';
+import { NAV_UP_STATE, TRANSITION_START_BUDGET_MS, onViewTransitionCreated } from './view-transitions';
 
 /** A route snapshot for `/hk/book` etc., reduced to what the hook reads. */
 const snap = (path: string) => {
@@ -11,7 +11,7 @@ const snap = (path: string) => {
 describe('onViewTransitionCreated', () => {
   let trigger: 'imperative' | 'popstate';
   let state: Record<string, unknown> | undefined;
-  let transition: { skipTransition: ReturnType<typeof vi.fn>; finished: Promise<void> };
+  let transition: { skipTransition: ReturnType<typeof vi.fn>; finished: Promise<void>; updateCallbackDone: Promise<void> };
 
   const run = (from: string, to: string) => {
     TestBed.runInInjectionContext(() =>
@@ -25,7 +25,7 @@ describe('onViewTransitionCreated', () => {
     trigger = 'imperative';
     state = undefined;
     // Never settles, so the attribute stays readable after the call.
-    transition = { skipTransition: vi.fn(), finished: new Promise(() => {}) };
+    transition = { skipTransition: vi.fn(), finished: new Promise(() => {}), updateCallbackDone: new Promise(() => {}) };
     TestBed.configureTestingModule({
       providers: [{ provide: Router, useValue: { currentNavigation: () => ({ trigger, extras: { state } }) } }],
     });
@@ -62,5 +62,30 @@ describe('onViewTransitionCreated', () => {
 
   it('skips navigations that stay on the same path', () => {
     expect(run('/hk/messages', '/hk/messages')).toBe('skipped');
+  });
+
+  it('drops a transition the browser is too slow to start, so the page still swaps', () => {
+    vi.useFakeTimers();
+    try {
+      run('/hk', '/hk/book');
+      vi.advanceTimersByTime(TRANSITION_START_BUDGET_MS);
+      expect(transition.skipTransition).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a transition that starts in time', async () => {
+    vi.useFakeTimers();
+    try {
+      transition.updateCallbackDone = Promise.resolve();
+      run('/hk', '/hk/book');
+      await Promise.resolve();
+      await Promise.resolve();
+      vi.advanceTimersByTime(TRANSITION_START_BUDGET_MS * 2);
+      expect(transition.skipTransition).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

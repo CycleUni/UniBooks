@@ -109,6 +109,10 @@
 
       <main class="main-content" [class.full-bleed]="fullBleed" [class.hide-bottom-nav]="mobileLayout.hideBottomNav()" [class.has-action-bar]="hasActionBar" [class.action-bar-over-tabs]="hasActionBar && !actionBarReplacesTabs">
         <ng-content></ng-content>
+        <div class="page-loading" *ngIf="loadingPage" role="status" aria-live="polite">
+          <span class="page-loading-spinner" aria-hidden="true"></span>
+          <span class="page-loading-text">{{ 'common.loading' | t }}</span>
+        </div>
       </main>
 
       <nav class="bottom-tab-bar" *ngIf="!mobileLayout.hideBottomNav() && !actionBarReplacesTabs">
