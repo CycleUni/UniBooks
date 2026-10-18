@@ -38,6 +38,8 @@ describe('MessageService hub reconnect', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    // Full schedule: the jitter only ever shortens a delay, and these pin the schedule itself.
+    vi.spyOn(Math, 'random').mockReturnValue(1);
     sockets = [];
     (globalThis as any).WebSocket = FakeWebSocket;
 

@@ -455,6 +455,7 @@ export const en: Record<string, string> = {
   'msg.retry': 'Retry',
   'msg.selectPrompt': 'Select a conversation from the left, or contact a seller from a book page.',
   'msg.reconnecting': 'Reconnecting...',
+  'msg.reconnectNow': 'Reconnect',
   'msg.emptyInboxTitle': 'No conversations yet',
   'msg.emptyInboxDesc': "Browse listings and contact a seller — your conversations will show up here.",
   'msg.inboxLoadFailed': "Couldn't load your conversations. Please try again.",

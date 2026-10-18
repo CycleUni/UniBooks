@@ -51,6 +51,8 @@ describe('Messages pending chats', () => {
       disconnectRoom: vi.fn(),
       roomUpdates$: EMPTY,
       roomTokenRefreshed$: EMPTY,
+      roomReconnected$: EMPTY,
+      roomGaveUp$: EMPTY,
       conversationUnreadState$: new BehaviorSubject(new Map()),
       realTimeMessages$: EMPTY,
       realTimeDeletions$: EMPTY,

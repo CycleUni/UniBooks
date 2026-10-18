@@ -86,6 +86,7 @@ describe('MessageService request cost', () => {
 
     it('stops dialing after repeated failures until the visitor comes back', () => {
       for (let i = 0; i < 20; i++) {
+        window.dispatchEvent(new Event('keydown')); // using the page, not idle
         latest().onclose?.();
         vi.advanceTimersByTime(60_000);
       }
@@ -142,7 +143,8 @@ describe('MessageService request cost', () => {
       expect(latest().sent).toEqual([]);
 
       setHidden(false);
-      expect(latest().sent).toEqual([JSON.stringify({ type: 'read' })]);
+      // Coming back also checks the socket with a ping.
+      expect(latest().sent.filter(m => m !== 'ping')).toEqual([JSON.stringify({ type: 'read' })]);
     });
 
     it('falls back to REST only when the socket is not open', () => {

@@ -50,6 +50,9 @@ export class ChatRoom extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    // Keepalive from the client's SocketWatch. Answered by the runtime without
+    // waking a hibernating object, and never reaches webSocketMessage (or the rate limit).
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
 
     this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS messages (

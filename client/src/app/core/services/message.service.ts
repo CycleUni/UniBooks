@@ -8,7 +8,12 @@ import { environment } from '../../../environments/environment';
 import { isTransientHttpFailure } from '../http-failure';
 import { decodeJwtPayload } from '../jwt';
 import { SessionRefreshService } from '../session-refresh.service';
-import { chatHubSocketUrl, chatRoomMessagesUrl, chatRoomReadUrl, chatRoomSocketUrl } from '../chat-urls';
+import {
+  chatHubSocketUrl,
+  chatRoomMessagesUrl,
+  chatRoomReadUrl,
+  chatRoomSocketUrl,
+} from '../chat-urls';
 import { importOrReload } from '../chunk-recovery';
 
 // Debug logging only outside production, to keep the prod console noise-free.
@@ -34,11 +39,76 @@ function tokenSecondsLeft(token: string): number {
   }
 }
 
+/**
+ * Reconnect delay: 1s, 2s, 4s, ... up to 30s, each cut by a random 0-50%.
+ * After a deploy or restart every client loses its socket at the same moment;
+ * without the spread they would all dial again on the same second, every
+ * round. Only ever shortened, so a delay is never longer than its schedule.
+ */
+function backoffDelay(attempts: number): number {
+  const base = Math.min(1000 * Math.pow(2, attempts), 30000);
+  return Math.round(base * (0.5 + Math.random() * 0.5));
+}
+
 /** The visitor can see the page and the device has a network. */
 function isActive(): boolean {
   const visible = typeof document === 'undefined' || !document.hidden;
   const online = typeof navigator === 'undefined' || navigator.onLine !== false;
   return visible && online;
+}
+
+/**
+ * Notices a socket that is dead without having closed. After the laptop
+ * sleeps or the network changes, the browser can keep reporting OPEN for
+ * minutes (or forever): onclose never fires, so nothing reconnects, sends go
+ * nowhere and nothing arrives. The server answers 'ping' with 'pong' on its
+ * own (setWebSocketAutoResponse), so any frame inside the deadline proves the
+ * socket is alive; none means it is dropped as if it had closed.
+ */
+class SocketWatch {
+  static readonly INTERVAL_MS = 25_000;
+  static readonly PONG_TIMEOUT_MS = 8_000;
+  /** The visitor just came back: a shorter wait, they are looking at it. */
+  static readonly RESUME_TIMEOUT_MS = 5_000;
+
+  private answered = true;
+  private interval: ReturnType<typeof setInterval>;
+  private deadline: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    private ws: WebSocket,
+    private onDead: () => void,
+  ) {
+    this.interval = setInterval(() => this.probe(), SocketWatch.INTERVAL_MS);
+  }
+
+  /** Any frame from the server, not only the pong, shows the socket is alive. */
+  seen(): void {
+    this.answered = true;
+  }
+
+  probe(timeoutMs: number = SocketWatch.PONG_TIMEOUT_MS): void {
+    if (this.deadline || this.ws.readyState !== WebSocket.OPEN) return;
+    try {
+      this.answered = false;
+      this.ws.send('ping');
+    } catch {
+      this.onDead();
+      return;
+    }
+    this.deadline = setTimeout(() => {
+      this.deadline = null;
+      if (!this.answered) this.onDead();
+    }, timeoutMs);
+  }
+
+  stop(): void {
+    clearInterval(this.interval);
+    if (this.deadline) {
+      clearTimeout(this.deadline);
+      this.deadline = null;
+    }
+  }
 }
 
 export interface ChatMessage {
@@ -60,7 +130,7 @@ export interface RoomUpdate {
 }
 
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root',
 })
 export class MessageService {
   private http = inject(HttpClient);
@@ -76,7 +146,23 @@ export class MessageService {
   private delayedReconnectingTimer: ReturnType<typeof setTimeout> | null = null;
   private roomStableTimer: ReturnType<typeof setTimeout> | null = null;
   /** A room reconnect was held back (tab hidden, offline, or out of attempts). */
-  private roomReconnectOwed = false;
+  /**
+   * Automatic reconnecting has stopped (out of attempts, or held back for a
+   * hidden tab) and is waiting for the visitor: the page offers a button then
+   * instead of the "reconnecting" badge.
+   */
+  public roomGaveUp$ = new BehaviorSubject<boolean>(false);
+  private get roomReconnectOwed(): boolean {
+    return this.roomGaveUp$.value;
+  }
+  private set roomReconnectOwed(owed: boolean) {
+    if (owed !== this.roomGaveUp$.value) this.roomGaveUp$.next(owed);
+  }
+  private roomWatch: SocketWatch | null = null;
+  private lastActivity = Date.now();
+  private lastReconnectNow = 0;
+  /** The room socket dropped on its own and has not been back yet. */
+  private roomDropped = false;
   private readTimer: ReturnType<typeof setTimeout> | null = null;
   private readOwed = false;
 
@@ -95,6 +181,15 @@ export class MessageService {
    */
   private static readonly MAX_RECONNECT_ATTEMPTS = 8;
   /** A room token with more left than this is reused for a reconnect. */
+  /**
+   * No input for this long and the page counts as idle: open sockets stay
+   * (they keep their heartbeat), but a dropped one is not dialed again until
+   * the visitor does something. An open tab nobody is touching otherwise
+   * redials for as long as the server is down.
+   */
+  private static readonly IDLE_MS = 10 * 60_000;
+  /** Least time between two visitor-triggered reconnects (reconnectNow). */
+  private static readonly RECONNECT_NOW_MIN_MS = 2_000;
   private static readonly TOKEN_REUSE_MIN_SECONDS = 60;
   /** Mark-reads for a burst of live messages collapse into one. */
   private static readonly READ_DEBOUNCE_MS = 1_500;
@@ -110,7 +205,12 @@ export class MessageService {
   // to the oldest still-pending send, same correlation-by-order as acks.
   public sendErrors$ = new Subject<string>();
 
-  public connectionState$ = new BehaviorSubject<'connected' | 'reconnecting' | 'disconnected'>('disconnected');
+  /** The room socket is back after a drop: messages sent meanwhile were never
+   *  delivered to it, so the open conversation should fetch what it missed. */
+  public roomReconnected$ = new Subject<void>();
+  public connectionState$ = new BehaviorSubject<'connected' | 'reconnecting' | 'disconnected'>(
+    'disconnected',
+  );
   /** A room token minted on reconnect; the open conversation's REST calls
    *  (history, older pages) use it in place of the expired one. */
   public roomTokenRefreshed$ = new Subject<{ roomId: string; token: string }>();
@@ -129,6 +229,7 @@ export class MessageService {
   private hubReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private hubStableTimer: ReturnType<typeof setTimeout> | null = null;
   private hubReconnectOwed = false;
+  private hubWatch: SocketWatch | null = null;
   private hubClosingIntentionally = false;
 
   // Opening the hub for a signed-in visitor (openHub), as opposed to
@@ -156,15 +257,35 @@ export class MessageService {
     // Reconnects and mark-reads held back while the tab was hidden or the
     // device offline go out when the visitor is back. Root service, so these
     // live as long as the page and need no teardown.
-    const resume = () => { if (isActive()) this.resumeOwed(); };
+    const resume = () => {
+      if (!isActive()) return;
+      // A socket that slept through the tab being away may be dead while still
+      // reporting OPEN: check it now instead of waiting for the next beat.
+      this.roomWatch?.probe(SocketWatch.RESUME_TIMEOUT_MS);
+      this.hubWatch?.probe(SocketWatch.RESUME_TIMEOUT_MS);
+      this.resumeOwed();
+    };
+    // Any input is the visitor being here; the first one after an idle spell
+    // also picks up the reconnect held back meanwhile. Handlers only compare
+    // timestamps, so the busy events cost nothing.
+    const touch = () => {
+      const wasIdle = this.isIdle();
+      this.lastActivity = Date.now();
+      if (wasIdle) resume();
+    };
+    for (const type of ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'wheel', 'scroll']) {
+      window.addEventListener(type, touch, { passive: true, capture: true });
+    }
     document.addEventListener('visibilitychange', resume);
     window.addEventListener('online', resume);
+    window.addEventListener('focus', resume);
+    window.addEventListener('pageshow', resume);
   }
 
   getConversations(): Observable<any[]> {
-    return this.http.get<any>('/messaging/conversations').pipe(
-      map(res => res.results !== undefined ? res.results : res)
-    );
+    return this.http
+      .get<any>('/messaging/conversations')
+      .pipe(map((res) => (res.results !== undefined ? res.results : res)));
   }
 
   startConversation(listingId: string): Observable<any> {
@@ -173,9 +294,9 @@ export class MessageService {
 
   // Room-scoped: the backend verifies the caller is a participant of this
   // conversation before issuing a token, and the token only works for it.
-  getChatToken(conversationId: string): Observable<{token: string}> {
-    return this.http.get<{token: string}>('/messaging/chat-token', {
-      params: { conversation_id: conversationId }
+  getChatToken(conversationId: string): Observable<{ token: string }> {
+    return this.http.get<{ token: string }>('/messaging/chat-token', {
+      params: { conversation_id: conversationId },
     });
   }
 
@@ -193,27 +314,35 @@ export class MessageService {
     return this.http.post<void>(
       chatRoomReadUrl(roomId),
       {},
-      { headers: { Authorization: `Bearer ${token}`, 'ngsw-bypass': 'true' } }
+      { headers: { Authorization: `Bearer ${token}`, 'ngsw-bypass': 'true' } },
     );
   }
 
-  deleteConversation(conversationId: string): Observable<{status: string}> {
-    return this.http.delete<{status: string}>(`/messaging/conversations/${conversationId}/delete`);
+  deleteConversation(conversationId: string): Observable<{ status: string }> {
+    return this.http.delete<{ status: string }>(
+      `/messaging/conversations/${conversationId}/delete`,
+    );
   }
 
   // Upload a chat image: compress client-side, then upload in two steps
   // (core/upload.ts). Returns the public URL of the uploaded image.
   uploadChatPhoto(file: File, conversationId: string): Observable<{ url: string }> {
-    return from(importOrReload(() => import('browser-image-compression')).then(m => m.default(file, {
-      maxSizeMB: 0.5,
-      maxWidthOrHeight: 1280,
-      initialQuality: 0.7,
-      useWebWorker: true,
-      fileType: 'image/webp',
-    }))).pipe(
-      switchMap(compressed =>
-        uploadImage(this.http, '/messaging/uploads', compressed, { conversation_id: conversationId })
-      )
+    return from(
+      importOrReload(() => import('browser-image-compression')).then((m) =>
+        m.default(file, {
+          maxSizeMB: 0.5,
+          maxWidthOrHeight: 1280,
+          initialQuality: 0.7,
+          useWebWorker: true,
+          fileType: 'image/webp',
+        }),
+      ),
+    ).pipe(
+      switchMap((compressed) =>
+        uploadImage(this.http, '/messaging/uploads', compressed, {
+          conversation_id: conversationId,
+        }),
+      ),
     );
   }
 
@@ -224,7 +353,7 @@ export class MessageService {
   // (which only adds the bypass to relative API URLs) never sees them.
   getRoomMessages(roomId: string, token: string): Observable<ChatMessage[]> {
     return this.http.get<ChatMessage[]>(chatRoomMessagesUrl(roomId), {
-      headers: { Authorization: `Bearer ${token}`, 'ngsw-bypass': 'true' }
+      headers: { Authorization: `Bearer ${token}`, 'ngsw-bypass': 'true' },
     });
   }
 
@@ -242,32 +371,40 @@ export class MessageService {
     roomId: string,
     token: string,
     limit: number,
-    before?: number
+    before?: number,
   ): Observable<{ messages: ChatMessage[]; has_more: boolean }> {
     let params = new HttpParams().set('paginated', '1').set('limit', String(limit));
     if (before !== undefined) {
       params = params.set('before', String(before));
     }
-    return this.http.get<{ messages: ChatMessage[]; has_more: boolean } | ChatMessage[]>(
-      chatRoomMessagesUrl(roomId),
-      { headers: { Authorization: `Bearer ${token}`, 'ngsw-bypass': 'true' }, params }
-    ).pipe(
-      // A worker predating the envelope ignores `paginated` and still returns
-      // a bare array. Normalise it so the chat isn't blank if the frontend
-      // ships before the worker does; no older pages are offered in that
-      // case, which is exactly the pre-pagination behaviour.
-      map(res => Array.isArray(res) ? { messages: res, has_more: false } : res)
-    );
+    return this.http
+      .get<{ messages: ChatMessage[]; has_more: boolean } | ChatMessage[]>(
+        chatRoomMessagesUrl(roomId),
+        { headers: { Authorization: `Bearer ${token}`, 'ngsw-bypass': 'true' }, params },
+      )
+      .pipe(
+        // A worker predating the envelope ignores `paginated` and still returns
+        // a bare array. Normalise it so the chat isn't blank if the frontend
+        // ships before the worker does; no older pages are offered in that
+        // case, which is exactly the pre-pagination behaviour.
+        map((res) => (Array.isArray(res) ? { messages: res, has_more: false } : res)),
+      );
   }
 
   connectRoom(roomId: string, token: string, userId: string) {
     if (!isPlatformBrowser(this.platformId)) return;
     this.disconnectRoom(false); // Do not clear reconnect state if we are just internally reconnecting, actually wait, if user manually calls connect, we should clear it.
+    // disconnectRoom() raises the "this close was deliberate" flag for the
+    // socket it is tearing down. Lower it again for the one about to be
+    // opened, as connectHub does: left raised, the first time this connection
+    // dropped on its own onclose read the drop as deliberate and scheduled no
+    // reconnect, leaving a long-open chat deaf (nothing sent, nothing received).
+    this.closingIntentionally = false;
 
     // We handle the intentional disconnect flag differently here.
     // If it's a completely new connection request, reset state.
     if (this.currentRoomId !== roomId) {
-       this.reconnectAttempts = 0;
+      this.reconnectAttempts = 0;
     }
 
     this.currentRoomId = roomId;
@@ -294,6 +431,9 @@ export class MessageService {
     ws.onopen = () => {
       if (this.ws !== ws) return;
       devLog(`[chat] Connected to room ${roomId}`);
+      this.roomWatch?.stop();
+      this.roomWatch = new SocketWatch(ws, () => dropRoom());
+      this.roomReconnectOwed = false;
       this.clearRoomStableTimer();
       this.roomStableTimer = setTimeout(() => {
         this.roomStableTimer = null;
@@ -308,10 +448,16 @@ export class MessageService {
         this.delayedReconnectingTimer = null;
       }
       this.connectionState$.next('connected');
+      if (this.roomDropped) {
+        this.roomDropped = false;
+        this.roomReconnected$.next();
+      }
     };
 
     ws.onmessage = (event) => {
       if (this.ws !== ws) return;
+      this.roomWatch?.seen();
+      if (event.data === 'pong') return;
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'message') {
@@ -336,15 +482,25 @@ export class MessageService {
       }
     };
 
-    ws.onclose = () => {
+    // The socket is gone: it closed, or the watch found it dead without a
+    // close. The superseded-socket guard makes the second of the two a no-op.
+    const dropRoom = () => {
       if (this.ws !== ws) return;
       devLog(`[chat] Disconnected from room ${roomId}`);
       this.ws = null;
+      this.roomWatch?.stop();
+      this.roomWatch = null;
+      try {
+        ws.close();
+      } catch {
+        /* already closed */
+      }
       this.clearRoomStableTimer();
       // A deliberate close (switching chats, leaving the page) isn't a send
       // failure — only flag it when the connection dropped on its own,
       // since anything sent right before that will never get its ack now.
       if (!this.closingIntentionally) {
+        this.roomDropped = true;
         this.scheduleReconnect();
 
         if (!this.delayedReconnectingTimer) {
@@ -359,6 +515,28 @@ export class MessageService {
       }
       this.closingIntentionally = false;
     };
+    ws.onclose = dropRoom;
+  }
+
+  /**
+   * The visitor wants to use the room (tried to send) while it is not
+   * connected: don't make them wait out a backoff, or the give-up after
+   * repeated failures.
+   */
+  reconnectNow(): void {
+    if (!this.currentRoomId || this.ws) return;
+    // Every Enter press lands here: one nudge per window, so holding the key
+    // neither keeps resetting the timer nor adds a dial of its own.
+    const now = Date.now();
+    if (now - this.lastReconnectNow < MessageService.RECONNECT_NOW_MIN_MS) return;
+    this.lastReconnectNow = now;
+    this.roomReconnectOwed = false;
+    this.reconnectAttempts = 0;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.scheduleReconnect();
   }
 
   private scheduleReconnect() {
@@ -369,12 +547,12 @@ export class MessageService {
     }
 
     // Exponential backoff: 1s, 2s, 4s, 8s, up to max 30s
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    const delay = backoffDelay(this.reconnectAttempts);
     devLog(`[chat] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
-    
+
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
-      if (!isActive()) {
+      if (!this.canRetry()) {
         this.roomReconnectOwed = true;
         return;
       }
@@ -401,7 +579,7 @@ export class MessageService {
       next: (res) => {
         // The user may have opened another conversation meanwhile.
         if (this.currentRoomId !== roomId) return;
-        this.connectRoom(roomId, res.token, userId, );
+        this.connectRoom(roomId, res.token, userId);
         this.roomTokenRefreshed$.next({ roomId, token: res.token });
       },
       error: () => {
@@ -414,6 +592,8 @@ export class MessageService {
   }
 
   disconnectRoom(intentional: boolean = true) {
+    this.roomWatch?.stop();
+    this.roomWatch = null;
     this.clearRoomStableTimer();
     this.clearReadTimer();
     this.readOwed = false;
@@ -428,6 +608,7 @@ export class MessageService {
         this.delayedReconnectingTimer = null;
       }
       this.reconnectAttempts = 0;
+      this.roomDropped = false;
       // Mark as intentional so onclose doesn't trigger scheduleReconnect()
       // or sendErrors$ — both of which would cause false "send failed" flags
       // on any message that was pending when the socket was closed.
@@ -442,7 +623,7 @@ export class MessageService {
       // between ws.close() and the new socket being assigned, flag it too.
       this.closingIntentionally = true;
     }
-    
+
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -452,9 +633,15 @@ export class MessageService {
   // Returns false if the message couldn't be sent at all (socket not open),
   // so the caller can flag it as failed immediately instead of waiting on a
   // server round trip that will never come.
-  sendRoomMessage(content: string, messageType: 'text' | 'image' = 'text', metadata?: Record<string, unknown>): boolean {
+  sendRoomMessage(
+    content: string,
+    messageType: 'text' | 'image' = 'text',
+    metadata?: Record<string, unknown>,
+  ): boolean {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'message', content, message_type: messageType, metadata }));
+      this.ws.send(
+        JSON.stringify({ type: 'message', content, message_type: messageType, metadata }),
+      );
       return true;
     }
     devError('[chat] Cannot send message, WebSocket is not open');
@@ -496,8 +683,7 @@ export class MessageService {
     }
     // No socket right now: fall back to the REST endpoint.
     if (this.currentRoomId && this.currentToken && this.currentUserId) {
-      this.postRoomRead(this.currentRoomId, this.currentToken)
-        .subscribe({ error: () => { } });
+      this.postRoomRead(this.currentRoomId, this.currentToken).subscribe({ error: () => {} });
     }
   }
 
@@ -520,6 +706,15 @@ export class MessageService {
       clearTimeout(this.hubStableTimer);
       this.hubStableTimer = null;
     }
+  }
+
+  private isIdle(): boolean {
+    return Date.now() - this.lastActivity >= MessageService.IDLE_MS;
+  }
+
+  /** A dropped socket may be dialed again: the visitor is here and using the page. */
+  private canRetry(): boolean {
+    return isActive() && !this.isIdle();
   }
 
   /** Pick up whatever was held back while the visitor was away. */
@@ -638,6 +833,8 @@ export class MessageService {
     hubWs.onopen = () => {
       if (this.hubWs !== hubWs) return;
       devLog('[chat] Hub connected');
+      this.hubWatch?.stop();
+      this.hubWatch = new SocketWatch(hubWs, () => dropHub());
       this.clearHubStableTimer();
       this.hubStableTimer = setTimeout(() => {
         this.hubStableTimer = null;
@@ -649,6 +846,8 @@ export class MessageService {
 
     hubWs.onmessage = (event) => {
       if (this.hubWs !== hubWs) return;
+      this.hubWatch?.seen();
+      if (event.data === 'pong') return;
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'room_update') {
@@ -688,16 +887,24 @@ export class MessageService {
       }
     };
 
-    hubWs.onclose = () => {
+    const dropHub = () => {
       if (this.hubWs !== hubWs) return;
       devLog('[chat] Hub disconnected');
       this.hubWs = null;
+      this.hubWatch?.stop();
+      this.hubWatch = null;
+      try {
+        hubWs.close();
+      } catch {
+        /* already closed */
+      }
       this.clearHubStableTimer();
       if (!this.hubClosingIntentionally) {
         this.scheduleHubReconnect();
       }
       this.hubClosingIntentionally = false;
     };
+    hubWs.onclose = dropHub;
   }
 
   private scheduleHubReconnect() {
@@ -707,13 +914,13 @@ export class MessageService {
       return;
     }
 
-    const delay = Math.min(1000 * Math.pow(2, this.hubReconnectAttempts), 30000);
+    const delay = backoffDelay(this.hubReconnectAttempts);
     this.hubReconnectTimeout = setTimeout(() => {
       this.hubReconnectTimeout = null;
       // Hidden tab or no network: the hub is only there to tell the chat server
       // the visitor is here, and they aren't — being counted away (and
       // emailed about new messages) is right until they come back.
-      if (!isActive()) {
+      if (!this.canRetry()) {
         this.hubReconnectOwed = true;
         return;
       }
@@ -735,7 +942,8 @@ export class MessageService {
           // transient turned every signed-out tab into a request to the
           // backend every couple of seconds, forever. Stop; signing in again
           // reconnects the hub from the layout.
-          const transient = err instanceof HttpErrorResponse &&
+          const transient =
+            err instanceof HttpErrorResponse &&
             (err.status === 0 || err.status === 429 || err.status >= 500);
           if (!transient) return;
           this.reconnectHub(generation);
@@ -760,6 +968,8 @@ export class MessageService {
   }
 
   disconnectHub() {
+    this.hubWatch?.stop();
+    this.hubWatch = null;
     this.clearHubStableTimer();
     this.hubReconnectOwed = false;
     if (this.hubReconnectTimeout) {

@@ -32,6 +32,8 @@ describe('Messages WebSocket ordering & temp-id reconciliation', () => {
       sendRoomMessage: vi.fn(() => true),
       roomUpdates$: EMPTY,
       roomTokenRefreshed$: EMPTY,
+      roomReconnected$: EMPTY,
+      roomGaveUp$: EMPTY,
       conversationUnreadState$: { subscribe: () => ({ unsubscribe() {} }), value: new Map() },
       realTimeMessages$: realTimeMessagesSubject.asObservable(),
       realTimeDeletions$: EMPTY,

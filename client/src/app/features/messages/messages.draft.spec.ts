@@ -28,6 +28,8 @@ describe('Messages draft persistence', () => {
       sendRoomMessage: vi.fn(() => true),
       roomUpdates$: EMPTY,
       roomTokenRefreshed$: EMPTY,
+      roomReconnected$: EMPTY,
+      roomGaveUp$: EMPTY,
       conversationUnreadState$: { subscribe: () => ({ unsubscribe() {} }), value: new Map() },
       realTimeMessages$: EMPTY,
       realTimeDeletions$: EMPTY,

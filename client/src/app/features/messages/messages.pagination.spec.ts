@@ -33,6 +33,8 @@ describe('Messages — history pagination', () => {
       disconnectRoom: vi.fn(),
       roomUpdates$: EMPTY,
       roomTokenRefreshed$: EMPTY,
+      roomReconnected$: EMPTY,
+      roomGaveUp$: EMPTY,
       conversationUnreadState$: { subscribe: () => ({ unsubscribe() {} }), value: new Map() },
       realTimeMessages$: EMPTY,
       realTimeDeletions$: EMPTY,

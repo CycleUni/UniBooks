@@ -47,6 +47,9 @@ const HUB_MAX_SOCKET_MS = 24 * 60 * 60 * 1000;
 export class UserHub extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    // Keepalive from the client's SocketWatch. Answered by the runtime without
+    // waking a hibernating object, and never reaches webSocketMessage (or the rate limit).
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
 
   async fetch(request: Request): Promise<Response> {

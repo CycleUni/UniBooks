@@ -445,6 +445,7 @@ export const zhTW: Record<string, string> = {
   'msg.retry': '重試',
   'msg.selectPrompt': '請從左側選擇對話，或從書目頁面聯絡賣家。',
   'msg.reconnecting': '連線中…',
+  'msg.reconnectNow': '重新連線',
   'msg.emptyInboxTitle': '還沒有任何對話',
   'msg.emptyInboxDesc': '逛逛書籍，找到喜歡的商品後聯絡賣家，對話就會顯示在這裡。',
   'msg.inboxLoadFailed': '無法載入你的對話，請再試一次。',

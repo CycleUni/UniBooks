@@ -128,6 +128,10 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   private connectionSubscription?: Subscription;
   private roomUpdateSubscription?: Subscription;
   private roomTokenSubscription?: Subscription;
+  private roomReconnectedSubscription?: Subscription;
+  private roomGaveUpSubscription?: Subscription;
+  /** Automatic reconnecting stopped: show the button instead of the badge. */
+  reconnectGaveUp = false;
   private unreadStateSubscription?: Subscription;
   private queryParamsSubscription?: Subscription;
   private location = inject(Location);
@@ -164,6 +168,14 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     // history calls below must use it too.
     this.roomTokenSubscription = this.messageService.roomTokenRefreshed$.subscribe(({ roomId, token }) => {
       if (String(this.activeChat?.id) === roomId) this.chatToken = token;
+    });
+
+    // The room socket was down for a while: whatever was said meanwhile never
+    // reached it, so fetch the latest page and add what is missing.
+    this.roomReconnectedSubscription = this.messageService.roomReconnected$.subscribe(() => this.catchUpHistory());
+    this.roomGaveUpSubscription = this.messageService.roomGaveUp$.subscribe(gaveUp => {
+      this.reconnectGaveUp = gaveUp;
+      this.cdr.markForCheck();
     });
 
     // Live "new activity" events for every conversation this user is part
@@ -383,6 +395,8 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
       this.roomUpdateSubscription.unsubscribe();
     }
     this.roomTokenSubscription?.unsubscribe();
+    this.roomReconnectedSubscription?.unsubscribe();
+    this.roomGaveUpSubscription?.unsubscribe();
     this.queryParamsSubscription?.unsubscribe();
     if (this.unreadStateSubscription) {
       this.unreadStateSubscription.unsubscribe();
@@ -681,7 +695,12 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     // at that moment causes sendRoomMessage() to return false and the message
     // is immediately marked as failed before the connection even had a chance
     // to open. 'reconnecting' is already handled, but 'disconnected' was not.
-    if (this.connectionState !== 'connected') return;
+    if (this.connectionState !== 'connected') {
+      // Typing into a room that is down: bring it back now rather than leave
+      // the visitor waiting out a backoff (or the give-up after repeated failures).
+      this.messageService.reconnectNow();
+      return;
+    }
     if (this.newMessage.trim() && this.activeChat) {
       const text = this.newMessage.trim();
       const chatId = this.activeChat.id;
@@ -1057,6 +1076,36 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
         this.historyFailed = true;
       }
     });
+  }
+
+  /** Adds messages sent while the room socket was down, leaving the rest of the list as it is. */
+  private catchUpHistory() {
+    const chatId = this.activeChat ? String(this.activeChat.id) : null;
+    if (!chatId || !this.chatToken || isPendingChat(this.activeChat)) return;
+    this.messageService.getRoomMessagePage(chatId, this.chatToken, this.HISTORY_PAGE_SIZE).subscribe({
+      next: (page) => {
+        if (String(this.activeChat?.id) !== chatId) return;
+        let added = false;
+        for (const raw of page?.messages || []) {
+          const msg = this.toViewMessage(raw);
+          const exists = this.messages.some(m => m.id === msg.id || (String(m.id).startsWith('temp_') && m.body === msg.body && m.is_mine));
+          if (exists) continue;
+          this.insertMessageSorted(msg);
+          added = true;
+        }
+        if (added) {
+          this.cdr.markForCheck();
+          setTimeout(() => this.scrollToBottom(false), 50);
+          this.messageService.markRoomRead();
+        }
+      },
+      error: () => { /* the next reconnect tries again */ },
+    });
+  }
+
+  /** The "Reconnect" button: dial now instead of waiting out a backoff or the give-up. */
+  reconnectNow() {
+    this.messageService.reconnectNow();
   }
 
   retryHistory() {

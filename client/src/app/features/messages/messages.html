@@ -22,7 +22,8 @@
                 </h4>
               </div>
               <div class="connection-status" *ngIf="connectionState === 'reconnecting'">
-                <span class="reconnecting-badge">{{ 'msg.reconnecting' | t }}</span>
+                <span class="reconnecting-badge" *ngIf="!reconnectGaveUp">{{ 'msg.reconnecting' | t }}</span>
+                <button class="reconnect-btn" type="button" *ngIf="reconnectGaveUp" (click)="reconnectNow()">{{ 'msg.reconnectNow' | t }}</button>
               </div>
               <button class="report-btn" type="button" *ngIf="!activeChat.pending" (click)="showReport = true" [title]="'msg.reportConversation' | t">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">

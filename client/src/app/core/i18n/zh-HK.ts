@@ -445,6 +445,7 @@ export const zhHK: Record<string, string> = {
   'msg.retry': '重試',
   'msg.selectPrompt': '喺左邊揀個對話，或者去書籍頁搵賣家傾。',
   'msg.reconnecting': '連線中…',
+  'msg.reconnectNow': '重新連線',
   'msg.emptyInboxTitle': '仲未有任何對話',
   'msg.emptyInboxDesc': '去揀下書，睇中咗就搵賣家傾，對話就會喺呢度出現。',
   'msg.inboxLoadFailed': '未能載入你嘅對話，請再試一次。',

@@ -44,6 +44,8 @@ describe('Messages ?chat= URL sync', () => {
       disconnectRoom: vi.fn(),
       roomUpdates$: roomUpdates,
       roomTokenRefreshed$: EMPTY,
+      roomReconnected$: EMPTY,
+      roomGaveUp$: EMPTY,
       conversationUnreadState$: new BehaviorSubject(new Map()),
       realTimeMessages$: EMPTY,
       realTimeDeletions$: EMPTY,
