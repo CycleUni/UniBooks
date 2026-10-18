@@ -98,6 +98,7 @@ export interface UserProfile {
   /** Whether other users see avatar_url; the owner always gets it. */
   show_avatar?: boolean;
   is_google_linked?: boolean;
+  passkey_2fa?: boolean;
   role?: UserRole;
   last_seen_bought_orders_at?: string | null;
   last_seen_sold_orders_at?: string | null;
@@ -491,6 +492,10 @@ export class AccountService {
 
   deleteAccount(): Observable<any> {
     return this.http.delete<any>('/auth/me');
+  }
+
+  setPasskeyTwoStep(enabled: boolean): Observable<{ passkey_2fa: boolean }> {
+    return this.authStore.setPasskeyTwoStep(enabled);
   }
 
   listPasskeys(): Observable<PasskeyItem[]> {

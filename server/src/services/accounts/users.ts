@@ -152,6 +152,7 @@ export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Rec
     ...reputation,
     has_password: !!user.passwordHash,
     is_google_linked: !!user.googleId,
+    passkey_2fa: !!user.passkey2fa,
     avatar_url: user.avatarUrl || null,
     show_avatar: !!user.showAvatar,
     last_seen_bought_orders_at: user.lastSeenBoughtOrdersAt ?? null,

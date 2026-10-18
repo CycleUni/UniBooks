@@ -86,6 +86,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   pwdIsError = false;
   hasPassword = true;
   passkeys: PasskeyItem[] = [];
+  passkeyTwoStep = false;
+  savingTwoStep = false;
   passkeysLoading = false;
   isAddingPasskey = false;
   editingPasskeyId: string | null = null;
@@ -297,6 +299,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.verifications = data.verifications || [];
         this.hasPassword = data.has_password ?? true;
         this.isGoogleLinked = data.is_google_linked ?? false;
+        this.passkeyTwoStep = data.passkey_2fa ?? false;
         this.avatarUrl = data.avatar_url || '';
         this.showAvatar = data.show_avatar ?? true;
         this.pendingEmail = data.pending_email ?? null;
@@ -782,6 +785,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.accountService.listPasskeys().subscribe({
       next: (list) => {
         this.passkeys = list;
+        // The server turns two-step off with the last passkey.
+        if (list.length === 0) this.passkeyTwoStep = false;
         this.passkeyIconErrors = {};
         this.passkeysLoading = false;
         this.cdr.markForCheck();
@@ -846,6 +851,29 @@ export class SettingsComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.isSavingPasskeyRename = false;
         this.toast.error(parseApiError(err, this.i18n, 'acct.errRenamePasskey'));
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  setPasskeyTwoStep(input: HTMLInputElement): void {
+    const enabled = input.checked;
+    if (enabled === this.passkeyTwoStep) return;
+    const previous = this.passkeyTwoStep;
+    this.passkeyTwoStep = enabled;
+    this.savingTwoStep = true;
+    this.cdr.markForCheck();
+    this.accountService.setPasskeyTwoStep(enabled).subscribe({
+      next: () => {
+        this.savingTwoStep = false;
+        this.toast.success(this.i18n.t(enabled ? 'acct.twoStepOn' : 'acct.twoStepOff'));
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.passkeyTwoStep = previous;
+        input.checked = previous;
+        this.savingTwoStep = false;
+        this.toast.error(parseApiError(err, this.i18n, 'acct.errTwoStep'));
         this.cdr.markForCheck();
       },
     });

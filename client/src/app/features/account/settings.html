@@ -297,6 +297,27 @@
       </div>
     </div>
 
+    <div class="avatar-visibility" *ngIf="passkeys.length > 0" style="margin-top: 16px">
+      <div class="avatar-visibility-text">
+        <span class="avatar-visibility-label" id="two-step-label">{{ 'acct.twoStepTitle' | t }}</span>
+        <p class="avatar-visibility-desc" id="two-step-desc">{{ 'acct.twoStepDesc' | t }}</p>
+      </div>
+      <label class="switch" [class.is-busy]="savingTwoStep">
+        <input
+          type="checkbox"
+          role="switch"
+          [attr.aria-busy]="savingTwoStep"
+          [checked]="passkeyTwoStep"
+          [disabled]="savingTwoStep"
+          [attr.aria-checked]="passkeyTwoStep"
+          aria-labelledby="two-step-label"
+          aria-describedby="two-step-desc"
+          (change)="setPasskeyTwoStep($any($event.target))"
+        />
+        <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+      </label>
+    </div>
+
     <ui-button variant="white" class="mt-4" (onClick)="onAddPasskey()" [disabled]="isAddingPasskey">
       {{ (isAddingPasskey ? 'acct.addingPasskey' : 'acct.addPasskey') | t }}
     </ui-button>

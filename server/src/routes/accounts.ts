@@ -40,14 +40,17 @@ import {
   serializeUser,
 } from '../services/accounts/users';
 import {
+  beginSecondFactor,
   countUserPasskeys,
   deleteUserPasskey,
   getPasskeyLoginOptions,
   getPasskeyRegistrationOptions,
   listUserPasskeys,
   renameUserPasskey,
+  setPasskeyTwoStep,
   verifyPasskeyLogin,
   verifyPasskeyRegistration,
+  verifySecondFactor,
 } from '../services/accounts/passkeys';
 import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
@@ -516,6 +519,8 @@ accountRoutes.post('/login', rateLimit('login', RATES.login), async (c) => {
     );
   }
 
+  const second = await beginSecondFactor(c, user);
+  if (second) return second;
   setSession(c, await issueTokens(c.env, user.id));
   await touchLastLogin(c, user.id);
   return c.json({ code: 'auth.loginSuccess', user_id: user.id });
@@ -647,6 +652,8 @@ accountRoutes.post('/google', rateLimit('login', RATES.login), async (c) => {
     }
   }
 
+  const second = await beginSecondFactor(c, user);
+  if (second) return second;
   setSession(c, await issueTokens(c.env, user.id));
   await touchLastLogin(c, user.id);
   const region = await getRegion(c);
@@ -726,6 +733,22 @@ accountRoutes.post('/passkeys/login/verify', rateLimit('passkey-login', RATES.pa
 });
 accountRoutes.post('/passkeys/login/verify/', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
   return verifyPasskeyLogin(c);
+});
+
+accountRoutes.post('/passkeys/2fa/verify', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
+  return verifySecondFactor(c);
+});
+accountRoutes.post('/passkeys/2fa/verify/', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
+  return verifySecondFactor(c);
+});
+
+accountRoutes.put('/passkeys/2fa', authMiddleware(), async (c) => {
+  const user = await currentUser(c);
+  return setPasskeyTwoStep(c, user);
+});
+accountRoutes.put('/passkeys/2fa/', authMiddleware(), async (c) => {
+  const user = await currentUser(c);
+  return setPasskeyTwoStep(c, user);
 });
 
 accountRoutes.get('/passkeys', authMiddleware(), async (c) => {

@@ -29,7 +29,7 @@ export const webauthnVerifier = {
 
 interface ChallengeRecord {
   challenge: string;
-  type: 'reg' | 'auth';
+  type: 'reg' | 'auth' | 'mfa';
   userId?: string;
 }
 
@@ -339,6 +339,126 @@ export async function verifyPasskeyLogin(c: C) {
 }
 
 /**
+ * Second sign-in step. Called after the password (or Google) check has passed
+ * for an account with passkey two-step on: no session yet, only a challenge
+ * limited to this user's own passkeys. Returns null when two-step is off.
+ */
+export async function beginSecondFactor(c: C, user: User) {
+  if (!user.passkey2fa) return null;
+  const db = createDb(c.env.DB);
+  const own = await db.select({ id: passkeys.id, transports: passkeys.transports }).from(passkeys).where(eq(passkeys.userId, user.id));
+  // Nothing to ask for (every passkey was removed): do not lock the owner out.
+  if (own.length === 0) return null;
+
+  const { rpID } = webAuthnConfig(c.req.url);
+  const options = await generateAuthenticationOptions({
+    rpID,
+    userVerification: 'required',
+    allowCredentials: own.map((p) => ({
+      id: p.id,
+      transports: p.transports ? JSON.parse(p.transports) : undefined,
+    })),
+  });
+  const challengeId = crypto.randomUUID();
+  const record: ChallengeRecord = { challenge: options.challenge, type: 'mfa', userId: user.id };
+  await c.env.KV.put(challengeKey(challengeId), JSON.stringify(record), { expirationTtl: CHALLENGE_TTL_SECONDS });
+  return c.json({ code: 'auth.passkeyRequired', challenge_id: challengeId, options });
+}
+
+/**
+ * Check the passkey for a pending second step, then start the session.
+ * One attempt per challenge: a wrong answer means signing in again.
+ */
+export async function verifySecondFactor(c: C) {
+  const body = await readJson(c.req);
+  const challengeId = body.challenge_id;
+  const response = body.response as AuthenticationResponseJSON | undefined;
+  if (!challengeId || typeof challengeId !== 'string' || !response || !response.id) {
+    apiError(400, 'auth.errPasskeyChallenge');
+  }
+
+  const kvKey = challengeKey(challengeId);
+  const record = await c.env.KV.get<ChallengeRecord>(kvKey, 'json');
+  await c.env.KV.delete(kvKey);
+  if (!record || record.type !== 'mfa' || !record.userId) {
+    apiError(400, 'auth.errPasskeyChallenge');
+  }
+
+  const db = createDb(c.env.DB);
+  const [passkey] = await db
+    .select()
+    .from(passkeys)
+    .where(and(eq(passkeys.id, response.id), eq(passkeys.userId, record.userId)))
+    .limit(1);
+  if (!passkey) {
+    apiError(401, 'auth.errPasskeyLogin');
+  }
+  const user = await getUser(c.env, record.userId);
+  if (!user) {
+    apiError(401, 'auth.errPasskeyLogin');
+  }
+
+  const { rpID, expectedOrigin } = webAuthnConfig(c.req.url);
+  let verification;
+  try {
+    verification = await webauthnVerifier.verifyAuthenticationResponse({
+      response,
+      expectedChallenge: record.challenge,
+      expectedOrigin,
+      expectedRPID: rpID,
+      credential: {
+        id: passkey.id,
+        publicKey: isoBase64URL.toBuffer(passkey.publicKey),
+        counter: passkey.counter,
+        transports: passkey.transports ? JSON.parse(passkey.transports) : undefined,
+      },
+      requireUserVerification: true,
+    });
+  } catch {
+    apiError(401, 'auth.errPasskeyLogin');
+  }
+  if (!verification || !verification.verified) {
+    apiError(401, 'auth.errPasskeyLogin');
+  }
+  if (accountDisabled(user)) {
+    apiError(403, 'auth.errAccountDisabled');
+  }
+
+  const { authenticationInfo } = verification;
+  await db
+    .update(passkeys)
+    .set({
+      counter: authenticationInfo.newCounter,
+      backedUp: authenticationInfo.credentialBackedUp ? 1 : 0,
+      deviceType: authenticationInfo.credentialDeviceType ?? passkey.deviceType,
+      lastUsedAt: nowIso(),
+    })
+    .where(eq(passkeys.id, passkey.id))
+    .run();
+
+  await touchLastLogin(c, user.id);
+  setSession(c, await issueTokens(c.env, user.id));
+  return c.json({ code: 'auth.loginSuccess', user_id: user.id });
+}
+
+/** Turn passkey two-step on or off. Turning it on needs a passkey to ask for. */
+export async function setPasskeyTwoStep(c: C, user: User) {
+  const body = await readJson(c.req);
+  if (typeof body.enabled !== 'boolean') {
+    apiError(400, 'common.errValidation');
+  }
+  if (body.enabled && (await countUserPasskeys(c.env, user.id)) === 0) {
+    apiError(409, 'acct.errTwoStepNeedsPasskey');
+  }
+  await createDb(c.env.DB)
+    .update(users)
+    .set({ passkey2fa: body.enabled ? 1 : 0, updatedAt: nowIso() })
+    .where(eq(users.id, user.id))
+    .run();
+  return c.json({ passkey_2fa: body.enabled });
+}
+
+/**
  * List the current user's registered passkeys.
  */
 export async function listUserPasskeys(c: C, userId: string) {
@@ -455,6 +575,11 @@ export async function deleteUserPasskey(c: C, user: User, passkeyId: string) {
     .delete(passkeys)
     .where(and(eq(passkeys.id, passkeyId), eq(passkeys.userId, user.id)))
     .run();
+
+  // No passkey left to ask for: two-step goes off with it.
+  if (user.passkey2fa && (await countUserPasskeys(c.env, user.id)) === 0) {
+    await db.update(users).set({ passkey2fa: 0, updatedAt: nowIso() }).where(eq(users.id, user.id)).run();
+  }
 
   return c.body(null, 204);
 }

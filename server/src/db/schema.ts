@@ -140,6 +140,8 @@ export const users = sqliteTable('users', {
     .default('user'),
   // The linked Google account's `sub`.
   googleId: text('google_id').unique(),
+  // 1 = password and Google sign-ins also need a passkey before a session starts.
+  passkey2fa: integer('passkey_2fa').notNull().default(0),
   isActive: integer('is_active').notNull().default(1),
   isBanned: integer('is_banned').notNull().default(0),
   banReason: text('ban_reason'),

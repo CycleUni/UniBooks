@@ -226,6 +226,55 @@ describe('AuthStore Passkey API', () => {
     });
   });
 
+  describe('two-step sign-in', () => {
+    it('login: a passkey challenge after the password is answered with the passkey, then signs in', async () => {
+      vi.spyOn(webauthnBrowser, 'browserSupportsWebAuthn').mockReturnValue(true);
+      const assertion = { id: 'cred-1', rawId: 'raw-1', response: {}, type: 'public-key' };
+      vi.spyOn(webauthnBrowser, 'startAuthentication').mockResolvedValue(assertion as any);
+
+      let result: any;
+      authStore.login('a@b.c', 'pw').subscribe((res) => (result = res));
+      httpMock.expectOne('/auth/login').flush({
+        code: 'auth.passkeyRequired',
+        challenge_id: 'chal-2fa',
+        options: { challenge: 'c', allowCredentials: [{ id: 'cred-1' }] },
+      });
+      await flushMicrotasks();
+
+      expect(authStore.isAuthenticated()).toBe(false);
+      const verify = httpMock.expectOne('/auth/passkeys/2fa/verify');
+      expect(verify.request.body).toEqual({ challenge_id: 'chal-2fa', response: assertion });
+      verify.flush({ code: 'auth.loginSuccess', user_id: 'u1' });
+
+      expect(result.code).toBe('auth.loginSuccess');
+      expect(authStore.isAuthenticated()).toBe(true);
+      expect(mockGa.trackLogin).toHaveBeenCalledWith('Password');
+    });
+
+    it('login: a cancelled passkey prompt fails with the passkey sign-in message', async () => {
+      vi.spyOn(webauthnBrowser, 'browserSupportsWebAuthn').mockReturnValue(true);
+      const cancelled = new Error('cancelled');
+      cancelled.name = 'NotAllowedError';
+      vi.spyOn(webauthnBrowser, 'startAuthentication').mockRejectedValue(cancelled);
+
+      let error: any;
+      authStore.login('a@b.c', 'pw').subscribe({ error: (e) => (error = e) });
+      httpMock.expectOne('/auth/login').flush({ code: 'auth.passkeyRequired', challenge_id: 'x', options: {} });
+      await flushMicrotasks();
+
+      expect(error.error.error.code).toBe('auth.errPasskeyLogin');
+      expect(authStore.isAuthenticated()).toBe(false);
+    });
+
+    it('setPasskeyTwoStep sends PUT /auth/passkeys/2fa', () => {
+      authStore.setPasskeyTwoStep(true).subscribe();
+      const req = httpMock.expectOne('/auth/passkeys/2fa');
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body).toEqual({ enabled: true });
+      req.flush({ passkey_2fa: true });
+    });
+  });
+
   describe('Passkey management endpoints', () => {
     it('cancelPasskey calls WebAuthnAbortService.cancelCeremony', () => {
       const cancelSpy = vi.spyOn(webauthnBrowser.WebAuthnAbortService, 'cancelCeremony');

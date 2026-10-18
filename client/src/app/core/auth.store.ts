@@ -2,7 +2,7 @@ import { DestroyRef, Injectable, Injector, signal, inject, untracked, runInInjec
 import { sentry } from './sentry';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { tap, catchError, filter, take, finalize, shareReplay, switchMap } from 'rxjs/operators';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, from, of, throwError } from 'rxjs';
 import {
   browserSupportsWebAuthn,
   startAuthentication,
@@ -86,6 +86,8 @@ export interface AuthUser {
   avatar_url?: string;
   show_avatar?: boolean;
   is_google_linked?: boolean;
+  /** Password and Google sign-ins also ask for a passkey. */
+  passkey_2fa?: boolean;
   role?: UserRole;
   verifications?: RegionVerification[];
   /** The language the site was last used in, as last reported. */
@@ -674,6 +676,7 @@ export class AuthStore {
   login(email: string, password: string, challenge?: string): Observable<any> {
     const body = challenge ? { email, password, cf_turnstile_response: challenge } : { email, password };
     return this.http.post<any>('/auth/login', body).pipe(
+      switchMap(response => this.withSecondStep(response)),
       tap(response => {
         if (isLoginSuccess(response)) {
           this.signInPending = true;
@@ -708,6 +711,7 @@ export class AuthStore {
 
   loginWithGoogle(credential: string): Observable<any> {
     return this.http.post<any>('/auth/google', { credential }).pipe(
+      switchMap(response => this.withSecondStep(response)),
       tap(response => {
         if (isLoginSuccess(response)) {
           this.signInPending = true;
@@ -716,6 +720,32 @@ export class AuthStore {
         }
       })
     );
+  }
+
+  /**
+   * Passkey two-step: when the first step (password or Google) was accepted
+   * but the account wants a passkey too, the server answers with a challenge
+   * instead of a session. Ask the browser for the passkey and send it back;
+   * the result is the final sign-in response. Any other response passes on.
+   */
+  private withSecondStep(response: any): Observable<any> {
+    if (response?.code !== 'auth.passkeyRequired') return of(response);
+    if (!this.supportsPasskeys()) return throwError(() => new Error('WebAuthn not supported'));
+    const { challenge_id, options } = response;
+    return from(webauthnBrowser.startAuthentication({ optionsJSON: options })).pipe(
+      switchMap(assertion => this.http.post<any>('/auth/passkeys/2fa/verify', { challenge_id, response: assertion })),
+      // A cancelled or failed prompt is not an HTTP error: give the form the
+      // same shape so it shows the passkey message.
+      catchError(err =>
+        throwError(() => (err?.error?.error ? err : { error: { error: { code: 'auth.errPasskeyLogin' } } })),
+      ),
+    );
+  }
+
+  setPasskeyTwoStep(enabled: boolean): Observable<{ passkey_2fa: boolean }> {
+    return this.http
+      .put<{ passkey_2fa: boolean }>('/auth/passkeys/2fa', { enabled })
+      .pipe(tap(r => this.updateUser(u => ({ ...u, passkey_2fa: r.passkey_2fa }))));
   }
 
   supportsPasskeys(): boolean {

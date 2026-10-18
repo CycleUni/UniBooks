@@ -43,6 +43,13 @@
       "when": 1792215356163,
       "tag": "0005_passkey_aaguid",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792312889156,
+      "tag": "0006_passkey_2fa",
+      "breakpoints": true
     }
   ]
 }

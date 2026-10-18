@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { clearCatalogueCache, loadCatalogue, webauthnVerifier } from '../../src/services/accounts/passkeys';
-import { call, createUser, login, seedReference, sessionOf } from './helpers';
+import { PASSWORD, call, createUser, login, seedReference, sessionOf } from './helpers';
 
 let mockRegVerifyResult: any = null;
 let mockAuthVerifyResult: any = null;
@@ -306,6 +306,91 @@ describe('Passkeys (WebAuthn)', () => {
     // Verify user last_login_at in DB
     const userRow = await env.DB.prepare('SELECT last_login_at FROM users WHERE id = ?').bind(userId).first<any>();
     expect(userRow.last_login_at).toBeTruthy();
+  });
+
+  it('two-step: password sign-in waits for a passkey; setting needs a passkey; last delete turns it off', async () => {
+    const email = 'passkey-2fa@example.com';
+    const userId = await createUser(email);
+    const { access } = await login(email);
+    const credId = 'cred-2fa';
+
+    // Nothing to ask for yet.
+    const refused = await call('/api/v1/auth/passkeys/2fa/', { method: 'PUT', token: access, body: { enabled: true } });
+    expect(refused.status).toBe(409);
+
+    await env.DB.prepare(
+      `INSERT INTO passkeys (id, user_id, public_key, counter, device_type, backed_up, name, created_at)
+       VALUES (?, ?, 'pubkey', 0, 'singleDevice', 0, 'Key', datetime('now'))`,
+    )
+      .bind(credId, userId)
+      .run();
+    const on = await call('/api/v1/auth/passkeys/2fa/', { method: 'PUT', token: access, body: { enabled: true } });
+    expect(on.status).toBe(200);
+
+    // Password alone no longer starts a session.
+    const first = await call('/api/v1/auth/login', { body: { email, password: PASSWORD } });
+    expect(first.status).toBe(200);
+    expect(sessionOf(first).access).toBe('');
+    const pending = (await first.json()) as any;
+    expect(pending.code).toBe('auth.passkeyRequired');
+    expect(pending.options.allowCredentials.map((c: any) => c.id)).toEqual([credId]);
+
+    // A first-step (discoverable) challenge cannot stand in for the second step.
+    await env.KV.put('webauthn:chal:plain-auth', JSON.stringify({ challenge: 'c', type: 'auth' }));
+    const wrongType = await call('/api/v1/auth/passkeys/2fa/verify/', {
+      body: { challenge_id: 'plain-auth', response: { id: credId } },
+    });
+    expect(wrongType.status).toBe(400);
+
+    // A failed answer spends the challenge.
+    mockAuthVerifyThrows = new Error('bad signature');
+    const bad = await call('/api/v1/auth/passkeys/2fa/verify/', {
+      body: { challenge_id: pending.challenge_id, response: { id: credId } },
+    });
+    expect(bad.status).toBe(401);
+    mockAuthVerifyThrows = null;
+    const replay = await call('/api/v1/auth/passkeys/2fa/verify/', {
+      body: { challenge_id: pending.challenge_id, response: { id: credId } },
+    });
+    expect(replay.status).toBe(400);
+
+    // Another user's passkey does not satisfy it.
+    const other = await createUser('passkey-2fa-other@example.com');
+    await env.DB.prepare(
+      `INSERT INTO passkeys (id, user_id, public_key, counter, device_type, backed_up, name, created_at)
+       VALUES ('cred-2fa-other', ?, 'pubkey', 0, 'singleDevice', 0, 'Other', datetime('now'))`,
+    )
+      .bind(other)
+      .run();
+    const second = (await (await call('/api/v1/auth/login', { body: { email, password: PASSWORD } })).json()) as any;
+    mockAuthVerifyResult = {
+      verified: true,
+      authenticationInfo: { newCounter: 1, credentialDeviceType: 'singleDevice', credentialBackedUp: false },
+    };
+    const foreign = await call('/api/v1/auth/passkeys/2fa/verify/', {
+      body: { challenge_id: second.challenge_id, response: { id: 'cred-2fa-other' } },
+    });
+    expect(foreign.status).toBe(401);
+
+    // The right passkey completes the sign-in.
+    const third = (await (await call('/api/v1/auth/login', { body: { email, password: PASSWORD } })).json()) as any;
+    const done = await call('/api/v1/auth/passkeys/2fa/verify/', {
+      body: { challenge_id: third.challenge_id, response: { id: credId } },
+    });
+    expect(done.status).toBe(200);
+    expect(await done.json()).toEqual({ code: 'auth.loginSuccess', user_id: userId });
+    const session = sessionOf(done);
+    expect(session.access).toBeTruthy();
+
+    // Profile shows the setting; deleting the last passkey switches it off.
+    const me = await call('/api/v1/auth/me', { token: session.access });
+    expect(me.status).toBe(200);
+    expect(((await me.json()) as any).passkey_2fa).toBe(true);
+    const del = await call(`/api/v1/auth/passkeys/${credId}/`, { method: 'DELETE', token: session.access });
+    expect(del.status).toBe(204);
+    const row = await env.DB.prepare('SELECT passkey_2fa FROM users WHERE id = ?').bind(userId).first<any>();
+    expect(row.passkey_2fa).toBe(0);
+    expect(sessionOf(await call('/api/v1/auth/login', { body: { email, password: PASSWORD } })).access).toBeTruthy();
   });
 
   it('list/rename/delete are scoped to the owner, last-method guard enforced', async () => {
