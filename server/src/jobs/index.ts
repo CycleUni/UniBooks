@@ -302,7 +302,13 @@ export async function runAutoComplete(env: Env) {
   const rows = await db
     .select({ id: orders.id, listingId: orders.listingId })
     .from(orders)
-    .where(and(eq(orders.status, 'handed_over'), lte(orders.updatedAt, cutoff), sql`COALESCE(${orders.meetupTime}, ${orders.updatedAt}) <= ${cutoff}`))
+    .where(
+      and(
+        eq(orders.status, 'handed_over'),
+        lte(orders.updatedAt, cutoff),
+        sql`COALESCE(${orders.meetupTime}, ${orders.updatedAt}) <= ${cutoff}`,
+      ),
+    )
     .orderBy(asc(orders.updatedAt))
     .limit(MAX_AUTO_COMPLETE_ORDERS_PER_RUN);
 

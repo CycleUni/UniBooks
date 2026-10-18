@@ -350,10 +350,19 @@ describe.skipIf(!schemaReady)('cron jobs', () => {
       await db.update(listings).set({ status: 'reserved' }).where(eq(listings.id, l.id));
       const id = crypto.randomUUID();
       await db.insert(orders).values({
-        id, regionCode: 'TW', currencyCode: 'TWD', listingId: l.id, listingRef: l.id, bookTitle: 'Book',
-        buyerId: buyer.id, sellerId: seller.id, status: 'handed_over', totalAmount: 100,
+        id,
+        regionCode: 'TW',
+        currencyCode: 'TWD',
+        listingId: l.id,
+        listingRef: l.id,
+        bookTitle: 'Book',
+        buyerId: buyer.id,
+        sellerId: seller.id,
+        status: 'handed_over',
+        totalAmount: 100,
         meetupTime: new Date(Date.now() - meetupAgoDays * day).toISOString(),
-        createdAt: now(), updatedAt: new Date(Date.now() - updatedAgoDays * day).toISOString(),
+        createdAt: now(),
+        updatedAt: new Date(Date.now() - updatedAgoDays * day).toISOString(),
       });
       return { id, listingId: l.id };
     };
