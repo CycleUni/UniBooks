@@ -165,19 +165,28 @@ describe('MessageService reconnect spread', () => {
   it('spreads clients that drop together across the backoff window', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     vi.useFakeTimers();
-    const spy = vi.spyOn(globalThis, 'setTimeout');
-    TestBed.configureTestingModule({
-      providers: [
-        MessageService,
-        { provide: HttpClient, useValue: { get: vi.fn(), post: vi.fn() } },
-        { provide: SessionRefreshService, useValue: { ensureAccess: () => of(undefined) } },
-      ],
-    });
-    const service = TestBed.inject(MessageService) as any;
-    service.currentRoomId = 'r';
-    service.scheduleReconnect();
-    expect(spy).toHaveBeenCalledWith(expect.any(Function), 500);
-    vi.useRealTimers();
+    // Wrapped by hand, not vi.spyOn: the afterEach restoreAllMocks() would put
+    // the fake setTimeout this wraps back after useRealTimers(), and every later
+    // spec in this worker (they share one) would wait on timers that never fire.
+    const fakeSetTimeout = globalThis.setTimeout;
+    const spy = vi.fn(fakeSetTimeout);
+    globalThis.setTimeout = spy as unknown as typeof setTimeout;
+    try {
+      TestBed.configureTestingModule({
+        providers: [
+          MessageService,
+          { provide: HttpClient, useValue: { get: vi.fn(), post: vi.fn() } },
+          { provide: SessionRefreshService, useValue: { ensureAccess: () => of(undefined) } },
+        ],
+      });
+      const service = TestBed.inject(MessageService) as any;
+      service.currentRoomId = 'r';
+      service.scheduleReconnect();
+      expect(spy).toHaveBeenCalledWith(expect.any(Function), 500);
+    } finally {
+      globalThis.setTimeout = fakeSetTimeout;
+      vi.useRealTimers();
+    }
   });
 });
 
