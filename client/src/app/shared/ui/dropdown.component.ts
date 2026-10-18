@@ -1,4 +1,4 @@
-import { Component, Input, forwardRef, ElementRef, HostListener, inject, ViewChild, ViewContainerRef, TemplateRef, EmbeddedViewRef, AfterViewInit, OnDestroy, PLATFORM_ID } from '@angular/core';
+import { Component, Input, forwardRef, ElementRef, HostListener, inject, ViewChild, ViewContainerRef, TemplateRef, EmbeddedViewRef, ChangeDetectorRef, AfterViewInit, OnDestroy, PLATFORM_ID } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule, ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { I18nService, TPipe } from '../../core/i18n.service';
@@ -83,7 +83,7 @@ export interface DropdownRow {
         </ng-template>
 
         <ng-template #panelTemplate>
-          <div class="dropdown-panel" [class.align-right]="align === 'right' && !appendToBody" [class.append-to-body]="appendToBody" [ngStyle]="panelStyle" *ngIf="open && !sheet">
+          <div class="dropdown-panel" [class.align-right]="(align === 'right' || flipRight) && !appendToBody" [class.append-to-body]="appendToBody" [ngStyle]="panelStyle" *ngIf="open && !sheet">
             <ng-container *ngTemplateOutlet="optionsTemplate"></ng-container>
           </div>
         </ng-template>
@@ -350,6 +350,9 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
   @Input() disabled: boolean = false;
 
   panelStyle: Record<string, string> = {};
+  /** The inline panel would run past the viewport's right edge, so it is
+   *  anchored to the trigger's right edge instead. Decided on each open. */
+  flipRight = false;
   private bodyPanelRef: EmbeddedViewRef<any> | null = null;
   private resizeHandler = () => this.updatePanelPosition();
 
@@ -357,6 +360,7 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
   private i18n = inject(I18nService);
   private viewContainerRef = inject(ViewContainerRef);
   private platformId = inject(PLATFORM_ID);
+  private cdr = inject(ChangeDetectorRef);
 
   private isBrowser = isPlatformBrowser(this.platformId);
 
@@ -430,6 +434,8 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
       this.searchQuery = '';
       this.sheet = isPhoneViewport();
       if (this.sheet) return;
+      this.flipRight = false;
+      if (!this.appendToBody) this.flipIfOverflowing();
       if (this.appendToBody && this.isBrowser) {
         this.createBodyPanel();
         this.updatePanelPosition();
@@ -447,8 +453,26 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
     }
   }
 
+  /** Once the inline panel has rendered, flip it to the trigger's right edge
+   *  when it overflows the viewport on the right and fits that way. */
+  private flipIfOverflowing() {
+    if (!this.isBrowser) return;
+    requestAnimationFrame(() => {
+      if (!this.open) return;
+      const panel = this.elementRef.nativeElement.querySelector('.dropdown-panel') as HTMLElement | null;
+      if (!panel) return;
+      const rect = panel.getBoundingClientRect();
+      const triggerRight = this.triggerRef.nativeElement.getBoundingClientRect().right;
+      if (rect.right > window.innerWidth - 8 && triggerRight - rect.width >= 8) {
+        this.flipRight = true;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
   close() {
     this.open = false;
+    this.flipRight = false;
     this.searchQuery = '';
     this.destroyBodyPanel();
     this.cleanupObservers();
