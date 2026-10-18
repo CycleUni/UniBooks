@@ -403,7 +403,6 @@ describe.skipIf(!schemaReady)('cron jobs', () => {
     });
     const auto = await applyAutoComplete(env, { orderId: id });
     expect(auto).toMatchObject({ ok: true, notices: [] });
-
   });
 
   it('hands the push the raw meetup time, which the push formats once in the region timezone', async () => {
