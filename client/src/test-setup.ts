@@ -5,3 +5,9 @@ import { TRANSLATIONS } from './app/core/i18n';
 import { en } from './app/core/i18n/en';
 
 TRANSLATIONS.en = en;
+
+// A shared CI runner can stall a test past vitest's 5s default, failing a
+// different spec on each run; a real hang still fails, just later.
+import { vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
