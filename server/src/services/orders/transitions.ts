@@ -49,8 +49,10 @@ const TRANSITION_NOTICE: Record<string, string> = {
   'pending>cancelled>seller': 'order.notify.seller_rejected',
   'accepted>cancelled>buyer': 'order.notify.cancelled_by_buyer',
   'accepted>cancelled>seller': 'order.notify.cancelled_by_seller',
+  // The one "meetup completed" message, from whoever marks the handover. The
+  // buyer's confirmation (handed_over>completed) says nothing more to the chat:
+  // it used to repeat the same message from the other side.
   'accepted>handed_over>seller': 'order.notify.delivered',
-  'handed_over>completed>buyer': 'order.notify.delivered',
   'handed_over>cancelled>seller': 'order.notify.cancelled_by_seller',
 };
 
@@ -312,8 +314,8 @@ export async function applyAutoComplete(
   return {
     ok: true,
     order: toNotice({ ...order, status: 'completed', completedAt: order.completedAt ?? now, updatedAt: now }),
-    // As if the buyer had confirmed: the same notice, from the buyer's side.
-    notices: [{ key: 'order.notify.delivered', senderId: order.buyerId, push: true }],
+    // As if the buyer had confirmed: no message, the handover already said it.
+    notices: [],
   };
 }
 

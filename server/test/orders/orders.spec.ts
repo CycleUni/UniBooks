@@ -17,6 +17,7 @@ import {
 import { signToken } from '../../src/lib/jwt';
 import { forceCancelOrder, cancelOpenOrdersForListing } from '../../src/services/orders/cancel';
 import { runAutoComplete, runMeetupReminder, runWaitlistNotify } from '../../src/jobs/index';
+import { applyAutoComplete } from '../../src/services/orders/transitions';
 
 /**
  * Integration tests: they need the orders schema this module defines
@@ -377,6 +378,32 @@ describe.skipIf(!schemaReady)('cron jobs', () => {
     expect((await status(early.id)).status).toBe('handed_over');
     expect((await status(lateMark.id)).status).toBe('handed_over');
     expect((await runAutoComplete(env)).completed_orders).toBe(0);
+  });
+
+  it('completes by itself without posting a second "meetup completed" (the handover already did)', async () => {
+    const seller = await makeUser('seller');
+    const buyer = await makeUser('buyer');
+    const l = await makeListing(seller.id);
+    await db.update(listings).set({ status: 'reserved' }).where(eq(listings.id, l.id));
+    const id = crypto.randomUUID();
+    await db.insert(orders).values({
+      id,
+      regionCode: 'TW',
+      currencyCode: 'TWD',
+      listingId: l.id,
+      listingRef: l.id,
+      bookTitle: 'Book',
+      buyerId: buyer.id,
+      sellerId: seller.id,
+      status: 'handed_over',
+      totalAmount: 100,
+      meetupTime: new Date(Date.now() - 8 * 24 * 60 * 60_000).toISOString(),
+      createdAt: now(),
+      updatedAt: new Date(Date.now() - 8 * 24 * 60 * 60_000).toISOString(),
+    });
+    const auto = await applyAutoComplete(env, { orderId: id });
+    expect(auto).toMatchObject({ ok: true, notices: [] });
+
   });
 
   it('hands the push the raw meetup time, which the push formats once in the region timezone', async () => {
