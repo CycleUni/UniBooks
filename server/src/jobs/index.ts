@@ -4,7 +4,6 @@ import type { Env } from '../env';
 import { createDb, subscriptions, books, users, orders, regions, listings } from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
 import { orderLock } from '../services/orders/lock';
-import { formatLocal } from '../services/orders/time';
 import { purgeTokenStore } from '../services/accounts/tokens';
 import { purgeOneTimeTokens } from '../services/accounts/oneTimeTokens';
 
@@ -208,7 +207,6 @@ export async function runMeetupReminder(env: Env) {
   let notifiedUsers = 0;
   for (const { order, timezone, buyer, seller } of rows) {
     const meetupTime = order.meetupTime!;
-    const formatted = formatLocal(meetupTime, timezone);
     const updates: Partial<typeof orders.$inferInsert> = {};
     const sentTo = new Set<string>();
 
@@ -255,7 +253,7 @@ export async function runMeetupReminder(env: Env) {
           user_id: user.id,
           order_id: order.id,
           book_title: order.bookTitle,
-          meetup_time: formatted,
+          meetup_time: meetupTime,
         };
         await env.PUSH_QUEUE.send(push);
       } catch (e) {

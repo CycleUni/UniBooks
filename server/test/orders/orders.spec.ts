@@ -341,6 +341,38 @@ describe.skipIf(!schemaReady)('cron jobs', () => {
     expect(second.reminded_orders).toBe(0);
   });
 
+  it('hands the push the raw meetup time, which the push formats once in the region timezone', async () => {
+    const seller = await makeUser('seller');
+    const buyer = await makeUser('buyer');
+    const l = await makeListing(seller.id);
+    const meetupTime = new Date(Date.now() + 30 * 60_000).toISOString();
+    await db.insert(orders).values({
+      id: crypto.randomUUID(),
+      regionCode: 'TW',
+      currencyCode: 'TWD',
+      listingId: l.id,
+      listingRef: l.id,
+      bookTitle: 'Book',
+      buyerId: buyer.id,
+      sellerId: seller.id,
+      status: 'accepted',
+      totalAmount: 100,
+      meetupTime,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+    const pushes: { type?: string; meetup_time?: string }[] = [];
+    const jobEnv = {
+      ...env,
+      EMAIL_QUEUE: { send: async () => undefined },
+      PUSH_QUEUE: { send: async (m: { type?: string; meetup_time?: string }) => void pushes.push(m) },
+    } as unknown as typeof env;
+    await runMeetupReminder(jobEnv);
+    const reminders = pushes.filter((m) => m.type === 'meetup_reminder');
+    expect(reminders.length).toBeGreaterThanOrEqual(1);
+    expect(reminders.every((m) => m.meetup_time === meetupTime)).toBe(true);
+  });
+
   it('a banned user gets neither meetup reminders nor waitlist emails', async () => {
     const seller = await makeUser('seller');
     const buyer = await makeUser('buyer');
