@@ -812,7 +812,9 @@ export class MessageService {
   connectHub() {
     if (!isPlatformBrowser(this.platformId)) return;
     if (this.hubWs) return;
-    this.disconnectHub();
+    // The unread numbers stay: a reconnect after a drop must not blank the
+    // badges until the new snapshot lands (it replaces them when it does).
+    this.disconnectHub(false);
     // disconnectHub() raises the "this close was deliberate" flag for the
     // socket it is tearing down. Lower it again for the one about to be
     // opened: left raised, the first time this connection dropped on its own
@@ -967,7 +969,8 @@ export class MessageService {
     this.hubReconnectAttempts = attempts;
   }
 
-  disconnectHub() {
+  /** @param clearUnread false when only tearing down to dial again — signing out clears them. */
+  disconnectHub(clearUnread: boolean = true) {
     this.hubWatch?.stop();
     this.hubWatch = null;
     this.clearHubStableTimer();
@@ -980,8 +983,10 @@ export class MessageService {
     this.hubActive = false;
     this.hubGeneration++;
     this.hubClosingIntentionally = true;
-    this.unreadCount$.next(0);
-    this.conversationUnreadState$.next(new Map());
+    if (clearUnread) {
+      this.unreadCount$.next(0);
+      this.conversationUnreadState$.next(new Map());
+    }
 
     if (this.hubWs) {
       this.hubWs.close();

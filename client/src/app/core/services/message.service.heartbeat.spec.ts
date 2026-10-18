@@ -226,3 +226,61 @@ describe('MessageService gave-up state', () => {
     delete (document as any).hidden;
   });
 });
+
+describe('MessageService unread badges across a hub drop', () => {
+  let service: MessageService;
+  let created: any[];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    created = [];
+    (globalThis as any).WebSocket = class {
+      static OPEN = 1;
+      readyState = 1;
+      onopen: any; onclose: any; onmessage: any;
+      constructor() { created.push(this); }
+      close() { this.readyState = 3; }
+      send() {}
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        MessageService,
+        { provide: HttpClient, useValue: { get: vi.fn(), post: vi.fn() } },
+        { provide: SessionRefreshService, useValue: { ensureAccess: () => of(undefined) } },
+      ],
+    });
+    service = TestBed.inject(MessageService);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (document as any).hidden;
+  });
+
+  const last = () => created[created.length - 1];
+
+  it('keeps the numbers while the hub reconnects, and takes the new snapshot when it arrives', () => {
+    service.connectHub();
+    last().onopen?.();
+    last().onmessage?.({ data: JSON.stringify({ type: 'snapshot', unread: ['r1', 'r2'], count: 2 }) });
+
+    last().onclose?.();
+    vi.advanceTimersByTime(2_000);
+    expect(created).toHaveLength(2);
+    last().onopen?.();
+    expect(service.unreadCount$.value).toBe(2);
+    expect(service.conversationUnreadState$.value.get('r1')).toBe(true);
+
+    last().onmessage?.({ data: JSON.stringify({ type: 'snapshot', unread: ['r1', 'r2', 'r3'], count: 3 }) });
+    expect(service.unreadCount$.value).toBe(3);
+  });
+
+  it('clears them when the visitor signs out', () => {
+    service.connectHub();
+    last().onmessage?.({ data: JSON.stringify({ type: 'snapshot', unread: ['r1'], count: 1 }) });
+    service.closeHub();
+    expect(service.unreadCount$.value).toBe(0);
+    expect(service.conversationUnreadState$.value.size).toBe(0);
+  });
+});
