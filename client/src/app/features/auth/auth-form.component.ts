@@ -168,6 +168,11 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.challengeInteractive && this.awaitingChallenge;
   }
 
+  /** A passkey was chosen (autofill) and the server is checking it. */
+  get passkeyVerifying(): boolean {
+    return !!this.auth.passkeyVerifying?.();
+  }
+
   get authMessage(): string {
     if (this.challengePrompting) return this.i18n.t('auth.challengePrompt');
     if (this.clientAuthError) return this.i18n.t(this.clientAuthError);

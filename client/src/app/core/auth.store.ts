@@ -748,6 +748,9 @@ export class AuthStore {
       .pipe(tap(r => this.updateUser(u => ({ ...u, passkey_2fa: r.passkey_2fa }))));
   }
 
+  /** True from the moment a passkey was chosen until the server has answered. */
+  readonly passkeyVerifying = signal(false);
+
   supportsPasskeys(): boolean {
     return typeof window !== 'undefined' && webauthnBrowser.browserSupportsWebAuthn();
   }
@@ -774,9 +777,12 @@ export class AuthStore {
           });
           return { challenge_id, response };
         }),
-        switchMap(({ challenge_id, response }) =>
-          this.http.post<any>('/auth/passkeys/login/verify', { challenge_id, response }),
-        ),
+        switchMap(({ challenge_id, response }) => {
+          this.passkeyVerifying.set(true);
+          return this.http
+            .post<any>('/auth/passkeys/login/verify', { challenge_id, response })
+            .pipe(finalize(() => this.passkeyVerifying.set(false)));
+        }),
         tap((response) => {
           if (isLoginSuccess(response)) {
             this.signInPending = true;

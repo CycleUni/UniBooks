@@ -22,8 +22,8 @@
 
       <ng-container *ngTemplateOutlet="messageTpl"></ng-container>
 
-      <ui-button  block class="mt-4" (onClick)="onLogin()" [disabled]="isLoading || awaitingChallenge">
-        {{ (isLoading ? 'auth.loggingIn' : awaitingChallenge ? 'auth.verifyingChallenge' : 'auth.login') | t }}
+      <ui-button  block class="mt-4" (onClick)="onLogin()" [disabled]="isLoading || passkeyVerifying || awaitingChallenge">
+        {{ (isLoading || passkeyVerifying ? 'auth.loggingIn' : awaitingChallenge ? 'auth.verifyingChallenge' : 'auth.login') | t }}
       </ui-button>
 
       <ng-container *ngTemplateOutlet="googleTpl"></ng-container>
