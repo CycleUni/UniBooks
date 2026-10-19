@@ -598,7 +598,13 @@ export class Book implements OnInit {
         if (silent && this.book && !this.book.source && this.previewSource) {
           this.book = { ...this.book, source: this.previewSource };
         }
-        if (this.book) {
+        if (this.book && err?.status === 404) {
+          // The preview is on screen but the backend has no such book — no
+          // row of ours, and no catalogue (Google over quota, say) could
+          // vouch for it — so it has no listings: empty, not a failure.
+          this.listings = [];
+          this.totalListings = 0;
+        } else if (this.book) {
           // The book is on screen; only its listings are missing.
           this.listingsFailed = true;
         } else if (err?.status !== 404) {

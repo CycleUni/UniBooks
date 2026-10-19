@@ -246,5 +246,18 @@ describe('Book page data source footer', () => {
       expect(page.querySelector('.listings-section ui-empty')).toBeNull();
       expect(page.querySelector('.waitlist-banner')).toBeNull();
     });
+
+    it('shows no listings, not a failed load, when the backend has no such book for a shown preview', () => {
+      sessionStorage.setItem('cachedBook_9786264140720', JSON.stringify({ isbn: '9786264140720', title: '微積分', author: 'Stewart' }));
+      const router = TestBed.inject(Router);
+      vi.spyOn(router as any, 'lastSuccessfulNavigation', 'get').mockReturnValue((() => ({ extras: { state: bookPreviewState() } })) as any);
+      getBook.mockReturnValue(throwError(() => ({ status: 404 })));
+      const page = open();
+      sessionStorage.clear();
+
+      expect(page.querySelector('.book-title')?.textContent).toContain('微積分');
+      expect(page.querySelector('.listings-section ui-error-state')).toBeNull();
+      expect(page.querySelector('.listings-section ui-empty')).not.toBeNull();
+    });
   });
 });
