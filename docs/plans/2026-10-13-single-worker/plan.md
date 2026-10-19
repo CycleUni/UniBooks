@@ -50,8 +50,8 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
   plus a non-HttpOnly `ub_session=1` hint so the SPA knows it is signed in.
   CSRF: unsafe methods require same-origin `Origin` (or `Sec-Fetch-Site: same-origin`).
 - No CORS middleware at all (single origin; dev uses the Angular proxy).
-- Email/cron links: origin from the request; queue/cron use the canonical origin
-  recorded in KV by `lib/origin.ts` (no FRONTEND_URL var).
+- Email/cron links: origin from the request; queue/cron use `SITE_ORIGIN` from
+  `vars` (`lib/origin.ts`; was recorded in KV, which cost a write per origin change).
 
 ## Work queue
 - [x] Phase A foundation, Phase B module ports, Phase C first integration (186 tests).

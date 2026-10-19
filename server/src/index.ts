@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import * as Sentry from '@sentry/cloudflare';
 import { sentryOptions } from './lib/sentry';
 import type { AppEnv, Env } from './env';
-import { rememberOrigin } from './lib/origin';
 import { sameOriginGuard } from './lib/session';
 import { errorHandler } from './middleware/error';
 import { apiThrottle } from './middleware/rateLimit';
@@ -47,11 +46,9 @@ export const UserHub = Sentry.instrumentDurableObjectWithSentry(sentryOptions, U
  */
 export const app = new Hono<AppEnv>();
 
-// One origin for app, API and chat: no CORS. Remember it for links in
-// emails and pushes sent from queue consumers and cron jobs.
+// One origin for app, API and chat: no CORS.
 // First, so a refused client costs no more than the check itself.
 app.use('/api/*', apiThrottle());
-app.use('/api/*', rememberOrigin());
 // Session cookies ride along automatically, so state changes must be same-origin.
 app.use('/api/*', sameOriginGuard());
 app.onError(errorHandler);

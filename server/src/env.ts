@@ -37,6 +37,8 @@ export interface Env {
   R2_PUBLIC_URL?: string;
   ALLOWED_IMAGE_HOSTS?: string;
   DEFAULT_FROM_EMAIL?: string;
+  /** Public origin for links built outside a request (queues, cron); see lib/origin.ts. */
+  SITE_ORIGIN?: string;
   GOOGLE_CLIENT_ID?: string;
   /** Only when the ISBNNET service binding is unavailable (e.g. local dev). */
   ISBNNET_RESOLVER_URL?: string;

@@ -259,7 +259,7 @@ async function meetupReminder(env: Env, msg: Extract<EmailMessage, { type: 'meet
 
 /** Build the email for a queue message, or null when nothing should be sent. */
 export async function buildEmail(msg: EmailMessage, env: Env): Promise<RenderedEmail | null> {
-  origin = await siteOrigin(env);
+  origin = siteOrigin(env);
   switch (msg.type) {
     case 'account_link':
       return accountLink(env, msg);

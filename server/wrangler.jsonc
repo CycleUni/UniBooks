@@ -84,6 +84,7 @@
   "vars": {
     "ENVIRONMENT": "production",
     "DEFAULT_REGION": "TW",
+    "SITE_ORIGIN": "https://unibooks.app",
     "CF_ACCOUNT_ID": "b74f839e7706a8d8e249168846802c14",
     "R2_PUBLIC_URL": "https://assets.unibooks.app",
     "ALLOWED_IMAGE_HOSTS": "assets.unibooks.app",

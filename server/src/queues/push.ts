@@ -198,7 +198,7 @@ const ORDER_STATUS_EVENT: Record<string, string> = {
  * hidden by the recipient).
  */
 export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPush | null> {
-  const frontend = await siteOrigin(env);
+  const frontend = siteOrigin(env);
   const reachable = (p: Person | null): p is Person => !!p && p.isActive && !p.deleted && !p.isBanned && p.notifyPush;
 
   switch (msg.type) {

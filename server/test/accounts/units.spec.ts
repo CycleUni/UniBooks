@@ -2,12 +2,13 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { buildEmail, chatEmailPreview, maskEmail } from '../../src/queues/email';
 import { formatMeetupTime } from '../../src/lib/time';
+import { siteOrigin } from '../../src/lib/origin';
 import { passwordProblems } from '../../src/services/accounts/passwords';
 import { displayName } from '../../src/services/accounts/users';
 import { emailLanguageFor, normalizeLanguage, pickLanguage } from '../../src/services/accounts/i18n';
 import { call, createUser, seedReference } from './helpers';
 
-const BASE = 'https://unibooks.app'; // lib/origin.ts default (no origin recorded in tests)
+const BASE = siteOrigin(env); // SITE_ORIGIN, which .dev.vars points at localhost
 
 beforeAll(async () => {
   await seedReference();

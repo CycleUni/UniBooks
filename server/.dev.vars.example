@@ -2,6 +2,8 @@
 # production `vars` in wrangler.jsonc and supply what production keeps in
 # `wrangler secret put`. Never put real production secrets in this file.
 ENVIRONMENT=development
+# Links in emails/pushes built outside a request (queues, cron)
+SITE_ORIGIN=http://localhost:8787
 
 # Local R2 is simulated by wrangler; the Worker serves it under /api/media in dev.
 R2_PUBLIC_URL=http://localhost:8787/api/media
