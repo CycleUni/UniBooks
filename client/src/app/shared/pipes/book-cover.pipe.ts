@@ -1,6 +1,11 @@
 import { Pipe, PipeTransform } from '@angular/core';
 
 /**
+ * Covers must go through the proxy; do not load them straight from the source.
+ * Only the server can tell a real cover from Google's "image not available"
+ * card (response headers and byte size, which a cross-origin <img> cannot
+ * read), cascade zoom tiers, and cache one URL per cover. See client/AGENTS.md §8.
+ *
  * The /api/cover URL for a catalogue cover. `ngsw-bypass` makes the Angular
  * service worker let the image request through untouched: it never caches
  * these (no asset group matches /api/cover), so intercepting them only added

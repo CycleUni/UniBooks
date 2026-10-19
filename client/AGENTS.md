@@ -100,6 +100,16 @@
   的 `vars`（本地再疊 `../server/.dev.vars`），由 `scripts/set-env.js` 讀取，不要在前端另寫一份。
   只有前端用的值放 `production.env`（只放會進到公開 bundle 或 header 的值，不放機密）；
   CSP 由 `scripts/set-env.js --production --headers` 寫進 `dist` 裡的 `_headers`。
+- 書籍封面一律經 `/api/cover` 代理（`BookCoverPipe`），**不要改成讓瀏覽器直連來源**。試過「先直連、失敗才走代理」，退回了，原因：
+  1. 判斷封面有沒有效只有伺服器做得到：Google 沒有封面時會回一張「image not available」圖，載入成功、不會觸發 `error`；
+     伺服器靠回應標頭 `cache-control: max-age`（低於 3600 秒即佔位圖）和 3000 位元組下限判斷（`server/src/services/frontend/cover.ts`）。
+     Google 圖片沒有 CORS 標頭，跨來源 `<img>` 讀不到標頭和位元組大小，前端只能看到解碼後的尺寸，靠猜（128×170、575×750、細條），會誤判。
+  2. 只有代理能依序降 zoom（3→2→1），找不到才回真正的 404；直連做不到。
+  3. 圖片在 edge 快取一年，網址唯一，首頁大圖和縮圖共用同一次下載；直連與代理混用會讓同一本書下載兩次。
+  4. 直連要把每個來源（含轉址目標，如 Open Library → archive.org）列進 CSP 的 `img-src`，正式環境 `img-src` 只放 R2，漏一個就被擋；
+     代理則只需 `'self'`。
+  5. 直連會把使用者的 IP 與 Referer 送給第三方。
+  省 Worker 請求數不足以抵銷這些成本。
 - 這個資料夾只有前端；伺服器端邏輯（API、聊天室、`/<region>/book`、`/api/cover`）都在 `../server`，部署設定是 `../server/wrangler.jsonc`。
 
 ## 9. 登入狀態（Session）
