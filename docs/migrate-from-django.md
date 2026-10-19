@@ -62,8 +62,8 @@ listings    1200 ->   1187   skipped: 13 missing seller
 ```bash
 npm --prefix server run predev        # 套用 migrations（也會建立 ads 資料庫）
 cd server
-npx wrangler d1 execute unibooks-apac --local --file src/db/seed.sql   # 可選：先灌 seed
-npx wrangler d1 execute unibooks-apac --local --file import.sql
+npx wrangler d1 execute unibooks --local --file src/db/seed.sql   # 可選：先灌 seed
+npx wrangler d1 execute unibooks --local --file import.sql
 ```
 
 參考資料可在 seed 之後執行：腳本以自然鍵（地區+代碼等）upsert，不會與 seed 衝突。
@@ -73,7 +73,7 @@ npx wrangler d1 execute unibooks-apac --local --file import.sql
 與腳本 stderr 的「輸出」數字、以及舊資料庫比對：
 
 ```bash
-npx wrangler d1 execute unibooks-apac --local --command "
+npx wrangler d1 execute unibooks --local --command "
 SELECT 'users' t, count(*) n FROM users
 UNION ALL SELECT 'staff_managed_regions', count(*) FROM staff_managed_regions
 UNION ALL SELECT 'region_verifications', count(*) FROM region_verifications
@@ -90,7 +90,7 @@ UNION ALL SELECT 'orphan_listings', count(*) FROM listings WHERE seller_id NOT I
 確認本機無誤後：
 
 ```bash
-npx wrangler d1 execute unibooks-apac --remote --file import.sql
+npx wrangler d1 execute unibooks --remote --file import.sql
 ```
 
 腳本不含 `BEGIN/COMMIT`（D1 不接受），每條陳述式佔一行，並依外鍵順序排列。檔案很大時可用 `split -l 5000 import.sql part_` 切檔後依序執行（切檔後要保持順序：`part_aa`、`part_ab`...）。建議先對遠端做 `wrangler d1 export unibooks --remote --output backup.sql` 備份。

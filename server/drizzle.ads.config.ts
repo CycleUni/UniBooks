@@ -1,6 +1,6 @@
 import { defineConfig } from 'drizzle-kit';
 
-/** The ads database (D1 binding DB_ADS, "unibooks-ads-apac"). */
+/** The ads database (D1 binding DB_ADS, "unibooks-ads"). */
 export default defineConfig({
   dialect: 'sqlite',
   schema: './src/db/ads-schema.ts',
