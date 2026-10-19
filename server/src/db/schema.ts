@@ -760,3 +760,11 @@ export const passkeys = sqliteTable(
 export type Passkey = InferSelectModel<typeof passkeys>;
 export type InsertPasskey = InferInsertModel<typeof passkeys>;
 export type NewPasskey = InsertPasskey;
+
+// ============================================================================
+// 24. Sent e-mail queue messages (redelivery de-duplication)
+// ============================================================================
+export const emailSent = sqliteTable('email_sent', {
+  messageId: text('message_id').primaryKey(),
+  sentAt: text('sent_at').notNull(),
+});

@@ -1,7 +1,7 @@
-import { and, asc, eq, gte, isNull, lte, notExists, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lt, lte, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { Env } from '../env';
-import { createDb, subscriptions, books, users, orders, regions, listings } from '../db';
+import { createDb, subscriptions, books, users, orders, regions, listings, emailSent } from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
 import { orderLock } from '../services/orders/lock';
 import { AUTO_COMPLETE_AFTER_MS, lockKeyFor } from '../services/orders/transitions';
@@ -349,6 +349,11 @@ export async function runCleanup(env: Env) {
     .run();
   const tokensPurged = await purgeTokenStore(env);
   const linksPurged = await purgeOneTimeTokens(env);
+  // Redelivery only happens within the queue's retry window, so a day is plenty.
+  const sentPurged = await db
+    .delete(emailSent)
+    .where(lt(emailSent.sentAt, new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()))
+    .run();
   // Throttle counters live in the RateLimiter Durable Object and expire on
   // their own, so there is nothing to purge here.
   const result = {
@@ -356,6 +361,7 @@ export async function runCleanup(env: Env) {
     scanned_books: Number(total),
     refresh_tokens_purged: tokensPurged,
     one_time_tokens_purged: linksPurged,
+    email_sent_purged: sentPurged.meta.changes ?? 0,
   };
   console.log('[Cleanup]', JSON.stringify(result));
   return result;

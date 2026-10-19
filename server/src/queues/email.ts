@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Env } from '../env';
-import { conversations, createDb, users } from '../db';
+import { conversations, createDb, emailSent, users } from '../db';
 import { escapeHtml } from '../lib/html';
 import { formatMeetupTime } from '../lib/time';
 import { siteOrigin } from '../lib/origin';
@@ -326,20 +326,18 @@ const MAILJET_TIMEOUT_MS = 10_000;
  * come back (the consumer stopped before acking). Its id is recorded once
  * sent, and a redelivery with a recorded id is acked without sending again.
  */
-const SENT_KEY = (id: string) => `email:sent:${id}`;
-const SENT_TTL_SECONDS = 24 * 60 * 60;
-
 async function alreadySent(env: Env, id: string): Promise<boolean> {
   try {
-    return (await env.KV.get(SENT_KEY(id))) !== null;
+    const [row] = await createDb(env.DB).select({ id: emailSent.messageId }).from(emailSent).where(eq(emailSent.messageId, id)).limit(1);
+    return !!row;
   } catch {
-    return false; // Bookkeeping only: a KV failure never blocks a send.
+    return false; // Bookkeeping only: a failed lookup never blocks a send.
   }
 }
 
 async function markSent(env: Env, id: string): Promise<void> {
   try {
-    await env.KV.put(SENT_KEY(id), '1', { expirationTtl: SENT_TTL_SECONDS });
+    await createDb(env.DB).insert(emailSent).values({ messageId: id, sentAt: new Date().toISOString() }).onConflictDoNothing().run();
   } catch (e) {
     console.warn('[email] could not record a sent message', e);
   }
