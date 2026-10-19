@@ -22,7 +22,7 @@
 | 用途 | 服務 | 綁定 |
 |---|---|---|
 | 主要資料（帳號、書籍、刊登、訂單、對話） | D1 `unibooks` | `DB` |
-| 廣告主與廣告 | D1 `unibooks-ads`（與主資料分開，日後可獨立搬遷） | `DB_ADS` |
+| 廣告主與廣告 | D1 `unibooks-ads-apac`（與主資料分開，日後可獨立搬遷） | `DB_ADS` |
 | 廣告曝光 / 點擊統計 | Workers Analytics Engine `unibooks_ad_events`（只寫事件，不寫資料庫） | `AD_EVENTS` |
 | 圖片（刊登照片、聊天圖片、頭像、廣告） | R2 `unibooks-assets`，公開網域 `assets.unibooks.app` | `R2` |
 | 快取、站點網址、外部書目查詢結果 | KV | `KV` |
@@ -152,7 +152,7 @@ Wrangler 要先在根目錄找到設定檔才讀得到它，而部署後套用 D
 |---|---|
 | Root directory | `server` |
 | Build command | `npm ci && npm --prefix ../client ci && npm run build:fe` |
-| Deploy command | `npx wrangler deploy && npx wrangler d1 migrations apply unibooks --remote && npx wrangler d1 migrations apply unibooks-ads --remote` |
+| Deploy command | `npx wrangler deploy && npx wrangler d1 migrations apply unibooks-apac --remote && npx wrangler d1 migrations apply unibooks-ads-apac --remote` |
 | Build variables | `NODE_VERSION` = `24`（與 CI 相同；`.nvmrc` 只在 `client/`，root 為 `server` 時讀不到） |
 
 Root directory 留空（repo 根目錄）時，Wrangler 找不到 `server/wrangler.jsonc`，會改把專案當成純靜態網站，
@@ -169,7 +169,7 @@ Service Binding 指向的 Worker `isbnnet-resolver` 必須已部署在同一個�
 # 建立（或把既有帳號升級為）超級使用者；本機開發把 --remote 拿掉
 npm --prefix server run user:create -- you@example.com --role admin --remote
 # 確認
-npx --prefix server wrangler d1 execute unibooks --remote --config server/wrangler.jsonc --command "SELECT email, role FROM users WHERE role IN ('staff','admin')"
+npx --prefix server wrangler d1 execute unibooks-apac --remote --config server/wrangler.jsonc --command "SELECT email, role FROM users WHERE role IN ('staff','admin')"
 ```
 
 既有帳號（例如已用 Google 登入的帳號）執行時也會改設為輸入的密碼；若不想動它的密碼，改用 SQL：

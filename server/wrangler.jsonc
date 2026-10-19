@@ -18,9 +18,9 @@
 
   // Resources are provisioned by name on first deploy (no ids in config).
   "d1_databases": [
-    { "binding": "DB", "database_name": "unibooks", "migrations_dir": "src/db/migrations" },
+    { "binding": "DB", "database_name": "unibooks-apac", "migrations_dir": "src/db/migrations" },
     // Ads live apart from marketplace data so they can move or scale on their own.
-    { "binding": "DB_ADS", "database_name": "unibooks-ads", "migrations_dir": "src/db/ads-migrations" }
+    { "binding": "DB_ADS", "database_name": "unibooks-ads-apac", "migrations_dir": "src/db/ads-migrations" }
   ],
   "kv_namespaces": [{ "binding": "KV" }],
   "r2_buckets": [{ "binding": "R2", "bucket_name": "unibooks-assets" }],
