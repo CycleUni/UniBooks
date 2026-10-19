@@ -31,6 +31,7 @@ import { ChatRoom as ChatRoomDO } from './durable-objects/ChatRoom';
 import { UserHub as UserHubDO } from './durable-objects/UserHub';
 export { OrderLock } from './durable-objects/OrderLock';
 export { RateLimiter } from './durable-objects/RateLimiter';
+export { ChallengeStore } from './durable-objects/ChallengeStore';
 
 // The chat Durable Objects report errors to Sentry (when configured).
 export const ChatRoom = Sentry.instrumentDurableObjectWithSentry(sentryOptions, ChatRoomDO);

@@ -51,10 +51,14 @@
       { "name": "CHAT_ROOM", "class_name": "ChatRoom" },
       { "name": "USER_HUB", "class_name": "UserHub" },
       { "name": "ORDER_LOCK", "class_name": "OrderLock" },
-      { "name": "RATE_LIMITER", "class_name": "RateLimiter" }
+      { "name": "RATE_LIMITER", "class_name": "RateLimiter" },
+      { "name": "CHALLENGE_STORE", "class_name": "ChallengeStore" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ChatRoom", "UserHub", "OrderLock", "RateLimiter"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ChatRoom", "UserHub", "OrderLock", "RateLimiter"] },
+    { "tag": "v2", "new_sqlite_classes": ["ChallengeStore"] }
+  ],
 
   "queues": {
     "producers": [

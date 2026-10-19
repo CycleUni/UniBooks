@@ -1,7 +1,13 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { clearCatalogueCache, loadCatalogue, webauthnVerifier } from '../../src/services/accounts/passkeys';
+import type { ChallengeStore } from '../../src/durable-objects/ChallengeStore';
 import { PASSWORD, call, createUser, login, seedReference, sessionOf } from './helpers';
+
+const challengeStore = (id: string) => {
+  const ns = env.CHALLENGE_STORE as DurableObjectNamespace<ChallengeStore>;
+  return ns.get(ns.idFromName(id));
+};
 
 let mockRegVerifyResult: any = null;
 let mockAuthVerifyResult: any = null;
@@ -53,7 +59,7 @@ afterEach(() => {
 });
 
 describe('Passkeys (WebAuthn)', () => {
-  it('options endpoints: auth required for register, public for login, challenge stored in KV', async () => {
+  it('options endpoints: auth required for register, public for login, challenge stored in DO', async () => {
     // Register options requires auth
     const unauthed = await call('/api/v1/auth/passkeys/register/options/', { method: 'POST' });
     expect(unauthed.status).toBe(401);
@@ -69,9 +75,9 @@ describe('Passkeys (WebAuthn)', () => {
     expect(regData.options).toBeTruthy();
     expect(regData.options.challenge).toBeTruthy();
 
-    // Verify KV stored the registration challenge
-    const regKv = await env.KV.get(`webauthn:chal:${regData.challenge_id}`, 'json');
-    expect(regKv).toEqual({
+    // Verify DO stored the registration challenge
+    const regRecord = await challengeStore(regData.challenge_id).take();
+    expect(regRecord).toEqual({
       challenge: regData.options.challenge,
       type: 'reg',
       userId,
@@ -85,9 +91,9 @@ describe('Passkeys (WebAuthn)', () => {
     expect(loginData.options).toBeTruthy();
     expect(loginData.options.allowCredentials).toEqual([]);
 
-    // Verify KV stored the authentication challenge
-    const authKv = await env.KV.get(`webauthn:chal:${loginData.challenge_id}`, 'json');
-    expect(authKv).toEqual({
+    // Verify DO stored the authentication challenge
+    const authRecord = await challengeStore(loginData.challenge_id).take();
+    expect(authRecord).toEqual({
       challenge: loginData.options.challenge,
       type: 'auth',
     });
@@ -107,7 +113,7 @@ describe('Passkeys (WebAuthn)', () => {
     expect(await unknownRes.json()).toEqual({ error: { code: 'auth.errPasskeyChallenge' } });
 
     // Wrong type in challenge (type: 'auth' instead of 'reg')
-    await env.KV.put('webauthn:chal:auth-type-chal', JSON.stringify({ challenge: 'c1', type: 'auth' }));
+    await challengeStore('auth-type-chal').put({ challenge: 'c1', type: 'auth' }, 120);
     const wrongTypeRes = await call('/api/v1/auth/passkeys/register/verify/', {
       token: access,
       body: { challenge_id: 'auth-type-chal', response: { id: 'x' } },
@@ -116,7 +122,7 @@ describe('Passkeys (WebAuthn)', () => {
     expect(await wrongTypeRes.json()).toEqual({ error: { code: 'auth.errPasskeyChallenge' } });
 
     // Challenge for another user
-    await env.KV.put('webauthn:chal:other-user-chal', JSON.stringify({ challenge: 'c2', type: 'reg', userId: 'other-id' }));
+    await challengeStore('other-user-chal').put({ challenge: 'c2', type: 'reg', userId: 'other-id' }, 120);
     const otherUserRes = await call('/api/v1/auth/passkeys/register/verify/', {
       token: access,
       body: { challenge_id: 'other-user-chal', response: { id: 'x' } },
@@ -136,7 +142,7 @@ describe('Passkeys (WebAuthn)', () => {
     expect(firstTry.status).toBe(400);
     expect(await firstTry.json()).toEqual({ error: { code: 'auth.errPasskeyRegistration' } });
 
-    // Replay with the same challenge_id: KV key is now deleted
+    // Replay with the same challenge_id: DO challenge is now consumed
     const replayTry = await call('/api/v1/auth/passkeys/register/verify/', {
       token: access,
       body: { challenge_id, response: { id: 'x', response: {} } },
@@ -198,8 +204,8 @@ describe('Passkeys (WebAuthn)', () => {
   });
 
   it('login verify: unknown credential or failed verify returns 401 without revealing which', async () => {
-    // Create an auth challenge in KV
-    await env.KV.put('webauthn:chal:auth-chal-1', JSON.stringify({ challenge: 'c-auth', type: 'auth' }));
+    // Create an auth challenge in DO
+    await challengeStore('auth-chal-1').put({ challenge: 'c-auth', type: 'auth' }, 120);
 
     // Non-existent credential id
     const resUnknownCred = await call('/api/v1/auth/passkeys/login/verify/', {
@@ -220,7 +226,7 @@ describe('Passkeys (WebAuthn)', () => {
       .run();
 
     // Challenge with failing verify
-    await env.KV.put('webauthn:chal:auth-chal-2', JSON.stringify({ challenge: 'c-auth', type: 'auth' }));
+    await challengeStore('auth-chal-2').put({ challenge: 'c-auth', type: 'auth' }, 120);
     mockAuthVerifyThrows = new Error('verification failed');
 
     const resFailedVerify = await call('/api/v1/auth/passkeys/login/verify/', {
@@ -241,7 +247,7 @@ describe('Passkeys (WebAuthn)', () => {
       .bind(credId, userId)
       .run();
 
-    await env.KV.put('webauthn:chal:auth-chal-banned', JSON.stringify({ challenge: 'c-auth', type: 'auth' }));
+    await challengeStore('auth-chal-banned').put({ challenge: 'c-auth', type: 'auth' }, 120);
     mockAuthVerifyResult = {
       verified: true,
       authenticationInfo: {
@@ -273,7 +279,7 @@ describe('Passkeys (WebAuthn)', () => {
       .bind(credId, userId)
       .run();
 
-    await env.KV.put('webauthn:chal:auth-chal-ok', JSON.stringify({ challenge: 'c-auth', type: 'auth' }));
+    await challengeStore('auth-chal-ok').put({ challenge: 'c-auth', type: 'auth' }, 120);
     mockAuthVerifyResult = {
       verified: true,
       authenticationInfo: {
@@ -336,7 +342,7 @@ describe('Passkeys (WebAuthn)', () => {
     expect(pending.options.allowCredentials.map((c: any) => c.id)).toEqual([credId]);
 
     // A first-step (discoverable) challenge cannot stand in for the second step.
-    await env.KV.put('webauthn:chal:plain-auth', JSON.stringify({ challenge: 'c', type: 'auth' }));
+    await challengeStore('plain-auth').put({ challenge: 'c', type: 'auth' }, 120);
     const wrongType = await call('/api/v1/auth/passkeys/2fa/verify/', {
       body: { challenge_id: 'plain-auth', response: { id: credId } },
     });
@@ -794,5 +800,28 @@ describe('Passkeys (WebAuthn)', () => {
     expect(noAssetsRes).toEqual({});
 
     (env as any).ASSETS = { fetch: originalAssetsFetch };
+  });
+
+  it('ChallengeStore DO: atomic take, expiry check, and alarm cleanup', async () => {
+    const chal = challengeStore('store-test-1');
+    await chal.put({ challenge: 'test-chal', type: 'reg' }, 120);
+    const first = await chal.take();
+    expect(first).toEqual({ challenge: 'test-chal', type: 'reg' });
+    // Second take returns null because it was atomically consumed
+    const second = await chal.take();
+    expect(second).toBeNull();
+
+    // Expired record returns null
+    const chalExpired = challengeStore('store-test-expired');
+    await chalExpired.put({ challenge: 'expired-chal', type: 'auth' }, -1);
+    expect(await chalExpired.take()).toBeNull();
+
+    // Alarm cleans up storage
+    const idAlarm = env.CHALLENGE_STORE.idFromName('store-test-alarm');
+    const chalAlarm = env.CHALLENGE_STORE.get(idAlarm) as DurableObjectStub<ChallengeStore>;
+    await chalAlarm.put({ challenge: 'alarm-chal', type: 'mfa' }, 120);
+    const { runDurableObjectAlarm } = await import('cloudflare:test');
+    await runDurableObjectAlarm(chalAlarm);
+    expect(await chalAlarm.take()).toBeNull();
   });
 });

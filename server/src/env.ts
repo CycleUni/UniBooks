@@ -24,6 +24,7 @@ export interface Env {
   USER_HUB: DurableObjectNamespace;
   ORDER_LOCK: DurableObjectNamespace;
   RATE_LIMITER: DurableObjectNamespace;
+  CHALLENGE_STORE: DurableObjectNamespace;
   R2: R2Bucket;
   KV: KVNamespace;
   EMAIL_QUEUE: Queue;

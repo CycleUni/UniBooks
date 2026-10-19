@@ -16,6 +16,9 @@ import { setSession } from '../../lib/session';
 import { nowIso } from '../../lib/time';
 import { issueTokens } from './tokens';
 import { getUser } from './users';
+import type { ChallengeRecord, ChallengeStore } from '../../durable-objects/ChallengeStore';
+
+export type { ChallengeRecord } from '../../durable-objects/ChallengeStore';
 
 type C = Context<AppEnv>;
 
@@ -27,14 +30,9 @@ export const webauthnVerifier = {
   verifyAuthenticationResponse,
 };
 
-interface ChallengeRecord {
-  challenge: string;
-  type: 'reg' | 'auth' | 'mfa';
-  userId?: string;
-}
-
-function challengeKey(id: string): string {
-  return `webauthn:chal:${id}`;
+function challengeStore(env: AppEnv['Bindings'], id: string) {
+  const ns = env.CHALLENGE_STORE as DurableObjectNamespace<ChallengeStore>;
+  return ns.get(ns.idFromName(id));
 }
 
 export interface PasskeyCatalogueEntry {
@@ -119,7 +117,7 @@ async function touchLastLogin(c: C, userId: string): Promise<void> {
 }
 
 /**
- * Generate WebAuthn registration options for the signed-in user and store the challenge in KV.
+ * Generate WebAuthn registration options for the signed-in user and store the challenge in the ChallengeStore DO.
  */
 export async function getPasskeyRegistrationOptions(c: C, user: User) {
   const { rpID, rpName } = webAuthnConfig(c.req.url);
@@ -151,9 +149,7 @@ export async function getPasskeyRegistrationOptions(c: C, user: User) {
     type: 'reg',
     userId: user.id,
   };
-  await c.env.KV.put(challengeKey(challengeId), JSON.stringify(chalRecord), {
-    expirationTtl: CHALLENGE_TTL_SECONDS,
-  });
+  await challengeStore(c.env, challengeId).put(chalRecord, CHALLENGE_TTL_SECONDS);
 
   return c.json({ challenge_id: challengeId, options });
 }
@@ -169,9 +165,7 @@ export async function verifyPasskeyRegistration(c: C, user: User) {
     apiError(400, 'auth.errPasskeyChallenge');
   }
 
-  const kvKey = challengeKey(challengeId);
-  const record = await c.env.KV.get<ChallengeRecord>(kvKey, 'json');
-  await c.env.KV.delete(kvKey);
+  const record = await challengeStore(c.env, challengeId).take();
 
   if (!record || record.type !== 'reg' || record.userId !== user.id) {
     apiError(400, 'auth.errPasskeyChallenge');
@@ -237,7 +231,7 @@ export async function verifyPasskeyRegistration(c: C, user: User) {
 }
 
 /**
- * Generate WebAuthn authentication options (discoverable credential) and store the challenge in KV.
+ * Generate WebAuthn authentication options (discoverable credential) and store the challenge in the ChallengeStore DO.
  */
 export async function getPasskeyLoginOptions(c: C) {
   const { rpID } = webAuthnConfig(c.req.url);
@@ -253,9 +247,7 @@ export async function getPasskeyLoginOptions(c: C) {
     challenge: options.challenge,
     type: 'auth',
   };
-  await c.env.KV.put(challengeKey(challengeId), JSON.stringify(chalRecord), {
-    expirationTtl: CHALLENGE_TTL_SECONDS,
-  });
+  await challengeStore(c.env, challengeId).put(chalRecord, CHALLENGE_TTL_SECONDS);
 
   return c.json({ challenge_id: challengeId, options });
 }
@@ -271,9 +263,7 @@ export async function verifyPasskeyLogin(c: C) {
     apiError(400, 'auth.errPasskeyChallenge');
   }
 
-  const kvKey = challengeKey(challengeId);
-  const record = await c.env.KV.get<ChallengeRecord>(kvKey, 'json');
-  await c.env.KV.delete(kvKey);
+  const record = await challengeStore(c.env, challengeId).take();
 
   if (!record || record.type !== 'auth') {
     apiError(400, 'auth.errPasskeyChallenge');
@@ -361,7 +351,7 @@ export async function beginSecondFactor(c: C, user: User) {
   });
   const challengeId = crypto.randomUUID();
   const record: ChallengeRecord = { challenge: options.challenge, type: 'mfa', userId: user.id };
-  await c.env.KV.put(challengeKey(challengeId), JSON.stringify(record), { expirationTtl: CHALLENGE_TTL_SECONDS });
+  await challengeStore(c.env, challengeId).put(record, CHALLENGE_TTL_SECONDS);
   return c.json({ code: 'auth.passkeyRequired', challenge_id: challengeId, options });
 }
 
@@ -377,9 +367,7 @@ export async function verifySecondFactor(c: C) {
     apiError(400, 'auth.errPasskeyChallenge');
   }
 
-  const kvKey = challengeKey(challengeId);
-  const record = await c.env.KV.get<ChallengeRecord>(kvKey, 'json');
-  await c.env.KV.delete(kvKey);
+  const record = await challengeStore(c.env, challengeId).take();
   if (!record || record.type !== 'mfa' || !record.userId) {
     apiError(400, 'auth.errPasskeyChallenge');
   }
