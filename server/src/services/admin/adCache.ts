@@ -13,10 +13,21 @@ const MIN_TTL = 60;
 
 export const ADS_VERSION_KEY = 'ads:ver';
 
+// Each cached request reads the version, so an isolate keeps what it read for a
+// moment instead of going to KV every time (KV's free plan allows 100k reads a
+// day). A write shows up in other isolates within VERSION_MEMO_MS plus KV's own
+// propagation; the isolate that wrote it knows the new version at once.
+const VERSION_MEMO_MS = 30_000;
+const versionMemo = new Map<string, { value: string; at: number }>();
+
 /** The current version of `versionKey` ('0' before the first bump). */
 export async function cacheVersion(kv: KVNamespace, versionKey: string): Promise<string> {
+  const memo = versionMemo.get(versionKey);
+  if (memo && Date.now() - memo.at < VERSION_MEMO_MS) return memo.value;
   try {
-    return (await kv.get(versionKey)) ?? '0';
+    const value = (await kv.get(versionKey)) ?? '0';
+    versionMemo.set(versionKey, { value, at: Date.now() });
+    return value;
   } catch {
     return '0';
   }
@@ -24,8 +35,10 @@ export async function cacheVersion(kv: KVNamespace, versionKey: string): Promise
 
 /** Invalidate every entry built under `versionKey`. */
 export async function bumpVersion(kv: KVNamespace, versionKey: string): Promise<void> {
+  const value = `${Date.now().toString(36)}${crypto.randomUUID().slice(0, 8)}`;
+  versionMemo.set(versionKey, { value, at: Date.now() });
   try {
-    await kv.put(versionKey, `${Date.now().toString(36)}${crypto.randomUUID().slice(0, 8)}`);
+    await kv.put(versionKey, value);
   } catch {
     // A failed bump leaves at most TTL-old entries; never fail the write for it.
   }
