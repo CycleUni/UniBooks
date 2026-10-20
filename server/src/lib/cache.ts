@@ -1,6 +1,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import type { AppEnv, Env } from '../env';
 import { afterResponse } from './http';
+import { takePlatformRate } from '../middleware/rateLimit';
 
 /**
  * Read-through cache in Workers KV for data that is the same for every
@@ -35,11 +36,31 @@ export type CacheNamespace = 'ref' | 'sitemap' | 'search';
 const MIN_TTL = 60; // KV's minimum expirationTtl
 const versionMemo = new Map<CacheNamespace, { value: string; at: number }>();
 const VERSION_MEMO_MS = 30_000;
+/** A memo is re-read for a newer `want` at most this often: `?v=` is in the URL, so anyone can vary it. */
+const REFETCH_MIN_MS = 1_000;
+/** A write's version reaches every isolate within VERSION_MEMO_MS plus KV propagation; older ones are not waited for. */
+const WANT_MAX_AGE_MS = 5 * 60_000;
+const CLOCK_SKEW_MS = 5_000;
 
-/** `ns`'s current version; `want` (a version a client saw) bypasses a memo that differs. */
+/**
+ * Whether `want` can be a version a recent write reported (versions are
+ * `Date.now()` in base 36) that is newer than `have`. Anything else in `?v=`
+ * is ignored rather than allowed to skip the memo and the edge cache.
+ */
+function plausiblyNewer(want: string, have: string): boolean {
+  if (!/^[0-9a-z]{1,11}$/.test(want)) return false;
+  const at = parseInt(want, 36);
+  const now = Date.now();
+  return at > (parseInt(have, 36) || 0) && at <= now + CLOCK_SKEW_MS && now - at <= WANT_MAX_AGE_MS;
+}
+
+/** `ns`'s current version; a plausibly newer `want` (a version a client saw) re-reads a memo that differs. */
 async function version(env: Env, ns: CacheNamespace, want?: string): Promise<string> {
   const memo = versionMemo.get(ns);
-  if (memo && Date.now() - memo.at < VERSION_MEMO_MS && (!want || memo.value === want)) return memo.value;
+  if (memo && Date.now() - memo.at < VERSION_MEMO_MS) {
+    const recheck = want && want !== memo.value && plausiblyNewer(want, memo.value) && Date.now() - memo.at >= REFETCH_MIN_MS;
+    if (!recheck) return memo.value;
+  }
   const value = (await env.KV.get(`c:ver:${ns}`)) ?? '0';
   versionMemo.set(ns, { value, at: Date.now() });
   return value;
@@ -144,9 +165,11 @@ export async function edgeCache(
 
 /**
  * edgeCache() under `ns`'s version, for the public lists the SPA asks for
- * with the `?v=` an admin write reported. A `?v=` this location has not
- * caught up with (KV still propagating) is answered from the source with
- * no-store, so neither the edge nor the browser keeps it under the newer URL.
+ * with the `?v=` an admin write reported. A recent `?v=` this location has
+ * not caught up with (KV still propagating) is answered from the source with
+ * no-store, so neither the edge nor the browser keeps it under the newer URL;
+ * CACHE_BYPASS_LIMIT caps how often one client gets that. Any other `?v=`
+ * gets the cached copy.
  */
 export async function versionedEdgeCache(c: Context<AppEnv>, ns: CacheNamespace, build: () => Promise<Response>): Promise<Response> {
   const want = c.req.query('v') || undefined;
@@ -157,7 +180,12 @@ export async function versionedEdgeCache(c: Context<AppEnv>, ns: CacheNamespace,
     console.warn(`[cache] version read failed for ${ns}`, e);
     return build();
   }
-  if (want && want !== current) {
+  if (
+    want &&
+    want !== current &&
+    plausiblyNewer(want, current) &&
+    (await takePlatformRate(c, c.env.CACHE_BYPASS_LIMIT, 'cache-bypass', '20/min'))
+  ) {
     const res = await build();
     res.headers.set('Cache-Control', 'no-store');
     return res;

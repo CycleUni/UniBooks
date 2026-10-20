@@ -36,10 +36,18 @@ describe('versioned edge cache for public lists', () => {
     expect(await slugs(await call(METADATA))).toContain('edge-new');
   });
 
-  it('keeps an answer for a version this location has not seen out of every cache', async () => {
-    const res = await call(`${METADATA}&v=notyet`);
+  it('keeps an answer for a recent version this location has not seen out of every cache', async () => {
+    const res = await call(`${METADATA}&v=${Date.now().toString(36)}`);
     expect(res.status).toBe(200);
     expect(res.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('answers a ?v= no recent write could have reported from the cache', async () => {
+    for (const v of ['notyet', (Date.now() - 60 * 60_000).toString(36), (Date.now() + 60 * 60_000).toString(36), 'x'.repeat(40)]) {
+      const res = await call(`${METADATA}&v=${v}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Cache-Control')).toMatch(/^public, max-age=/);
+    }
   });
 
   it('a failed write names no version', async () => {
