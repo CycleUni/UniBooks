@@ -513,9 +513,10 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
           this.router.navigate([], { queryParams: { chat: chat.id }, replaceUrl: true });
         }
       },
-      error: () => {
+      error: (err) => {
         this.loadingChats = false;
-        this.toast.error(this.i18n.t('msg.chatOpenFailed'));
+        // A taken-down listing is a 404 to everyone but its seller.
+        this.toast.error(this.i18n.t(err?.status === 404 ? 'msg.errListingUnavailable' : 'msg.chatOpenFailed'));
         this.clearChatParam();
       }
     });

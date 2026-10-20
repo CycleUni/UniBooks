@@ -317,6 +317,8 @@ listingRoutes.get(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c) =
   if (!listing) return notFound(c);
   const region = await requireRegion(c);
   const userId = c.get('userId');
+  // Taken down (by the seller or a moderator): only the seller and staff still see it.
+  if (listing.status === 'removed' && userId !== listing.sellerId && !c.get('user')?.isStaff) return notFound(c);
   // The seller gets their note back; everyone else never sees it.
   const [out] = await serializeListings(c.env, [listing], { viewerId: userId, lang: resolveLanguage(c, region) });
   if (userId && userId === listing.sellerId) out.private_note = listing.privateNote ?? '';
