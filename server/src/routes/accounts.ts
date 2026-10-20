@@ -5,7 +5,7 @@ import { and, asc, desc, eq, isNull, like, ne, or, sql, type SQL } from 'drizzle
 import type { AppEnv } from '../env';
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { getRegion, isVerifiedIn } from '../lib/region';
-import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { authMiddleware, optionalAuthMiddleware, requireRecentSignIn } from '../middleware/auth';
 import { outcomeLimit, rateLimit, takeRate } from '../middleware/rateLimit';
 import { turnstileEnabled, verifyTurnstile } from '../lib/turnstile';
 import { InvalidTokenError, verifyToken } from '../lib/jwt';
@@ -703,23 +703,47 @@ accountRoutes.post('/logout', optionalAuthMiddleware(), async (c) => {
 // Passkeys (WebAuthn)
 // ---------------------------------------------------------------------------
 
-accountRoutes.post('/passkeys/register/options', authMiddleware(), rateLimit('passkey-register', RATES.passkeyRegister), async (c) => {
-  const user = await currentUser(c);
-  return getPasskeyRegistrationOptions(c, user);
-});
-accountRoutes.post('/passkeys/register/options/', authMiddleware(), rateLimit('passkey-register', RATES.passkeyRegister), async (c) => {
-  const user = await currentUser(c);
-  return getPasskeyRegistrationOptions(c, user);
-});
+accountRoutes.post(
+  '/passkeys/register/options',
+  authMiddleware(),
+  rateLimit('passkey-register', RATES.passkeyRegister),
+  requireRecentSignIn(),
+  async (c) => {
+    const user = await currentUser(c);
+    return getPasskeyRegistrationOptions(c, user);
+  },
+);
+accountRoutes.post(
+  '/passkeys/register/options/',
+  authMiddleware(),
+  rateLimit('passkey-register', RATES.passkeyRegister),
+  requireRecentSignIn(),
+  async (c) => {
+    const user = await currentUser(c);
+    return getPasskeyRegistrationOptions(c, user);
+  },
+);
 
-accountRoutes.post('/passkeys/register/verify', authMiddleware(), rateLimit('passkey-register', RATES.passkeyRegister), async (c) => {
-  const user = await currentUser(c);
-  return verifyPasskeyRegistration(c, user);
-});
-accountRoutes.post('/passkeys/register/verify/', authMiddleware(), rateLimit('passkey-register', RATES.passkeyRegister), async (c) => {
-  const user = await currentUser(c);
-  return verifyPasskeyRegistration(c, user);
-});
+accountRoutes.post(
+  '/passkeys/register/verify',
+  authMiddleware(),
+  rateLimit('passkey-register', RATES.passkeyRegister),
+  requireRecentSignIn(),
+  async (c) => {
+    const user = await currentUser(c);
+    return verifyPasskeyRegistration(c, user);
+  },
+);
+accountRoutes.post(
+  '/passkeys/register/verify/',
+  authMiddleware(),
+  rateLimit('passkey-register', RATES.passkeyRegister),
+  requireRecentSignIn(),
+  async (c) => {
+    const user = await currentUser(c);
+    return verifyPasskeyRegistration(c, user);
+  },
+);
 
 accountRoutes.post('/passkeys/login/options', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
   return getPasskeyLoginOptions(c);
@@ -765,11 +789,11 @@ accountRoutes.patch('/passkeys/:id/', authMiddleware(), async (c) => {
   return renameUserPasskey(c, c.get('user')!.id, c.req.param('id'));
 });
 
-accountRoutes.delete('/passkeys/:id', authMiddleware(), async (c) => {
+accountRoutes.delete('/passkeys/:id', authMiddleware(), requireRecentSignIn(), async (c) => {
   const user = await currentUser(c);
   return deleteUserPasskey(c, user, c.req.param('id'));
 });
-accountRoutes.delete('/passkeys/:id/', authMiddleware(), async (c) => {
+accountRoutes.delete('/passkeys/:id/', authMiddleware(), requireRecentSignIn(), async (c) => {
   const user = await currentUser(c);
   return deleteUserPasskey(c, user, c.req.param('id'));
 });

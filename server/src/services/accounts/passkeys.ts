@@ -15,6 +15,8 @@ import { apiError, fieldErrors, readJson } from '../../lib/http';
 import { setSession } from '../../lib/session';
 import { nowIso } from '../../lib/time';
 import { issueTokens } from './tokens';
+import { assertRecentSignIn } from '../../middleware/auth';
+import type { EmailMessage } from '../../queues/types';
 import { getUser } from './users';
 import type { ChallengeRecord, ChallengeStore } from '../../durable-objects/ChallengeStore';
 
@@ -227,6 +229,14 @@ export async function verifyPasskeyRegistration(c: C, user: User) {
     })
     .run();
 
+  // The owner hears about every new way in: if it was not them, this is the warning.
+  const notice: EmailMessage = { type: 'passkey_added', user_id: user.id, passkey_name: passkeyName };
+  try {
+    await c.env.EMAIL_QUEUE.send(notice);
+  } catch (e) {
+    console.error(`[passkeys] could not queue the passkey-added notice for user ${user.id}`, e);
+  }
+
   return c.json({ id: registrationInfo.credential.id, name: passkeyName }, 201);
 }
 
@@ -435,6 +445,8 @@ export async function setPasskeyTwoStep(c: C, user: User) {
   if (typeof body.enabled !== 'boolean') {
     apiError(400, 'common.errValidation');
   }
+  // Turning it off takes a factor away: like adding or removing a passkey, it needs a recent sign-in.
+  if (!body.enabled) assertRecentSignIn(c);
   if (body.enabled && (await countUserPasskeys(c.env, user.id)) === 0) {
     apiError(409, 'acct.errTwoStepNeedsPasskey');
   }

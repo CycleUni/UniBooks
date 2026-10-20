@@ -813,7 +813,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.isAddingPasskey = false;
         this.cdr.markForCheck();
-        if (isUserCancellation(err)) {
+        if (isUserCancellation(err) || this.offerSignInAgain(err)) {
           return;
         }
         this.toast.error(parseApiError(err, this.i18n, 'auth.errPasskeyRegistration'));
@@ -873,8 +873,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.passkeyTwoStep = previous;
         input.checked = previous;
         this.savingTwoStep = false;
-        this.toast.error(parseApiError(err, this.i18n, 'acct.errTwoStep'));
         this.cdr.markForCheck();
+        if (this.offerSignInAgain(err)) return;
+        this.toast.error(parseApiError(err, this.i18n, 'acct.errTwoStep'));
       },
     });
   }
@@ -898,9 +899,29 @@ export class SettingsComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.deletingPasskeyId = null;
-        this.toast.error(parseApiError(err, this.i18n, 'acct.errDeletePasskey'));
         this.cdr.markForCheck();
+        if (this.offerSignInAgain(err)) return;
+        this.toast.error(parseApiError(err, this.i18n, 'acct.errDeletePasskey'));
       },
     });
+  }
+
+  /**
+   * Adding or removing a passkey, or turning two-step off, needs a recent
+   * sign-in. When the server says this one is too old, offer to sign in again
+   * and come back here. True when `err` was that refusal.
+   */
+  private offerSignInAgain(err: any): boolean {
+    if (err?.error?.error?.code !== 'auth.errReauthRequired') return false;
+    void this.confirms
+      .ask({
+        title: this.i18n.t('acct.reauthTitle'),
+        message: this.i18n.t('auth.errReauthRequired'),
+        confirmLabel: this.i18n.t('acct.reauthSignIn'),
+      })
+      .then((again) => {
+        if (again) this.authStore.logout(this.router.url).subscribe();
+      });
+    return true;
   }
 }

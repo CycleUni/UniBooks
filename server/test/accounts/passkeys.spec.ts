@@ -3,6 +3,8 @@ import { env } from 'cloudflare:workers';
 import { clearCatalogueCache, loadCatalogue, webauthnVerifier } from '../../src/services/accounts/passkeys';
 import type { ChallengeStore } from '../../src/durable-objects/ChallengeStore';
 import { PASSWORD, call, createUser, login, seedReference, sessionOf } from './helpers';
+import { signToken } from '../../src/lib/jwt';
+import { RECENT_SIGN_IN_SECONDS } from '../../src/middleware/auth';
 
 const challengeStore = (id: string) => {
   const ns = env.CHALLENGE_STORE as DurableObjectNamespace<ChallengeStore>;
@@ -503,6 +505,77 @@ describe('Passkeys (WebAuthn)', () => {
       token: tokens.access,
     });
     expect(deleteOneOfTwo.status).toBe(204);
+  });
+
+  it('adding, removing, or turning two-step off needs a recent sign-in; refreshing keeps the sign-in time', async () => {
+    const email = 'passkey-stale@example.com';
+    const userId = await createUser(email);
+    const stale = Math.floor(Date.now() / 1000) - RECENT_SIGN_IN_SECONDS - 60;
+    const staleAccess = await signToken('access', { user_id: userId, auth_time: stale }, env);
+    const legacyAccess = await signToken('access', { user_id: userId }, env);
+    await env.DB.prepare(
+      "INSERT INTO passkeys (id, user_id, public_key, counter, device_type, backed_up, name, created_at) VALUES ('stale-cred', ?, 'AAAA', 0, 'singleDevice', 0, 'Old', datetime('now'))",
+    )
+      .bind(userId)
+      .run();
+
+    for (const token of [staleAccess, legacyAccess]) {
+      const reg = await call('/api/v1/auth/passkeys/register/options', { method: 'POST', token });
+      expect(reg.status).toBe(403);
+      expect(((await reg.json()) as any).error.code).toBe('auth.errReauthRequired');
+      const del = await call('/api/v1/auth/passkeys/stale-cred', { method: 'DELETE', token });
+      expect(del.status).toBe(403);
+    }
+    // Turning two-step on adds protection and is allowed; turning it off is not.
+    expect((await call('/api/v1/auth/passkeys/2fa', { method: 'PUT', token: staleAccess, body: { enabled: true } })).status).toBe(200);
+    const off = await call('/api/v1/auth/passkeys/2fa', { method: 'PUT', token: staleAccess, body: { enabled: false } });
+    expect(off.status).toBe(403);
+    // Renaming changes no way in.
+    expect(
+      (await call('/api/v1/auth/passkeys/stale-cred', { method: 'PATCH', token: staleAccess, body: { name: 'Renamed' } })).status,
+    ).toBe(200);
+
+    // A refreshed pair carries the original sign-in time, not the refresh time.
+    await env.DB.prepare('UPDATE users SET passkey_2fa = 0 WHERE id = ?').bind(userId).run();
+    const { refresh } = await login(email);
+    const { access: refreshed } = sessionOf(await call('/api/v1/auth/refresh', { body: { refresh } }));
+    const [, payload] = refreshed.split('.');
+    const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    expect(Math.abs(claims.auth_time - Math.floor(Date.now() / 1000))).toBeLessThan(30);
+    expect((await call('/api/v1/auth/passkeys/register/options', { method: 'POST', token: refreshed })).status).toBe(200);
+  });
+
+  it('registration verify: queues a notice to the account owner', async () => {
+    const email = 'passkey-notice@example.com';
+    const userId = await createUser(email);
+    const { access } = await login(email);
+    const send = vi.spyOn(env.EMAIL_QUEUE, 'send').mockResolvedValue({ metadata: {} } as never);
+    try {
+      const optRes = await call('/api/v1/auth/passkeys/register/options', { method: 'POST', token: access });
+      const { challenge_id } = (await optRes.json()) as { challenge_id: string };
+      mockRegVerifyResult = {
+        verified: true,
+        registrationInfo: {
+          fmt: 'none',
+          aaguid: '00000000-0000-0000-0000-000000000000',
+          credential: { id: 'notice-cred', publicKey: new Uint8Array([1]), counter: 0, transports: ['internal'] },
+          credentialType: 'public-key',
+          attestationObject: new Uint8Array([0]),
+          userVerified: true,
+          credentialDeviceType: 'multiDevice',
+          credentialBackedUp: true,
+          origin: 'http://x',
+        },
+      };
+      const res = await call('/api/v1/auth/passkeys/register/verify', {
+        token: access,
+        body: { challenge_id, response: { id: 'notice-cred', response: {} }, name: 'Phone' },
+      });
+      expect(res.status).toBe(201);
+      expect(send.mock.calls.map(([msg]) => msg)).toContainEqual({ type: 'passkey_added', user_id: userId, passkey_name: 'Phone' });
+    } finally {
+      send.mockRestore();
+    }
   });
 
   it('account deletion removes all passkeys for that user', async () => {

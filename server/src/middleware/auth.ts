@@ -1,4 +1,4 @@
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { accessTokenFrom } from '../lib/session';
 import { eq } from 'drizzle-orm';
 import type { AppEnv, AuthUser } from '../env';
@@ -12,10 +12,11 @@ import { apiError } from '../lib/http';
  * from D1 on every request, so a ban or demotion takes effect immediately
  * rather than when the 15-minute token runs out.
  */
-async function resolveUser(c: Parameters<MiddlewareHandler<AppEnv>>[0], token: string): Promise<AuthUser | null> {
+async function resolveUser(c: Parameters<MiddlewareHandler<AppEnv>>[0], token: string): Promise<(AuthUser & { authTime: number }) | null> {
   let userId: string;
+  let authTime: number | undefined;
   try {
-    ({ user_id: userId } = await verifyToken('access', token, c.env));
+    ({ user_id: userId, auth_time: authTime } = await verifyToken('access', token, c.env));
   } catch (e) {
     if (e instanceof InvalidTokenError) return null;
     throw e;
@@ -33,12 +34,14 @@ async function resolveUser(c: Parameters<MiddlewareHandler<AppEnv>>[0], token: s
     role: row.role,
     isStaff: row.role === 'staff' || row.role === 'admin',
     isAdmin: row.role === 'admin',
+    authTime: typeof authTime === 'number' ? authTime : 0,
   };
 }
 
-function setUser(c: Parameters<MiddlewareHandler<AppEnv>>[0], user: AuthUser) {
+function setUser(c: Parameters<MiddlewareHandler<AppEnv>>[0], { authTime, ...user }: AuthUser & { authTime: number }) {
   c.set('user', user);
   c.set('userId', user.id);
+  c.set('authTime', authTime);
 }
 
 /** 401 {"error":{"code":"auth.errNotLoggedIn"}} without a valid access token. */
@@ -69,3 +72,23 @@ export const requireAdmin = (): MiddlewareHandler<AppEnv> => async (c, next) => 
   if (!c.get('user')?.isAdmin) apiError(403, 'admin.errForbiddenAction');
   await next();
 };
+
+/** How recent a sign-in must be for changes that add or remove a way into the account. */
+export const RECENT_SIGN_IN_SECONDS = 15 * 60;
+
+/**
+ * 403 auth.errReauthRequired unless the user signed in (password, Google or
+ * passkey) within RECENT_SIGN_IN_SECONDS. A session alone — possibly a stolen
+ * one, kept alive by refreshes — must not be able to plant a passkey or take
+ * one away. Use after authMiddleware.
+ */
+export const requireRecentSignIn = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+  assertRecentSignIn(c);
+  await next();
+};
+
+/** requireRecentSignIn() for a handler that needs it only on some inputs. */
+export function assertRecentSignIn(c: Context<AppEnv>): void {
+  const authTime = c.get('authTime') ?? 0;
+  if (Math.floor(Date.now() / 1000) - authTime > RECENT_SIGN_IN_SECONDS) apiError(403, 'auth.errReauthRequired');
+}

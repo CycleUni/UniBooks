@@ -82,6 +82,19 @@ describe('emails', () => {
     expect(maskEmail('nope')).toBe('***');
   });
 
+  it("passkey added: goes to the account's address in its language, names the passkey, escaped", async () => {
+    const id = await createUser('passkey-mail@example.com');
+    await env.DB.prepare("UPDATE users SET email_language = 'zh-TW' WHERE id = ?").bind(id).run();
+    const mail = await buildEmail({ type: 'passkey_added', user_id: id, passkey_name: '<b>Mac</b>' }, env);
+    expect(mail?.to).toBe('passkey-mail@example.com');
+    expect(mail?.subject).toBe('UniBooks：您的帳號新增了一組通行密鑰');
+    expect(mail?.text).toContain('<b>Mac</b>');
+    expect(mail?.html).not.toContain('<b>Mac</b>');
+    expect(mail?.text).toContain(BASE + '/account/settings');
+    await env.DB.prepare('UPDATE users SET is_banned = 1 WHERE id = ?').bind(id).run();
+    expect(await buildEmail({ type: 'passkey_added', user_id: id, passkey_name: 'x' }, env)).toBeNull();
+  });
+
   it('chat notification: escaped, region-prefixed link, settings link, recipient language, opt-out', async () => {
     const seller = await createUser('seller-mail@example.com', { first: '<script>', last: 'x"' });
     const buyer = await createUser('buyer-mail@example.com');

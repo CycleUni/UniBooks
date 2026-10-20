@@ -54,12 +54,17 @@ async function safe<T>(op: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-async function mintPair(env: Env, userId: string, family: string | null): Promise<{ jti: string; family: string; pair: TokenPair }> {
+async function mintPair(
+  env: Env,
+  userId: string,
+  family: string | null,
+  authTime: number,
+): Promise<{ jti: string; family: string; pair: TokenPair }> {
   const jti = newHexId();
   const familyId = family ?? jti;
   const [access, refresh] = await Promise.all([
-    signToken('access', { user_id: userId }, env),
-    signToken('refresh', { user_id: userId, jti, family_id: familyId }, env),
+    signToken('access', { user_id: userId, auth_time: authTime }, env),
+    signToken('refresh', { user_id: userId, jti, family_id: familyId, auth_time: authTime }, env),
   ]);
   return { jti, family: familyId, pair: { access, refresh } };
 }
@@ -77,9 +82,9 @@ function insertStatement(db: Database, jti: string, userId: string, family: stri
   });
 }
 
-/** Issue a pair and whitelist its refresh token. `family` continues a chain; omitted, a new one starts. */
-export async function issueTokens(env: Env, userId: string, family: string | null = null): Promise<TokenPair> {
-  const { jti, family: familyId, pair } = await mintPair(env, userId, family);
+/** Issue a pair for a sign-in that just happened, and whitelist its refresh token. A new chain starts. */
+export async function issueTokens(env: Env, userId: string): Promise<TokenPair> {
+  const { jti, family: familyId, pair } = await mintPair(env, userId, null, Math.floor(Date.now() / 1000));
   await strict(() => insertStatement(createDb(env.DB), jti, userId, familyId).run());
   return pair;
 }
@@ -163,7 +168,7 @@ function graceTokens(row: TokenRow): TokenPair | null {
  * answer; returns the pair otherwise.
  */
 export async function rotateRefreshToken(env: Env, raw: string): Promise<TokenPair> {
-  let claims: { jti: string; user_id: string };
+  let claims: { jti: string; user_id: string; auth_time?: number };
   try {
     claims = await verifyToken('refresh', raw, env);
   } catch (e) {
@@ -203,7 +208,8 @@ export async function rotateRefreshToken(env: Env, raw: string): Promise<TokenPa
 
   // Record the new pair and retire the old token in one transaction; the
   // retirement is conditional, so of two concurrent rotations exactly one wins.
-  const minted = await mintPair(env, userId, row.family_id || row.jti);
+  // A refresh is not a sign-in: the new pair keeps the chain's sign-in time.
+  const minted = await mintPair(env, userId, row.family_id || row.jti, claims.auth_time ?? 0);
   const [, retired] = await strict(() =>
     db.batch([
       insertStatement(db, minted.jti, userId, minted.family),

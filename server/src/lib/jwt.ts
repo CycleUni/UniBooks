@@ -17,12 +17,15 @@ export type TokenType = 'access' | 'refresh' | 'chat' | 'upload';
 
 export interface AccessTokenPayload {
   user_id: string;
+  /** When the user last proved who they are (password, Google, passkey), in epoch seconds; carried through refreshes. */
+  auth_time?: number;
 }
 
 export interface RefreshTokenPayload {
   user_id: string;
   jti: string;
   family_id: string;
+  auth_time?: number;
 }
 
 export interface ChatTokenPayload {

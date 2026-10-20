@@ -24,6 +24,14 @@ export const CATALOGS: Record<string, Record<string, string>> = {
     'email.emailChanged.notYouNoContact':
       'If you did not make this change, someone else may be using your account. Contact the UniBooks team right away.',
     'email.emailChanged.wasYou': 'If it was you, there is nothing else to do. You can check your account settings here:',
+    'email.passkeyAdded.subject': 'UniBooks — a passkey was added to your account',
+    'email.passkeyAdded.intro':
+      'A new passkey, "{name}", was just added to your UniBooks account. It can be used to sign in without a password.',
+    'email.passkeyAdded.notYou':
+      'If you did not add it, remove it in your account settings and contact the UniBooks team right away at {contact} (or reply to this email).',
+    'email.passkeyAdded.notYouNoContact':
+      'If you did not add it, remove it in your account settings and contact the UniBooks team right away.',
+    'email.passkeyAdded.manage': 'Your passkeys are listed here:',
     'email.chatMessage.subject': 'New message from {sender} on UniBooks',
     'email.chatMessage.intro': '{sender} sent you a new message on UniBooks.',
     'email.chatMessage.listing': 'Listing: {title}',
@@ -80,6 +88,11 @@ export const CATALOGS: Record<string, Record<string, string>> = {
       '如果唔係你改嘅，可能有其他人用緊你嘅帳戶，請即刻寫信去 {contact} 聯絡 UniBooks 團隊（直接回覆呢封電郵都得）。',
     'email.emailChanged.notYouNoContact': '如果唔係你改嘅，可能有其他人用緊你嘅帳戶，請即刻聯絡 UniBooks 團隊。',
     'email.emailChanged.wasYou': '如果係你自己改嘅，就唔使再做任何嘢。你可以喺呢度睇返帳戶設定：',
+    'email.passkeyAdded.subject': 'UniBooks：你嘅帳戶加咗一個通行密鑰',
+    'email.passkeyAdded.intro': '你嘅 UniBooks 帳戶啱啱加咗一個新嘅通行密鑰「{name}」，可以用嚟免密碼登入。',
+    'email.passkeyAdded.notYou': '如果唔係你加嘅，請即刻喺帳戶設定刪除佢，再寫信去 {contact} 聯絡 UniBooks 團隊（直接回覆呢封電郵都得）。',
+    'email.passkeyAdded.notYouNoContact': '如果唔係你加嘅，請即刻喺帳戶設定刪除佢，再聯絡 UniBooks 團隊。',
+    'email.passkeyAdded.manage': '你可以喺呢度睇返你嘅通行密鑰：',
     'email.chatMessage.subject': 'UniBooks：{sender} 向你傳送了新訊息',
     'email.chatMessage.intro': '{sender} 在 UniBooks 向你傳送了新訊息。',
     'email.chatMessage.listing': '書籍：{title}',
@@ -135,6 +148,12 @@ export const CATALOGS: Record<string, Record<string, string>> = {
       '如果這不是您本人的操作，可能有其他人正在使用您的帳號，請立即寫信至 {contact} 聯絡 UniBooks 團隊（直接回覆這封信也可以）。',
     'email.emailChanged.notYouNoContact': '如果這不是您本人的操作，可能有其他人正在使用您的帳號，請立即聯絡 UniBooks 團隊。',
     'email.emailChanged.wasYou': '如果是您本人變更的，就不需要再做任何事。您可以在這裡查看帳號設定：',
+    'email.passkeyAdded.subject': 'UniBooks：您的帳號新增了一組通行密鑰',
+    'email.passkeyAdded.intro': '您的 UniBooks 帳號剛新增了一組通行密鑰「{name}」，可以用來免密碼登入。',
+    'email.passkeyAdded.notYou':
+      '如果不是您新增的，請立即到帳號設定刪除它，並寫信到 {contact} 聯絡 UniBooks 團隊（直接回覆這封信件也可以）。',
+    'email.passkeyAdded.notYouNoContact': '如果不是您新增的，請立即到帳號設定刪除它，並聯絡 UniBooks 團隊。',
+    'email.passkeyAdded.manage': '您可以在這裡查看您的通行密鑰：',
     'email.chatMessage.subject': 'UniBooks：{sender} 傳送了新訊息給您',
     'email.chatMessage.intro': '{sender} 在 UniBooks 傳送了新訊息給您。',
     'email.chatMessage.listing': '書籍：{title}',

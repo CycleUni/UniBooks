@@ -33,6 +33,13 @@ export type EmailMessage =
       new_email: string;
     }
   | {
+      /** Sent to the account's address when a passkey is added to it. */
+      type: 'passkey_added';
+      user_id: string;
+      /** The passkey's name, as shown in account settings. */
+      passkey_name: string;
+    }
+  | {
       type: 'offline_chat_notification';
       recipient_id: string;
       room_id: string;

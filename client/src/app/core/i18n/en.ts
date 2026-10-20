@@ -243,6 +243,7 @@ export const en: Record<string, string> = {
   'auth.errPasskeyChallenge':
     'The passkey sign-in request has expired or is invalid. Please try again.',
   'auth.errPasskeyRegistration': 'Could not register passkey. Please try again.',
+  'auth.errReauthRequired': 'For your security, sign in again before changing your passkeys or two-step sign-in.',
   'auth.errPasskeyLogin':
     'Could not sign in with passkey. Please check your passkey and try again.',
   'auth.errPasskeyNotFound': 'Passkey not found.',
@@ -410,6 +411,8 @@ export const en: Record<string, string> = {
   'acct.twoStepOff': 'Two-step sign-in is off',
   'acct.errTwoStep': 'Could not change two-step sign-in. Please try again.',
   'acct.errTwoStepNeedsPasskey': 'Add a passkey first to turn on two-step sign-in.',
+  'acct.reauthTitle': 'Sign in again',
+  'acct.reauthSignIn': 'Sign in again',
   'acct.errDeletePasskey': 'Failed to delete passkey. Please try again.',
   'acct.errRenamePasskey': 'Failed to rename passkey. Please try again.',
   'acct.renamePasskey': 'Rename',

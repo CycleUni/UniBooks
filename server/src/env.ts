@@ -87,6 +87,8 @@ export interface AuthUser {
 export interface Variables {
   user?: AuthUser;
   userId?: string;
+  /** When the signed-in user last proved who they are (epoch seconds; 0 when unknown). */
+  authTime?: number;
   /** Set by lib/region getRegion(); read through that, not directly. */
   region?: string;
   regionObj?: Region | null;

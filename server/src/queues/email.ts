@@ -155,6 +155,21 @@ async function emailChanged(env: Env, msg: Extract<EmailMessage, { type: 'email_
   ]);
 }
 
+async function passkeyAdded(env: Env, msg: Extract<EmailMessage, { type: 'passkey_added' }>): Promise<RenderedEmail | null> {
+  const user = await loadUser(env, msg.user_id);
+  if (!reachable(user)) return null;
+  const lang = await languageFor(env, user, null);
+  const contact = (env.DEFAULT_FROM_EMAIL ?? '').trim();
+  return render(user.email, displayName(user.first_name, user.last_name), t(lang, 'email.passkeyAdded.subject'), [
+    t(lang, 'email.passkeyAdded.intro', { name: msg.passkey_name }),
+    '',
+    contact ? t(lang, 'email.passkeyAdded.notYou', { contact }) : t(lang, 'email.passkeyAdded.notYouNoContact'),
+    '',
+    t(lang, 'email.passkeyAdded.manage'),
+    { link: `${frontend(env)}/account/settings` },
+  ]);
+}
+
 async function chatNotification(
   env: Env,
   msg: Extract<EmailMessage, { type: 'offline_chat_notification' }>,
@@ -265,6 +280,8 @@ export async function buildEmail(msg: EmailMessage, env: Env): Promise<RenderedE
       return accountLink(env, msg);
     case 'email_changed':
       return emailChanged(env, msg);
+    case 'passkey_added':
+      return passkeyAdded(env, msg);
     case 'offline_chat_notification':
       return chatNotification(env, msg);
     case 'waitlist_notification':

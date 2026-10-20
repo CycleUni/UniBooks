@@ -876,7 +876,8 @@ export class AuthStore {
     return this.http.post<any>('/auth/password/reset/confirm', { token, new_password: newPassword });
   }
 
-  logout(): Observable<any> {
+  /** `returnUrl`: where the sign-in page sends the visitor after they sign in again. */
+  logout(returnUrl?: string): Observable<any> {
     // Before the session goes: the device removal still needs the session,
     // and a signed-out browser should stop receiving this account's messages.
     void this.injector.get(PushService).unregisterThisDevice();
@@ -887,22 +888,22 @@ export class AuthStore {
       // the server revokes it and clears every session cookie.
       return this.http.post('/auth/logout', {}).pipe(
         tap({
-          next: () => this.signOut(),
-          error: () => this.signOut()
+          next: () => this.signOut(returnUrl),
+          error: () => this.signOut(returnUrl)
         }),
         catchError(() => of(null))
       );
     }
-    this.signOut();
+    this.signOut(returnUrl);
     return of(null);
   }
 
   /** Signing out is a deliberate act, so it always lands on the sign-in page —
    *  the same place the old /account login wall put them — whether or not the
    *  page they were on was one they could have stayed on. */
-  private signOut(): void {
+  private signOut(returnUrl?: string): void {
     this.clearAuth();
     this.announce('logout');
-    this.router.navigate(this.regionLink.path(['/login']));
+    this.router.navigate(this.regionLink.path(['/login']), returnUrl ? { queryParams: { returnUrl } } : undefined);
   }
 }

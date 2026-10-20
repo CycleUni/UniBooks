@@ -186,6 +186,7 @@ npx --prefix server wrangler d1 execute unibooks --remote --config server/wrangl
 - 只用 Google 登入的帳號預設沒有密碼，也無法用登入狀態另外設定密碼（沒有密碼可被暴力破解或外洩）；更換登入信箱需輸入目前的密碼。
 - 只有一把主金鑰 `SECRET_KEY`：各種 JWT（存取、更新、上傳、聊天、hub）的 HMAC 金鑰都由它以 HKDF-SHA256 依用途分別推導，再加上 `token_type` 檢查，彼此互不通用；缺少或過短的主金鑰直接拒絕。輪替主金鑰會讓所有人登出。
 - 每個請求都從 D1 重新讀取帳號狀態（停權、降級立即生效）。
+- 權杖帶 `auth_time`（上次以密碼、Google、通行密鑰或啟用連結證明身分的時間，更新權杖時沿用）。新增或刪除通行密鑰、關閉兩步驟登入，需要 15 分鐘內登入過；只拿到登入狀態（例如被盜的 Cookie）無法替帳號加上後門。每新增一把通行密鑰都會寄信通知帳號信箱。
 - 上傳一律兩段式且同源：`POST <base>/uploads/` 簽出短效上傳權杖，`PUT <base>/uploads/file/?token=` 由 Worker 寫入 R2；伺服器決定 R2 key、檢查檔案魔數與大小，刊登照片只接受本人上傳的 key。
 - 限流以 Durable Object 原子計數（登入、註冊、驗證、搜尋、上傳、下單等）。
 - 前端 CSP 由建置時產生（`client/scripts/set-env.js`），正式環境為強制模式。
