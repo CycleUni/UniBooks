@@ -192,6 +192,7 @@ export async function applyOrderUpdate(
     set.meetupReminderSentAt = null;
   }
   if (newStatus === 'completed' && !order.completedAt) set.completedAt = now;
+  if (newStatus === 'handed_over') set.handedOverAt = now;
   if (
     newStatus === 'cancelled' &&
     oldStatus === 'accepted' &&
@@ -268,10 +269,12 @@ export async function applyOrderUpdate(
 export const AUTO_COMPLETE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** The instant an order in `handed_over` becomes due to auto-complete, as an ISO string. */
-export function autoCompleteDueAt(order: { meetupTime: string | null; updatedAt: string }): string {
+export function autoCompleteDueAt(order: { meetupTime: string | null; handedOverAt: string | null; updatedAt: string }): string {
   // Whichever is later, so a handover marked long after the meetup still
-  // leaves the buyer the full window to object.
-  const base = Math.max(order.meetupTime ? Date.parse(order.meetupTime) : 0, Date.parse(order.updatedAt));
+  // leaves the buyer the full window to object. (Rows handed over before
+  // handed_over_at existed were backfilled from updated_at.)
+  const handedOver = order.handedOverAt ?? order.updatedAt;
+  const base = Math.max(order.meetupTime ? Date.parse(order.meetupTime) : 0, Date.parse(handedOver));
   return new Date(base + AUTO_COMPLETE_AFTER_MS).toISOString();
 }
 

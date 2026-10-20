@@ -152,6 +152,14 @@ describe.skipIf(!schemaReady)('orders API', () => {
 
     res = await patch(`${order.id}`, seller.token, { status: 'handed_over' });
     expect(res.status).toBe(200);
+    expect(
+      (
+        await db
+          .select()
+          .from(orders)
+          .where(eq(orders.id, String(order.id)))
+      )[0].handedOverAt,
+    ).toBeTruthy();
     res = await patch(`${order.id}`, buyer.token, { status: 'completed' });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { completed_at: string | null }).completed_at).toBeTruthy();
@@ -346,7 +354,7 @@ describe.skipIf(!schemaReady)('cron jobs', () => {
     const seller = await makeUser('seller');
     const buyer = await makeUser('buyer');
     const day = 24 * 60 * 60_000;
-    const mk = async (meetupAgoDays: number, updatedAgoDays: number) => {
+    const mk = async (meetupAgoDays: number, updatedAgoDays: number, handedOverAgoDays: number | null = null) => {
       const l = await makeListing(seller.id);
       await db.update(listings).set({ status: 'reserved' }).where(eq(listings.id, l.id));
       const id = crypto.randomUUID();
@@ -364,10 +372,14 @@ describe.skipIf(!schemaReady)('cron jobs', () => {
         meetupTime: new Date(Date.now() - meetupAgoDays * day).toISOString(),
         createdAt: now(),
         updatedAt: new Date(Date.now() - updatedAgoDays * day).toISOString(),
+        handedOverAt: handedOverAgoDays === null ? null : new Date(Date.now() - handedOverAgoDays * day).toISOString(),
       });
       return { id, listingId: l.id };
     };
     const due = await mk(8, 8);
+    // Handed over 8 days ago; something else wrote the row yesterday. The window counts from the handover.
+    const touched = await mk(8, 1, 8);
+    const markedLate = await mk(10, 10, 1);
     const early = await mk(6, 6);
     const lateMark = await mk(10, 1); // meetup long ago, handover marked yesterday
     await runAutoComplete(env);
@@ -377,6 +389,8 @@ describe.skipIf(!schemaReady)('cron jobs', () => {
     expect(await listingStatus(due.listingId)).toBe('sold');
     expect((await status(early.id)).status).toBe('handed_over');
     expect((await status(lateMark.id)).status).toBe('handed_over');
+    expect((await status(touched.id)).status).toBe('completed');
+    expect((await status(markedLate.id)).status).toBe('handed_over');
     expect((await runAutoComplete(env)).completed_orders).toBe(0);
   });
 

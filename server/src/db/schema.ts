@@ -471,6 +471,9 @@ export const orders = sqliteTable(
     updatedAt: text('updated_at').notNull(),
     // Set once, when the buyer confirms receipt.
     completedAt: text('completed_at'),
+    // When the seller marked the handover: the auto-complete window counts
+    // from this (or the meetup, if later), not from whatever wrote the row last.
+    handedOverAt: text('handed_over_at'),
     // Set (1) when a party cancels an accepted order once its agreed meetup
     // time has passed: the only cancellation a no-show report may follow.
     // Decided under the order lock from the pre-cancel row, so a party

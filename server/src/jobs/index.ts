@@ -297,19 +297,22 @@ export const MAX_AUTO_COMPLETE_ORDERS_PER_RUN = 50;
  */
 export async function runAutoComplete(env: Env) {
   const db = createDb(env.DB);
-  // Cheap prefilter on the earlier of the two bases; the lock re-checks the real deadline.
+  // Due when both the handover and the meetup lie past the window (the same
+  // rule as autoCompleteDueAt, which the lock re-checks): no row that is not
+  // yet due can fill the batch and hold back one that is.
   const cutoff = new Date(Date.now() - AUTO_COMPLETE_AFTER_MS).toISOString();
+  const handedOver = sql`COALESCE(${orders.handedOverAt}, ${orders.updatedAt})`;
   const rows = await db
     .select({ id: orders.id, listingId: orders.listingId })
     .from(orders)
     .where(
       and(
         eq(orders.status, 'handed_over'),
-        lte(orders.updatedAt, cutoff),
-        sql`COALESCE(${orders.meetupTime}, ${orders.updatedAt}) <= ${cutoff}`,
+        sql`${handedOver} <= ${cutoff}`,
+        sql`(${orders.meetupTime} IS NULL OR ${orders.meetupTime} <= ${cutoff})`,
       ),
     )
-    .orderBy(asc(orders.updatedAt))
+    .orderBy(asc(handedOver))
     .limit(MAX_AUTO_COMPLETE_ORDERS_PER_RUN);
 
   let completed = 0;

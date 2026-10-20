@@ -57,6 +57,13 @@
       "when": 1792418685104,
       "tag": "0007_email_sent",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792539708656,
+      "tag": "0008_order_handed_over_at",
+      "breakpoints": true
     }
   ]
 }
