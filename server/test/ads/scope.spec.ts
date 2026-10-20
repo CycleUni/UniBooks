@@ -183,3 +183,27 @@ describe('public list cache', () => {
     expect(await titles()).toEqual([]);
   });
 });
+
+describe("an advertiser's schools", () => {
+  it("must be in the advertiser's regions unless it runs everywhere", async () => {
+    const body = (schools: number[], extra: Record<string, unknown> = {}) => ({
+      company_name: 'Schools',
+      contact_email: 's@example.com',
+      regions: ['TW'],
+      schools,
+      ...extra,
+    });
+    const hk = await call('/api/v1/admin/sponsors', { token: manager.token, body: body([2]) });
+    expect(hk.status).toBe(400);
+    expect(((await hk.json()) as any).error.fields.schools).toBeTruthy();
+    const tw = await call('/api/v1/admin/sponsors', { token: manager.token, body: body([1]) });
+    expect(tw.status).toBe(201);
+    const { id } = (await tw.json()) as { id: number };
+    expect((await call(`/api/v1/admin/sponsors/${id}`, { token: manager.token, method: 'PATCH', body: { schools: [1, 2] } })).status).toBe(
+      400,
+    );
+    expect(
+      (await call('/api/v1/admin/sponsors', { token: admin.token, body: body([1, 2], { regions: [], all_regions: true }) })).status,
+    ).toBe(201);
+  });
+});

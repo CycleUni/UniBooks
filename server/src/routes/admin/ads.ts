@@ -180,7 +180,17 @@ function assertMayLinkUser(scope: string[] | null, requested: string | null | un
 }
 
 /** Reference checks for regions / schools / user (main DB), user uniqueness (ads DB). */
-async function checkAdvertiserRefs(db: Database, adb: AdsDatabase, body: { regions?: string[]; schools?: number[]; user?: string | null }) {
+/**
+ * The ids an advertiser body names exist. `schoolRegions`: the regions its
+ * schools must belong to (the advertiser's own), or null when it runs
+ * everywhere.
+ */
+async function checkAdvertiserRefs(
+  db: Database,
+  adb: AdsDatabase,
+  body: { regions?: string[]; schools?: number[]; user?: string | null },
+  schoolRegions: string[] | null,
+) {
   const errors: Record<string, string[]> = {};
   if (body.regions?.length) {
     const found = new Set(
@@ -189,7 +199,8 @@ async function checkAdvertiserRefs(db: Database, adb: AdsDatabase, body: { regio
     if (body.regions.some((r) => !found.has(r))) errors.regions = [INVALID];
   }
   if (body.schools?.length) {
-    const found = new Set((await db.select({ id: schools.id }).from(schools).where(inList(schools.id, body.schools))).map((s) => s.id));
+    const rows = await db.select({ id: schools.id, regionCode: schools.regionCode }).from(schools).where(inList(schools.id, body.schools));
+    const found = new Set(rows.filter((s) => schoolRegions === null || schoolRegions.includes(s.regionCode)).map((s) => s.id));
     if (body.schools.some((s) => !found.has(s))) errors.schools = [INVALID];
   }
   if (body.user) {
@@ -239,7 +250,12 @@ adRoutes.post('/sponsors', async (c) => {
   const regionCodes = [...new Set(body.regions ?? [])];
   const schoolIds = [...new Set(body.schools ?? [])];
   assertMayLinkUser(await scopeOf(c), body.user, null);
-  await checkAdvertiserRefs(createDb(c.env.DB), adb, { regions: regionCodes, schools: schoolIds, user: body.user });
+  await checkAdvertiserRefs(
+    createDb(c.env.DB),
+    adb,
+    { regions: regionCodes, schools: schoolIds, user: body.user },
+    body.all_regions ? null : regionCodes,
+  );
   assertCanWrite(await scopeOf(c), body.all_regions ?? false, regionCodes);
   const db = adb;
   const now = new Date().toISOString();
@@ -294,11 +310,16 @@ async function updateAdvertiser(c: Context<AppEnv>) {
   assertMayLinkUser(scope, body.user, instance.userId);
   const regionCodes = body.regions ? [...new Set(body.regions)] : undefined;
   const schoolIds = body.schools ? [...new Set(body.schools)] : undefined;
-  await checkAdvertiserRefs(createDb(c.env.DB), db, {
-    regions: regionCodes,
-    schools: schoolIds,
-    user: body.user !== undefined && body.user !== instance.userId ? body.user : undefined,
-  });
+  await checkAdvertiserRefs(
+    createDb(c.env.DB),
+    db,
+    {
+      regions: regionCodes,
+      schools: schoolIds,
+      user: body.user !== undefined && body.user !== instance.userId ? body.user : undefined,
+    },
+    (body.all_regions ?? !!instance.allRegions) ? null : (regionCodes ?? stored),
+  );
   assertCanWrite(scope, body.all_regions ?? !!instance.allRegions, regionCodes ?? stored);
   const set: Partial<Advertiser> = { updatedAt: new Date().toISOString() };
   if (body.company_name !== undefined) set.companyName = body.company_name;

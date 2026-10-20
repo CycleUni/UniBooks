@@ -38,7 +38,12 @@ interface VerificationRow {
   schoolTranslations: string | null;
 }
 
-async function activeVerifications(db: Database, userIds: string[]): Promise<Map<string, VerificationRow[]>> {
+/**
+ * Each user's active verifications, limited to the regions in `scope` (a
+ * region manager sees nothing of a user's standing in regions they do not
+ * manage; null, an admin, sees every region).
+ */
+async function activeVerifications(db: Database, userIds: string[], scope: string[] | null): Promise<Map<string, VerificationRow[]>> {
   const out = new Map<string, VerificationRow[]>();
   if (!userIds.length) return out;
   const rows: VerificationRow[] = [];
@@ -62,6 +67,7 @@ async function activeVerifications(db: Database, userIds: string[]): Promise<Map
     );
   }
   for (const r of rows) {
+    if (scope !== null && !scope.includes(r.regionCode)) continue;
     const list = out.get(r.userId) ?? [];
     list.push(r);
     out.set(r.userId, list);
@@ -105,7 +111,7 @@ export function userJson(u: User, verifications: VerificationRow[], lang: string
 }
 
 async function serializeOne(c: Context<AppEnv>, db: Database, u: User) {
-  const vs = await activeVerifications(db, [u.id]);
+  const vs = await activeVerifications(db, [u.id], await scopeOf(c));
   return userJson(u, vs.get(u.id) ?? [], await resolveLanguage(c));
 }
 
@@ -167,6 +173,7 @@ userRoutes.get('/users', async (c) => {
   const vs = await activeVerifications(
     db,
     rows.map((u) => u.id),
+    await scopeOf(c),
   );
   const lang = await resolveLanguage(c);
   return c.json(
@@ -279,15 +286,17 @@ userRoutes.patch('/users/:id', async (c) => {
   let schoolUpdate: { regionCode: string; schoolId: number | null } | undefined;
   if ('school' in data) {
     const raw = data.school;
+    const regionCode = regionFor();
     let newSchoolId: number | null = null;
     if (raw !== null) {
       const id = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw) : NaN;
       if (!Number.isSafeInteger(id)) apiError(400, 'admin.errInvalidField');
-      const [s] = await db.select({ id: schools.id }).from(schools).where(eq(schools.id, id)).limit(1);
-      if (!s) apiError(400, 'admin.errInvalidField');
+      // The school of a region's verification is one of that region's schools.
+      const [s] = await db.select({ id: schools.id, regionCode: schools.regionCode }).from(schools).where(eq(schools.id, id)).limit(1);
+      if (!s || s.regionCode !== regionCode) apiError(400, 'admin.errInvalidField');
       newSchoolId = s.id;
     }
-    schoolUpdate = { regionCode: regionFor(), schoolId: newSchoolId };
+    schoolUpdate = { regionCode, schoolId: newSchoolId };
   }
 
   let verifiedUpdate: { regionCode: string; value: boolean } | undefined;
@@ -396,7 +405,7 @@ userRoutes.patch('/managers/:id', requireAdmin(), async (c) => {
     );
   }
   const [fresh] = await db.select().from(users).where(eq(users.id, target.id)).limit(1);
-  // Serialized without a request context: names unlocalized.
-  const vs = await activeVerifications(db, [fresh.id]);
+  // Serialized without a request context: names unlocalized. Admins only, so every region.
+  const vs = await activeVerifications(db, [fresh.id], null);
   return c.json(userJson(fresh, vs.get(fresh.id) ?? [], null));
 });

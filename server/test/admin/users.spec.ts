@@ -60,3 +60,26 @@ describe('switching an account on or off', () => {
     ).toBe(403);
   });
 });
+
+describe("a region manager sees and sets only their regions' standing", () => {
+  it("lists and shows only the manager's regions' verifications", async () => {
+    const both = await createUser('users-scope-both@example.com');
+    await verifyIn(both, 'TW');
+    await verifyIn(both, 'HK');
+    const mine = (await (await call(`/api/v1/admin/users/${both}`, { token: twManager.token })).json()) as any;
+    expect(mine.regions).toEqual(['TW']);
+    expect(mine.verifications.map((v: any) => v.region)).toEqual(['TW']);
+    const all = (await (await call(`/api/v1/admin/users/${both}`, { token: root.token })).json()) as any;
+    expect(all.regions.sort()).toEqual(['HK', 'TW']);
+  });
+
+  it("refuses a school from another region for a region's verification", async () => {
+    const u = await createUser('users-scope-school@example.com');
+    await verifyIn(u, 'TW');
+    const patch = (token: string, school: number) =>
+      call(`/api/v1/admin/users/${u}`, { token, method: 'PATCH', body: { region: 'TW', school } });
+    expect((await patch(twManager.token, 2)).status).toBe(400); // HKU is in HK
+    expect((await patch(root.token, 2)).status).toBe(400);
+    expect((await patch(twManager.token, 1)).status).toBe(200);
+  });
+});
