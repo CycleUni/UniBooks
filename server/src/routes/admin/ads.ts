@@ -21,7 +21,7 @@ import {
 } from '../../db';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../../lib/http';
 import { likeContains, notFound, regionParam, scopeOf, intId } from '../../services/admin/scope';
-import { ADS_VERSION_KEY, bumpVersion } from '../../services/admin/adCache';
+import { invalidate } from '../../lib/cache';
 import { adCounts, ZERO_COUNTS, type AdCounts } from '../../services/admin/adAnalytics';
 import { deleteAdImage, isInternalImage, resolveAdImage, tmpAdPrefix } from '../../services/admin/uploads';
 import { issueUpload, storeUpload } from '../../lib/upload';
@@ -33,7 +33,7 @@ import { parseJsonArray } from '../../lib/json';
  *
  * Advertisers and ads live in the ads database (DB_ADS); regions, schools
  * and users they point at are checked against the main DB (DB). Every write
- * bumps `ads:ver` so the cached public ad list changes at once.
+ * moves the `ads` cache version so the cached public ad list changes at once.
  */
 export const adRoutes = new Hono<AppEnv>();
 
@@ -91,7 +91,9 @@ async function assertAdvertiserWritable(c: Context<AppEnv>, adb: AdsDatabase, a:
 }
 
 /** Make the cached public ad list reflect this write. */
-const invalidateAds = (c: Context<AppEnv>) => bumpVersion(c.env.KV, ADS_VERSION_KEY);
+const invalidateAds = (c: Context<AppEnv>) =>
+  // A failed bump leaves at most TTL-old entries; never fail the write for it.
+  invalidate(c.env, 'ads').catch((e) => console.warn('[admin] ads cache invalidation failed', e));
 
 async function advertiserRelations(db: AdsDatabase, ids: number[]) {
   const regionsBy = new Map<number, string[]>();

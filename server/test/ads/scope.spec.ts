@@ -159,7 +159,7 @@ describe('admin ad list numbers', () => {
 });
 
 describe('public list cache', () => {
-  it('serves the cached list until an admin write bumps ads:ver', async () => {
+  it('serves the cached list until an admin write moves the ads cache version', async () => {
     const adv = await advertiser({ name: 'Cached Co', regions: ['TW'] });
     const id = await ad(adv, { title: 'Before' });
     const titles = async () =>

@@ -19,6 +19,8 @@ import { takePlatformRate } from '../middleware/rateLimit';
  *   search   course facets (they follow categories)
  *   sitemap  sitemap index and pages (listing/book changes are not tracked:
  *            the TTL alone bounds staleness)
+ *   ads      the public ad list (admin ad and advertiser edits; entries
+ *            built by services/admin/adCache.ts)
  *
  * A route that writes source rows says so with `invalidates(...)` next to
  * its handler, so a new write route cannot quietly leave stale copies.
@@ -31,7 +33,7 @@ import { takePlatformRate } from '../middleware/rateLimit';
  * change gets a new URL — no copy from its HTTP cache — and the server skips
  * its memo for it. Other visitors keep their browser copy until max-age.
  */
-export type CacheNamespace = 'ref' | 'sitemap' | 'search';
+export type CacheNamespace = 'ref' | 'sitemap' | 'search' | 'ads';
 
 const MIN_TTL = 60; // KV's minimum expirationTtl
 const versionMemo = new Map<CacheNamespace, { value: string; at: number }>();
@@ -64,6 +66,16 @@ async function version(env: Env, ns: CacheNamespace, want?: string): Promise<str
   const value = (await env.KV.get(`c:ver:${ns}`)) ?? '0';
   versionMemo.set(ns, { value, at: Date.now() });
   return value;
+}
+
+/** `ns`'s current version, for keys built outside cached(); '0' when KV cannot be read. */
+export async function currentVersion(env: Env, ns: CacheNamespace): Promise<string> {
+  try {
+    return await version(env, ns);
+  } catch (e) {
+    console.warn(`[cache] version read failed for ${ns}`, e);
+    return '0';
+  }
 }
 
 /**

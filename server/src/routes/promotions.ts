@@ -9,8 +9,8 @@ import { optionalAuthMiddleware } from '../middleware/auth';
 import { takePlatformRate } from '../middleware/rateLimit';
 import { parseJsonArray } from '../lib/json';
 import { schoolFilterId } from '../services/admin/schoolCodes';
-import { ADS_VERSION_KEY, cacheVersion, cachedJson, versionedKey } from '../services/admin/adCache';
-import { edgeCache } from '../lib/cache';
+import { cachedJson, versionedKey } from '../services/admin/adCache';
+import { currentVersion, edgeCache } from '../lib/cache';
 import { isSafeTargetUrl } from './admin/ads';
 
 /**
@@ -26,7 +26,7 @@ export const promotionRoutes = new Hono<AppEnv>();
 /** Rate limit for view / click events. */
 const AD_STATS_RATE = '60/min';
 const AD_LIST_RATE = '120/min';
-/** How long a public ad list stays cached; admin writes bump ads:ver so edits show at once. */
+/** How long a public ad list stays cached; admin writes move the 'ads' cache version so edits show at once. */
 const ACTIVE_TTL = 300;
 
 /** An ad the public may see right now: active, in its run, and its advertiser active. */
@@ -46,7 +46,7 @@ promotionRoutes.get('/active', async (c) => {
   // under the ads version, so admin edits still show at once. Browsers do
   // not keep it (an edit would wait for their copy to expire).
   if (region && c.req.query('region')?.toUpperCase() === region.code) {
-    return edgeCache(c, await cacheVersion(c.env.KV, ADS_VERSION_KEY), () => activeAds(c), { edgeTtl: ACTIVE_TTL });
+    return edgeCache(c, await currentVersion(c.env, 'ads'), () => activeAds(c), { edgeTtl: ACTIVE_TTL });
   }
   return activeAds(c);
 });
@@ -62,7 +62,7 @@ async function activeAds(c: Context<AppEnv>): Promise<Response> {
   const schoolParam = c.req.query('school') ?? '';
   const schoolId = schoolParam ? await schoolFilterId(createDb(c.env.DB), region.code, schoolParam) : null;
   if (schoolParam && !schoolId) return c.json(page.wrap([], 0));
-  const key = await versionedKey(c.env.KV, ADS_VERSION_KEY, 'ads:active', [region.code, position, schoolId ?? '', page.limit, page.offset]);
+  const key = await versionedKey(c.env, 'ads', 'ads:active', [region.code, position, schoolId ?? '', page.limit, page.offset]);
   // Only the rows are cached; the pagination links are built for this request.
   const cachedPage = await cachedJson(c.env.KV, key, ACTIVE_TTL, async () => {
     const adsDb = createAdsDb(c.env.DB_ADS);

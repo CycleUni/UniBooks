@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { call, seedReference } from '../accounts/helpers';
 import { ad, advertiser, staff } from '../ads/helpers';
-import { ADS_VERSION_KEY, bumpVersion } from '../../src/services/admin/adCache';
+import { invalidate } from '../../src/lib/cache';
 
 let root: { id: string; token: string };
 
@@ -73,7 +73,7 @@ describe('edge cache for the public ad list', () => {
     expect(cachedRes.headers.get('Cache-Control')).toBeNull();
     expect(await titles(cachedRes)).not.toContain('Edge second');
 
-    await bumpVersion(env.KV, ADS_VERSION_KEY);
+    await invalidate(env, 'ads');
     expect(await titles(await call(ACTIVE))).toContain('Edge second');
   });
 });
