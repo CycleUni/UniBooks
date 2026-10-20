@@ -31,6 +31,7 @@ import { emailAlreadyUsed, isPlainEmail, isValidEduEmail, resolveSchoolFromEmail
 import { GoogleTokenInvalid, GoogleUnavailable, verifyGoogleIdToken } from '../services/accounts/google';
 import { EMAIL_LANGUAGE_AUTO, EMAIL_LANGUAGES, resolveLanguage } from '../services/accounts/i18n';
 import {
+  accountDisabled,
   deleteAccount,
   getUser,
   getUserByEmail,
@@ -38,6 +39,7 @@ import {
   nameColumns,
   serializePublicUser,
   serializeUser,
+  touchLastLogin,
 } from '../services/accounts/users';
 import {
   beginSecondFactor,
@@ -118,10 +120,6 @@ async function sendLinkEmail(c: C, kind: AccountLinkKind, userId: string, to: st
   } catch (e) {
     console.error(`[accounts] could not queue ${kind} email for user ${userId}`, e);
   }
-}
-
-function accountDisabled(user: { isActive: number; isBanned: number; deletedAt: string | null }): boolean {
-  return !user.isActive || !!user.isBanned || !!user.deletedAt;
 }
 
 /** The boolean spellings accepted (true/false, 1/0, yes/no, on/off, t/f, y/n), or undefined for anything else. */
@@ -522,13 +520,9 @@ accountRoutes.post('/login', rateLimit('login', RATES.login), async (c) => {
   const second = await beginSecondFactor(c, user);
   if (second) return second;
   setSession(c, await issueTokens(c.env, user.id));
-  await touchLastLogin(c, user.id);
+  await touchLastLogin(c.env, user.id);
   return c.json({ code: 'auth.loginSuccess', user_id: user.id });
 });
-
-async function touchLastLogin(c: C, userId: string): Promise<void> {
-  await createDb(c.env.DB).update(users).set({ lastLoginAt: nowIso() }).where(eq(users.id, userId)).run();
-}
 
 async function setPassword(c: C, userId: string, password: string): Promise<void> {
   const passwordHash = await hashPassword(password);
@@ -655,7 +649,7 @@ accountRoutes.post('/google', rateLimit('login', RATES.login), async (c) => {
   const second = await beginSecondFactor(c, user);
   if (second) return second;
   setSession(c, await issueTokens(c.env, user.id));
-  await touchLastLogin(c, user.id);
+  await touchLastLogin(c.env, user.id);
   const region = await getRegion(c);
   const isVerified = region ? await isVerifiedIn(c.env, user.id, region.code) : false;
   return c.json({ code: 'auth.loginSuccess', user_id: user.id, user: { is_verified: isVerified } });

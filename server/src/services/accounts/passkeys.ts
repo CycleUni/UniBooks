@@ -17,7 +17,7 @@ import { nowIso } from '../../lib/time';
 import { issueTokens } from './tokens';
 import { assertRecentSignIn } from '../../middleware/auth';
 import type { EmailMessage } from '../../queues/types';
-import { getUser } from './users';
+import { accountDisabled, getUser, touchLastLogin } from './users';
 import type { ChallengeRecord, ChallengeStore } from '../../durable-objects/ChallengeStore';
 
 export type { ChallengeRecord } from '../../durable-objects/ChallengeStore';
@@ -74,27 +74,25 @@ export async function loadCatalogue(env: AppEnv['Bindings'], origin = 'http://lo
 /**
  * Default passkey label derived from catalogue for aaguid, or deviceType/transports.
  */
-export function defaultPasskeyName(
-  optionsOrUserAgent?:
-    | {
-        aaguid?: string | null;
-        catalogue?: PasskeyCatalogue;
-        deviceType?: string;
-        transports?: string[] | null;
-      }
-    | string
-    | null,
-): string {
-  if (typeof optionsOrUserAgent === 'string' || optionsOrUserAgent === null || optionsOrUserAgent === undefined) {
-    return 'Passkey';
+export function defaultPasskeyName({
+  aaguid,
+  catalogue,
+  deviceType,
+  transports: given,
+}: {
+  aaguid?: string | null;
+  catalogue?: PasskeyCatalogue;
+  deviceType?: string;
+  transports?: string[] | null;
+}): string {
+  const known = aaguid ? catalogue?.[aaguid]?.name : undefined;
+  if (known) {
+    return known;
   }
-  if (optionsOrUserAgent.aaguid && optionsOrUserAgent.catalogue && optionsOrUserAgent.catalogue[optionsOrUserAgent.aaguid]?.name) {
-    return optionsOrUserAgent.catalogue[optionsOrUserAgent.aaguid].name;
-  }
-  if (optionsOrUserAgent.deviceType === 'multiDevice') {
+  if (deviceType === 'multiDevice') {
     return 'Passkey (synced)';
   }
-  const transports = optionsOrUserAgent.transports ?? [];
+  const transports = given ?? [];
   if (transports.includes('usb') || transports.includes('nfc')) {
     return 'Security key';
   }
@@ -108,14 +106,6 @@ function webAuthnConfig(reqUrl: string) {
     expectedOrigin: url.origin,
     rpName: 'UniBooks',
   };
-}
-
-function accountDisabled(user: { isActive: number; isBanned: number; deletedAt: string | null }): boolean {
-  return !user.isActive || !!user.isBanned || !!user.deletedAt;
-}
-
-async function touchLastLogin(c: C, userId: string): Promise<void> {
-  await createDb(c.env.DB).update(users).set({ lastLoginAt: nowIso() }).where(eq(users.id, userId)).run();
 }
 
 /**
@@ -333,7 +323,7 @@ export async function verifyPasskeyLogin(c: C) {
     .where(eq(passkeys.id, passkey.id))
     .run();
 
-  await touchLastLogin(c, user.id);
+  await touchLastLogin(c.env, user.id);
   setSession(c, await issueTokens(c.env, user.id));
   return c.json({ code: 'auth.loginSuccess', user_id: user.id });
 }
@@ -434,7 +424,7 @@ export async function verifySecondFactor(c: C) {
     .where(eq(passkeys.id, passkey.id))
     .run();
 
-  await touchLastLogin(c, user.id);
+  await touchLastLogin(c.env, user.id);
   setSession(c, await issueTokens(c.env, user.id));
   return c.json({ code: 'auth.loginSuccess', user_id: user.id });
 }

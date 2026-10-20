@@ -20,6 +20,7 @@ import { localizedName, type Row } from './regionData';
 import { cancelEmailChangeStatement } from './oneTimeTokens';
 import { revokeAllTokensForUser } from './tokens';
 import { newHexId } from '../../lib/uuid';
+import { nowIso } from '../../lib/time';
 import { cancelOpenOrdersForUser } from '../orders/cancel';
 import { disconnectUser } from '../messaging/disconnect';
 
@@ -40,6 +41,15 @@ export function publicAvatarUrl(user: { avatarUrl?: string | null; showAvatar?: 
 }
 
 export const isStaffRole = (role: string) => role === 'staff' || role === 'admin';
+
+/** Switched off, banned or deleted: no sign-in of any kind gets past this. */
+export function accountDisabled(user: { isActive: number; isBanned: number; deletedAt: string | null }): boolean {
+  return !user.isActive || !!user.isBanned || !!user.deletedAt;
+}
+
+export async function touchLastLogin(env: Env, userId: string): Promise<void> {
+  await createDb(env.DB).update(users).set({ lastLoginAt: nowIso() }).where(eq(users.id, userId)).run();
+}
 
 export async function getUser(env: Env, id: string): Promise<User | null> {
   const [row] = await createDb(env.DB).select().from(users).where(eq(users.id, id)).limit(1);
