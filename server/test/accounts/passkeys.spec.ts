@@ -63,14 +63,14 @@ afterEach(() => {
 describe('Passkeys (WebAuthn)', () => {
   it('options endpoints: auth required for register, public for login, challenge stored in DO', async () => {
     // Register options requires auth
-    const unauthed = await call('/api/v1/auth/passkeys/register/options/', { method: 'POST' });
+    const unauthed = await call('/api/v1/auth/passkeys/register/options', { method: 'POST' });
     expect(unauthed.status).toBe(401);
 
     const userEmail = 'passkey-opts@example.com';
     const userId = await createUser(userEmail);
     const { access } = await login(userEmail);
 
-    const regRes = await call('/api/v1/auth/passkeys/register/options/', { method: 'POST', token: access });
+    const regRes = await call('/api/v1/auth/passkeys/register/options', { method: 'POST', token: access });
     expect(regRes.status).toBe(200);
     const regData = (await regRes.json()) as { challenge_id: string; options: any };
     expect(regData.challenge_id).toBeTruthy();
@@ -86,7 +86,7 @@ describe('Passkeys (WebAuthn)', () => {
     });
 
     // Login options is public (no auth)
-    const loginRes = await call('/api/v1/auth/passkeys/login/options/', { method: 'POST' });
+    const loginRes = await call('/api/v1/auth/passkeys/login/options', { method: 'POST' });
     expect(loginRes.status).toBe(200);
     const loginData = (await loginRes.json()) as { challenge_id: string; options: any };
     expect(loginData.challenge_id).toBeTruthy();
@@ -107,7 +107,7 @@ describe('Passkeys (WebAuthn)', () => {
     const { access } = await login(userEmail);
 
     // Unknown challenge_id
-    const unknownRes = await call('/api/v1/auth/passkeys/register/verify/', {
+    const unknownRes = await call('/api/v1/auth/passkeys/register/verify', {
       token: access,
       body: { challenge_id: 'non-existent', response: { id: 'x' } },
     });
@@ -116,7 +116,7 @@ describe('Passkeys (WebAuthn)', () => {
 
     // Wrong type in challenge (type: 'auth' instead of 'reg')
     await challengeStore('auth-type-chal').put({ challenge: 'c1', type: 'auth' }, 120);
-    const wrongTypeRes = await call('/api/v1/auth/passkeys/register/verify/', {
+    const wrongTypeRes = await call('/api/v1/auth/passkeys/register/verify', {
       token: access,
       body: { challenge_id: 'auth-type-chal', response: { id: 'x' } },
     });
@@ -125,7 +125,7 @@ describe('Passkeys (WebAuthn)', () => {
 
     // Challenge for another user
     await challengeStore('other-user-chal').put({ challenge: 'c2', type: 'reg', userId: 'other-id' }, 120);
-    const otherUserRes = await call('/api/v1/auth/passkeys/register/verify/', {
+    const otherUserRes = await call('/api/v1/auth/passkeys/register/verify', {
       token: access,
       body: { challenge_id: 'other-user-chal', response: { id: 'x' } },
     });
@@ -133,11 +133,11 @@ describe('Passkeys (WebAuthn)', () => {
     expect(await otherUserRes.json()).toEqual({ error: { code: 'auth.errPasskeyChallenge' } });
 
     // Valid challenge gets consumed; second try fails
-    const optRes = await call('/api/v1/auth/passkeys/register/options/', { method: 'POST', token: access });
+    const optRes = await call('/api/v1/auth/passkeys/register/options', { method: 'POST', token: access });
     const { challenge_id } = (await optRes.json()) as { challenge_id: string };
 
     mockRegVerifyThrows = new Error('simulated verify failure');
-    const firstTry = await call('/api/v1/auth/passkeys/register/verify/', {
+    const firstTry = await call('/api/v1/auth/passkeys/register/verify', {
       token: access,
       body: { challenge_id, response: { id: 'x', response: {} } },
     });
@@ -145,7 +145,7 @@ describe('Passkeys (WebAuthn)', () => {
     expect(await firstTry.json()).toEqual({ error: { code: 'auth.errPasskeyRegistration' } });
 
     // Replay with the same challenge_id: DO challenge is now consumed
-    const replayTry = await call('/api/v1/auth/passkeys/register/verify/', {
+    const replayTry = await call('/api/v1/auth/passkeys/register/verify', {
       token: access,
       body: { challenge_id, response: { id: 'x', response: {} } },
     });
@@ -158,7 +158,7 @@ describe('Passkeys (WebAuthn)', () => {
     const userId = await createUser(userEmail);
     const { access } = await login(userEmail);
 
-    const optRes = await call('/api/v1/auth/passkeys/register/options/', { method: 'POST', token: access });
+    const optRes = await call('/api/v1/auth/passkeys/register/options', { method: 'POST', token: access });
     const { challenge_id } = (await optRes.json()) as { challenge_id: string };
 
     const credId = 'test-cred-id-1';
@@ -182,7 +182,7 @@ describe('Passkeys (WebAuthn)', () => {
       },
     };
 
-    const verifyRes = await call('/api/v1/auth/passkeys/register/verify/', {
+    const verifyRes = await call('/api/v1/auth/passkeys/register/verify', {
       token: access,
       body: {
         challenge_id,
@@ -210,7 +210,7 @@ describe('Passkeys (WebAuthn)', () => {
     await challengeStore('auth-chal-1').put({ challenge: 'c-auth', type: 'auth' }, 120);
 
     // Non-existent credential id
-    const resUnknownCred = await call('/api/v1/auth/passkeys/login/verify/', {
+    const resUnknownCred = await call('/api/v1/auth/passkeys/login/verify', {
       body: { challenge_id: 'auth-chal-1', response: { id: 'unknown-cred' } },
     });
     expect(resUnknownCred.status).toBe(401);
@@ -231,7 +231,7 @@ describe('Passkeys (WebAuthn)', () => {
     await challengeStore('auth-chal-2').put({ challenge: 'c-auth', type: 'auth' }, 120);
     mockAuthVerifyThrows = new Error('verification failed');
 
-    const resFailedVerify = await call('/api/v1/auth/passkeys/login/verify/', {
+    const resFailedVerify = await call('/api/v1/auth/passkeys/login/verify', {
       body: { challenge_id: 'auth-chal-2', response: { id: credId } },
     });
     expect(resFailedVerify.status).toBe(401);
@@ -263,7 +263,7 @@ describe('Passkeys (WebAuthn)', () => {
       },
     };
 
-    const res = await call('/api/v1/auth/passkeys/login/verify/', {
+    const res = await call('/api/v1/auth/passkeys/login/verify', {
       body: { challenge_id: 'auth-chal-banned', response: { id: credId } },
     });
     expect(res.status).toBe(403);
@@ -295,7 +295,7 @@ describe('Passkeys (WebAuthn)', () => {
       },
     };
 
-    const res = await call('/api/v1/auth/passkeys/login/verify/', {
+    const res = await call('/api/v1/auth/passkeys/login/verify', {
       body: { challenge_id: 'auth-chal-ok', response: { id: credId } },
     });
     expect(res.status).toBe(200);
@@ -323,7 +323,7 @@ describe('Passkeys (WebAuthn)', () => {
     const credId = 'cred-2fa';
 
     // Nothing to ask for yet.
-    const refused = await call('/api/v1/auth/passkeys/2fa/', { method: 'PUT', token: access, body: { enabled: true } });
+    const refused = await call('/api/v1/auth/passkeys/2fa', { method: 'PUT', token: access, body: { enabled: true } });
     expect(refused.status).toBe(409);
 
     await env.DB.prepare(
@@ -332,7 +332,7 @@ describe('Passkeys (WebAuthn)', () => {
     )
       .bind(credId, userId)
       .run();
-    const on = await call('/api/v1/auth/passkeys/2fa/', { method: 'PUT', token: access, body: { enabled: true } });
+    const on = await call('/api/v1/auth/passkeys/2fa', { method: 'PUT', token: access, body: { enabled: true } });
     expect(on.status).toBe(200);
 
     // Password alone no longer starts a session.
@@ -345,19 +345,19 @@ describe('Passkeys (WebAuthn)', () => {
 
     // A first-step (discoverable) challenge cannot stand in for the second step.
     await challengeStore('plain-auth').put({ challenge: 'c', type: 'auth' }, 120);
-    const wrongType = await call('/api/v1/auth/passkeys/2fa/verify/', {
+    const wrongType = await call('/api/v1/auth/passkeys/2fa/verify', {
       body: { challenge_id: 'plain-auth', response: { id: credId } },
     });
     expect(wrongType.status).toBe(400);
 
     // A failed answer spends the challenge.
     mockAuthVerifyThrows = new Error('bad signature');
-    const bad = await call('/api/v1/auth/passkeys/2fa/verify/', {
+    const bad = await call('/api/v1/auth/passkeys/2fa/verify', {
       body: { challenge_id: pending.challenge_id, response: { id: credId } },
     });
     expect(bad.status).toBe(401);
     mockAuthVerifyThrows = null;
-    const replay = await call('/api/v1/auth/passkeys/2fa/verify/', {
+    const replay = await call('/api/v1/auth/passkeys/2fa/verify', {
       body: { challenge_id: pending.challenge_id, response: { id: credId } },
     });
     expect(replay.status).toBe(400);
@@ -375,14 +375,14 @@ describe('Passkeys (WebAuthn)', () => {
       verified: true,
       authenticationInfo: { newCounter: 1, credentialDeviceType: 'singleDevice', credentialBackedUp: false },
     };
-    const foreign = await call('/api/v1/auth/passkeys/2fa/verify/', {
+    const foreign = await call('/api/v1/auth/passkeys/2fa/verify', {
       body: { challenge_id: second.challenge_id, response: { id: 'cred-2fa-other' } },
     });
     expect(foreign.status).toBe(401);
 
     // The right passkey completes the sign-in.
     const third = (await (await call('/api/v1/auth/login', { body: { email, password: PASSWORD } })).json()) as any;
-    const done = await call('/api/v1/auth/passkeys/2fa/verify/', {
+    const done = await call('/api/v1/auth/passkeys/2fa/verify', {
       body: { challenge_id: third.challenge_id, response: { id: credId } },
     });
     expect(done.status).toBe(200);
@@ -394,7 +394,7 @@ describe('Passkeys (WebAuthn)', () => {
     const me = await call('/api/v1/auth/me', { token: session.access });
     expect(me.status).toBe(200);
     expect(((await me.json()) as any).passkey_2fa).toBe(true);
-    const del = await call(`/api/v1/auth/passkeys/${credId}/`, { method: 'DELETE', token: session.access });
+    const del = await call(`/api/v1/auth/passkeys/${credId}`, { method: 'DELETE', token: session.access });
     expect(del.status).toBe(204);
     const row = await env.DB.prepare('SELECT passkey_2fa FROM users WHERE id = ?').bind(userId).first<any>();
     expect(row.passkey_2fa).toBe(0);
@@ -427,20 +427,20 @@ describe('Passkeys (WebAuthn)', () => {
     ]);
 
     // List: User A sees only A's passkeys
-    const listRes = await call('/api/v1/auth/passkeys/', { token: accessA });
+    const listRes = await call('/api/v1/auth/passkeys', { token: accessA });
     expect(listRes.status).toBe(200);
     const list = (await listRes.json()) as any[];
     expect(list.length).toBe(2);
     expect(list.map((p) => p.id)).toEqual([credA2, credA1]);
 
     // List: User B sees only B's passkeys
-    const listBRes = await call('/api/v1/auth/passkeys/', { token: accessB });
+    const listBRes = await call('/api/v1/auth/passkeys', { token: accessB });
     expect(listBRes.status).toBe(200);
     const listB = (await listBRes.json()) as any[];
     expect(listB.map((p) => p.id)).toEqual([credB]);
 
     // Rename: User A renames own passkey
-    const renameRes = await call(`/api/v1/auth/passkeys/${credA1}/`, {
+    const renameRes = await call(`/api/v1/auth/passkeys/${credA1}`, {
       method: 'PATCH',
       token: accessA,
       body: { name: 'Renamed Key 1' },
@@ -449,7 +449,7 @@ describe('Passkeys (WebAuthn)', () => {
     expect(await renameRes.json()).toEqual({ id: credA1, name: 'Renamed Key 1' });
 
     // Rename: User A cannot rename User B's passkey -> 404
-    const renameOther = await call(`/api/v1/auth/passkeys/${credB}/`, {
+    const renameOther = await call(`/api/v1/auth/passkeys/${credB}`, {
       method: 'PATCH',
       token: accessA,
       body: { name: 'Hack' },
@@ -457,14 +457,14 @@ describe('Passkeys (WebAuthn)', () => {
     expect(renameOther.status).toBe(404);
 
     // Delete: User A cannot delete User B's passkey -> 404
-    const deleteOther = await call(`/api/v1/auth/passkeys/${credB}/`, {
+    const deleteOther = await call(`/api/v1/auth/passkeys/${credB}`, {
       method: 'DELETE',
       token: accessA,
     });
     expect(deleteOther.status).toBe(404);
 
     // Delete: User A has password, so deleting is allowed even if 1 remains
-    const deleteA1 = await call(`/api/v1/auth/passkeys/${credA1}/`, {
+    const deleteA1 = await call(`/api/v1/auth/passkeys/${credA1}`, {
       method: 'DELETE',
       token: accessA,
     });
@@ -485,7 +485,7 @@ describe('Passkeys (WebAuthn)', () => {
     const tokens = await issueTokens(env, idNoPass);
 
     // Try deleting the only passkey
-    const deleteLastRes = await call(`/api/v1/auth/passkeys/${credOnly}/`, {
+    const deleteLastRes = await call(`/api/v1/auth/passkeys/${credOnly}`, {
       method: 'DELETE',
       token: tokens.access,
     });
@@ -500,7 +500,7 @@ describe('Passkeys (WebAuthn)', () => {
       .bind(credSecond, idNoPass)
       .run();
 
-    const deleteOneOfTwo = await call(`/api/v1/auth/passkeys/${credSecond}/`, {
+    const deleteOneOfTwo = await call(`/api/v1/auth/passkeys/${credSecond}`, {
       method: 'DELETE',
       token: tokens.access,
     });
@@ -628,7 +628,7 @@ describe('Passkeys (WebAuthn)', () => {
 
     // 1. Matches catalogue -> name is catalogue name
     clearCatalogueCache();
-    let optRes = await call('/api/v1/auth/passkeys/register/options/', { method: 'POST', token: access });
+    let optRes = await call('/api/v1/auth/passkeys/register/options', { method: 'POST', token: access });
     let { challenge_id } = (await optRes.json()) as { challenge_id: string };
 
     mockRegVerifyResult = {
@@ -651,7 +651,7 @@ describe('Passkeys (WebAuthn)', () => {
       },
     };
 
-    let verifyRes = await call('/api/v1/auth/passkeys/register/verify/', {
+    let verifyRes = await call('/api/v1/auth/passkeys/register/verify', {
       token: access,
       body: {
         challenge_id,
@@ -662,7 +662,7 @@ describe('Passkeys (WebAuthn)', () => {
     expect(await verifyRes.json()).toEqual({ id: 'cred-cat-name', name: 'YubiKey 5 NFC' });
 
     // 2. All-zero AAGUID (iCloud Keychain fallback) with multiDevice -> 'Passkey (synced)'
-    optRes = await call('/api/v1/auth/passkeys/register/options/', { method: 'POST', token: access });
+    optRes = await call('/api/v1/auth/passkeys/register/options', { method: 'POST', token: access });
     challenge_id = ((await optRes.json()) as { challenge_id: string }).challenge_id;
 
     mockRegVerifyResult = {
@@ -685,7 +685,7 @@ describe('Passkeys (WebAuthn)', () => {
       },
     };
 
-    verifyRes = await call('/api/v1/auth/passkeys/register/verify/', {
+    verifyRes = await call('/api/v1/auth/passkeys/register/verify', {
       token: access,
       body: {
         challenge_id,
@@ -696,7 +696,7 @@ describe('Passkeys (WebAuthn)', () => {
     expect(await verifyRes.json()).toEqual({ id: 'cred-icloud-fallback', name: 'Passkey (synced)' });
 
     // 3. Unknown AAGUID with usb transport -> 'Security key'
-    optRes = await call('/api/v1/auth/passkeys/register/options/', { method: 'POST', token: access });
+    optRes = await call('/api/v1/auth/passkeys/register/options', { method: 'POST', token: access });
     challenge_id = ((await optRes.json()) as { challenge_id: string }).challenge_id;
 
     mockRegVerifyResult = {
@@ -719,7 +719,7 @@ describe('Passkeys (WebAuthn)', () => {
       },
     };
 
-    verifyRes = await call('/api/v1/auth/passkeys/register/verify/', {
+    verifyRes = await call('/api/v1/auth/passkeys/register/verify', {
       token: access,
       body: {
         challenge_id,
@@ -730,7 +730,7 @@ describe('Passkeys (WebAuthn)', () => {
     expect(await verifyRes.json()).toEqual({ id: 'cred-security-key', name: 'Security key' });
 
     // 4. Unknown AAGUID, singleDevice, internal transport -> 'Passkey'
-    optRes = await call('/api/v1/auth/passkeys/register/options/', { method: 'POST', token: access });
+    optRes = await call('/api/v1/auth/passkeys/register/options', { method: 'POST', token: access });
     challenge_id = ((await optRes.json()) as { challenge_id: string }).challenge_id;
 
     mockRegVerifyResult = {
@@ -753,7 +753,7 @@ describe('Passkeys (WebAuthn)', () => {
       },
     };
 
-    verifyRes = await call('/api/v1/auth/passkeys/register/verify/', {
+    verifyRes = await call('/api/v1/auth/passkeys/register/verify', {
       token: access,
       body: {
         challenge_id,
@@ -800,7 +800,7 @@ describe('Passkeys (WebAuthn)', () => {
       ).bind(cred2, userId),
     ]);
 
-    const res = await call('/api/v1/auth/passkeys/', { token: access });
+    const res = await call('/api/v1/auth/passkeys', { token: access });
     expect(res.status).toBe(200);
     const list = (await res.json()) as any[];
     expect(list.length).toBe(2);

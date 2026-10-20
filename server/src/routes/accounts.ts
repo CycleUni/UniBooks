@@ -748,21 +748,12 @@ accountRoutes.post(
 accountRoutes.post('/passkeys/login/options', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
   return getPasskeyLoginOptions(c);
 });
-accountRoutes.post('/passkeys/login/options/', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
-  return getPasskeyLoginOptions(c);
-});
 
 accountRoutes.post('/passkeys/login/verify', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
   return verifyPasskeyLogin(c);
 });
-accountRoutes.post('/passkeys/login/verify/', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
-  return verifyPasskeyLogin(c);
-});
 
 accountRoutes.post('/passkeys/2fa/verify', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
-  return verifySecondFactor(c);
-});
-accountRoutes.post('/passkeys/2fa/verify/', rateLimit('passkey-login', RATES.passkeyLogin), async (c) => {
   return verifySecondFactor(c);
 });
 
@@ -770,30 +761,16 @@ accountRoutes.put('/passkeys/2fa', authMiddleware(), async (c) => {
   const user = await currentUser(c);
   return setPasskeyTwoStep(c, user);
 });
-accountRoutes.put('/passkeys/2fa/', authMiddleware(), async (c) => {
-  const user = await currentUser(c);
-  return setPasskeyTwoStep(c, user);
-});
 
 accountRoutes.get('/passkeys', authMiddleware(), async (c) => {
-  return listUserPasskeys(c, c.get('user')!.id);
-});
-accountRoutes.get('/passkeys/', authMiddleware(), async (c) => {
   return listUserPasskeys(c, c.get('user')!.id);
 });
 
 accountRoutes.patch('/passkeys/:id', authMiddleware(), async (c) => {
   return renameUserPasskey(c, c.get('user')!.id, c.req.param('id'));
 });
-accountRoutes.patch('/passkeys/:id/', authMiddleware(), async (c) => {
-  return renameUserPasskey(c, c.get('user')!.id, c.req.param('id'));
-});
 
 accountRoutes.delete('/passkeys/:id', authMiddleware(), requireRecentSignIn(), async (c) => {
-  const user = await currentUser(c);
-  return deleteUserPasskey(c, user, c.req.param('id'));
-});
-accountRoutes.delete('/passkeys/:id/', authMiddleware(), requireRecentSignIn(), async (c) => {
   const user = await currentUser(c);
   return deleteUserPasskey(c, user, c.req.param('id'));
 });
