@@ -107,9 +107,14 @@ npx wrangler secret put GOOGLE_BOOKS_API_KEY
 npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON   # 推播（可選）
 npx wrangler secret put CF_ANALYTICS_TOKEN       # 廣告統計：Account Analytics Read 權限的 API token（可選）
 npx wrangler secret put TURNSTILE_SECRET_KEY     # 登入／註冊／忘記密碼人機驗證（可選；site key 填在 wrangler.jsonc vars 的 TURNSTILE_SITE_KEY）
-npm run deploy    # 建置前端 → wrangler deploy（首次自動建立資源）→ 套用遠端 D1 migration
+npm run deploy:first   # 第一次：建置前端 → wrangler deploy（依名稱建立 D1 等資源）→ 套用遠端 D1 migration
 npm run db:seed:remote         # 可選，首次部署後一次：香港地區與縣市、學校、分類
+npm run deploy         # 之後每次：建置前端 → 先套用遠端 D1 migration → wrangler deploy
 ```
+
+之後的部署先套 migration 再上線新程式：新程式從第一個請求起就看得到它需要的欄位與資料表。
+代價是舊程式會在新 schema 上跑幾十秒，所以 migration 必須向後相容：只新增欄位（可為 NULL 或有預設值）
+與資料表；要改名或刪除欄位，分兩次部署（先讓程式不再用它，下一次再刪）。
 
 主金鑰之外的密鑰請貼上各服務核發的值。輪替主金鑰時再執行一次上面的 `openssl rand … | wrangler secret put SECRET_KEY`
 即可（所有人會被登出）。本機開發的 `server/.dev.vars` 也可用
@@ -146,13 +151,13 @@ R2；要回收它們，得先改成和刊登照片一樣：上傳到 `tmp/chat/<
 ### 由 Git 自動部署（Workers Builds）
 
 在 Cloudflare 後台 Worker `unibooks` → Settings → Build 設定以下各欄。這些無法寫進 `wrangler.jsonc`：
-Wrangler 要先在根目錄找到設定檔才讀得到它，而部署後套用 D1 migration 也不是設定檔能表達的步驟。
+Wrangler 要先在根目錄找到設定檔才讀得到它，而部署前套用 D1 migration 也不是設定檔能表達的步驟。
 
 | 欄位 | 值 |
 |---|---|
 | Root directory | `server` |
 | Build command | `npm ci && npm --prefix ../client ci && npm run build:fe` |
-| Deploy command | `npx wrangler deploy && npx wrangler d1 migrations apply unibooks --remote && npx wrangler d1 migrations apply unibooks-ads --remote` |
+| Deploy command | `npm run migrate:remote && npx wrangler deploy`（migration 先於新程式上線，原因見上方「部署」） |
 | Build variables | `NODE_VERSION` = `24`（與 CI 相同；`.nvmrc` 只在 `client/`，root 為 `server` 時讀不到） |
 
 Root directory 留空（repo 根目錄）時，Wrangler 找不到 `server/wrangler.jsonc`，會改把專案當成純靜態網站，
