@@ -13,7 +13,7 @@ import { bookRoutes } from '../../src/routes/books';
 import { listingRoutes } from '../../src/routes/listings';
 import { searchRoutes } from '../../src/routes/search';
 import { subscriptionRoutes } from '../../src/routes/subscriptions';
-import { sitemapRoutes } from '../../src/routes/sitemap';
+import { computePages, sitemapRoutes } from '../../src/routes/sitemap';
 
 const cols = await env.DB.prepare(`SELECT name FROM pragma_table_info('books')`).all<{ name: string }>();
 const schemaReady = cols.results.some((c) => c.name === 'authors');
@@ -293,5 +293,21 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
     expect(await res.text()).toContain('/tw/book?isbn=9780131103627');
     expect((await call('/api/v1/sitemap/books-tw-2.xml')).status).toBe(404);
     expect((await call('/api/v1/sitemap/books-hk-1.xml')).status).toBe(404);
+  });
+
+  it('sitemap pages: each starts at its first id in id order and carries its newest date', async () => {
+    const { results: rows } = await env.DB.prepare(
+      "SELECT id, created_at AS lastmod FROM listings WHERE region_code = 'TW' AND status = 'active' ORDER BY id",
+    ).all<{ id: string; lastmod: string }>();
+    expect(rows.length).toBeGreaterThan(1);
+    for (const size of [1, 2, rows.length]) {
+      const expected: Array<[string, string]> = [];
+      rows.forEach((r, i) => {
+        if (i % size === 0) expected.push([r.id, r.lastmod]);
+        else if (r.lastmod > expected[expected.length - 1][1]) expected[expected.length - 1][1] = r.lastmod;
+      });
+      expect(await computePages(env, 'listings', 'TW', size)).toEqual(expected);
+    }
+    expect((await computePages(env, 'books', 'TW', 1)).length).toBeGreaterThan(0);
   });
 });

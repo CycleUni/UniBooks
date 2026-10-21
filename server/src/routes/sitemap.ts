@@ -47,25 +47,25 @@ function escapeXml(s: string): string {
 
 const day = (stamp: string) => stamp.slice(0, 10);
 
-/** [first id, newest lastmod] for each page of one kind and region. */
-/** Page boundaries, cached: computing them scans every active row of the region. */
+/** [first id, newest lastmod] for each page of one kind and region; cached, as computing them scans every active row of the region. */
 async function buildPages(env: Env, kind: Kind, code: string): Promise<Array<[string, string]>> {
   return cached(env, 'sitemap', `pages:${kind}:${code}`, SITEMAP_TTL, () => computePages(env, kind, code));
 }
 
-async function computePages(env: Env, kind: Kind, region: string): Promise<Array<[string, string]>> {
+export async function computePages(env: Env, kind: Kind, region: string, pageSize = PAGE_SIZE): Promise<Array<[string, string]>> {
   const q = KIND_SQL[kind];
+  // Cut in SQL: one row per page comes back, not every row of the region.
   const { results } = await env.DB.prepare(
-    `SELECT ${idCol(kind)} AS id, ${kind === 'books' ? 'MAX(l.created_at)' : 'l.created_at'} AS lastmod ${q.from.replace('{range}', '')} ORDER BY ${idCol(kind)}`,
+    `WITH numbered AS (
+       SELECT ${idCol(kind)} AS id, ${kind === 'books' ? 'MAX(l.created_at)' : 'l.created_at'} AS lastmod,
+              ROW_NUMBER() OVER (ORDER BY ${idCol(kind)}) - 1 AS rn
+       ${q.from.replace('{range}', '')}
+     )
+     SELECT MIN(id) AS id, MAX(lastmod) AS lastmod FROM numbered GROUP BY rn / ${pageSize} ORDER BY MIN(id)`,
   )
     .bind(region)
     .all<{ id: string; lastmod: string }>();
-  const pages: Array<[string, string]> = [];
-  results.forEach((row, i) => {
-    if (i % PAGE_SIZE === 0) pages.push([row.id, row.lastmod]);
-    else if (row.lastmod > pages[pages.length - 1][1]) pages[pages.length - 1][1] = row.lastmod;
-  });
-  return pages;
+  return results.map((row) => [row.id, row.lastmod]);
 }
 
 function frontendOrigin(c: Context<AppEnv>): string {
