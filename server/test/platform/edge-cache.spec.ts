@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { call, seedReference } from '../accounts/helpers';
 import { ad, advertiser, staff } from '../ads/helpers';
@@ -75,5 +75,20 @@ describe('edge cache for the public ad list', () => {
 
     await invalidate(env, 'ads');
     expect(await titles(await call(ACTIVE))).toContain('Edge second');
+  });
+});
+
+describe('the public ad list and the KV write budget', () => {
+  it('writes KV only for the page the app asks for, not for any page a client makes up', async () => {
+    const put = vi.spyOn(env.KV, 'put');
+    try {
+      await call('/api/v1/promotions/active?region=TW&position=home_banner&page=5');
+      await call('/api/v1/promotions/active?region=TW&position=home_banner&page_size=7');
+      expect(put.mock.calls.filter(([k]) => String(k).startsWith('ads:active'))).toHaveLength(0);
+      await call('/api/v1/promotions/active?region=TW');
+      expect(put.mock.calls.filter(([k]) => String(k).startsWith('ads:active'))).toHaveLength(1);
+    } finally {
+      put.mockRestore();
+    }
   });
 });

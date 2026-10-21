@@ -26,6 +26,8 @@ export const promotionRoutes = new Hono<AppEnv>();
 /** Rate limit for view / click events. */
 const AD_STATS_RATE = '60/min';
 const AD_LIST_RATE = '120/min';
+/** pagination()'s default page size: the page the app requests. */
+const DEFAULT_PAGE_SIZE = 20;
 /** How long a public ad list stays cached; admin writes move the 'ads' cache version so edits show at once. */
 const ACTIVE_TTL = 300;
 
@@ -62,9 +64,7 @@ async function activeAds(c: Context<AppEnv>): Promise<Response> {
   const schoolParam = c.req.query('school') ?? '';
   const schoolId = schoolParam ? await schoolFilterId(createDb(c.env.DB), region.code, schoolParam) : null;
   if (schoolParam && !schoolId) return c.json(page.wrap([], 0));
-  const key = await versionedKey(c.env, 'ads', 'ads:active', [region.code, position, schoolId ?? '', page.limit, page.offset]);
-  // Only the rows are cached; the pagination links are built for this request.
-  const cachedPage = await cachedJson(c.env.KV, key, ACTIVE_TTL, async () => {
+  const load = async () => {
     const adsDb = createAdsDb(c.env.DB_ADS);
     const now = new Date().toISOString();
     const conds: SQL[] = [
@@ -107,7 +107,21 @@ async function activeAds(c: Context<AppEnv>): Promise<Response> {
       show_in_hero: !!a.showInHero,
     }));
     return { results, count: n };
-  });
+  };
+  // Only the rows are cached; the pagination links are built for this request.
+  // In KV only for the page the app asks for (the first, default size): page
+  // and page_size are unbounded, and each new combination would be a KV write
+  // (the free plan allows 1,000 a day). Other pages are read from D1, still
+  // behind the edge cache and the per-client limit.
+  const cachedPage =
+    page.offset === 0 && page.limit === DEFAULT_PAGE_SIZE
+      ? await cachedJson(
+          c.env.KV,
+          await versionedKey(c.env, 'ads', 'ads:active', [region.code, position, schoolId ?? '', page.limit, page.offset]),
+          ACTIVE_TTL,
+          load,
+        )
+      : await load();
   return c.json(page.wrap(cachedPage?.results ?? [], cachedPage?.count ?? 0));
 }
 
