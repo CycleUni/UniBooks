@@ -1293,5 +1293,10 @@ accountRoutes.get('/users/:id', optionalAuthMiddleware(), rateLimit('public_prof
   const id = c.req.param('id');
   const user = UUID_RE.test(id) ? await getUser(c.env, id) : null;
   if (!user) apiError(404, 'auth.errUserNotFound');
+  // A switched-off, banned or never-activated account has no public face (a
+  // squatted sign-up's name is whatever a stranger typed). A deleted one is
+  // already anonymized and stays, for the orders and chats that link to it.
+  const hidden = !user.deletedAt && (!user.isActive || !!user.isBanned);
+  if (hidden && !c.get('user')?.isStaff) apiError(404, 'auth.errUserNotFound');
   return c.json(await serializePublicUser(c, user));
 });

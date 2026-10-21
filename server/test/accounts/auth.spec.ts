@@ -596,6 +596,13 @@ describe('profile', () => {
     expect(await env.DB.prepare("SELECT 1 FROM push_devices WHERE token = 'tok-mine'").first()).toBeNull();
   });
 
+  it('public profile: 404 for a switched-off, banned or never-activated account', async () => {
+    const pending = await createUser('profile-pending@example.com', { active: false, password: null });
+    const banned = await createUser('profile-banned@example.com');
+    await env.DB.prepare('UPDATE users SET is_banned = 1 WHERE id = ?').bind(banned).run();
+    for (const id of [pending, banned]) expect((await call(`/api/v1/auth/users/${id}`)).status).toBe(404);
+  });
+
   it('DELETE /me needs a recent sign-in', async () => {
     const id = await createUser('leaving-stale@example.com');
     const stale = await signToken('access', { user_id: id, auth_time: Math.floor(Date.now() / 1000) - 3600 }, env);
