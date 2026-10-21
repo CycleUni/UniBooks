@@ -39,16 +39,25 @@ export class OrderLock extends DurableObject<Env> {
     return this.exclusive(() => applyAutoComplete(this.env, args));
   }
 
-  /** Take the run lock unless a live one is held; it lapses after ttlMs. */
-  async tryAcquire(ttlMs: number): Promise<boolean> {
-    const until = (await this.ctx.storage.get<number>('until')) ?? 0;
+  /**
+   * Take the run lock unless a live one is held; it lapses after ttlMs.
+   * Returns this holder's id (for release), or null when another holds it.
+   */
+  async tryAcquire(ttlMs: number): Promise<string | null> {
+    const held = await this.ctx.storage.get<{ until: number; holder: string }>('run');
     const now = Date.now();
-    if (until > now) return false;
-    await this.ctx.storage.put('until', now + ttlMs);
-    return true;
+    if (held && held.until > now) return null;
+    const holder = crypto.randomUUID();
+    await this.ctx.storage.put('run', { until: now + ttlMs, holder });
+    return holder;
   }
 
-  async release(): Promise<void> {
-    await this.ctx.storage.delete('until');
+  /**
+   * Release the run lock, if `holder` still holds it: a run that outlived
+   * its ttl must not free the lock a later run has taken since.
+   */
+  async release(holder: string): Promise<void> {
+    const held = await this.ctx.storage.get<{ until: number; holder: string }>('run');
+    if (held?.holder === holder) await this.ctx.storage.delete('run');
   }
 }

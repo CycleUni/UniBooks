@@ -36,11 +36,12 @@ export type Skipped = { status: 'skipped'; reason: 'already_running' };
  */
 async function runAlone<T>(env: Env, name: string, fn: () => Promise<T>): Promise<T | Skipped> {
   const lock = orderLock(env, `cron:${name}`);
-  if (!(await lock.tryAcquire(CRON_RUN_LOCK_TTL_MS))) return { status: 'skipped', reason: 'already_running' };
+  const holder = await lock.tryAcquire(CRON_RUN_LOCK_TTL_MS);
+  if (!holder) return { status: 'skipped', reason: 'already_running' };
   try {
     return await fn();
   } finally {
-    await lock.release().catch((e: unknown) => console.error(`[cron:${name}] lock release failed`, e));
+    await lock.release(holder).catch((e: unknown) => console.error(`[cron:${name}] lock release failed`, e));
   }
 }
 
