@@ -33,13 +33,16 @@ interface Jwks {
 
 let keyCache: { at: number; maxAge: number; jwks: Jwks } | null = null;
 
+/** A sign-in waits at most this long for Google's keys; then it is answered 503. */
+const CERTS_TIMEOUT_MS = 5000;
+
 /** Where the keys come from. Replaced in tests. */
 export const googleKeys = {
   async fetchJwks(): Promise<Jwks> {
     if (keyCache && Date.now() - keyCache.at < keyCache.maxAge) return keyCache.jwks;
     let res: Response;
     try {
-      res = await fetch(CERTS_URL);
+      res = await fetch(CERTS_URL, { signal: AbortSignal.timeout(CERTS_TIMEOUT_MS) });
     } catch (e) {
       throw new GoogleUnavailable(String(e));
     }

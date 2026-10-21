@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { inList } from '../../lib/sql';
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import type { AppEnv } from '../../env';
 import {
@@ -378,7 +379,8 @@ async function listingScope(c: Context<AppEnv>, db: Database, code: string): Pro
     const col = listings[field];
     const stored = await db.selectDistinct({ v: col }).from(listings).where(eq(listings.regionCode, code));
     const matching = stored.map((s) => s.v).filter((v) => textKey(v) === raw);
-    conds.push(matching.length ? inArray(col, matching) : sql`0`);
+    // One bound parameter however many spellings match (D1 allows 100 per statement).
+    conds.push(inList(col, matching));
   }
   return scoped ? and(...conds)! : null;
 }
