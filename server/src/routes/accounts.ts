@@ -75,17 +75,21 @@ async function emailTakenByOther(c: C, email: string, userId: string): Promise<b
   return !!row;
 }
 
-// Rate limits per scope.
+// Rate limits per scope. Unauthenticated ones are keyed by IP, and a campus
+// puts hundreds of students behind one address: those stay loose, since
+// Turnstile already makes each sign-in, sign-up and reset request a human's.
 const RATES = {
-  login: '5/min',
+  login: '20/min',
   loginAccountFailures: '20/hour',
 
-  register: '10/hour',
+  register: '30/hour',
   verifyRequest: '3/hour',
   refresh: '10/min',
   passwordChange: '5/min',
   pushDevice: '30/min',
-  passwordResetRequest: '3/hour',
+  passwordResetRequest: '10/hour',
+  /** Per (address, caller): what one caller can ask for one address. */
+  passwordResetRequestPair: '3/hour',
   emailChange: '5/hour',
   schoolRequest: '5/hour',
   publicProfile: '30/min',
@@ -814,12 +818,17 @@ accountRoutes.post('/password/reset/request', rateLimit('password-reset-request'
   await assertChallenge(c, challenge);
   const email = raw.trim();
   const sent = { code: 'acct.passwordResetSent' };
-  // Per address as well as per caller, so one mailbox cannot be flooded
-  // from many addresses. Checked for every address, known or not, so the
-  // limit says nothing about which ones exist. Over the limit, the request
-  // gets the usual answer and no email: a stranger hammering someone's
-  // address never shows that person an error.
-  if (!(await takeRate(c, 'password-reset-request-email', RATES.passwordResetRequest, `email:${email.toLowerCase()}`))) {
+  // Per (address, caller) and, looser, per address, so one mailbox cannot be
+  // flooded from many addresses while a stranger asking for someone's address
+  // uses up their own allowance, not the owner's. Checked for every address,
+  // known or not, so the limit says nothing about which ones exist. Over it,
+  // the request gets the usual answer and no email.
+  const ip = c.req.header('CF-Connecting-IP') ?? 'local';
+  const key = email.toLowerCase();
+  if (
+    !(await takeRate(c, 'password-reset-request-pair', RATES.passwordResetRequestPair, `email:${key}|ip:${ip}`)) ||
+    !(await takeRate(c, 'password-reset-request-email', RATES.passwordResetRequest, `email:${key}`))
+  ) {
     return c.json(sent);
   }
 
@@ -1125,19 +1134,21 @@ accountRoutes.patch('/me', authMiddleware(), async (c) => {
       // A campus address as the sign-in email is what auto-verify trusts; it
       // is only ever set by registration or Google, never edited in.
       if (await isValidEduEmail(c.env, newEmail)) apiError(400, 'acct.errEduEmailChangeNotAllowed');
+      // A session alone does not move the sign-in address: the link would let
+      // whoever holds it reset the password and keep the account.
+      const currentPassword = body.current_password;
+      if (typeof currentPassword !== 'string' || !currentPassword) fieldErrors({ current_password: ['acct.errCurrentPasswordRequired'] });
+      if (!(await checkPassword(currentPassword, user.passwordHash))) fieldErrors({ current_password: ['auth.errInvalidPassword'] });
       // Each request mails a link to an address the caller chose: limited per
       // account and per recipient, so no mailbox can be flooded from here.
+      // Counted only past the password, so nobody spends a stranger's
+      // allowance for an address with wrong guesses.
       if (
         !(await takeRate(c, 'email-change', RATES.emailChange)) ||
         !(await takeRate(c, 'email-change-recipient', RATES.emailChange, `email:${newEmail}`))
       ) {
         apiError(429, 'common.errThrottled');
       }
-      // A session alone does not move the sign-in address: the link would let
-      // whoever holds it reset the password and keep the account.
-      const currentPassword = body.current_password;
-      if (typeof currentPassword !== 'string' || !currentPassword) fieldErrors({ current_password: ['acct.errCurrentPasswordRequired'] });
-      if (!(await checkPassword(currentPassword, user.passwordHash))) fieldErrors({ current_password: ['auth.errInvalidPassword'] });
       // Not applied here: only once the link mailed to the new address is followed.
       // The other fields are saved first, so an error there leaves no live link.
       await saveFields();
