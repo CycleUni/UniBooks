@@ -421,6 +421,13 @@ export class Book implements OnInit {
   get loadedPhonePage(): number { return this.pager.loadedPage; }
 
   constructor(private route: ActivatedRoute, private router: Router) {
+    // Verified or not comes with the profile the app already loads (/auth/me):
+    // asking for the full profile again here cost a second request per page.
+    effect(() => {
+      const user = this.auth.user();
+      this.isVerified = !!user && this.auth.isVerifiedIn(this.book?.region || this.regionService.region());
+      this.cdr.markForCheck();
+    });
     onLanguageChange(this.i18n, () => {
       if (this.bookId && !this.isLocalCache) {
         this.fetchBook();
@@ -532,18 +539,6 @@ export class Book implements OnInit {
       }
     });
 
-    if (this.auth.isLoggedIn()) {
-      this.accountService.getMyProfile().subscribe({
-        next: (profile) => {
-          this.isVerified = this.auth.isVerifiedIn(this.book?.region || this.regionService.region());
-          this.cdr.markForCheck();
-        },
-        error: () => {
-          this.isVerified = false;
-          this.cdr.markForCheck();
-        }
-      });
-    }
   }
 
   fetchBook(silent = false) {

@@ -121,21 +121,12 @@ export class ListingDetail implements OnInit, OnDestroy {
       }
     });
 
-    // Fetch the current user's profile (browser-side only) to determine
-    // whether to hide the "report" button on the user's own listing.
+    // Who is looking (to hide "report" on their own listing), from the
+    // profile the app already loads; no second /auth/me for it. Until it is
+    // known the report button stays hidden, as before.
     effect(() => {
-      if (isPlatformBrowser(this.platformId) && this.auth.isLoggedIn()) {
-        this.accountService.getMyProfile().subscribe({
-          next: (profile) => {
-            this.currentUserId = profile?.id ?? null;
-            this.cdr.markForCheck();
-          },
-          error: () => {
-            // If the profile fetch fails, stay conservative (don't show the
-            // report button) rather than risk mistaking someone else's listing for the user's own.
-          }
-        });
-      }
+      this.currentUserId = this.auth.user()?.id ?? null;
+      this.cdr.markForCheck();
     });
   }
 
