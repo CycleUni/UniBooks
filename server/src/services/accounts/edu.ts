@@ -51,7 +51,21 @@ export async function resolveSchoolFromEmail(env: Env, email: string | null | un
 export async function isValidEduEmail(env: Env, email: string): Promise<boolean> {
   if (await resolveSchoolFromEmail(env, email)) return true;
   const regions = await activeRegionDetails(env);
-  return regions.some((r) => r.eduEmailSuffix.some((suffix) => email.endsWith(suffix)));
+  return regions.some((r) => r.eduEmailSuffix.some((suffix) => domainMatchesSuffix(email, suffix)));
+}
+
+/**
+ * Whether the email's domain is `suffix` (written with or without a leading
+ * dot) or a subdomain of it: ".hku.hk" covers hku.hk and connect.hku.hk, but
+ * not evilhku.hk, which a bare endsWith let through.
+ */
+export function domainMatchesSuffix(email: string, suffix: string): boolean {
+  const domain = email.slice(email.lastIndexOf('@') + 1).toLowerCase();
+  const s = suffix
+    .trim()
+    .toLowerCase()
+    .replace(/^[.@]+/, '');
+  return !!s && (domain === s || domain.endsWith(`.${s}`));
 }
 
 /**

@@ -221,3 +221,16 @@ describe('core', () => {
     expect(page2.waitlist).toBeUndefined();
   });
 });
+
+describe('campus email suffixes', () => {
+  it('match the domain or its subdomains, never a lookalike', async () => {
+    const { domainMatchesSuffix } = await import('../../src/services/accounts/edu');
+    expect(domainMatchesSuffix('a@ntu.edu.tw', '.edu.tw')).toBe(true);
+    expect(domainMatchesSuffix('a@connect.hku.hk', '.hku.hk')).toBe(true);
+    expect(domainMatchesSuffix('a@hku.hk', '.hku.hk')).toBe(true);
+    expect(domainMatchesSuffix('a@evilhku.hk', '.hku.hk')).toBe(false);
+    expect(domainMatchesSuffix('a@hku.hk', 'hku.hk')).toBe(true);
+    expect(domainMatchesSuffix('a@company.hk', '.edu.hk')).toBe(false);
+    expect(domainMatchesSuffix('a@x.com', '')).toBe(false);
+  });
+});

@@ -13,6 +13,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { ActivatedRoute, Router } from '@angular/router';
 import { parseApiError, translateApiError } from '../../core/api-error.util';
+import { domainMatchesSuffix } from '../../core/verification';
 import { SchoolRequestFormComponent } from './school-request-form.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
@@ -215,12 +216,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (parts.length !== 2) return null;
     const loginDomain = parts[1].toLowerCase();
 
-    const suffixes = this.currentRegion.edu_email_suffix.map((s) => {
-      const lower = s.toLowerCase();
-      return lower.startsWith('.') ? lower : '.' + lower;
-    });
-
-    if (suffixes.some((s) => loginDomain.endsWith(s))) {
+    if (this.currentRegion.edu_email_suffix.some((s) => domainMatchesSuffix(loginDomain, s))) {
       return this.currentRegion;
     }
     return null;
@@ -342,11 +338,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
     const regions = this.regionService.regions();
     const matchedRegion = regions.find((r) => {
-      const suffixes = r.edu_email_suffix.map((s) => {
-        const lower = s.toLowerCase();
-        return lower.startsWith('.') ? lower : '.' + lower;
-      });
-      return suffixes.some((s) => loginDomain.endsWith(s));
+      return r.edu_email_suffix.some((s) => domainMatchesSuffix(loginDomain, s));
     });
 
     if (matchedRegion) {
