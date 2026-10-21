@@ -22,8 +22,10 @@ function proxied(src: string): string {
  *
  * Usage: {{ url | bookCover: 2 }}
  * - zoom=1  → default (small, ~128px)
- * - zoom=2  → medium  (~300px) — use on /book page
- * - zoom=3  → large   (~800px) — use on /listing detail page
+ * - zoom=2  → medium  (~300px)
+ * - zoom=3  → large   (~800px) — book tiles, the home hero, /book and /listing:
+ *   one zoom everywhere a visitor goes from a tile to the book, so the cover
+ *   is fetched (and billed as a Worker request) once, not once per zoom.
  */
 @Pipe({
   name: 'bookCover',

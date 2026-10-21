@@ -76,7 +76,7 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
               [title]="book.title"
               [author]="book.authors"
               [isbn]="book.isbn13"
-              [zoom]="2"
+              [zoom]="3"
             ></ui-book-cover>
           </div>
           <div class="book-info">
