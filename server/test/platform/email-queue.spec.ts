@@ -19,3 +19,37 @@ describe('email queue redelivery', () => {
     expect(m.retry).not.toHaveBeenCalled();
   });
 });
+
+describe('email queue failures', () => {
+  const link: EmailMessage = {
+    type: 'account_link',
+    kind: 'passwordReset',
+    user_id: 'u1',
+    to: 'someone@example.com',
+    name: '',
+    lang: 'en',
+    path: '/forgot-password?token=abc',
+  };
+  const withMailjet = { ...env, MAILJET_API_KEY: 'k', MAILJET_SECRET_KEY: 's' } as typeof env;
+
+  it('drops a message Mailjet rejects (4xx) and retries one it could not take (5xx, 429)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    try {
+      for (const [status, outcome] of [
+        [400, 'ack'],
+        [422, 'ack'],
+        [429, 'retry'],
+        [401, 'retry'],
+        [503, 'retry'],
+      ] as const) {
+        fetchSpy.mockResolvedValueOnce(new Response('{}', { status }));
+        const m = message(crypto.randomUUID(), 1, link);
+        await handleEmailQueue({ messages: [m] } as unknown as MessageBatch<EmailMessage>, withMailjet);
+        expect(outcome === 'ack' ? m.ack : m.retry, `status ${status}`).toHaveBeenCalledOnce();
+        expect(outcome === 'ack' ? m.retry : m.ack, `status ${status}`).not.toHaveBeenCalled();
+      }
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});

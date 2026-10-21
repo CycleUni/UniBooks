@@ -319,6 +319,7 @@ async function sendViaMailjet(env: Env, email: RenderedEmail): Promise<void> {
   });
   if (!response.ok) {
     // Status only: the body may echo the address (PII).
+    if (isPermanentRejection(response.status)) throw new MailjetRejected(response.status);
     throw new Error(`Mailjet API error (${response.status})`);
   }
   if (env.MAILJET_SANDBOX === '1') console.log(`[email] Mailjet sandbox accepted "${email.subject}"`);
@@ -333,6 +334,22 @@ export async function processEmailMessage(msg: EmailMessage, env: Env): Promise<
     return;
   }
   await sendViaMailjet(env, email);
+}
+
+/** Mailjet refused this message itself (e.g. an invalid address): sending it again cannot succeed. */
+export class MailjetRejected extends Error {
+  constructor(readonly status: number) {
+    super(`Mailjet rejected the message (${status})`);
+  }
+}
+
+/**
+ * A 4xx is about the message, so a retry gets the same answer, except a rate
+ * limit (429), a timeout (408) and our own credentials (401/403): those may
+ * pass on the next try, or once the key is fixed.
+ */
+function isPermanentRejection(status: number): boolean {
+  return status >= 400 && status < 500 && ![401, 403, 408, 429].includes(status);
 }
 
 /** Mailjet normally answers in well under a second; past this the send is retried. */
@@ -373,7 +390,8 @@ export async function handleEmailQueue(batch: MessageBatch<EmailMessage>, env: E
     } catch (error) {
       // Neither the payload (tokens, message text) nor the address is logged.
       console.error(`[email] failed to send ${message.body?.type ?? 'unknown'} email`, error);
-      message.retry();
+      if (error instanceof MailjetRejected) message.ack();
+      else message.retry();
     }
   }
 }
