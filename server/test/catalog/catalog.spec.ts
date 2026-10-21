@@ -4,6 +4,7 @@ import { cleanAndValidateIsbn, isbnChecksumOk, isbnForms, validateBookIsbn } fro
 import { cleanCoverUrl, cleanPublisher, describeSource } from '../../src/services/catalog/common';
 import { engineOrder, regionSearchEngines, ISBN_FALLBACK_ORDER } from '../../src/services/catalog/lookups';
 import { PhotoError, acceptListingPhotos, settlePhotos } from '../../src/services/listings/photos';
+import { seedListing, seedRegion, seedUser } from '../messaging/helpers';
 import { sniffImage as detectImageExtension, publicBase, storageKeyFromUrl, validatedContentLength } from '../../src/lib/media';
 
 const ORIGIN = 'http://x';
@@ -99,6 +100,23 @@ describe('listing photo keys', () => {
     await settlePhotos(env, ORIGIN, 'u1', out, false);
     expect(await env.R2.head(`listings/u1/${name}.png`)).toBeNull();
     expect(await env.R2.head(tmpKey)).not.toBeNull();
+  });
+
+  it('never replaces a photo another listing shows, even if its name turns up in tmp again', async () => {
+    await seedRegion();
+    const seller = await seedUser({ verifiedIn: 'TW' });
+    const name = 'e'.repeat(32);
+    const permKey = `listings/${seller.id}/${name}.png`;
+    await env.R2.put(permKey, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1]));
+    const holder = await seedListing(seller.id);
+    await env.DB.prepare('UPDATE listings SET photos = ? WHERE id = ?')
+      .bind(JSON.stringify([`${BASE}/${permKey}`]), holder)
+      .run();
+
+    const tmpKey = `tmp/listings/${seller.id}/${name}.png`;
+    await env.R2.put(tmpKey, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 2]));
+    expect(await code(acceptListingPhotos(env, ORIGIN, [`${BASE}/${tmpKey}`], seller.id))).toBe('listing.errPhotoPromoteFailed');
+    expect(new Uint8Array(await (await env.R2.get(permKey))!.arrayBuffer())[4]).toBe(1);
   });
 
   it('a committed edit deletes the photos it dropped', async () => {

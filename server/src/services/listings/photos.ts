@@ -12,6 +12,7 @@
 import { sql } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { createDb, listings } from '../../db';
+import { putOnce } from '../../lib/upload';
 import { IMAGE_CONTENT_TYPES, publicUrl, storageKeyFromUrl, type ImageExt } from '../../lib/media';
 
 export const TMP_LISTING_PREFIX = 'tmp/listings';
@@ -78,9 +79,15 @@ export async function acceptListingPhotos(
       const obj = await env.R2.get(item.promote.from);
       if (!obj) throw new Error('missing');
       const ext = item.promote.to.split('.').pop() ?? '';
-      await env.R2.put(item.promote.to, await obj.arrayBuffer(), {
-        httpMetadata: { contentType: IMAGE_CONTENT_TYPES[ext as ImageExt] ?? 'application/octet-stream' },
-      });
+      const meta = { contentType: IMAGE_CONTENT_TYPES[ext as ImageExt] ?? 'application/octet-stream' };
+      const bytes = new Uint8Array(await obj.arrayBuffer());
+      if (!(await putOnce(env.R2, item.promote.to, bytes, meta))) {
+        // Already there: a leftover of a write that failed after copying may
+        // be replaced, but never a photo a listing shows (a replayed upload
+        // reusing a tmp name must not swap another listing's picture).
+        if ((await listingsHoldingPhoto(env, publicUrl(env, origin, item.promote.to))).length) throw new Error('taken');
+        await env.R2.put(item.promote.to, bytes, { httpMetadata: meta });
+      }
     } catch (e) {
       console.error('[listings] failed to promote tmp photo', item.promote.from, e);
       throw new PhotoError('listing.errPhotoPromoteFailed');
