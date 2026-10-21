@@ -33,8 +33,6 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
 // ------------------------------------------------------------------ detail --
 
 bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
-  // Unknown ISBNs fan out to external catalogues; bound that per client.
-  await checkRate(c, 'book_lookup', '120/min');
   const isbn = c.req.query('isbn');
   const bookId = c.req.query('id');
   if (!isbn && !bookId) apiError(400, 'common.errValidation');
@@ -59,6 +57,9 @@ bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
     // Not in the catalogue yet: serve the external record. A named engine is
     // asked first and alone; with nothing there, the region's other engines.
     if (validIsbn) {
+      // Unknown ISBNs fan out to external catalogues; bound that per client.
+      // A book already in the catalogue is one D1 read and is not counted.
+      await checkRate(c, 'book_lookup', '120/min');
       let found = await lookupInOrder(c.env, validIsbn, engineOrder(engine, allowed, ISBN_FALLBACK_ORDER), ISBN_LOOKUPS, allowed);
       if (!found.result && engine) {
         const tried = new Set(found.meta.attempts.map((a) => a.engine));

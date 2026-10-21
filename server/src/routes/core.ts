@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { cached, versionedEdgeCache } from '../lib/cache';
 import type { Region } from '../db';
-import { rateLimit } from '../middleware/rateLimit';
+import { checkRate, rateLimit } from '../middleware/rateLimit';
 import { and, asc, eq, getTableName, is } from 'drizzle-orm';
 import { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { AppEnv } from '../env';
@@ -133,17 +133,30 @@ function allNames(row: Row): string[] {
   return names;
 }
 
-coreRoutes.get('/metadata', rateLimit('metadata', '120/min'), optionalAuthMiddleware(), (c) =>
-  versionedEdgeCache(c, 'ref', async () => {
-    const [lang, region] = await Promise.all([resolveLanguage(c), requireRegion(c)]);
-    // Reference rows only (the most-wanted list rides on recent-books):
-    // admin edits invalidate 'ref'.
-    const body = await cached(c.env, 'ref', `metadata:${region.code}:${lang}`, 3600, () => buildMetadata(c, region, lang));
-    // Viewer-independent: let browsers reuse it.
-    await setSharedCache(c, { maxAge: 900, staleWhileRevalidate: 86400, lang: true });
-    return c.json(body);
-  }),
-);
+/**
+ * Viewer-independent once the URL names the region (the app always sends it):
+ * then an edge hit costs no rate-limit count and no session lookup. Without
+ * ?region the region may come from the signed-in user, so that answer is
+ * built for them and never stored under a URL others share.
+ */
+coreRoutes.get('/metadata', async (c) => {
+  if (!c.req.query('region')) {
+    await optionalAuthMiddleware()(c, async () => {});
+    return buildMetadataResponse(c);
+  }
+  return versionedEdgeCache(c, 'ref', () => buildMetadataResponse(c));
+});
+
+async function buildMetadataResponse(c: Context<AppEnv>): Promise<Response> {
+  await checkRate(c, 'metadata', '120/min');
+  const [lang, region] = await Promise.all([resolveLanguage(c), requireRegion(c)]);
+  // Reference rows only (the most-wanted list rides on recent-books):
+  // admin edits invalidate 'ref'.
+  const body = await cached(c.env, 'ref', `metadata:${region.code}:${lang}`, 3600, () => buildMetadata(c, region, lang));
+  // Viewer-independent: let browsers reuse it.
+  await setSharedCache(c, { maxAge: 900, staleWhileRevalidate: 86400, lang: true });
+  return c.json(body);
+}
 
 async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string) {
   const db = createDb(c.env.DB);
