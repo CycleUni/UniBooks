@@ -145,21 +145,25 @@ export async function purgeOneTimeTokens(env: Env): Promise<number> {
 
 /**
  * A row created by /register/ whose owner never followed the link: inactive,
- * never signed in, no Google link, not banned or deleted, and with a
- * registration link on record. Such a row proves nothing about who owns the
- * address, so it must not block (or be claimable against) the real owner.
+ * never signed in, no Google link, not banned or deleted, and no password
+ * (a pending registration keeps its password on the mailed link, not the row).
+ * Such a row proves nothing about who owns the address, so it must not block
+ * (or be claimable against) the real owner. Decided from the row alone: the
+ * link itself is purged a day after it expires, and a row judged by its link
+ * would then hold the address for good.
  */
 export async function isPendingRegistration(
-  env: Env,
-  user: { id: string; isActive: number; isBanned: number; deletedAt: string | null; lastLoginAt: string | null; googleId: string | null },
+  _env: Env,
+  user: {
+    isActive: number;
+    isBanned: number;
+    deletedAt: string | null;
+    lastLoginAt: string | null;
+    googleId: string | null;
+    passwordHash: string | null;
+  },
 ): Promise<boolean> {
-  if (user.isActive || user.isBanned || user.deletedAt || user.lastLoginAt || user.googleId) return false;
-  const [row] = await createDb(env.DB)
-    .select({ id: oneTimeTokens.id })
-    .from(oneTimeTokens)
-    .where(and(eq(oneTimeTokens.userId, user.id), eq(oneTimeTokens.purpose, REGISTER)))
-    .limit(1);
-  return !!row;
+  return !user.isActive && !user.isBanned && !user.deletedAt && !user.lastLoginAt && !user.googleId && !user.passwordHash;
 }
 
 /** Void every outstanding registration link of a user. */
