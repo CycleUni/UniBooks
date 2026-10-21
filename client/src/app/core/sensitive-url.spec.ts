@@ -20,4 +20,17 @@ describe('redactSensitiveUrl', () => {
     expect(redactSensitiveUrl('/tw/search?q=calculus%20book')).toBe('/tw/search?q=calculus%20book');
     expect(redactSensitiveUrl('/tw/home')).toBe('/tw/home');
   });
+
+  it('redacts a token inside returnUrl and keeps where it leads', () => {
+    const url = '/tw/login?returnUrl=' + encodeURIComponent('/tw/account/settings?email_change_token=secret-token&tab=1');
+    const out = redactSensitiveUrl(url);
+    expect(out).not.toContain('secret-token');
+    const back = new URL(out, 'http://x').searchParams.get('returnUrl')!;
+    expect(back).toBe('/tw/account/settings?email_change_token=redacted&tab=1');
+  });
+
+  it('leaves a returnUrl without tokens as it was', () => {
+    const url = '/tw/login?returnUrl=%2Ftw%2Fsell';
+    expect(redactSensitiveUrl(url)).toBe(url);
+  });
 });

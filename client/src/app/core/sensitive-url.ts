@@ -11,6 +11,9 @@ export const SENSITIVE_QUERY_PARAMS: readonly string[] = ['token', 'email_change
 
 const REDACTED = 'redacted';
 
+/** Parameters whose value is itself a URL of this app (where to go after signing in). */
+const NESTED_URL_PARAMS: readonly string[] = ['returnUrl'];
+
 /** `url` with every sensitive parameter's value replaced. Works on absolute
  *  URLs and on the router's relative ones; anything unparseable comes back
  *  with its whole query string dropped rather than as it was. */
@@ -24,6 +27,19 @@ export function redactSensitiveUrl(url: string): string {
       if (parsed.searchParams.has(name)) {
         parsed.searchParams.set(name, REDACTED);
         changed = true;
+      }
+    }
+    // A signed-out visitor following an emailed link lands on /login with the
+    // link's whole URL, token and all, in returnUrl. The navigation needs it;
+    // analytics and error reports get it redacted, however deeply it nests.
+    for (const name of NESTED_URL_PARAMS) {
+      const nested = parsed.searchParams.get(name);
+      if (nested && nested.includes('?') && !nested.startsWith('?')) {
+        const clean = redactSensitiveUrl(nested);
+        if (clean !== nested) {
+          parsed.searchParams.set(name, clean);
+          changed = true;
+        }
       }
     }
     if (!changed) return url;
