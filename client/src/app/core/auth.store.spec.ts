@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { SELL_DRAFT_STORAGE_KEY } from './storage-keys';
+import { RecentSearches } from './search-suggestions';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 import { sentry } from './sentry';
@@ -319,6 +321,24 @@ describe('AuthStore session expiry', () => {
 
     expect(store.isAuthenticated()).toBe(false);
     expect(router.url).toBe('/tw/login');
+  });
+
+  it("logout() forgets what this person typed (sell draft, recent searches), for whoever uses the browser next", async () => {
+    setSessionHint();
+    const store = build();
+    await router.navigateByUrl('/tw');
+    await settle();
+    httpMock.expectOne('/auth/me').flush({ id: 1, email: 'a@b.c' });
+    localStorage.setItem(SELL_DRAFT_STORAGE_KEY, '{"version":1}');
+    const recent = TestBed.inject(RecentSearches);
+    recent.add('Organic Chemistry');
+
+    store.logout().subscribe();
+    httpMock.expectOne('/auth/logout').flush({});
+    await settle();
+
+    expect(localStorage.getItem(SELL_DRAFT_STORAGE_KEY)).toBeNull();
+    expect(recent.items()).toEqual([]);
   });
 
   it('logout() still lands there when the server refuses to revoke the token', async () => {

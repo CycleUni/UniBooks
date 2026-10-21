@@ -12,6 +12,8 @@ import {
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
 import { PushService } from './services/push.service';
+import { forgetSignedOutUser } from './signed-out-storage';
+import { RecentSearches } from './search-suggestions';
 import { RegionLinkService } from './region-link.service';
 import { isSameRegion, stripRegionPrefix } from './region-path';
 import { isUserVerifiedIn } from './verification';
@@ -881,6 +883,11 @@ export class AuthStore {
     // Before the session goes: the device removal still needs the session,
     // and a signed-out browser should stop receiving this account's messages.
     void this.injector.get(PushService).unregisterThisDevice();
+    // Signing out on purpose may mean handing the computer over: what this
+    // person typed (a sell draft with its private note, their searches) goes
+    // too. A session that merely expired keeps them for when they sign back in.
+    forgetSignedOutUser();
+    this.injector.get(RecentSearches).clear();
     // No hint cookie: the server already ended the session (an account
     // deletion clears the cookies) or there never was one — nothing to revoke.
     if (hasSessionHint()) {

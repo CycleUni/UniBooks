@@ -36,7 +36,8 @@ import { Subscription, catchError, concatMap, defaultIfEmpty, from, map, of, tak
  * prefix scheme the rest of the app uses (`unibooks.chat.draft.*`,
  * `unibooks.verification_prompt.sell`).
  */
-export const SELL_DRAFT_STORAGE_KEY = 'unibooks.sell.draft';
+export { SELL_DRAFT_STORAGE_KEY } from '../../core/storage-keys';
+import { SELL_DRAFT_STORAGE_KEY } from '../../core/storage-keys';
 
 /**
  * Drafts older than this are dropped on load. Photos are stored as server URLs
@@ -114,6 +115,8 @@ const DEFAULT_CONDITION = 'new';
 export interface SellDraft {
   version: 1;
   savedAt: number;
+  /** Whose draft it is: on a shared computer the next person signed in must not be offered it (it holds a private note and that account's uploads). */
+  userId: string;
   step: number;
   searchQuery: string;
   bookPreview: any;
@@ -339,8 +342,9 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
   }
 
   ngOnInit() {
-    this.pendingDraft = this.readDraft();
-    this.showDraftPrompt = !!this.pendingDraft;
+    // A draft names its owner, so it waits for the signed-in user: on a cold
+    // load the profile is still on its way here, and arrives below.
+    if (this.authStore.user()) this.offerDraft();
 
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeunload', this.onBeforeUnload);
@@ -354,6 +358,8 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
       this.accountService.getMyProfile().subscribe({
         next: (profile) => {
           this.isLoading = false;
+          // Not over a form the visitor has started in the meantime.
+          if (!this.pendingDraft && this.step === 1 && !this.searchQuery) this.offerDraft();
           this.isVerified = this.authStore.isVerifiedIn(this.regionService.region());
           // Both triggers for this banner — landing here unverified, and a
           // later submit blocked by a stale 403 — must go through the same
@@ -899,9 +905,12 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
       this.pendingDraft = null;
     }
 
+    const userId = this.authStore.user()?.id;
+    if (!userId) return;
     const draft: SellDraft = {
       version: 1,
       savedAt: Date.now(),
+      userId: String(userId),
       step: this.step,
       searchQuery: this.searchQuery,
       bookPreview: this.bookPreview,
@@ -924,6 +933,11 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
     }
   }
 
+  private offerDraft(): void {
+    this.pendingDraft = this.readDraft();
+    this.showDraftPrompt = !!this.pendingDraft;
+  }
+
   /** Reads and sanity-checks a stored draft. Returns null when there is none. */
   private readDraft(): SellDraft | null {
     if (typeof localStorage === 'undefined') return null;
@@ -939,6 +953,11 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
     try {
       const draft = JSON.parse(raw) as SellDraft;
       if (!draft || draft.version !== 1) {
+        this.clearDraft();
+        return null;
+      }
+      // Someone else's (or from before drafts named their owner): never shown, and gone.
+      if (!draft.userId || draft.userId !== String(this.authStore.user()?.id ?? '')) {
         this.clearDraft();
         return null;
       }
