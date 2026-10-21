@@ -377,15 +377,22 @@ async function markSent(env: Env, id: string): Promise<void> {
   }
 }
 
+function dedupeKeyOf(body: EmailMessage | undefined): string | null {
+  return body && 'dedupe_key' in body && typeof body.dedupe_key === 'string' && body.dedupe_key ? `key:${body.dedupe_key}` : null;
+}
+
 export async function handleEmailQueue(batch: MessageBatch<EmailMessage>, env: Env): Promise<void> {
   for (const message of batch.messages) {
     try {
-      if (message.attempts > 1 && (await alreadySent(env, message.id))) {
+      // A dedupe key also catches the same notice enqueued twice, not only a redelivery.
+      const dedupeKey = dedupeKeyOf(message.body);
+      const key = dedupeKey ?? message.id;
+      if ((dedupeKey || message.attempts > 1) && (await alreadySent(env, key))) {
         message.ack();
         continue;
       }
       await processEmailMessage(message.body, env);
-      await markSent(env, message.id);
+      await markSent(env, key);
       message.ack();
     } catch (error) {
       // Neither the payload (tokens, message text) nor the address is logged.

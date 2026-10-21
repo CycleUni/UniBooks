@@ -52,6 +52,8 @@ export type EmailMessage =
     }
   | {
       type: 'waitlist_notification';
+      /** Same key, same notice: a scheduled job that enqueues it again (its "sent" mark failed to save) is not sent twice. */
+      dedupe_key?: string;
       user_id: string;
       email: string;
       book_title: string;
@@ -62,6 +64,8 @@ export type EmailMessage =
     }
   | {
       type: 'meetup_reminder';
+      /** Same key, same notice: a scheduled job that enqueues it again (its "sent" mark failed to save) is not sent twice. */
+      dedupe_key?: string;
       user_id: string;
       email: string;
       order_id: string;
@@ -97,6 +101,8 @@ export type PushMessage =
     }
   | {
       type: 'waitlist_match';
+      /** Same key, same notice: a scheduled job that enqueues it again (its "sent" mark failed to save) is not sent twice. */
+      dedupe_key?: string;
       user_id: string;
       book_title: string;
       listing_count: number;
@@ -104,4 +110,12 @@ export type PushMessage =
       book_isbn?: string | null;
       region?: string;
     }
-  | { type: 'meetup_reminder'; user_id: string; order_id: string; book_title: string; meetup_time: string };
+  | {
+      type: 'meetup_reminder';
+      /** As the email's. */
+      dedupe_key?: string;
+      user_id: string;
+      order_id: string;
+      book_title: string;
+      meetup_time: string;
+    };

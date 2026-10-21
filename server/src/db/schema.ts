@@ -768,6 +768,15 @@ export type NewPasskey = InsertPasskey;
 // 24. Sent e-mail queue messages (redelivery de-duplication)
 // ============================================================================
 export const emailSent = sqliteTable('email_sent', {
+  // The queue message id, or the message's dedupe_key when it has one.
   messageId: text('message_id').primaryKey(),
+  sentAt: text('sent_at').notNull(),
+});
+
+// ============================================================================
+// 25. Sent push notices with a dedupe key (scheduled jobs' reminders)
+// ============================================================================
+export const pushSent = sqliteTable('push_sent', {
+  key: text('key').primaryKey(),
   sentAt: text('sent_at').notNull(),
 });

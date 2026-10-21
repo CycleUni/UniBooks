@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, isNull, lt, lte, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { Env } from '../env';
-import { createDb, subscriptions, books, users, orders, regions, listings, emailSent } from '../db';
+import { createDb, subscriptions, books, users, orders, regions, listings, emailSent, pushSent } from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
 import { orderLock } from '../services/orders/lock';
 import { AUTO_COMPLETE_AFTER_MS, lockKeyFor } from '../services/orders/transitions';
@@ -42,6 +42,11 @@ async function runAlone<T>(env: Env, name: string, fn: () => Promise<T>): Promis
   } finally {
     await lock.release().catch((e: unknown) => console.error(`[cron:${name}] lock release failed`, e));
   }
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // ---------------------------------------------------------------------------
@@ -109,8 +114,16 @@ export async function runWaitlistNotify(env: Env) {
   let notifiedSubscriptions = 0;
   for (const subs of batch) {
     const first = subs[0];
+    // These subscriptions, told about once: a run whose notified_at write failed sends nothing new.
+    const dedupeKey = `waitlist:${await sha256Hex(
+      subs
+        .map((s) => s.id)
+        .sort()
+        .join(','),
+    )}`;
     const email: EmailMessage = {
       type: 'waitlist_notification',
+      dedupe_key: dedupeKey,
       user_id: first.userId,
       email: first.email,
       book_title: first.title,
@@ -128,6 +141,7 @@ export async function runWaitlistNotify(env: Env) {
     try {
       const push: PushMessage = {
         type: 'waitlist_match',
+        dedupe_key: dedupeKey,
         user_id: first.userId,
         book_title: first.title,
         listing_count: subs.length,
@@ -228,8 +242,11 @@ export async function runMeetupReminder(env: Env) {
         updates[field] = now;
         continue;
       }
+      // One reminder per person per agreed meetup, however many runs see it due.
+      const dedupeKey = `meetup:${order.id}:${user.id}:${meetupTime}`;
       const email: EmailMessage = {
         type: 'meetup_reminder',
+        dedupe_key: dedupeKey,
         user_id: user.id,
         email: user.email,
         order_id: order.id,
@@ -252,6 +269,7 @@ export async function runMeetupReminder(env: Env) {
       try {
         const push: PushMessage = {
           type: 'meetup_reminder',
+          dedupe_key: dedupeKey,
           user_id: user.id,
           order_id: order.id,
           book_title: order.bookTitle,
@@ -353,10 +371,12 @@ export async function runCleanup(env: Env) {
   const tokensPurged = await purgeTokenStore(env);
   const linksPurged = await purgeOneTimeTokens(env);
   // Redelivery only happens within the queue's retry window, so a day is plenty.
-  const sentPurged = await db
-    .delete(emailSent)
-    .where(lt(emailSent.sentAt, new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()))
-    .run();
+  // A day covers a redelivery and the next run of every job that enqueues with a dedupe key (6 h at most).
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const [sentPurged, pushSentPurged] = await db.batch([
+    db.delete(emailSent).where(lt(emailSent.sentAt, dayAgo)),
+    db.delete(pushSent).where(lt(pushSent.sentAt, dayAgo)),
+  ]);
   // Throttle counters live in the RateLimiter Durable Object and expire on
   // their own, so there is nothing to purge here.
   const result = {
@@ -365,6 +385,7 @@ export async function runCleanup(env: Env) {
     refresh_tokens_purged: tokensPurged,
     one_time_tokens_purged: linksPurged,
     email_sent_purged: sentPurged.meta.changes ?? 0,
+    push_sent_purged: pushSentPurged.meta.changes ?? 0,
   };
   console.log('[Cleanup]', JSON.stringify(result));
   return result;

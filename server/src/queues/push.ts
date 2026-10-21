@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import type { Env } from '../env';
-import { books, createDb, listings, orders, pushDevices, regions } from '../db';
+import { books, createDb, listings, orders, pushDevices, pushSent, regions } from '../db';
 import { parsePhotos } from '../lib/json';
 import { coverImageUrl } from '../services/frontend/bookMeta';
 import { siteOrigin } from '../lib/origin';
@@ -29,11 +29,39 @@ interface FirebaseServiceAccount {
   token_uri?: string;
 }
 
+/**
+ * A scheduled job enqueues its reminder before it records it as sent; when
+ * that record fails, the next run enqueues the same reminder again. Its
+ * dedupe key, recorded here once sent, turns the second one away.
+ */
+async function pushAlreadySent(env: Env, key: string): Promise<boolean> {
+  try {
+    const [row] = await createDb(env.DB).select({ key: pushSent.key }).from(pushSent).where(eq(pushSent.key, key)).limit(1);
+    return !!row;
+  } catch {
+    return false; // Bookkeeping only: a failed lookup never blocks a push.
+  }
+}
+
+async function markPushSent(env: Env, key: string): Promise<void> {
+  try {
+    await createDb(env.DB).insert(pushSent).values({ key, sentAt: new Date().toISOString() }).onConflictDoNothing().run();
+  } catch (e) {
+    console.warn('[PushWorker] could not record a sent reminder', e);
+  }
+}
+
 export async function handlePushQueue(batch: MessageBatch<PushMessage>, env: Env): Promise<void> {
   const account = serviceAccount(env);
   for (const message of batch.messages) {
     try {
+      const key = message.body && 'dedupe_key' in message.body ? message.body.dedupe_key : undefined;
+      if (key && (await pushAlreadySent(env, key))) {
+        message.ack();
+        continue;
+      }
       if (account) await processPushMessage(message.body, env, account);
+      if (key) await markPushSent(env, key);
       message.ack();
     } catch (error) {
       // The payload is not logged: it may quote private conversation context.

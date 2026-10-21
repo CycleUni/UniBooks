@@ -53,3 +53,38 @@ describe('email queue failures', () => {
     }
   });
 });
+
+describe('email queue dedupe keys', () => {
+  it('sends a keyed notice once, however many times it is enqueued', async () => {
+    const withMailjet = { ...env, MAILJET_API_KEY: 'k', MAILJET_SECRET_KEY: 's' } as typeof env;
+    const userId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO users (id, email, role, is_active, is_banned, created_at, updated_at) VALUES (?, ?, 'user', 1, 0, ?, ?)",
+    )
+      .bind(userId, `${userId.slice(0, 8)}@example.com`, new Date().toISOString(), new Date().toISOString())
+      .run();
+    const body = {
+      type: 'meetup_reminder',
+      dedupe_key: `meetup:o1:${userId}:2030-01-01T10:00:00.000Z`,
+      user_id: userId,
+      email: `${userId.slice(0, 8)}@example.com`,
+      order_id: 'o1',
+      book_title: 'Book',
+      meetup_time: '2030-01-01T10:00:00.000Z',
+      meetup_location: 'Library',
+      region: 'TW',
+    } as EmailMessage;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}', { status: 200 }));
+    try {
+      const a = message(crypto.randomUUID(), 1, body);
+      const b = message(crypto.randomUUID(), 1, body);
+      await handleEmailQueue({ messages: [a] } as unknown as MessageBatch<EmailMessage>, withMailjet);
+      await handleEmailQueue({ messages: [b] } as unknown as MessageBatch<EmailMessage>, withMailjet);
+      expect(a.ack).toHaveBeenCalledOnce();
+      expect(b.ack).toHaveBeenCalledOnce();
+      expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('mailjet')).length).toBe(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
