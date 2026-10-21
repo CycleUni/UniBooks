@@ -551,6 +551,29 @@ describe('profile', () => {
     expect(await env.R2.get(key)).toBeNull();
   });
 
+  it('a password reset or change voids a pending email change', async () => {
+    for (const via of ['reset', 'change'] as const) {
+      const id = await createUser(`mailmove-${via}@example.com`);
+      const changeToken = await ott.issueEmailChange(env, id, `attacker-${via}@example.com`);
+      if (via === 'reset') {
+        const token = await ott.issue(env, ott.PASSWORD_RESET, id, ott.PASSWORD_RESET_TTL);
+        expect((await call('/api/v1/auth/password/reset/confirm', { body: { token, new_password: 'Brand-New-Pass-42' } })).status).toBe(
+          200,
+        );
+      } else {
+        const { access } = await login(`mailmove-${via}@example.com`);
+        const res = await call('/api/v1/auth/password', {
+          body: { old_password: PASSWORD, new_password: 'Brand-New-Pass-42' },
+          token: access,
+        });
+        expect(res.status).toBe(200);
+      }
+      const confirm = await call('/api/v1/auth/email/change/confirm', { body: { token: changeToken } });
+      expect(await confirm.json()).toEqual({ error: { code: 'acct.errEmailChangeTokenInvalid' } });
+      expect((await userRow(`mailmove-${via}@example.com`))?.id).toBe(id);
+    }
+  });
+
   it('DELETE /me needs a recent sign-in', async () => {
     const id = await createUser('leaving-stale@example.com');
     const stale = await signToken('access', { user_id: id, auth_time: Math.floor(Date.now() / 1000) - 3600 }, env);

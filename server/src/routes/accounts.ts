@@ -786,8 +786,11 @@ accountRoutes.post('/password', authMiddleware(), rateLimit('password_change', R
   if (problems.length) fieldErrors({ new_password: problems });
 
   await setPassword(c, user.id, newPassword);
-  // Every other session ends; this device gets a fresh pair.
+  // Every other session ends; this device gets a fresh pair. An email change
+  // asked for under the old password goes too: whoever knew it could have
+  // started one to their own address.
   await revokeAllTokensForUser(c.env, user.id);
+  await ott.cancelEmailChange(c.env, user.id);
   setSession(c, await issueTokens(c.env, user.id));
   return c.json({ code: 'acct.passwordUpdated' });
 });
@@ -848,8 +851,10 @@ accountRoutes.post('/password/reset/confirm', async (c) => {
   if (!(await ott.consume(c.env, record.id))) apiError(400, 'auth.errInvalidToken');
 
   await setPassword(c, user.id, newPassword);
-  // Any existing session may be the compromised credential this reset fixes.
+  // Any existing session may be the compromised credential this reset fixes,
+  // and so may a pending email change to someone else's address.
   await revokeAllTokensForUser(c.env, user.id);
+  await ott.cancelEmailChange(c.env, user.id);
   return c.json({ code: 'acct.passwordResetSuccess' });
 });
 
