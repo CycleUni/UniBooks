@@ -701,6 +701,13 @@ export class Book implements OnInit {
       this.router.navigate(this.regionLink.path(['/login']), { queryParams: { returnUrl: this.router.url } });
       return;
     }
+    // As for contacting the seller: an unverified buyer is told here, not
+    // refused at checkout after getting there.
+    if (!this.isVerified) {
+      this.showUnverifiedPrompt = true;
+      this.cdr.markForCheck();
+      return;
+    }
     this.router.navigate(this.regionLink.path(['/checkout', listingId]));
   }
 
