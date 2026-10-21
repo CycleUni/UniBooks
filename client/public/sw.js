@@ -13,8 +13,15 @@
 // the event from reaching it for any other origin, so the browser handles
 // those requests natively. Same-origin requests — the app shell, route
 // chunks, index.html — are left to Angular's worker exactly as before.
+//
+// The API (/api/...) goes to the browser natively too. Angular's worker never
+// caches it (no data groups), yet with the worker in control every page load
+// sent /core/metadata and /core/regions to the network a second time beside
+// the page's own request, which the browser had answered from its HTTP
+// cache: two billed Worker requests per load for nothing.
 self.addEventListener('fetch', (event) => {
-  if (new URL(event.request.url).origin !== self.location.origin) {
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) {
     event.stopImmediatePropagation();
   }
 });
