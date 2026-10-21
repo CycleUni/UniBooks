@@ -95,7 +95,30 @@ describe('ListingsComponent.submitEdit', () => {
 
     component.submitEdit();
 
-    expect(toastError).toHaveBeenCalledWith(en['listing.errBookShared']);
+    // Shown in the dialog, beside the form it is about.
+    expect(component.editError).toBe(en['listing.errBookShared']);
+  });
+
+  it('sends only what a reserved listing may still change', () => {
+    component.editingListing = { ...manualListing, status: 'reserved' };
+    component.editForm.price = 1;
+    component.editForm.book_title = 'Changed';
+    component.editForm.description = 'Spine is worn';
+    component.submitEdit();
+
+    const payload = updateListing.mock.calls[0][1];
+    for (const locked of ['price', 'condition', 'status', 'photos', 'book_title', 'book_authors', 'isbn']) {
+      expect(locked in payload, locked).toBe(false);
+    }
+    expect(payload.description).toBe('Spine is worn');
+  });
+
+  it('sends only the private note for a sold listing', () => {
+    component.editingListing = { ...manualListing, status: 'sold' };
+    component.editForm.private_note = 'paid in cash';
+    component.submitEdit();
+
+    expect(updateListing.mock.calls[0][1]).toEqual({ private_note: 'paid in cash' });
   });
 });
 

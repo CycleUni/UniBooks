@@ -164,16 +164,19 @@ const PAGE_SIZE = 20;
 
         <div class="modal-body app-modal-body">
           <p class="edit-book">{{ editingListing.book_title }}</p>
+          <p *ngIf="editLock" class="edit-lock-hint" role="note">{{ (editLock === 'sold' ? 'listing.errSoldLocked' : 'listing.errReservedLocked') | t }}</p>
+          <p *ngIf="editError" class="edit-error" role="alert">{{ editError }}</p>
 
           <!-- What a seller actually comes here to change. -->
           <ui-input
             type="number"
             [label]="'acct.priceLabel' | t:{currency: regionService.currency().symbol}"
             [(ngModel)]="editForm.price"
+            [disabled]="!!editLock"
             class="mb-4"
           ></ui-input>
-          <ui-dropdown [label]="'common.condition' | t" [(ngModel)]="editForm.condition" [options]="conditionOptions" [searchable]="false" class="mb-4"></ui-dropdown>
-          <ui-dropdown [label]="'acct.statusLabel' | t" [(ngModel)]="editForm.status" [options]="statusOptions" [searchable]="false" class="mb-4"></ui-dropdown>
+          <ui-dropdown [label]="'common.condition' | t" [(ngModel)]="editForm.condition" [options]="conditionOptions" [searchable]="false" [disabled]="!!editLock" class="mb-4"></ui-dropdown>
+          <ui-dropdown [label]="'acct.statusLabel' | t" [(ngModel)]="editForm.status" [options]="statusOptions" [searchable]="false" [disabled]="!!editLock" class="mb-4"></ui-dropdown>
 
           <!-- Every photo the listing carries, not just the cover: saving sends
                this whole list back, so showing only the first one meant an
@@ -186,10 +189,10 @@ const PAGE_SIZE = 20;
             <div class="photo-grid" *ngIf="editForm.photos?.length">
               <div class="photo-preview" *ngFor="let url of editForm.photos; let i = index">
                 <img [src]="url" loading="lazy" alt="" />
-                <button class="delete-photo-btn" type="button" (click)="removePhoto(i)" [title]="'common.delete' | t" [attr.aria-label]="'common.delete' | t">✕</button>
+                <button *ngIf="!editLock" class="delete-photo-btn" type="button" (click)="removePhoto(i)" [title]="'common.delete' | t" [attr.aria-label]="'common.delete' | t">✕</button>
               </div>
             </div>
-            <div *ngIf="editForm.photos.length < maxPhotos || isUploadingPhoto">
+            <div *ngIf="!editLock && (editForm.photos.length < maxPhotos || isUploadingPhoto)">
               <input type="file" accept="image/*" multiple (change)="onFileSelected($event)" #fileInput style="display: none;" />
               <ui-button variant="ghost" (onClick)="fileInput.click()" [disabled]="isUploadingPhoto">{{ (isUploadingPhoto ? 'sell.uploading' : 'acct.uploadPhoto') | t }}</ui-button>
             </div>
@@ -201,17 +204,17 @@ const PAGE_SIZE = 20;
           <details class="more" [open]="showAdvanced">
             <summary (click)="showAdvanced = !showAdvanced">{{ 'acct.moreFields' | t }}</summary>
             <div class="more-body">
-              <div *ngIf="editingListing.book_source === 'manual'" class="manual-book-edit mb-4">
+              <div *ngIf="editingListing.book_source === 'manual' && !editLock" class="manual-book-edit mb-4">
                 <p class="manual-note">{{ 'acct.manualBookDesc' | t }}</p>
                 <ui-input [label]="'acct.bookTitleLabel' | t" [(ngModel)]="editForm.book_title" class="mb-3"></ui-input>
                 <ui-input [label]="'acct.bookAuthorsLabel' | t" [(ngModel)]="editForm.book_authors" class="mb-3"></ui-input>
                 <ui-input [label]="'acct.isbnLabel' | t" [(ngModel)]="editForm.isbn"></ui-input>
               </div>
 
-              <ui-dropdown [label]="'sell.categoryLabel' | t" [(ngModel)]="editForm.category" [options]="categoryOptions" class="mb-4"></ui-dropdown>
-              <ui-input [label]="'sell.courseLabel' | t" [(ngModel)]="editForm.course_name" class="mb-4"></ui-input>
-              <ui-input [label]="'sell.professorLabel' | t" [(ngModel)]="editForm.professor_name" class="mb-4"></ui-input>
-              <ui-textarea [label]="'sell.descriptionLabel' | t" [(ngModel)]="editForm.description" [rows]="3" class="mb-4"></ui-textarea>
+              <ui-dropdown [label]="'sell.categoryLabel' | t" [(ngModel)]="editForm.category" [options]="categoryOptions" [disabled]="editLock === 'sold'" class="mb-4"></ui-dropdown>
+              <ui-input [label]="'sell.courseLabel' | t" [(ngModel)]="editForm.course_name" [disabled]="editLock === 'sold'" class="mb-4"></ui-input>
+              <ui-input [label]="'sell.professorLabel' | t" [(ngModel)]="editForm.professor_name" [disabled]="editLock === 'sold'" class="mb-4"></ui-input>
+              <ui-textarea [label]="'sell.descriptionLabel' | t" [(ngModel)]="editForm.description" [rows]="3" [disabled]="editLock === 'sold'" class="mb-4"></ui-textarea>
               <ui-textarea [label]="'sell.privateNoteLabel' | t" [(ngModel)]="editForm.private_note" [rows]="2"></ui-textarea>
             </div>
           </details>
@@ -268,6 +271,8 @@ const PAGE_SIZE = 20;
       z-index: 1001;
     }
     .edit-book { margin: 0 0 16px; color: var(--muted); overflow-wrap: anywhere; word-break: break-word; }
+    .edit-lock-hint { margin: 0 0 16px; color: var(--muted); font-size: var(--text-sm); }
+    .edit-error { margin: 0 0 16px; color: var(--danger); font-size: var(--text-sm); }
     .photo-label { display: block; margin-bottom: 8px; font-weight: 500; font-size: var(--text-base); }
     .photo-count { margin-left: 6px; font-weight: 400; font-size: var(--text-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
     /* Fixed-width tracks that wrap: five fit on one row in the 420px dialog
@@ -634,6 +639,7 @@ export class ListingsComponent implements OnInit {
   }
 
   closeEdit() {
+    this.editError = '';
     this.editingListing = null;
     // onDelete closes the sheet from inside an awaited confirm; without this
     // the sheet stayed drawn whenever the delete then failed or was refused.
@@ -693,22 +699,43 @@ export class ListingsComponent implements OnInit {
     }
   }
 
+  /**
+   * What the server lets this listing change (routes/listings.ts): once a
+   * buyer's order is accepted (reserved) the book, photos, price, condition
+   * and status stay; a sold listing keeps only its private note editable.
+   */
+  get editLock(): 'reserved' | 'sold' | null {
+    const status = this.editingListing?.status;
+    return status === 'reserved' || status === 'sold' ? status : null;
+  }
+
+  editError = '';
+
   submitEdit() {
     if (!this.editingListing || this.saving) return;
+    this.editError = '';
 
-    const payload: any = {
-      price: this.editForm.price,
-      condition: this.editForm.condition,
-      status: this.editForm.status,
-      category: this.editForm.category || null,
-      course_name: this.editForm.course_name || '',
-      professor_name: this.editForm.professor_name || '',
-      private_note: this.editForm.private_note,
-      description: this.editForm.description,
-      photos: this.editForm.photos
-    };
+    const lock = this.editLock;
+    const payload: any =
+      lock === 'sold'
+        ? { private_note: this.editForm.private_note }
+        : {
+            category: this.editForm.category || null,
+            course_name: this.editForm.course_name || '',
+            professor_name: this.editForm.professor_name || '',
+            private_note: this.editForm.private_note,
+            description: this.editForm.description,
+            ...(lock === 'reserved'
+              ? {}
+              : {
+                  price: this.editForm.price,
+                  condition: this.editForm.condition,
+                  status: this.editForm.status,
+                  photos: this.editForm.photos,
+                }),
+          };
 
-    if (this.editingListing.book_source === 'manual') {
+    if (this.editingListing.book_source === 'manual' && !lock) {
       // Only the fields the seller actually touched. A Book row is shared by
       // every listing of that title, so the backend refuses book-field edits
       // once a second seller lists the same manual book — and sending the
@@ -740,8 +767,9 @@ export class ListingsComponent implements OnInit {
         // malformed ISBN, ISBN already on another book) and each carries an
         // i18n code; the blanket "update failed" left the seller guessing.
         this.saving = false;
+        // In the dialog, beside the form it is about, not as a passing toast.
+        this.editError = parseApiError(err, this.i18n, 'acct.updateFailed');
         this.cdr.markForCheck();
-        this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
       }
     });
   }
