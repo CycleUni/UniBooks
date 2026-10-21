@@ -136,17 +136,16 @@ npm run deploy         # 之後每次：建置前端 → 先套用遠端 D1 migr
 6. 驗證：自己點一次線上廣告，等約 6 分鐘（Analytics Engine 寫入延遲加上 5 分鐘 KV 快取）再看後台。token 或帳號 ID 錯誤、或未設定時，後台不會報錯，數字只會維持 0。
 自訂網域：在 Cloudflare 後台把 `unibooks.app` 綁到 Worker `unibooks`。
 
-R2 生命週期規則（`wrangler.jsonc` 沒有這項設定，首次部署後設定一次）：刊登照片與廣告圖片先上傳到
-`tmp/`，儲存刊登或廣告時才搬到正式位置；沒被用到的上傳靠這條規則清掉。
+R2 生命週期規則與 CORS 由 Terraform 管理（`CycleUni/Cloudflare-Infra` 的 `r2.tf`），不要再用
+`wrangler r2 bucket lifecycle add` 手動加：Terraform 套用時會整份覆蓋，手動加的規則會被刪掉。目前的規則：
 
-```bash
-npx --prefix server wrangler r2 bucket lifecycle add unibooks-assets expire-tmp tmp/ --expire-days 1 --config server/wrangler.jsonc
-```
+| 前綴 | 動作 | 原因 |
+|---|---|---|
+| `tmp/` | 1 天後刪除 | 刊登照片與廣告圖片先上傳到這裡，儲存刊登或廣告時才搬到正式位置；沒被用到的上傳在這裡清掉（上傳權杖只有 15 分鐘） |
+| `tmp/` | 7 天後放棄未完成的分段上傳 | Cloudflare 預設規則 |
+| `chat/` | 365 天後刪除 | 刻意的保留期限：聊天圖片只保留一年。過期後訊息仍在，畫面以「圖片已過期」的佔位圖顯示（`messages.ts` 的 `expiredImageSrc`） |
 
-聊天圖片（`chat/<userId>/`）不能套用這種前綴規則：上傳後直接就是訊息裡的網址，沒有「附加」這一步，
-同一個前綴下已送出的圖片和沒送出的上傳無法區分，設了會把對話裡的圖片一起刪掉。沒送出的聊天上傳目前會留在
-R2；要回收它們，得先改成和刊登照片一樣：上傳到 `tmp/chat/<userId>/`，送出訊息時由 ChatRoom 搬到 `chat/`，
-之後 `tmp/` 的規則就會一併處理。
+聊天圖片上傳後直接就是訊息裡的網址，沒有「附加」這一步，所以沒送出的聊天上傳也一樣保留一年才清掉。
 
 ### 由 Git 自動部署（Workers Builds）
 
