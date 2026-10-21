@@ -23,13 +23,18 @@ export class ErrorReportInterceptor implements HttpInterceptor {
   intercept(request: HttpRequest<unknown>, next: HttpHandler): Observable<HttpEvent<unknown>> {
     return next.handle(request).pipe(
       catchError((error: unknown) => {
-        if (error instanceof HttpErrorResponse && error.status >= 500 && isOwnBackend(error.url ?? request.url)) {
-          const path = routeOf(error.url ?? request.url);
-          sentry.captureException(error, {
+        const path = error instanceof HttpErrorResponse && error.status >= 500 ? ownPath(error.url ?? request.url) : null;
+        if (error instanceof HttpErrorResponse && path !== null) {
+          const route = routeOf(path);
+          // A new error naming the route only: the HttpErrorResponse's message
+          // carries the full URL, query string (and any token in it) included.
+          const report = new Error(`HTTP ${error.status} ${request.method} ${route}`);
+          report.name = 'HttpServerError';
+          sentry.captureException(report, {
             tags: { http_status: String(error.status), http_method: request.method },
             // One issue per route and status, not one per listing id.
-            fingerprint: ['http-5xx', request.method, String(error.status), path],
-            extra: { route: path },
+            fingerprint: ['http-5xx', request.method, String(error.status), route],
+            extra: { route },
           });
         }
         return throwError(() => error);
@@ -38,12 +43,24 @@ export class ErrorReportInterceptor implements HttpInterceptor {
   }
 }
 
-function isOwnBackend(url: string): boolean {
-  return !url.startsWith('http') || url.startsWith(environment.backendUrl);
+/**
+ * The path of a URL on this site, or null for another origin. A failed
+ * response's url is the absolute one the browser fetched
+ * (https://unibooks.app/api/v1/...); comparing it as a string with the
+ * relative backendUrl never matched, and no 5xx was ever reported.
+ */
+function ownPath(url: string): string | null {
+  try {
+    const parsed = new URL(url, location.origin);
+    return parsed.origin === location.origin ? parsed.pathname : null;
+  } catch {
+    return null;
+  }
 }
 
-/** The path without the query string, with ids collapsed: /listings/42 -> /listings/:id */
-function routeOf(url: string): string {
-  const path = url.replace(environment.backendUrl, '').split(/[?#]/)[0];
-  return path.replace(/\/(\d+|[0-9a-f]{8}-[0-9a-f-]{27})(?=\/|$)/gi, '/:id');
+/** The API path with ids collapsed: /api/v1/listings/42 -> /listings/:id */
+function routeOf(path: string): string {
+  const base = new URL(environment.backendUrl, location.origin).pathname.replace(/\/+$/, '');
+  const rest = base && path.startsWith(base) ? path.slice(base.length) || '/' : path;
+  return rest.replace(/\/(\d+|[0-9a-f]{8}-[0-9a-f-]{27})(?=\/|$)/gi, '/:id');
 }

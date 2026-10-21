@@ -57,8 +57,17 @@ describe('ErrorReportInterceptor', () => {
     expect(sentry.captureException).not.toHaveBeenCalled();
   });
 
-  it('reports absolute URLs under the backend', () => {
+  it('reports URLs under the backend', () => {
     failWith(`${environment.backendUrl}/books`, 503);
     expect(sentry.captureException).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the absolute URL a failed response carries, without its query string', () => {
+    failWith(`${location.origin}/api/v1/listings/42?email_change_token=secret-token`, 500);
+    expect(sentry.captureException).toHaveBeenCalledTimes(1);
+    const [error, options] = vi.mocked(sentry.captureException).mock.calls[0] as [Error, any];
+    expect(options.fingerprint).toEqual(['http-5xx', 'GET', '500', '/listings/:id']);
+    expect(error.message).toBe('HTTP 500 GET /listings/:id');
+    expect(JSON.stringify(options) + error.message).not.toContain('secret-token');
   });
 });
