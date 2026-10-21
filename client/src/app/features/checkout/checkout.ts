@@ -15,6 +15,7 @@ import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { UiEmpty } from '../../shared/ui/empty.component';
 import { RegionLinkService } from '../../core/region-link.service';
+import { translateApiError } from '../../core/api-error.util';
 
 
 @Component({
@@ -222,6 +223,8 @@ export class CheckoutComponent implements OnInit {
   }
 
   async placeOrder() {
+    // The button is disabled while submitting; Enter or a fast second tap is not.
+    if (this.isSubmitting) return;
     this.isSubmitting = true;
     this.errorMsg = '';
     this.isNoChatError = false;
@@ -248,35 +251,14 @@ export class CheckoutComponent implements OnInit {
         this.errorKey = '';
         this.errorMsg = '';
         this.isNoChatError = false;
-        const errStr = JSON.stringify(err.error || {});
-        if (errStr.includes('checkout.errNoChat')) {
+        // One error format (server/src/lib/http.ts): {error: {code, fields?}}.
+        if (err?.error?.error?.code === 'checkout.errNoChat') {
           this.errorKey = 'checkout.errNoChat';
           this.isNoChatError = true;
-        } else if (errStr.includes('checkout.errListingUnavailable')) {
-          this.errorKey = 'checkout.errListingUnavailable';
         } else {
-          // If it's a field-error object, try to extract the first string
-          let msg = 'checkout.orderFailed';
-          let foundBackendMsg = false;
-          if (err.error && typeof err.error === 'object') {
-            for (const key in err.error) {
-              if (Array.isArray(err.error[key]) && err.error[key].length > 0) {
-                msg = err.error[key][0];
-                foundBackendMsg = true;
-                break;
-              }
-            }
-          }
-          if (foundBackendMsg) {
-            // Check if the extracted message is an i18n key
-            if (typeof msg === 'string' && msg.startsWith('checkout.')) {
-              this.errorKey = msg;
-            } else {
-              this.errorMsg = msg;
-            }
-          } else {
-            this.errorKey = msg;
-          }
+          const translated = translateApiError(err, this.i18n);
+          if (translated) this.errorMsg = translated;
+          else this.errorKey = 'checkout.orderFailed';
         }
         this.cdr.markForCheck();
       }
