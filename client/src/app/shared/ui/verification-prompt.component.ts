@@ -11,7 +11,7 @@ import { RegionService } from '../../core/region.service';
   standalone: true,
   imports: [RegionLinkDirective, CommonModule, RouterModule, TPipe, UiButton],
   template: `
-    <div class="verification-prompt-banner" *ngIf="!isDismissed">
+    <div class="verification-prompt-banner" *ngIf="requested || !isDismissed">
       <div class="prompt-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
           <circle cx="12" cy="12" r="10"></circle>
@@ -95,6 +95,13 @@ export class UiVerificationPrompt {
   protected regionService = inject(RegionService);
 
   @Input() storageKey = 'unibooks.verification_prompt.dismissed';
+  /**
+   * Shown because the visitor just tried something that needs verification
+   * (contact a seller, list a book): then an earlier dismissal does not hide
+   * it, or the tap would seem to do nothing at all. The dismissal only quiets
+   * the banner a page shows on arrival.
+   */
+  @Input() requested = false;
   @Input() title = '';
   @Input() message = '';
   @Output() onDismiss = new EventEmitter<void>();

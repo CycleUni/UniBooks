@@ -14,7 +14,8 @@
       <ng-container *ngIf="isLoggedIn && !isLoading">
         <ui-verification-prompt
           *ngIf="showUnverifiedPrompt"
-          (onDismiss)="showUnverifiedPrompt = false"
+          [requested]="unverifiedPromptRequested"
+          (onDismiss)="showUnverifiedPrompt = false; unverifiedPromptRequested = false"
           storageKey="unibooks.verification_prompt.sell"
           [message]="'sell.unverifiedDesc' | t:{suffix: (regionService.currentRegionObj()?.edu_email_suffix?.join(', ') || '.edu')}">
         </ui-verification-prompt>

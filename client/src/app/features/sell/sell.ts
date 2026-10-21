@@ -152,6 +152,8 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
     return this.authStore.isLoggedIn();
   }
   isVerified = false;
+  /** The banner came from a submit, not from arriving: an earlier dismissal does not hide it. */
+  unverifiedPromptRequested = false;
   showUnverifiedPrompt = false;
   isLoading = true;
   isCheckingIsbn = false;
@@ -788,6 +790,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
 
     if (!this.isVerified) {
       this.showUnverifiedPrompt = true;
+      this.unverifiedPromptRequested = true;
       this.cdr.markForCheck();
       return;
     }
@@ -831,6 +834,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
           const code = err.error?.error?.code;
           if (err.status === 403 || code === 'acct.errUnverified' || code === 'auth.errNotVerified') {
             this.showUnverifiedPrompt = true;
+            this.unverifiedPromptRequested = true;
           } else {
             // tOrNull, not t: an unrecognised backend code would otherwise be
             // pasted into the sentence verbatim, showing the user a raw key.

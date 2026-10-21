@@ -66,6 +66,7 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
 
         <ui-verification-prompt
           *ngIf="showUnverifiedPrompt"
+          [requested]="true"
           (onDismiss)="showUnverifiedPrompt = false">
         </ui-verification-prompt>
 

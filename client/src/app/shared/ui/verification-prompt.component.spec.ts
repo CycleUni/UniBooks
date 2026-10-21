@@ -55,4 +55,14 @@ describe('UiVerificationPrompt', () => {
     const banner = fixture.nativeElement.querySelector('.verification-prompt-banner');
     expect(banner).toBeNull();
   });
+
+  it('shows again when an action asks for it, even after a dismissal', () => {
+    fixture.nativeElement.querySelector('.dismiss-btn').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.verification-prompt-banner')).toBeNull();
+
+    fixture.componentRef.setInput('requested', true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.verification-prompt-banner')).toBeTruthy();
+  });
 });

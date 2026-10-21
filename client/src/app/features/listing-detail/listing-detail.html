@@ -99,6 +99,7 @@
 
           <ui-verification-prompt
             *ngIf="showUnverifiedPrompt"
+            [requested]="true"
             (onDismiss)="showUnverifiedPrompt = false">
           </ui-verification-prompt>
 
