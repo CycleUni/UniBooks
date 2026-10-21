@@ -7,6 +7,7 @@ import { PASSWORD, call, createUser, login, seedReference, sessionOf } from './h
 import { hashPassword } from '../../src/services/accounts/passwords';
 import { tokenFor } from '../ads/helpers';
 import { signToken } from '../../src/lib/jwt';
+import { seedListing, seedRegion } from '../messaging/helpers';
 
 beforeAll(async () => {
   await seedReference();
@@ -530,6 +531,24 @@ describe('profile', () => {
     expect(res.status).toBe(204);
     expect(await userRow('leaving@example.com')).toBeNull();
     expect((await call('/api/v1/auth/refresh', { body: { refresh } })).status).toBe(401);
+  });
+
+  it("DELETE /me takes the listings' photos off the media host and clears their private notes", async () => {
+    await seedRegion();
+    const id = await createUser('leaving-photos@example.com');
+    const listing = await seedListing(id);
+    const key = `listings/${id}/${'b'.repeat(32)}.png`;
+    await env.R2.put(key, new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    const url = `${env.R2_PUBLIC_URL}/${key}`;
+    await env.DB.prepare("UPDATE listings SET photos = ?, private_note = 'my phone 0912' WHERE id = ?")
+      .bind(JSON.stringify([url]), listing)
+      .run();
+
+    const { access } = await login('leaving-photos@example.com');
+    expect((await call('/api/v1/auth/me', { method: 'DELETE', token: access })).status).toBe(204);
+    const row = await env.DB.prepare('SELECT status, photos, private_note FROM listings WHERE id = ?').bind(listing).first<any>();
+    expect(row).toEqual({ status: 'removed', photos: '[]', private_note: '' });
+    expect(await env.R2.get(key)).toBeNull();
   });
 
   it('DELETE /me needs a recent sign-in', async () => {

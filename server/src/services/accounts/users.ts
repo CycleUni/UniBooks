@@ -23,6 +23,9 @@ import { newHexId } from '../../lib/uuid';
 import { nowIso } from '../../lib/time';
 import { cancelOpenOrdersForUser } from '../orders/cancel';
 import { disconnectUser } from '../messaging/disconnect';
+import { deleteListingPhotos } from '../listings/photos';
+import { parsePhotos } from '../../lib/json';
+import { siteOrigin } from '../../lib/origin';
 
 /** "First Last" when either part is Latin, else "LastFirst". */
 export function displayName(firstName: string | null | undefined, lastName: string | null | undefined): string {
@@ -218,18 +221,20 @@ export function nameColumns(firstName: string, lastName: string) {
  * delete would take the other party's history with it.
  */
 export async function deleteAccount(env: Env, userId: string): Promise<void> {
-  // First, through each order's lock: the other party is told and any
+  const db = createDb(env.DB);
+  // Switched off before anything else: from here no request of this account
+  // passes authentication, so no order or listing appears while the rest runs.
+  await db.update(users).set({ isActive: 0, updatedAt: nowIso() }).where(eq(users.id, userId)).run();
+  // Then, through each order's lock: the other party is told and any
   // reservation released, rather than an open order left on a gone listing.
   await cancelOpenOrdersForUser(env, userId);
   const now = new Date().toISOString();
   const hex = newHexId();
-  const db = createDb(env.DB);
+  const own = await db.select({ photos: listings.photos }).from(listings).where(eq(listings.sellerId, userId));
   await db.batch([
-    // Other modules' tables.
-    db
-      .update(listings)
-      .set({ status: 'removed', updatedAt: now })
-      .where(and(eq(listings.sellerId, userId), ne(listings.status, 'removed'))),
+    // Other modules' tables. Listings stay as records (orders and reports
+    // point at them) but lose what was personal: the private note and photos.
+    db.update(listings).set({ status: 'removed', privateNote: '', photos: '[]', updatedAt: now }).where(eq(listings.sellerId, userId)),
     db.delete(subscriptions).where(eq(subscriptions.userId, userId)),
     // Ours.
     db.delete(regionVerifications).where(eq(regionVerifications.userId, userId)),
@@ -258,4 +263,11 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
   ]);
   await revokeAllTokensForUser(env, userId);
   await disconnectUser(env, userId);
+  // Their photos are public at fixed URLs: take them off the media host too.
+  await deleteListingPhotos(
+    env,
+    siteOrigin(env),
+    userId,
+    own.flatMap((l) => parsePhotos(l.photos)),
+  );
 }
