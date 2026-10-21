@@ -62,7 +62,7 @@ import { UiButton } from '../../shared/ui/button.component';
         <tr *ngFor="let user of users" [regionLink]="[user.id]" [class.picked]="bulk.selection.has(user.id)">
           <td adminPick
             [checked]="bulk.selection.has(user.id)"
-            [disabled]="bulk.busy"
+            [disabled]="bulk.busy || !canToggle(user)"
             [label]="'admin.bulk.selectRow' | t: { name: user.email }"
             (toggle)="bulk.selection.toggle(user.id)"></td>
           <td>{{ formatRegions(user.regions) }}</td>
@@ -110,7 +110,16 @@ export class AdminUsersListComponent {
   bulk = new BulkController<string | number>(() => this.reload());
 
   get pageIds(): (string | number)[] {
-    return this.users.map((u) => u.id);
+    return this.users.filter((u) => this.canToggle(u)).map((u) => u.id);
+  }
+
+  /**
+   * Rows the bulk switch can act on. The API never switches off your own
+   * account or a staff or admin one (activating them is moot), so those rows
+   * are not offered rather than counted as failures afterwards.
+   */
+  canToggle(user: AdminUser): boolean {
+    return String(user.id) !== String(this.authStore.user()?.id) && user.role !== 'staff' && user.role !== 'admin';
   }
 
   /** Whether the table the admin is looking at is narrowed by anything. An
