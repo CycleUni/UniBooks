@@ -1,4 +1,4 @@
-import { importOrReload } from './chunk-recovery';
+import { importOrReload, reloadForMissingChunk } from './chunk-recovery';
 
 describe('importOrReload', () => {
   beforeEach(() => sessionStorage.clear());
@@ -21,5 +21,20 @@ describe('importOrReload', () => {
   it('leaves other failures to the caller without reloading', async () => {
     await expect(importOrReload(() => Promise.reject(new Error('boom')))).rejects.toThrow('boom');
     expect(sessionStorage.getItem('unibooks.chunkReload')).toBeNull();
+  });
+
+  it('does not reload while offline', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    expect(reloadForMissingChunk(new Error('Failed to fetch dynamically imported module'))).toBe(false);
+    expect(sessionStorage.getItem('unibooks.chunkReload')).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it('does not reload when nothing could remember it did (no sessionStorage)', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    expect(reloadForMissingChunk(new Error('Failed to fetch dynamically imported module'))).toBe(false);
+    vi.restoreAllMocks();
   });
 });

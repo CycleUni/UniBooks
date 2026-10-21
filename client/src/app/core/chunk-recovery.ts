@@ -37,13 +37,18 @@ const RELOAD_KEY = 'unibooks.chunkReload';
  * that copy again. Returns false when it did not reload.
  */
 export function reloadForMissingChunk(error: unknown, url: string = location.href): boolean {
+  // Offline, the import failed for want of a network, not because a deploy
+  // removed the chunk: a reload would only swap the app for the browser's
+  // offline page.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
   try {
     const last = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || 'null');
     if (last && last.url === url && Date.now() - last.at < 10_000) return false;
     sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ url, at: Date.now() }));
   } catch {
-    // No sessionStorage: reload anyway; the browser's own history stops a
-    // loop from being more than a nuisance.
+    // No sessionStorage, so nothing would remember this reload and a broken
+    // chunk would reload the page forever: leave the error to the caller.
+    return false;
   }
   const chunkUrl = chunkUrlFromError(error);
   const refreshed = chunkUrl ? fetch(chunkUrl, { cache: 'reload' }).then(() => undefined, () => undefined) : Promise.resolve();
