@@ -1,3 +1,4 @@
+import { translateApiError } from '../../core/api-error.util';
 import { AfterViewInit, Component, OnInit, OnDestroy, ElementRef, ViewChild, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule, Router } from '@angular/router';
@@ -303,11 +304,9 @@ export class ForgotPassword implements OnInit, AfterViewInit, OnDestroy {
       },
       error: (err) => {
         this.confirmStatus = 'idle';
-        const code = err.error?.error?.code;
-        const fieldErrors: string[] | undefined = err.error?.error?.fields;
-        this.errorMessage = fieldErrors?.length
-          ? fieldErrors.join(' ')
-          : (code ? this.i18n.t(code) : this.i18n.t('verify.errUnknown'));
+        // {error:{code, fields:{new_password:[keys]}}}: the field's reasons
+        // ("too short", "too common") first, then the code, translated.
+        this.errorMessage = translateApiError(err, this.i18n) ?? this.i18n.t('verify.errUnknown');
         this.cdr.markForCheck();
       }
     });
