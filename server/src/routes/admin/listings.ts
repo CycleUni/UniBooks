@@ -145,6 +145,10 @@ listingRoutes.patch('/listings/:id', async (c) => {
   const allowed = new Set(['status', 'admin_locked', 'admin_lock_reason', 'reason']);
   if (Object.keys(data).some((k) => !allowed.has(k))) apiError(400, 'admin.errForbiddenField');
   if (!('status' in data) && !('admin_locked' in data)) apiError(400, 'admin.errInvalidField');
+  // Stored and shown as text: anything else would be saved as "[object Object]".
+  for (const k of ['reason', 'admin_lock_reason'] as const) {
+    if (data[k] !== undefined && data[k] !== null && typeof data[k] !== 'string') apiError(400, 'admin.errInvalidField');
+  }
 
   const db = createDb(c.env.DB);
   const row = await loadListing(c, db);

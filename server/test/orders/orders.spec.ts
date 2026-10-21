@@ -573,6 +573,9 @@ describe.skipIf(!schemaReady)('taking a listing down settles its open orders', (
 
     expect((await set({ status: 'sold' })).status).toBe(400);
     expect((await set({ status: 'active' })).status).toBe(409);
+    // A reason is text, never an object stored as "[object Object]".
+    expect((await set({ admin_locked: true, admin_lock_reason: { x: 1 } })).status).toBe(400);
+    expect((await set({ status: 'removed', reason: ['a long enough reason'] })).status).toBe(400);
     const noReason = await set({ status: 'removed' });
     expect(noReason.status).toBe(400);
     expect(await orderStatus(orderId)).toBe('accepted');
