@@ -23,6 +23,7 @@ import {
   type User,
 } from '../db';
 import { serializeListings } from '../services/listings/serialize';
+import { coverUrlFor } from '../services/catalog/covers';
 import type { AccountLinkKind, EmailMessage } from '../queues/types';
 import * as ott from '../services/accounts/oneTimeTokens';
 import { issueTokens, revokeAllTokensForUser, rotateRefreshToken, verifyAndRevokeRefreshToken } from '../services/accounts/tokens';
@@ -1014,6 +1015,7 @@ async function mySubscriptions(c: C, userId: string, regionCode: string | null) 
       title: books.title,
       isbn13: books.isbn13,
       cover_url: books.coverUrl,
+      cover_r2_key: books.coverR2Key,
       new_count: sql<number>`(SELECT COUNT(DISTINCT ${listings.id}) FROM ${listings}
         WHERE ${listings.bookId} = ${subscriptions.bookId} AND ${listings.status} = 'active' AND ${listings.createdAt} > ${subscriptions.createdAt})`,
     })
@@ -1021,12 +1023,13 @@ async function mySubscriptions(c: C, userId: string, regionCode: string | null) 
     .innerJoin(books, eq(books.id, subscriptions.bookId))
     .where(and(eq(subscriptions.userId, userId), eq(subscriptions.regionCode, regionCode)))
     .orderBy(desc(subscriptions.createdAt));
+  const origin = new URL(c.req.url).origin;
   return results.map((s) => ({
     id: s.id,
     book: s.book_id,
     bookTitle: s.title,
     isbn: s.isbn13,
-    bookCoverUrl: s.cover_url,
+    bookCoverUrl: coverUrlFor(c.env, origin, s),
     newListingsCount: Number(s.new_count),
     created_at: s.created_at,
   }));

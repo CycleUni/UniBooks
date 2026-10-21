@@ -358,6 +358,8 @@ export const books = sqliteTable(
     publisher: text('publisher').notNull().default(''),
     publishedDate: text('published_date').notNull().default(''),
     coverUrl: text('cover_url').notNull().default(''),
+    coverR2Key: text('cover_r2_key'),
+    coverCheckedAt: text('cover_checked_at'),
     source: text('source', {
       enum: ['listed', 'preseed', 'manual', 'google_api', 'openlibrary_api', 'isbnnet_api'],
     }).notNull(),

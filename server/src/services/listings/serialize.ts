@@ -9,12 +9,13 @@ import { inList } from '../../lib/sql';
 import type { Env } from '../../env';
 import { createDb, users, schools, orders, reviews, books, type Book, type Listing } from '../../db';
 import { cleanPublisher } from '../catalog/common';
+import { coverUrlFor } from '../catalog/covers';
 import { displayName, publicAvatarUrl } from '../accounts/users';
 import { categorySlugsById, localizedSchoolName } from './places';
 
 type Row = Record<string, unknown>;
 
-export function serializeBook(book: Book): Record<string, unknown> {
+export function serializeBook(book: Book, env?: Env, origin?: string): Record<string, unknown> {
   return {
     id: book.id,
     isbn13: book.isbn13,
@@ -22,7 +23,7 @@ export function serializeBook(book: Book): Record<string, unknown> {
     authors: book.authors,
     publisher: cleanPublisher(book.publisher),
     published_date: book.publishedDate,
-    cover_url: book.coverUrl,
+    cover_url: env ? coverUrlFor(env, origin, book) : book.coverUrl,
     source: book.source,
     created_at: book.createdAt,
     region: book.regionCode,
@@ -122,7 +123,7 @@ export async function serializeListings(
       seller_school_id: l.schoolId,
       book_title: book?.title ?? '',
       book_authors: book?.authors ?? '',
-      book_cover_url: book?.coverUrl ?? '',
+      book_cover_url: book ? coverUrlFor(env, undefined, book) : '',
       book_source: book?.source ?? '',
       course_name: l.courseName,
       professor_name: l.professorName,

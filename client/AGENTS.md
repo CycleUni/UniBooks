@@ -110,6 +110,7 @@
      代理則只需 `'self'`。
   5. 直連會把使用者的 IP 與 Referer 送給第三方。
   省 Worker 請求數不足以抵銷這些成本。
+  另外，已刊登書籍（至少有一筆 active 或 reserved 刊登）的封面由伺服器在後台抓取並寫入 R2（`covers/` 前綴），直接由 R2 公開網域提供給前端以節省 Worker 請求數；其餘未快取封面與未刊登書籍則維持走 `/api/cover` 代理。
 - 這個資料夾只有前端；伺服器端邏輯（API、聊天室、`/<region>/book`、`/api/cover`）都在 `../server`，部署設定是 `../server/wrangler.jsonc`。
 
 ## 9. 登入狀態（Session）

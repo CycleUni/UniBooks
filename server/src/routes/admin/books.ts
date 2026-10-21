@@ -19,6 +19,7 @@ import {
   SOURCE_BY_ENGINE,
 } from '../../services/catalog/lookups';
 import { serializeBook } from '../../services/listings/serialize';
+import { dropCoverCopy } from '../../services/catalog/covers';
 import { bookSearch } from './listings';
 import { isUniqueViolation } from '../../lib/db';
 
@@ -55,9 +56,9 @@ function bookWithCounts(db: Database) {
   return db.select({ b: books, activeListings: activeListingsSql, requestCount: requestCountSql }).from(books);
 }
 
-function adminBookJson(row: { b: Book; activeListings: number; requestCount: number }) {
+function adminBookJson(row: { b: Book; activeListings: number; requestCount: number }, env?: AppEnv['Bindings'], origin?: string) {
   return {
-    ...serializeBook(row.b),
+    ...serializeBook(row.b, env, origin),
     reviewed_at: row.b.reviewedAt,
     active_listings: row.activeListings,
     request_count: row.requestCount,
@@ -83,7 +84,13 @@ bookRoutes.get('/books', async (c) => {
   const where = and(...conds);
   const [{ n }] = await db.select({ n: count() }).from(books).where(where);
   const rows = await bookWithCounts(db).where(where).orderBy(desc(books.createdAt), desc(books.id)).limit(page.limit).offset(page.offset);
-  return c.json(page.wrap(rows.map(adminBookJson), n));
+  const origin = new URL(c.req.url).origin;
+  return c.json(
+    page.wrap(
+      rows.map((r) => adminBookJson(r, c.env, origin)),
+      n,
+    ),
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -178,7 +185,7 @@ async function otherBookWith(db: Database, book: Book, isbn: string): Promise<Bo
   return other;
 }
 
-bookRoutes.get('/books/:id', async (c) => c.json(adminBookJson(await loadBook(c, createDb(c.env.DB)))));
+bookRoutes.get('/books/:id', async (c) => c.json(adminBookJson(await loadBook(c, createDb(c.env.DB)), c.env, new URL(c.req.url).origin)));
 
 bookRoutes.get('/books/:id/lookup', async (c) => {
   const db = createDb(c.env.DB);
@@ -324,8 +331,12 @@ bookRoutes.patch('/books/:id', async (c) => {
       ),
     ];
     await db.batch(statements as [(typeof statements)[0], ...typeof statements]);
+    if (book.coverR2Key && book.coverR2Key.startsWith('covers/')) {
+      await c.env.R2.delete(book.coverR2Key).catch((e: unknown) => console.error(`[admin/books] failed to delete ${book.coverR2Key}`, e));
+    }
     const [fresh] = await db.select().from(books).where(eq(books.id, target.id)).limit(1);
-    return c.json({ merged_into: target.id, book: serializeBook(fresh ?? target) });
+    const origin = new URL(c.req.url).origin;
+    return c.json({ merged_into: target.id, book: serializeBook(fresh ?? target, c.env, origin) });
   }
 
   const set: Partial<Book> = { ...updates };
@@ -334,6 +345,11 @@ bookRoutes.patch('/books/:id', async (c) => {
       // The review vouched for the old ISBN, not the new one.
       set.reviewedAt = null;
       set.reviewedById = null;
+    }
+    if ('coverUrl' in updates && updates.coverUrl !== book.coverUrl) {
+      await dropCoverCopy(c.env, book);
+      set.coverR2Key = null;
+      set.coverCheckedAt = null;
     }
     const camelToSnake: Record<string, string> = {
       title: 'title',
@@ -368,7 +384,8 @@ bookRoutes.patch('/books/:id', async (c) => {
     }
   }
   const [fresh] = await db.select().from(books).where(eq(books.id, book.id)).limit(1);
-  return c.json({ merged_into: null, book: serializeBook(fresh) });
+  const origin = new URL(c.req.url).origin;
+  return c.json({ merged_into: null, book: serializeBook(fresh, c.env, origin) });
 });
 
 bookRoutes.post('/books/:id/confirm-manual', async (c) => {
@@ -394,5 +411,5 @@ bookRoutes.post('/books/:id/confirm-manual', async (c) => {
       c,
     );
   }
-  return c.json(adminBookJson(await loadBook(c, db, book.id)));
+  return c.json(adminBookJson(await loadBook(c, db, book.id), c.env, new URL(c.req.url).origin));
 });

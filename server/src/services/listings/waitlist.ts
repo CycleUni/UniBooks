@@ -1,6 +1,7 @@
 import { and, count, desc, eq, exists, isNotNull } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { books, createDb, regionVerifications, subscriptions } from '../../db';
+import { coverUrlFor } from '../catalog/covers';
 import { NO_SCHOOL_ID } from './places';
 
 export interface WaitlistEntry {
@@ -46,6 +47,7 @@ export async function mostWanted(env: Env, regionCode: string, schoolId: number 
         bookId: subscriptions.bookId,
         title: books.title,
         coverUrl: books.coverUrl,
+        coverR2Key: books.coverR2Key,
         isbn13: books.isbn13,
         authors: books.authors,
         n,
@@ -53,14 +55,14 @@ export async function mostWanted(env: Env, regionCode: string, schoolId: number 
       .from(subscriptions)
       .innerJoin(books, eq(books.id, subscriptions.bookId))
       .where(and(eq(subscriptions.regionCode, regionCode), bySchool))
-      .groupBy(subscriptions.bookId, books.title, books.coverUrl, books.isbn13, books.authors)
+      .groupBy(subscriptions.bookId, books.title, books.coverUrl, books.coverR2Key, books.isbn13, books.authors)
       .orderBy(desc(n))
       .limit(7);
     return rows.map((r) => ({
       title: r.title,
       count: Number(r.n),
       book_id: r.bookId,
-      cover_url: r.coverUrl,
+      cover_url: coverUrlFor(env, undefined, { coverUrl: r.coverUrl, coverR2Key: r.coverR2Key }),
       isbn: r.isbn13,
       authors: r.authors,
     }));

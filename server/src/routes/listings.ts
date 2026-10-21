@@ -9,6 +9,8 @@ import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../l
 import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
+import { cleanCoverUrl } from '../services/catalog/common';
+import { copyBookCover, coverUrlFor, dropCoverCopy } from '../services/catalog/covers';
 import { validateBookIsbn } from '../services/catalog/isbn';
 import { nowIso } from '../lib/time';
 import { resolveLanguage, schoolFilterId, schoolFilterScope } from '../services/listings/places';
@@ -150,6 +152,7 @@ listingRoutes.post('/', authMiddleware(), async (c) => {
     throw e;
   }
   await afterResponse(c, settlePhotos(c.env, origin(c), user.id, accepted, true));
+  await afterResponse(c, copyBookCover(c.env, origin(c), values.bookId!));
   const lang = resolveLanguage(c, region);
   const [out] = await serializeListings(c.env, [row], { viewerId: user.id, lang }, new Map([[values.book!.id, values.book!]]));
   return c.json(out, 201);
@@ -224,13 +227,13 @@ async function recentBooks(c: Context<AppEnv>): Promise<Response> {
 
   const { results: bookRows } = await db
     .prepare(
-      `SELECT b.id, b.isbn13, b.title, b.authors, b.cover_url, MAX(l.created_at) AS latest
+      `SELECT b.id, b.isbn13, b.title, b.authors, b.cover_url, b.cover_r2_key, MAX(l.created_at) AS latest
          FROM books b JOIN listings l ON l.book_id = b.id
         WHERE b.region_code = ? AND l.status = 'active'${place.sql}
         GROUP BY b.id ORDER BY latest DESC, b.id LIMIT ? OFFSET ?`,
     )
     .bind(region.code, ...place.args, p.limit, p.offset)
-    .all<{ id: string; isbn13: string | null; title: string; authors: string; cover_url: string }>();
+    .all<{ id: string; isbn13: string | null; title: string; authors: string; cover_url: string; cover_r2_key?: string | null }>();
   const page = bookRows.slice(0, limit);
   if (!page.length) return c.json({ ...p.wrap([], count), ...scopeFields });
 
@@ -256,7 +259,7 @@ async function recentBooks(c: Context<AppEnv>): Promise<Response> {
       isbn: b.isbn13,
       title: b.title,
       authors: b.authors,
-      cover_url: b.cover_url,
+      cover_url: coverUrlFor(c.env, origin(c), b),
       avg_price: avg === null ? null : Math.round(avg),
       min_price: st.prices.length ? Math.min(...st.prices) : null,
       max_price: st.prices.length ? Math.max(...st.prices) : null,
@@ -346,7 +349,7 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c)
 
   // A manual book's own fields, editable only while this seller is its sole lister.
   const bookUpdate: Partial<typeof books.$inferInsert> = {};
-  const bookFieldsSent = ['book_title', 'book_authors', 'isbn'].some((k) => Object.prototype.hasOwnProperty.call(body, k));
+  const bookFieldsSent = ['book_title', 'book_authors', 'isbn', 'cover_url'].some((k) => Object.prototype.hasOwnProperty.call(body, k));
   const [book] = await db.select().from(books).where(eq(books.id, listing.bookId)).limit(1);
   if (book && book.source === 'manual' && bookFieldsSent) {
     const [other] = await db
@@ -355,7 +358,7 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c)
       .where(and(eq(listings.bookId, book.id), sql`${listings.sellerId} <> ${userId}`))
       .limit(1);
     if (other) apiError(403, 'listing.errBookShared');
-    const before = [book.title, book.authors, book.isbn13];
+    const before = [book.title, book.authors, book.isbn13, book.coverUrl];
     if (body.book_title !== undefined && body.book_title !== null) {
       if (typeof body.book_title !== 'string' || !body.book_title.trim()) apiError(400, 'sell.errValidation');
       bookUpdate.title = body.book_title.trim().slice(0, 255);
@@ -363,6 +366,11 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c)
     if (body.book_authors !== undefined && body.book_authors !== null) {
       if (typeof body.book_authors !== 'string') apiError(400, 'sell.errValidation');
       bookUpdate.authors = body.book_authors.trim().slice(0, 512);
+    }
+    if (body.cover_url !== undefined && body.cover_url !== null) {
+      const cover = cleanCoverUrl(body.cover_url);
+      if (cover === null) apiError(400, 'sell.errValidation');
+      bookUpdate.coverUrl = cover;
     }
     if (body.isbn !== undefined && body.isbn !== null) {
       if (body.isbn === '') bookUpdate.isbn13 = null;
@@ -378,10 +386,16 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c)
         bookUpdate.isbn13 = valid;
       }
     }
+    if (bookUpdate.coverUrl !== undefined && bookUpdate.coverUrl !== book.coverUrl) {
+      await dropCoverCopy(c.env, book);
+      bookUpdate.coverR2Key = null;
+      bookUpdate.coverCheckedAt = null;
+    }
     const after = [
       bookUpdate.title ?? book.title,
       bookUpdate.authors ?? book.authors,
       'isbn13' in bookUpdate ? bookUpdate.isbn13 : book.isbn13,
+      bookUpdate.coverUrl ?? book.coverUrl,
     ];
     if (after.some((v, i) => v !== before[i])) {
       // The admin's "no catalogue has this" was about the old record.
@@ -429,6 +443,12 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c)
     const dropped = parsePhotos(listing.photos).filter((u) => !kept.has(u));
     const settled = settlePhotos(c.env, origin(c), listing.sellerId, accepted, !!changed, dropped);
     await afterResponse(c, settled);
+  }
+  const becameActive = update.status === 'active' && listing.status !== 'active';
+  const bookChanged = update.bookId !== undefined && update.bookId !== listing.bookId;
+  if ((becameActive || bookChanged) && changed) {
+    const targetBookId = update.bookId ?? listing.bookId;
+    await afterResponse(c, copyBookCover(c.env, origin(c), targetBookId));
   }
   if (!changed) fieldErrors({ status: ['listing.errStatusNotAllowed'] });
 

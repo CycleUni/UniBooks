@@ -30,6 +30,7 @@ import { apiError, pagination } from '../../lib/http';
 import { parseJsonObject } from '../../lib/json';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { notFound, scopeOf, uuidId } from '../../services/admin/scope';
+import { coverUrlFor } from '../../services/catalog/covers';
 import { regionAdTotals } from '../../services/admin/adAnalytics';
 import {
   ALLOWED_DAYS,
@@ -285,8 +286,14 @@ async function topSchools(
   });
 }
 
-function bookDict(b: Book, full = false) {
-  const data: Record<string, unknown> = { id: b.id, title: b.title, authors: b.authors, isbn13: b.isbn13, cover_url: b.coverUrl };
+function bookDict(b: Book, full = false, env?: AppEnv['Bindings'], origin?: string) {
+  const data: Record<string, unknown> = {
+    id: b.id,
+    title: b.title,
+    authors: b.authors,
+    isbn13: b.isbn13,
+    cover_url: env ? coverUrlFor(env, origin, b) : b.coverUrl,
+  };
   if (full) {
     data.publisher = b.publisher;
     data.published_date = b.publishedDate;
@@ -747,9 +754,10 @@ statsRoutes.get('/stats/books/ranking', async (c) => {
       (x.b.id < y.b.id ? -1 : x.b.id > y.b.id ? 1 : 0),
   );
   const ranker = bookRanker(groups, sortField);
+  const origin = new URL(c.req.url).origin;
   const results = rows.slice(page.offset, page.offset + page.limit).map(({ b, s }) => ({
     rank: ranker.rank(s[sortField]),
-    book: bookDict(b),
+    book: bookDict(b, false, c.env, origin),
     ...s,
   }));
   return c.json({ ...page.wrap(results, rows.length), currency: region.defaultCurrency, sort });
@@ -784,9 +792,10 @@ statsRoutes.get('/stats/books/requests', async (c) => {
       (x.b.id < y.b.id ? -1 : x.b.id > y.b.id ? 1 : 0),
   );
   const ranker = requestRanker(stats, unlistedOnly);
+  const origin = new URL(c.req.url).origin;
   const results = rows.slice(page.offset, page.offset + page.limit).map(({ b, s }) => ({
     rank: ranker.rank(s.request_count),
-    book: bookDict(b),
+    book: bookDict(b, false, c.env, origin),
     ...s,
   }));
   return c.json({ ...page.wrap(results, rows.length), summary });
@@ -1054,7 +1063,7 @@ statsRoutes.get('/stats/books/:id', async (c) => {
     region: region.code,
     currency: region.defaultCurrency,
     days,
-    book: bookDict(book, true),
+    book: bookDict(book, true, c.env, new URL(c.req.url).origin),
     summary,
     requests: { ...requests, rank: requestRanker(reqStatsAll).rank(mine.request_count) },
     by_status: byStatus,

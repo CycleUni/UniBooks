@@ -12,6 +12,7 @@ import { authMiddleware } from '../middleware/auth';
 import { cleanAndValidateIsbn, validateBookIsbn } from '../services/catalog/isbn';
 import { checkRate } from '../middleware/rateLimit';
 import { cleanCoverUrl, cleanPublisher } from '../services/catalog/common';
+import { coverUrlFor } from '../services/catalog/covers';
 import { getGoogleBooksByIsbn } from '../services/catalog/lookups';
 import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
@@ -44,7 +45,7 @@ async function serialize(env: Env, subs: Subscription[]): Promise<Record<string,
       book: s.bookId,
       bookTitle: book?.title ?? '',
       isbn: book?.isbn13 ?? '',
-      bookCoverUrl: book?.coverUrl ?? '',
+      bookCoverUrl: book ? coverUrlFor(env, undefined, book) : '',
       newListingsCount: countMap.get(s.id) ?? 0,
       created_at: s.createdAt,
     };
@@ -110,6 +111,8 @@ subscriptionRoutes.post('/', async (c) => {
         publisher: String(cleanPublisher(gb.publisher ?? '')).slice(0, 255),
         publishedDate: (gb.published_date ?? '').slice(0, 50),
         coverUrl: (cleanCoverUrl(gb.cover_url) ?? '').slice(0, 1024),
+        coverR2Key: null,
+        coverCheckedAt: null,
         source: 'google_api',
         createdAt: nowIso(),
         reviewedAt: null,

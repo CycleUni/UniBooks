@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNull, lt, lte, notExists, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNotNull, isNull, lt, lte, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { Env } from '../env';
 import { createDb, subscriptions, books, users, orders, regions, listings, emailSent, pushSent } from '../db';
@@ -8,6 +8,9 @@ import { AUTO_COMPLETE_AFTER_MS, lockKeyFor } from '../services/orders/transitio
 import { deliverNotices } from '../services/orders/notify';
 import { purgeTokenStore } from '../services/accounts/tokens';
 import { purgeOneTimeTokens } from '../services/accounts/oneTimeTokens';
+import { runCoverSweep, runCoverCleanup } from '../services/catalog/covers';
+
+export { runCoverSweep, runCoverCleanup };
 
 /**
  * Scheduled jobs. They run only from the Worker's own cron triggers
@@ -360,15 +363,21 @@ export async function runCleanup(env: Env) {
     .from(books);
   // Books with no listings (any status) and no subscriptions.
   const db = createDb(env.DB);
-  const orphans = await db
-    .delete(books)
-    .where(
-      and(
-        notExists(db.select({ id: listings.id }).from(listings).where(eq(listings.bookId, books.id))),
-        notExists(db.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.bookId, books.id))),
-      ),
-    )
-    .run();
+  const orphanWhere = and(
+    notExists(db.select({ id: listings.id }).from(listings).where(eq(listings.bookId, books.id))),
+    notExists(db.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.bookId, books.id))),
+  );
+  const orphanBooksWithCovers = await db
+    .select({ coverR2Key: books.coverR2Key })
+    .from(books)
+    .where(and(isNotNull(books.coverR2Key), orphanWhere));
+  for (const b of orphanBooksWithCovers) {
+    if (b.coverR2Key && b.coverR2Key.startsWith('covers/')) {
+      await env.R2.delete(b.coverR2Key).catch((e: unknown) => console.error('[Cleanup] failed to delete cover', b.coverR2Key, e));
+    }
+  }
+  const orphans = await db.delete(books).where(orphanWhere).run();
+  const coverCleanup = await runCoverCleanup(env);
   const tokensPurged = await purgeTokenStore(env);
   const linksPurged = await purgeOneTimeTokens(env);
   // Redelivery only happens within the queue's retry window, so a day is plenty.
@@ -383,6 +392,7 @@ export async function runCleanup(env: Env) {
   const result = {
     orphan_books_deleted: orphans.meta.changes ?? 0,
     scanned_books: Number(total),
+    unlisted_covers_cleaned: coverCleanup.cleaned,
     refresh_tokens_purged: tokensPurged,
     one_time_tokens_purged: linksPurged,
     email_sent_purged: sentPurged.meta.changes ?? 0,
@@ -401,13 +411,15 @@ export async function handleScheduled(controller: Pick<ScheduledController, 'cro
     switch (controller.cron) {
       case '0 */6 * * *':
         await runAlone(env, 'WaitlistNotify', () => runWaitlistNotify(env));
+        await runAlone(env, 'CoverSweep', () => runCoverSweep(env));
         break;
       case '*/30 * * * *':
         await runAlone(env, 'MeetupReminder', () => runMeetupReminder(env));
         await runAlone(env, 'AutoComplete', () => runAutoComplete(env));
         break;
       case '0 3 * * *':
-        await runCleanup(env);
+        await runAlone(env, 'CoverCleanup', () => runCoverCleanup(env));
+        await runAlone(env, 'Cleanup', () => runCleanup(env));
         break;
       default:
         console.warn(`[cron] unhandled trigger ${controller.cron}`);

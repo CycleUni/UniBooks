@@ -3,6 +3,7 @@ import type { Env } from '../env';
 import { books, createDb, listings, orders, pushDevices, pushSent, regions } from '../db';
 import { parsePhotos } from '../lib/json';
 import { coverImageUrl } from '../services/frontend/bookMeta';
+import { coverUrlFor } from '../services/catalog/covers';
 import { siteOrigin } from '../lib/origin';
 import { formatMeetupTime } from '../lib/time';
 import type { PushMessage } from './types';
@@ -163,25 +164,25 @@ export interface RenderedPush {
 async function bookCoverImage(env: Env, origin: string, region: string | null | undefined, isbn: string | null | undefined) {
   if (!region || !isbn) return undefined;
   const [row] = await createDb(env.DB)
-    .select({ coverUrl: books.coverUrl })
+    .select({ coverUrl: books.coverUrl, coverR2Key: books.coverR2Key })
     .from(books)
     .where(and(eq(books.regionCode, region), eq(books.isbn13, isbn)))
     .limit(1);
-  return (row && coverImageUrl(origin, row.coverUrl)) || undefined;
+  return (row && coverImageUrl(origin, coverUrlFor(env, origin, row))) || undefined;
 }
 
 /** The listing's first photo, else its book's cover; undefined when it has neither (or the listing is gone). */
 async function listingImage(env: Env, origin: string, listingId: string | null | undefined) {
   if (!listingId) return undefined;
   const [row] = await createDb(env.DB)
-    .select({ photos: listings.photos, coverUrl: books.coverUrl })
+    .select({ photos: listings.photos, coverUrl: books.coverUrl, coverR2Key: books.coverR2Key })
     .from(listings)
     .innerJoin(books, eq(books.id, listings.bookId))
     .where(eq(listings.id, listingId))
     .limit(1);
   if (!row) return undefined;
   const photo = parsePhotos(row.photos).find((u) => /^https?:\/\//i.test(u));
-  return photo || coverImageUrl(origin, row.coverUrl) || undefined;
+  return photo || coverImageUrl(origin, coverUrlFor(env, origin, row)) || undefined;
 }
 
 /** Listing photo, else cover, falling back to the book's cover by ISBN once the listing is deleted. */

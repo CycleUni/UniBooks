@@ -9,6 +9,7 @@ import { requireRegion, setSharedCache } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { cleanPublisher, describeSource, type Engine } from '../services/catalog/common';
+import { coverUrlFor } from '../services/catalog/covers';
 import {
   ISBN_FALLBACK_ORDER,
   ISBN_LOOKUPS,
@@ -58,6 +59,7 @@ interface LocalBook {
   publisher: string;
   published_date: string;
   cover_url: string;
+  cover_r2_key?: string | null;
   source: string;
 }
 
@@ -73,15 +75,15 @@ interface Item {
   debug_source?: string | null;
 }
 
-const BOOK_COLS = 'b.id, b.isbn13, b.title, b.authors, b.publisher, b.published_date, b.cover_url, b.source';
-const toItem = (b: LocalBook): Item => ({
+const BOOK_COLS = 'b.id, b.isbn13, b.title, b.authors, b.publisher, b.published_date, b.cover_url, b.cover_r2_key, b.source';
+const toItem = (b: LocalBook, env?: Env, origin?: string): Item => ({
   id: String(b.id),
   isbn: b.isbn13,
   title: b.title,
   authors: b.authors,
   publisher: b.publisher,
   published_date: b.published_date,
-  cover_url: b.cover_url,
+  cover_url: env ? coverUrlFor(env, origin, b) : b.cover_url,
   source: b.source,
 });
 
@@ -128,6 +130,7 @@ searchRoutes.get('/books', optionalAuthMiddleware(), (c) =>
 async function searchBooks(c: Context<AppEnv>): Promise<Response> {
   await checkRate(c, 'search', SEARCH_RATE);
   const env = c.env;
+  const origin = new URL(c.req.url).origin;
   // Bounded: every distinct query is a DB scan plus an external lookup.
   const query = (c.req.query('q') ?? '').slice(0, 100);
   const category = c.req.query('category') ?? '';
@@ -196,7 +199,7 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
       }
     }
     resultsTruncated = rows.length === LOCAL_BROWSE_LIMIT;
-    results = rows.map(toItem);
+    results = rows.map((r) => toItem(r, env, origin));
   } else {
     let external: Item[] = [];
     let localRows: LocalBook[];
@@ -288,7 +291,7 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
     }
 
     const seen = new Set<string>();
-    for (const item of [...localRows.map(toItem), ...external]) {
+    for (const item of [...localRows.map((r) => toItem(r, env, origin)), ...external]) {
       if (item.isbn && !seen.has(item.isbn)) {
         seen.add(item.isbn);
         results.push(item);

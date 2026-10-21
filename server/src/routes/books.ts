@@ -114,8 +114,9 @@ bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
   // Shared by every viewer of the book page: seller-only fields stay out.
   const results = await serializeListings(c.env, rows, { stripPrivateNote: true, lang }, new Map([[book.id, book]]));
 
+  const origin = new URL(c.req.url).origin;
   const out: Record<string, unknown> = {
-    ...serializeBook(book),
+    ...serializeBook(book, c.env, origin),
     listings: p.wrap(results, count),
     price_stats: { count, min: agg?.lo ?? null, max: agg?.hi ?? null },
     waiting_count: Number(waiting),
@@ -211,7 +212,7 @@ bookRoutes.post('/manual', authMiddleware(), async (c) => {
         await db.update(books).set(patch).where(eq(books.id, existing.id));
         Object.assign(existing, patch);
       }
-      return c.json(serializeBook(existing), 200);
+      return c.json(serializeBook(existing, c.env, new URL(c.req.url).origin), 200);
     }
   }
 
@@ -258,5 +259,5 @@ bookRoutes.post('/manual', authMiddleware(), async (c) => {
     if (isbn13 && /UNIQUE/i.test(String(e))) apiError(400, 'listing.errIsbnTaken');
     throw e;
   }
-  return c.json(serializeBook(row as Book), 201);
+  return c.json(serializeBook(row as Book, c.env, new URL(c.req.url).origin), 201);
 });

@@ -1,7 +1,7 @@
 /**
  * Listing deletion and page bounds.
  */
-import { and, eq, inArray, notExists, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, notExists, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { books, conversations, createDb, listings, orders, subscriptions } from '../../db';
 import { parsePhotos } from '../../lib/json';
@@ -35,6 +35,22 @@ export async function deleteListing(
 ): Promise<void> {
   const db = createDb(env.DB);
   const rooms = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.listingId, listing.id));
+  const [orphanBook] = await db
+    .select({ coverR2Key: books.coverR2Key })
+    .from(books)
+    .where(
+      and(
+        eq(books.id, listing.bookId),
+        notExists(
+          db
+            .select({ id: listings.id })
+            .from(listings)
+            .where(and(eq(listings.bookId, listing.bookId), ne(listings.id, listing.id))),
+        ),
+        notExists(db.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.bookId, listing.bookId))),
+      ),
+    )
+    .limit(1);
   await db.batch([
     db
       .update(orders)
@@ -55,6 +71,11 @@ export async function deleteListing(
         ),
       ),
   ]);
+  if (orphanBook?.coverR2Key && orphanBook.coverR2Key.startsWith('covers/')) {
+    await env.R2.delete(orphanBook.coverR2Key).catch((e: unknown) =>
+      console.error(`[listings] failed to delete ${orphanBook.coverR2Key}`, e),
+    );
+  }
   // Chats about it are read-only now; sockets already open learn it here.
   await Promise.allSettled(
     rooms.map((r) =>
