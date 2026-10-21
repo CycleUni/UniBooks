@@ -916,6 +916,8 @@ export const zhHK: Record<string, string> = {
   'admin.deleteWithOrdersHint': '呢個刊登有 {count} 張進行中嘅訂單，刪除嗰陣會一併取消並通知買家同賣家。請填寫原因。',
   'admin.locked': '已鎖定',
   'listing.errAdminLocked': '呢件商品已經被平台鎖定，改唔到。',
+  'listing.errReservedLocked': '呢件商品已經有接受咗嘅訂單，書、相、價錢同書況都唔可以再改。',
+  'listing.errSoldLocked': '呢件商品已經賣出，唔可以再改。',
   'listing.errStatusNotAllowed': '而家改唔到呢個狀態。有訂單喺度嘅商品，狀態會跟住訂單變。',
   'admin.noSchool': '無學校',
   'admin.staffBadge': '管理員',

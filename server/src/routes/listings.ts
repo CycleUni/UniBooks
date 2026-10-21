@@ -325,6 +325,9 @@ listingRoutes.get(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c) =
   return c.json(out);
 });
 
+/** What a buyer agreed to: fixed while their accepted order is open. */
+const RESERVED_LOCKED_FIELDS = ['book', 'book_title', 'book_authors', 'isbn', 'photos', 'price', 'condition'] as const;
+
 listingRoutes.patch(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c) => {
   const userId = c.get('userId');
   const listing = await loadListing(c, c.req.param('id'));
@@ -332,6 +335,12 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c)
   await assertVerifiedIn(c, listing.regionCode);
   if (listing.adminLocked) apiError(403, 'listing.errAdminLocked');
   const body = await readJson(c.req);
+  // While a buyer's accepted order waits on it, the book, photos, price and
+  // condition stay what the buyer agreed to (the description and notes may
+  // still be clarified). A sold listing is a record: only its private note.
+  const sent = (keys: readonly string[]) => keys.some((k) => Object.prototype.hasOwnProperty.call(body, k));
+  if (listing.status === 'reserved' && sent(RESERVED_LOCKED_FIELDS)) apiError(409, 'listing.errReservedLocked');
+  if (listing.status === 'sold' && Object.keys(body).some((k) => k !== 'private_note')) apiError(409, 'listing.errSoldLocked');
   const db = createDb(c.env.DB);
   const now = nowIso();
 
