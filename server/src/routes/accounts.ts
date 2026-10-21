@@ -694,6 +694,15 @@ accountRoutes.post('/logout', optionalAuthMiddleware(), async (c) => {
   }
   if (userId && body.all_devices) await revokeAllTokensForUser(c.env, userId);
   else if (userId && jti) await verifyAndRevokeRefreshToken(c.env, jti, userId);
+  // This browser's push registration goes with the session, here rather than
+  // only in a separate request, which an expired access token could lose.
+  const pushToken = body.push_token;
+  if (userId && typeof pushToken === 'string' && pushToken && pushToken.length <= PUSH_TOKEN_MAX_LENGTH) {
+    await createDb(c.env.DB)
+      .delete(pushDevices)
+      .where(and(eq(pushDevices.userId, userId), eq(pushDevices.token, pushToken)))
+      .run();
+  }
   return c.json({ code: 'auth.logoutSuccess' });
 });
 

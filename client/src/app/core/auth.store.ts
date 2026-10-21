@@ -882,7 +882,11 @@ export class AuthStore {
   logout(returnUrl?: string): Observable<any> {
     // Before the session goes: the device removal still needs the session,
     // and a signed-out browser should stop receiving this account's messages.
-    void this.injector.get(PushService).unregisterThisDevice();
+    // The token also rides on the logout request, which removes it even when
+    // this separate request loses to an expired access token.
+    const push = this.injector.get(PushService);
+    const pushToken = push.storedToken();
+    void push.unregisterThisDevice();
     // Signing out on purpose may mean handing the computer over: what this
     // person typed (a sell draft with its private note, their searches) goes
     // too. A session that merely expired keeps them for when they sign back in.
@@ -893,7 +897,7 @@ export class AuthStore {
     if (hasSessionHint()) {
       // The refresh cookie travels with this request (Path=/api/v1/auth/);
       // the server revokes it and clears every session cookie.
-      return this.http.post('/auth/logout', {}).pipe(
+      return this.http.post('/auth/logout', pushToken ? { push_token: pushToken } : {}).pipe(
         tap({
           next: () => this.signOut(returnUrl),
           error: () => this.signOut(returnUrl)

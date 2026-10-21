@@ -105,6 +105,11 @@ export class PushService {
     await this.unregisterThisDevice();
   }
 
+  /** This browser's registered push token, for the sign-out request to remove. */
+  storedToken(): string | null {
+    return this.readStored()?.token ?? null;
+  }
+
   /**
    * Tells the backend this browser should no longer be pushed to and drops its
    * token. Also what sign-out calls: the request goes out before the session

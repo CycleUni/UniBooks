@@ -574,6 +574,28 @@ describe('profile', () => {
     }
   });
 
+  it("logout removes this browser's push registration, and only the caller's", async () => {
+    const id = await createUser('push-out@example.com');
+    const other = await createUser('push-other@example.com');
+    const now = new Date().toISOString();
+    for (const [uid, token] of [
+      [id, 'tok-mine'],
+      [other, 'tok-theirs'],
+    ]) {
+      await env.DB.prepare(
+        'INSERT INTO push_devices (user_id, token, platform, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)',
+      )
+        .bind(uid, token, 'web', now, now)
+        .run();
+    }
+    const { access } = await login('push-out@example.com');
+    await call('/api/v1/auth/logout', { body: { push_token: 'tok-theirs' }, token: access });
+    expect(await env.DB.prepare("SELECT 1 FROM push_devices WHERE token = 'tok-theirs'").first()).toBeTruthy();
+    const again = await login('push-out@example.com');
+    await call('/api/v1/auth/logout', { body: { push_token: 'tok-mine' }, token: again.access });
+    expect(await env.DB.prepare("SELECT 1 FROM push_devices WHERE token = 'tok-mine'").first()).toBeNull();
+  });
+
   it('DELETE /me needs a recent sign-in', async () => {
     const id = await createUser('leaving-stale@example.com');
     const stale = await signToken('access', { user_id: id, auth_time: Math.floor(Date.now() / 1000) - 3600 }, env);
