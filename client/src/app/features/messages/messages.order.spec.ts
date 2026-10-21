@@ -14,11 +14,13 @@ describe('Messages WebSocket ordering & temp-id reconciliation', () => {
   let component: Messages;
   let realTimeMessagesSubject: Subject<any>;
   let realTimeAcksSubject: Subject<any>;
+  let roomReconnectedSubject: Subject<void>;
   let mockMessageService: any;
 
   beforeEach(() => {
     realTimeMessagesSubject = new Subject();
     realTimeAcksSubject = new Subject();
+    roomReconnectedSubject = new Subject();
 
     mockMessageService = {
       getConversations: vi.fn(() => of([])),
@@ -32,7 +34,7 @@ describe('Messages WebSocket ordering & temp-id reconciliation', () => {
       sendRoomMessage: vi.fn(() => true),
       roomUpdates$: EMPTY,
       roomTokenRefreshed$: EMPTY,
-      roomReconnected$: EMPTY,
+      roomReconnected$: roomReconnectedSubject.asObservable(),
       roomGaveUp$: EMPTY,
       conversationUnreadState$: { subscribe: () => ({ unsubscribe() {} }), value: new Map() },
       realTimeMessages$: realTimeMessagesSubject.asObservable(),
@@ -121,6 +123,39 @@ describe('Messages WebSocket ordering & temp-id reconciliation', () => {
     expect(component.messages.length).toBe(1);
     expect(component.messages[0].id).toBe('server-id-123');
     expect(component.messages[0].body).toBe('Optimistic hello');
+  });
+
+  it("keeps the other party's identical message while mine waits for its ack", () => {
+    component.selectChat({ id: 'conv-1' });
+    component.userId = 'user-1';
+    component.connectionState = 'connected';
+    component.newMessage = 'ok';
+    component.sendMessage();
+
+    realTimeMessagesSubject.next({ id: 'theirs-1', content: 'ok', user_id: 'user-2', timestamp: 6000 });
+
+    const seen = component.messages.map(m => [m.body, m.is_mine]);
+    expect(seen).toHaveLength(2);
+    expect(seen).toContainEqual(['ok', true]);
+    expect(seen).toContainEqual(['ok', false]);
+  });
+
+  it('a reconnect fails the sends still waiting, so a later ack lands on the right bubble', () => {
+    component.selectChat({ id: 'conv-1' });
+    component.userId = 'user-1';
+    component.connectionState = 'connected';
+    component.newMessage = 'first';
+    component.sendMessage();
+    component.newMessage = 'second';
+    component.sendMessage();
+
+    roomReconnectedSubject.next();
+    expect(component.messages.every(m => m.failed)).toBe(true);
+
+    component.newMessage = 'third';
+    component.sendMessage();
+    realTimeAcksSubject.next({ id: 'server-3', timestamp: Date.now() });
+    expect(component.messages.find(m => m.id === 'server-3')?.body).toBe('third');
   });
 
   describe('accepting a meetup from the chat card', () => {

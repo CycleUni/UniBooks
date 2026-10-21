@@ -144,6 +144,12 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   private rawEdgeMsgs: any[] = [];
   // Temp ids of messages sent but not yet confirmed by the server, oldest first
   private pendingTempIds: string[] = [];
+  private tempSeq = 0;
+
+  /** Unique per bubble: two sends in one millisecond must not share a temp id (acks and failures find bubbles by it). */
+  private nextTempId(): string {
+    return `temp_${Date.now()}_${++this.tempSeq}`;
+  }
   // Enter confirming an IME candidate (e.g. Zhuyin) fires `compositionend`
   // and the Enter `keyup` in the same tick, and by then some browsers have
   // already flipped `isComposing` back to false on that keyup — so a plain
@@ -172,7 +178,19 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
 
     // The room socket was down for a while: whatever was said meanwhile never
     // reached it, so fetch the latest page and add what is missing.
-    this.roomReconnectedSubscription = this.messageService.roomReconnected$.subscribe(() => this.catchUpHistory());
+    this.roomReconnectedSubscription = this.messageService.roomReconnected$.subscribe(() => {
+      // Sends still waiting for an ack died with the old socket (the drop
+      // reports one error, however many were pending): mark them failed and
+      // start the ack queue afresh, or later acks would land on the wrong
+      // bubbles. The history below replaces any that did get through.
+      for (const tempId of this.pendingTempIds) {
+        const msg = this.messages.find(m => m.id === tempId);
+        if (msg) msg.failed = true;
+      }
+      this.pendingTempIds = [];
+      this.cdr.markForCheck();
+      this.catchUpHistory();
+    });
     this.roomGaveUpSubscription = this.messageService.roomGaveUp$.subscribe(gaveUp => {
       this.reconnectGaveUp = gaveUp;
       this.cdr.markForCheck();
@@ -206,12 +224,15 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
 
     this.wsSubscription = this.messageService.realTimeMessages$.subscribe(msg => {
       if (this.activeChat) {
-        const exists = this.messages.some(m => m.id === msg.id || (m.id.startsWith('temp_') && m.body === msg.content && m.is_mine));
+        const mine = String(msg.user_id) === String(this.userId);
+        // Only my own message can be the echo of my unacknowledged bubble: the
+        // other side saying the same thing ("ok") is a message of its own.
+        const exists = this.messages.some(m => m.id === msg.id || (mine && m.id.startsWith('temp_') && m.body === msg.content && m.is_mine));
         if (!exists) {
           this.insertMessageSorted({
             id: msg.id,
             body: msg.content,
-            is_mine: String(msg.user_id) === String(this.userId),
+            is_mine: mine,
             created_at: msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString(),
             message_type: msg.message_type || 'text'
           });
@@ -685,7 +706,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
       if (!text || this.creatingChat) return;
       this.clearDraft(this.activeChat.id);
       this.newMessage = '';
-      const tempMsg: any = { id: 'temp_' + Date.now(), body: text, is_mine: true, created_at: new Date().toISOString() };
+      const tempMsg: any = { id: this.nextTempId(), body: text, is_mine: true, created_at: new Date().toISOString() };
       this.insertMessageSorted(tempMsg);
       this.cdr.markForCheck();
       this.startPendingChat(this.activeChat, tempMsg);
@@ -709,7 +730,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
       this.newMessage = '';
 
       const tempMsg: any = {
-        id: 'temp_' + Date.now(),
+        id: this.nextTempId(),
         body: text,
         is_mine: true,
         created_at: new Date().toISOString()
@@ -827,7 +848,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
 
         // Send the image message
         const tempMsg: any = {
-          id: 'temp_' + Date.now(),
+          id: this.nextTempId(),
           body: res.url,
           message_type: 'image',
           metadata: { filename: file.name },
@@ -1089,7 +1110,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
         let added = false;
         for (const raw of page?.messages || []) {
           const msg = this.toViewMessage(raw);
-          const exists = this.messages.some(m => m.id === msg.id || (String(m.id).startsWith('temp_') && m.body === msg.body && m.is_mine));
+          const exists = this.messages.some(m => m.id === msg.id || (msg.is_mine && String(m.id).startsWith('temp_') && m.body === msg.body && m.is_mine));
           if (exists) continue;
           this.insertMessageSorted(msg);
           added = true;
