@@ -127,6 +127,62 @@ export class ChatRoom extends DurableObject<Env> {
     return closed;
   }
 
+  /**
+   * The room's listing is gone: the chat is read-only from now on (the
+   * contract's rule, applied by roomAccess to new connections). Sockets
+   * already open as 'user' become observers in place, so they cannot keep
+   * writing until their token runs out. Called from
+   * services/listings/lifecycle.ts; never reachable over HTTP. Returns how
+   * many sockets changed.
+   */
+  async makeReadOnly(): Promise<number> {
+    let changed = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      const state = ws.deserializeAttachment() as ConnectionState | undefined;
+      if (state?.role !== 'user') continue;
+      ws.serializeAttachment({ ...state, role: 'observer' });
+      this.sendToSender(ws, { type: 'read_only' });
+      changed++;
+    }
+    return changed;
+  }
+
+  /** Open sockets whose token is still valid; expired ones are closed on the way. */
+  private liveSockets(): WebSocket[] {
+    const now = Date.now();
+    const live: WebSocket[] = [];
+    for (const ws of this.ctx.getWebSockets()) {
+      const state = ws.deserializeAttachment() as ConnectionState | undefined;
+      if (state?.expiresAt !== undefined && state.expiresAt <= now) {
+        try {
+          ws.close(TOKEN_EXPIRED_CLOSE_CODE, 'Token expired');
+        } catch {
+          /* already closing */
+        }
+      } else {
+        live.push(ws);
+      }
+    }
+    return live;
+  }
+
+  /**
+   * Wake up when the earliest socket expires. Without it a socket that only
+   * listens outlived its token: expiry was checked only when it sent.
+   */
+  private async scheduleExpiry(at: number): Promise<void> {
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || at < current) await this.ctx.storage.setAlarm(at);
+  }
+
+  async alarm(): Promise<void> {
+    const next = this.liveSockets()
+      .map((ws) => (ws.deserializeAttachment() as ConnectionState | undefined)?.expiresAt)
+      .filter((t): t is number => typeof t === 'number')
+      .sort((a, b) => a - b)[0];
+    if (next !== undefined) await this.ctx.storage.setAlarm(next);
+  }
+
   // ─── HTTP (from routes/chat.ts) ─────────────────────────────────────────
 
   async fetch(request: Request): Promise<Response> {
@@ -159,6 +215,7 @@ export class ChatRoom extends DurableObject<Env> {
         expiresAt: Number.isFinite(expSeconds) && expSeconds > 0 ? expSeconds * 1000 : undefined,
       };
       server.serializeAttachment(state);
+      if (state.expiresAt !== undefined) await this.scheduleExpiry(state.expiresAt);
 
       // Echo the offered subprotocol (the token) so strict clients accept the handshake.
       const requestedProtocol = request.headers.get('Sec-WebSocket-Protocol');
@@ -408,7 +465,7 @@ export class ChatRoom extends DurableObject<Env> {
       type: 'message',
       message: { id, user_id: userId, content, message_type: messageType, metadata, timestamp },
     });
-    for (const peer of this.ctx.getWebSockets()) {
+    for (const peer of this.liveSockets()) {
       if (peer === except) continue;
       try {
         peer.send(frame);
@@ -515,7 +572,7 @@ export class ChatRoom extends DurableObject<Env> {
       this.ctx.storage.sql.exec(`DELETE FROM messages WHERE id = ?`, messageId);
       this.ctx.storage.sql.exec(`DELETE FROM message_deletions WHERE message_id = ?`, messageId);
       const purged = JSON.stringify({ type: 'message_deleted', id: messageId });
-      for (const peer of this.ctx.getWebSockets()) {
+      for (const peer of this.liveSockets()) {
         try {
           peer.send(purged);
         } catch (e) {
