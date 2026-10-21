@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 import { OrdersComponent } from './orders';
@@ -59,6 +59,45 @@ describe('OrdersComponent.updateStatus', () => {
     component.updateStatus(component.soldOrders[0], 'accepted');
 
     expect(component.loadOrders).not.toHaveBeenCalled();
+  });
+
+  it('sends one request however often it is tapped while one is in flight', () => {
+    const pending = new Subject<any>();
+    updateOrderStatus.mockReturnValue(pending);
+    const order = component.soldOrders[0];
+    component.updateStatus(order, 'accepted');
+    component.updateStatus(order, 'accepted');
+    expect(updateOrderStatus).toHaveBeenCalledTimes(1);
+    expect(component.isBusy(order)).toBe(true);
+    pending.next({ ...pendingOrder, status: 'accepted' });
+    pending.complete();
+    expect(component.isBusy(order)).toBe(false);
+  });
+
+  it('merges into the list holding the order, whatever tab shows', () => {
+    component.activeTab = 'buying';
+    component.updateStatus(component.soldOrders[0], 'accepted');
+    expect(component.soldOrders[0].status).toBe('accepted');
+  });
+
+  it('asks before cancelling or rejecting, and does nothing on No', async () => {
+    const askDanger = vi.fn().mockResolvedValue(false);
+    (component as any).confirms = { askDanger, ask: vi.fn() };
+    await component.cancelOrder(component.soldOrders[0], 'seller_rejected');
+    expect(askDanger).toHaveBeenCalledTimes(1);
+    expect(updateOrderStatus).not.toHaveBeenCalled();
+
+    askDanger.mockResolvedValue(true);
+    await component.cancelOrder(component.soldOrders[0], 'seller_rejected');
+    expect(updateOrderStatus).toHaveBeenCalledWith('o1', 'cancelled', 'seller_rejected', undefined, undefined);
+  });
+
+  it('asks before confirming receipt', async () => {
+    const ask = vi.fn().mockResolvedValue(false);
+    (component as any).confirms = { askDanger: vi.fn(), ask };
+    await component.confirmReceived(component.soldOrders[0]);
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(updateOrderStatus).not.toHaveBeenCalled();
   });
 
   it('does not re-read the list when the request never reached the server', () => {

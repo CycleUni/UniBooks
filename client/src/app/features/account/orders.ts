@@ -18,6 +18,8 @@ import { DateTimeFormatPipe } from '../../shared/pipes/datetime-format.pipe';
 import { PricePipe } from '../../shared/pipes/price.pipe';
 import { GoogleAnalyticsService } from '../../core/services/google-analytics.service';
 import { RegionLinkService } from '../../core/region-link.service';
+import { finalize } from 'rxjs/operators';
+import { ConfirmService } from '../../core/services/confirm.service';
 import { ToastService } from '../../core/services/toast.service';
 import { scrollBehavior } from '../../core/reduced-motion';
 import { parseApiError } from '../../core/api-error.util';
@@ -63,12 +65,12 @@ import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
           <div class="order-card" *ngFor="let order of filteredBoughtOrders" [id]="'order-' + order.id">
             <div *ngIf="hasExclusiveConflict(order)" class="exclusive-conflict">
               {{ 'order.exclusiveConflict' | t }}
-              <ui-button variant="ghost" (onClick)="cancelOtherPending(order)">{{ 'order.cancelOtherPending' | t }}</ui-button>
+              <ui-button variant="ghost" [disabled]="busyOrderIds.size > 0" (onClick)="cancelOtherPending(order)">{{ 'order.cancelOtherPending' | t }}</ui-button>
             </div>
             <ng-container *ngTemplateOutlet="orderSummary; context: { $implicit: order, role: 'buyer' }"></ng-container>
             <div class="order-actions" *ngIf="hasActions(order, 'buyer')">
-              <ui-button *ngIf="order.status === 'pending' || order.status === 'accepted'" variant="ghost" (onClick)="updateStatus(order, 'cancelled', 'buyer_cancelled')">{{ 'order.cancel' | t }}</ui-button>
-              <ui-button *ngIf="order.status === 'handed_over'" (onClick)="updateStatus(order, 'completed')">{{ 'order.confirmReceived' | t }}</ui-button>
+              <ui-button *ngIf="order.status === 'pending' || order.status === 'accepted'" variant="ghost" [disabled]="isBusy(order)" (onClick)="cancelOrder(order, 'buyer_cancelled')">{{ 'order.cancel' | t }}</ui-button>
+              <ui-button *ngIf="order.status === 'handed_over'" [disabled]="isBusy(order)" (onClick)="confirmReceived(order)">{{ 'order.confirmReceived' | t }}</ui-button>
               <ui-button *ngIf="order.status === 'completed' && !order.has_reviewed" variant="ghost" (onClick)="openReviewModal(order)">{{ 'order.reviewAndReport' | t }}</ui-button>
             </div>
           </div>
@@ -80,11 +82,11 @@ import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
             <ng-container *ngTemplateOutlet="orderSummary; context: { $implicit: order, role: 'seller' }"></ng-container>
             <div class="order-actions" *ngIf="hasActions(order, 'seller')">
               <ng-container *ngIf="order.status === 'pending'">
-                <ui-button (onClick)="approveOrder(order)">{{ 'order.approve' | t }}</ui-button>
-                <ui-button variant="ghost" (onClick)="updateStatus(order, 'cancelled', 'seller_rejected')">{{ 'order.reject' | t }}</ui-button>
+                <ui-button [disabled]="isBusy(order)" (onClick)="approveOrder(order)">{{ 'order.approve' | t }}</ui-button>
+                <ui-button variant="ghost" [disabled]="isBusy(order)" (onClick)="cancelOrder(order, 'seller_rejected')">{{ 'order.reject' | t }}</ui-button>
               </ng-container>
-              <ui-button *ngIf="order.status === 'accepted'" (onClick)="updateStatus(order, 'handed_over')">{{ 'order.markHandedOver' | t }}</ui-button>
-              <ui-button variant="ghost" *ngIf="order.status === 'accepted'" (onClick)="updateStatus(order, 'cancelled', 'seller_cancelled')">{{ 'order.cancel' | t }}</ui-button>
+              <ui-button *ngIf="order.status === 'accepted'" [disabled]="isBusy(order)" (onClick)="markHandedOver(order)">{{ 'order.markHandedOver' | t }}</ui-button>
+              <ui-button variant="ghost" *ngIf="order.status === 'accepted'" [disabled]="isBusy(order)" (onClick)="cancelOrder(order, 'seller_cancelled')">{{ 'order.cancel' | t }}</ui-button>
               <ui-button *ngIf="order.status === 'completed' && !order.has_reviewed" variant="ghost" (onClick)="openReviewModal(order)">{{ 'order.reviewAndReport' | t }}</ui-button>
             </div>
           </div>
@@ -438,6 +440,14 @@ export class OrdersComponent implements OnInit {
   }
   private toast = inject(ToastService);
   private ga = inject(GoogleAnalyticsService);
+  private confirms = inject(ConfirmService);
+
+  /** Orders with a status change in flight: their buttons wait, so a double tap sends one request. */
+  readonly busyOrderIds = new Set<string>();
+
+  isBusy(order: Order): boolean {
+    return !!order.id && this.busyOrderIds.has(String(order.id));
+  }
 
   get filteredBoughtOrders() {
     return this.searchOrders(this.boughtOrders, o => o.seller_name);
@@ -653,9 +663,38 @@ export class OrdersComponent implements OnInit {
     }, 100);
   }
 
+  /** Cancel, or for a seller reject: neither can be undone, so asked first. */
+  async cancelOrder(order: Order, reason: 'buyer_cancelled' | 'seller_cancelled' | 'seller_rejected') {
+    const rejecting = reason === 'seller_rejected';
+    const ok = await this.confirms.askDanger(this.i18n.t(rejecting ? 'order.rejectConfirm' : 'order.cancelConfirm'), {
+      confirmLabel: this.i18n.t(rejecting ? 'order.reject' : 'order.cancel'),
+    });
+    if (ok) this.updateStatus(order, 'cancelled', reason);
+  }
+
+  /** Completes the sale for good. */
+  async confirmReceived(order: Order) {
+    const ok = await this.confirms.ask({ message: this.i18n.t('order.confirmReceivedConfirm'), confirmLabel: this.i18n.t('order.confirmReceived') });
+    if (ok) this.updateStatus(order, 'completed');
+  }
+
+  /** Starts the buyer's window to confirm; the order completes by itself after it. */
+  async markHandedOver(order: Order) {
+    const ok = await this.confirms.ask({ message: this.i18n.t('order.handedOverConfirm'), confirmLabel: this.i18n.t('order.markHandedOver') });
+    if (ok) this.updateStatus(order, 'handed_over');
+  }
+
   updateStatus(order: Order, status: string, cancelReason?: string, meetupTime?: string, meetupLocation?: string) {
-    if (!order.id) return;
-    this.orderService.updateOrderStatus(order.id, status, cancelReason, meetupTime, meetupLocation).subscribe({
+    if (!order.id || this.isBusy(order)) return;
+    const id = String(order.id);
+    this.busyOrderIds.add(id);
+    this.cdr.markForCheck();
+    this.orderService.updateOrderStatus(order.id, status, cancelReason, meetupTime, meetupLocation).pipe(
+      finalize(() => {
+        this.busyOrderIds.delete(id);
+        this.cdr.markForCheck();
+      }),
+    ).subscribe({
       next: (updatedOrder) => {
         if (status === 'cancelled') {
           this.ga.trackCancelOrder(order.id, cancelReason);
@@ -664,14 +703,9 @@ export class OrdersComponent implements OnInit {
         } else if (status === 'completed') {
           this.ga.trackPurchase({ ...order, ...updatedOrder });
         }
-        // Find and replace - MERGE updated fields with existing order
-        if (this.activeTab === 'buying') {
-          const idx = this.boughtOrders.findIndex(o => o.id === order.id);
-          if (idx !== -1) this.boughtOrders[idx] = { ...this.boughtOrders[idx], ...updatedOrder };
-        } else {
-          const idx = this.soldOrders.findIndex(o => o.id === order.id);
-          if (idx !== -1) this.soldOrders[idx] = { ...this.soldOrders[idx], ...updatedOrder };
-        }
+        // Merged into whichever list holds it, whatever tab is showing by now.
+        this.boughtOrders = this.boughtOrders.map(o => (o.id === order.id ? { ...o, ...updatedOrder } : o));
+        this.soldOrders = this.soldOrders.map(o => (o.id === order.id ? { ...o, ...updatedOrder } : o));
         this.cdr.markForCheck();
       },
       error: (err) => {
@@ -720,10 +754,15 @@ export class OrdersComponent implements OnInit {
     );
   }
 
-  cancelOtherPending(acceptedOrder: Order) {
+  async cancelOtherPending(acceptedOrder: Order) {
     const toCancel = this.boughtOrders.filter(o => 
       o.listing_title === acceptedOrder.listing_title && o.status === 'pending'
     );
+    if (!toCancel.length) return;
+    const ok = await this.confirms.askDanger(this.i18n.t('order.cancelOtherPendingConfirm', { count: toCancel.length }), {
+      confirmLabel: this.i18n.t('order.cancelOtherPending'),
+    });
+    if (!ok) return;
     toCancel.forEach(o => {
       this.updateStatus(o, 'cancelled', 'buyer_cancelled');
     });
