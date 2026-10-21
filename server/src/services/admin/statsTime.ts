@@ -128,6 +128,34 @@ export class SeriesBuckets {
     }
   }
 
+  /**
+   * Each bucket's label and its [start, end) as UTC ISO strings: the ranges
+   * keyOf() assigns, for counting in SQL instead of row by row.
+   */
+  bounds(): { label: string; start: string; end: string }[] {
+    if (this.unit === 'hour') {
+      const midnight = Date.parse(this.start);
+      return this.labels.map((label, h) => ({
+        label,
+        start: new Date(midnight + h * 3_600_000).toISOString(),
+        end: new Date(midnight + (h + 1) * 3_600_000).toISOString(),
+      }));
+    }
+    const midnightOf = (label: string) => {
+      const [y, m, d] = label.split('-').map(Number);
+      return zonedMidnight(y, m, d, this.tz);
+    };
+    return this.labels.map((label) => {
+      const [y, m, d] = label.split('-').map(Number);
+      const next = new Date(Date.UTC(y, m - 1, d) + DAY_MS);
+      return {
+        label,
+        start: new Date(midnightOf(label)).toISOString(),
+        end: new Date(zonedMidnight(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), this.tz)).toISOString(),
+      };
+    });
+  }
+
   keyOf(iso: string | null | undefined): string | null {
     if (!iso || iso < this.start) return null;
     const ms = Date.parse(iso);
@@ -156,6 +184,11 @@ export function termIndex(ms: number, tz: string): number {
   if (month >= 8) return year * 2 + 1;
   if (month === 1) return (year - 1) * 2 + 1;
   return year * 2;
+}
+
+/** The UTC instant term `index` starts (local midnight on 1 August or 1 February); it ends where `index + 1` starts. */
+export function termStart(index: number, tz: string): number {
+  return index % 2 ? zonedMidnight((index - 1) / 2, 8, 1, tz) : zonedMidnight(index / 2, 2, 1, tz);
 }
 
 export function termLabel(index: number) {

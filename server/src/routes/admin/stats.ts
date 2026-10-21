@@ -44,6 +44,7 @@ import {
   SeriesBuckets,
   termIndex,
   termLabel,
+  termStart,
 } from '../../services/admin/statsTime';
 
 /**
@@ -101,22 +102,6 @@ function optionalInt(c: Context<AppEnv>, name: string): number | null {
 
 /** `col >= start`, or no condition for all time. */
 const inWindow = (col: SQLWrapper, start: string | null): SQL | undefined => (start ? gte(col, start) : undefined);
-
-/** Users holding an active verification in the region (not deleted), created in the window. */
-async function regionUsers(db: Database, code: string, start: string | null = null) {
-  return db
-    .selectDistinct({ id: users.id, createdAt: users.createdAt })
-    .from(users)
-    .innerJoin(regionVerifications, eq(regionVerifications.userId, users.id))
-    .where(
-      and(
-        eq(regionVerifications.regionCode, code),
-        eq(regionVerifications.isActive, 1),
-        sql`${users.deletedAt} IS NULL`,
-        inWindow(users.createdAt, start),
-      ),
-    );
-}
 
 /** One book's figures over the window's orders (the null group is orders whose listing is gone). */
 interface OrderGroup {
@@ -240,25 +225,37 @@ const avg = (xs: number[]) => (xs.length ? sum(xs) / xs.length : null);
 // Shared pieces
 // ---------------------------------------------------------------------------
 
-/** What the day/hour series needs of an order. */
-interface SeriesOrder {
-  status: string;
-  totalAmount: number;
-  createdAt: string;
+/**
+ * Per series bucket: how many of `rows` fall in it, and the sum of their `v`.
+ * `rows` is a query yielding `at` (a stored timestamp) and `v`. Counted in D1
+ * against the buckets' bounds, so one row per bucket comes back instead of
+ * every record of up to a year.
+ */
+async function bucketTotals(db: Database, buckets: SeriesBuckets, rows: SQL): Promise<Map<string, { n: number; sum: number }>> {
+  const bounds = buckets.bounds();
+  const result = await db.all<{ i: number; n: number; s: number }>(sql`
+    SELECT CAST(b.key AS INTEGER) AS i, count(*) AS n, coalesce(sum(x.v), 0) AS s
+    FROM json_each(${JSON.stringify(bounds.map((b) => [b.start, b.end]))}) b
+    JOIN (${rows}) x ON x.at >= json_extract(b.value, '$[0]') AND x.at < json_extract(b.value, '$[1]')
+    GROUP BY b.key`);
+  return new Map(result.map((r) => [bounds[Number(r.i)].label, { n: Number(r.n), sum: Number(r.s) }]));
 }
 
-function orderSeries(buckets: SeriesBuckets, rows: SeriesOrder[], withGmv = true) {
-  const all = buckets.group(rows, (o) => o.createdAt);
-  const done = rows.filter((o) => o.status === 'completed');
-  const completed = buckets.group(done, (o) => o.createdAt);
-  const gmv = buckets.group(
-    done,
-    (o) => o.createdAt,
-    (o) => o.totalAmount,
-  );
+/** Orders per bucket, completed orders and (with `withGmv`) their GMV, of the orders `where` selects; `join` adds the listing when `where` needs it. */
+async function orderSeries(db: Database, buckets: SeriesBuckets, where: SQL, { withGmv = true, join = false } = {}) {
+  const from = join ? sql`FROM orders INNER JOIN listings ON listings.id = orders.listing_id` : sql`FROM orders`;
+  const since = sql`orders.created_at >= ${buckets.start}`;
+  const [all, done] = await Promise.all([
+    bucketTotals(db, buckets, sql`SELECT orders.created_at AS at, 0 AS v ${from} WHERE ${where} AND ${since}`),
+    bucketTotals(
+      db,
+      buckets,
+      sql`SELECT orders.created_at AS at, orders.total_amount AS v ${from} WHERE ${where} AND ${since} AND orders.status = 'completed'`,
+    ),
+  ]);
   return buckets.labels.map((label) => {
-    const item: Record<string, unknown> = { date: label, orders: all.get(label) ?? 0, completed: completed.get(label) ?? 0 };
-    if (withGmv) item.gmv = gmv.get(label) ?? 0;
+    const item: Record<string, unknown> = { date: label, orders: all.get(label)?.n ?? 0, completed: done.get(label)?.n ?? 0 };
+    if (withGmv) item.gmv = done.get(label)?.sum ?? 0;
     return item;
   });
 }
@@ -666,23 +663,26 @@ statsRoutes.get('/stats/timeseries', async (c) => {
   const region = await resolveStatsRegion(c, db);
   const days = parseDays(c);
   const buckets = new SeriesBuckets(region.tz, days);
-  const [orderRows, listingRows, regUsers] = await Promise.all([
-    db
-      .select({ status: orders.status, totalAmount: orders.totalAmount, createdAt: orders.createdAt })
-      .from(orders)
-      .where(and(eq(orders.regionCode, region.code), gte(orders.createdAt, buckets.start))),
-    db
-      .select({ createdAt: listings.createdAt })
-      .from(listings)
-      .where(and(eq(listings.regionCode, region.code), gte(listings.createdAt, buckets.start))),
-    regionUsers(db, region.code, buckets.start),
+  const code = region.code;
+  const [series, newUsers, newListings] = await Promise.all([
+    orderSeries(db, buckets, sql`orders.region_code = ${code}`),
+    // As regionUsers(): verified in the region, not deleted, each user once.
+    bucketTotals(
+      db,
+      buckets,
+      sql`SELECT u.created_at AS at, 0 AS v FROM users u
+          WHERE u.deleted_at IS NULL AND u.created_at >= ${buckets.start}
+            AND EXISTS (SELECT 1 FROM region_verifications rv WHERE rv.user_id = u.id AND rv.region_code = ${code} AND rv.is_active = 1)`,
+    ),
+    bucketTotals(
+      db,
+      buckets,
+      sql`SELECT created_at AS at, 0 AS v FROM listings WHERE region_code = ${code} AND created_at >= ${buckets.start}`,
+    ),
   ]);
-  const series = orderSeries(buckets, orderRows);
-  const newUsers = buckets.group(regUsers, (u) => u.createdAt);
-  const newListings = buckets.group(listingRows, (l) => l.createdAt);
   buckets.labels.forEach((label, i) => {
-    series[i].new_users = newUsers.get(label) ?? 0;
-    series[i].new_listings = newListings.get(label) ?? 0;
+    series[i].new_users = newUsers.get(label)?.n ?? 0;
+    series[i].new_listings = newListings.get(label)?.n ?? 0;
   });
   return c.json({ region: region.code, currency: region.defaultCurrency, days, unit: buckets.unit, series });
 });
@@ -1020,11 +1020,7 @@ statsRoutes.get('/stats/books/:id', async (c) => {
       .where(and(eq(listings.regionCode, region.code), eq(listings.status, 'active'), eq(listings.bookId, book.id)))
       .orderBy(asc(listings.price), desc(listings.createdAt), sql`${listings}.rowid`)
       .limit(20),
-    db
-      .select({ status: orders.status, totalAmount: orders.totalAmount, createdAt: orders.createdAt })
-      .from(orders)
-      .innerJoin(listings, eq(listings.id, orders.listingId))
-      .where(and(thisBook, gte(orders.createdAt, buckets.start))),
+    orderSeries(db, buckets, sql`orders.region_code = ${region.code} AND listings.book_id = ${book.id}`, { withGmv: false, join: true }),
     completedBySchool(db, region.code, start, eq(listings.bookId, book.id)),
   ]);
   const stats = bookStats(groups, activeCounts).get(book.id) ?? emptyStats();
@@ -1063,7 +1059,7 @@ statsRoutes.get('/stats/books/:id', async (c) => {
     requests: { ...requests, rank: requestRanker(reqStatsAll).rank(mine.request_count) },
     by_status: byStatus,
     series_unit: buckets.unit,
-    series: orderSeries(buckets, seriesOrders, false),
+    series: seriesOrders,
     top_schools: await topSchools(db, schoolGroups, lang, false),
     recent_orders: recent.map((o) => ({
       id: o.id,
@@ -1234,30 +1230,37 @@ statsRoutes.get('/stats/retention', async (c) => {
   if (terms < 1 || terms > 8 || !ROLES.includes(role)) invalid();
   const tz = region.tz;
 
-  const events: [string, string][] = [];
-  const orderRows = await db
-    .select({ buyerId: orders.buyerId, sellerId: orders.sellerId, createdAt: orders.createdAt })
-    .from(orders)
-    .where(eq(orders.regionCode, region.code));
-  if (role === 'all' || role === 'buyer') for (const o of orderRows) events.push([o.buyerId, o.createdAt]);
-  if (role === 'all' || role === 'seller') {
-    const ls = await db
-      .select({ sellerId: listings.sellerId, createdAt: listings.createdAt })
-      .from(listings)
-      .where(eq(listings.regionCode, region.code));
-    for (const l of ls) events.push([l.sellerId, l.createdAt]);
-    for (const o of orderRows) events.push([o.sellerId, o.createdAt]);
-  }
-  const active = new Map<string, Set<number>>();
-  for (const [user, at] of events) {
-    const ms = Date.parse(at);
-    if (Number.isNaN(ms)) continue;
-    const set = active.get(user) ?? new Set<number>();
-    set.add(termIndex(ms, tz));
-    active.set(user, set);
-  }
   const current = termIndex(Date.now(), tz);
   const first = current - terms + 1;
+
+  // A user's activity: orders they placed (buyer), listings they posted and
+  // orders they received (seller). Only users whose first activity ever falls
+  // in the terms shown can be in a cohort, so only they come back, each with
+  // the terms (offsets from `first`) they were active in: no row per event.
+  const code = region.code;
+  const sources: SQL[] = [];
+  if (role === 'all' || role === 'buyer') sources.push(sql`SELECT buyer_id AS u, created_at AS at FROM orders WHERE region_code = ${code}`);
+  if (role === 'all' || role === 'seller') {
+    sources.push(sql`SELECT seller_id AS u, created_at AS at FROM listings WHERE region_code = ${code}`);
+    sources.push(sql`SELECT seller_id AS u, created_at AS at FROM orders WHERE region_code = ${code}`);
+  }
+  const termBounds = Array.from({ length: current - first + 1 }, (_, k) => [
+    new Date(termStart(first + k, tz)).toISOString(),
+    new Date(termStart(first + k + 1, tz)).toISOString(),
+  ]);
+  const rows = await db.all<{ u: string; k: number }>(sql`
+    WITH ev AS (${sql.join(sources, sql` UNION ALL `)}),
+    newcomers AS (SELECT u FROM ev GROUP BY u HAVING min(at) >= ${termBounds[0][0]})
+    SELECT DISTINCT ev.u AS u, CAST(b.key AS INTEGER) AS k
+    FROM ev JOIN json_each(${JSON.stringify(termBounds)}) b
+      ON ev.at >= json_extract(b.value, '$[0]') AND ev.at < json_extract(b.value, '$[1]')
+    WHERE ev.u IN (SELECT u FROM newcomers)`);
+  const active = new Map<string, Set<number>>();
+  for (const { u, k } of rows) {
+    const set = active.get(u) ?? new Set<number>();
+    set.add(first + Number(k));
+    active.set(u, set);
+  }
   const cohorts = [];
   for (let term = first; term <= current; term++) {
     const members = [...active.values()].filter((seen) => Math.min(...seen) === term);
