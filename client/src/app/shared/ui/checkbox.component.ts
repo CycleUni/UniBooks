@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, forwardRef } from '@angular/core';
+import { Component, Input, Output, EventEmitter, forwardRef, ChangeDetectorRef, inject } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 
@@ -142,8 +142,14 @@ export class UiCheckbox implements ControlValueAccessor {
     this.change.emit(isChecked);
   }
 
+  // Forms write through writeValue()/setDisabledState(), not through an input,
+  // so an OnPush view would keep showing the old value (a chat box that stays
+  // full after sending): mark it for check.
+  private readonly cdr = inject(ChangeDetectorRef);
+
   writeValue(val: any): void {
     this.checked = !!val;
+    this.cdr.markForCheck();
   }
   registerOnChange(fn: any): void {
     this.onChange = fn;
@@ -153,5 +159,6 @@ export class UiCheckbox implements ControlValueAccessor {
   }
   setDisabledState?(isDisabled: boolean): void {
     this.disabled = isDisabled;
+    this.cdr.markForCheck();
   }
 }

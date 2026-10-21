@@ -5,7 +5,9 @@ import {
   Input,
   Output,
   ViewChild,
-  forwardRef
+  forwardRef,
+  ChangeDetectorRef,
+  inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
@@ -259,8 +261,13 @@ export class UiSearchField implements ControlValueAccessor {
   onChange = (_val: string) => {};
   onTouched = () => {};
 
+  // Forms write through writeValue(), not through an input, so an OnPush view
+  // would keep showing the old value: mark it for check.
+  private readonly cdr = inject(ChangeDetectorRef);
+
   writeValue(val: any): void {
     this._value = (val !== null && val !== undefined) ? String(val) : '';
+    this.cdr.markForCheck();
   }
 
   registerOnChange(fn: any): void {

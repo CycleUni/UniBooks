@@ -1,4 +1,4 @@
-import { Component, Input, forwardRef } from '@angular/core';
+import { Component, Input, forwardRef, ChangeDetectorRef, inject } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 
@@ -111,8 +111,14 @@ export class UiRadioGroup implements ControlValueAccessor {
     this.onTouched();
   }
 
+  // Forms write through writeValue()/setDisabledState(), not through an input,
+  // so an OnPush view would keep showing the old value (a chat box that stays
+  // full after sending): mark it for check.
+  private readonly cdr = inject(ChangeDetectorRef);
+
   writeValue(val: any): void {
     this.value = val;
+    this.cdr.markForCheck();
   }
   registerOnChange(fn: any): void {
     this.onChange = fn;
@@ -122,5 +128,6 @@ export class UiRadioGroup implements ControlValueAccessor {
   }
   setDisabledState?(isDisabled: boolean): void {
     this.disabled = isDisabled;
+    this.cdr.markForCheck();
   }
 }

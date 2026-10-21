@@ -599,6 +599,7 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
 
   writeValue(val: any): void {
     this.value = (val !== null && val !== undefined) ? String(val) : '';
+    this.cdr.markForCheck();
   }
   registerOnChange(fn: any): void {
     this.onChange = fn;
@@ -608,5 +609,6 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
   }
   setDisabledState?(isDisabled: boolean): void {
     this.disabled = isDisabled;
+    this.cdr.markForCheck();
   }
 }

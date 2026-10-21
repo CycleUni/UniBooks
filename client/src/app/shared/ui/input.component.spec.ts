@@ -79,4 +79,19 @@ describe('UiInput', () => {
     expect(input.hasAttribute('aria-label')).toBe(false);
     expect(input.hasAttribute('aria-describedby')).toBe(false);
   });
+
+  it('shows a value the form writes from code (a chat box cleared after sending)', () => {
+    const own = TestBed.createComponent(UiInput);
+    own.detectChanges();
+    const el = own.debugElement.query(By.css('input')).nativeElement as HTMLInputElement;
+    el.value = 'Calculus';
+    el.dispatchEvent(new Event('input'));
+    own.detectChanges();
+    expect(el.value).toBe('Calculus');
+
+    // What ngModel does once the model is cleared: write the control, no input binding involved.
+    own.componentInstance.writeValue('');
+    own.detectChanges();
+    expect(el.value).toBe('');
+  });
 });
