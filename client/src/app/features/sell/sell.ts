@@ -319,7 +319,6 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
 
     // Asynchronously tell the server to delete the physical file
     this.listingService.deletePhoto(url).subscribe({
-      next: () => console.log('Successfully deleted orphaned photo from server'),
       error: (err) => console.error('Failed to delete orphaned photo from server', err)
     });
   }

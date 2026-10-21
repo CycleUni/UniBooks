@@ -41,14 +41,29 @@ export function initSentry(): void {
     // every event records the page URL; see core/sensitive-url.
     beforeSend: (event) => scrubEventUrls(event),
     beforeSendTransaction: (event) => scrubEventUrls(event),
-    beforeBreadcrumb: (breadcrumb) => {
-      const data = breadcrumb.data;
-      if (data) {
-        for (const field of ['from', 'to', 'url']) {
-          if (typeof data[field] === 'string') data[field] = redactSensitiveUrl(data[field]);
-        }
-      }
-      return breadcrumb;
-    },
+    beforeBreadcrumb: (breadcrumb) => scrubBreadcrumb(breadcrumb),
   });
+}
+
+/**
+ * console.log/info/debug lines are development chatter and may quote what
+ * someone typed (a chat message, a search): dropped. Warnings and errors stay,
+ * with the URLs a navigation or request breadcrumb carries redacted.
+ */
+export function scrubBreadcrumb<
+  T extends { category?: string; level?: string; data?: Record<string, unknown> },
+>(breadcrumb: T): T | null {
+  if (
+    breadcrumb.category === 'console' &&
+    breadcrumb.level !== 'warning' &&
+    breadcrumb.level !== 'error'
+  )
+    return null;
+  const data = breadcrumb.data;
+  if (data) {
+    for (const field of ['from', 'to', 'url']) {
+      if (typeof data[field] === 'string') data[field] = redactSensitiveUrl(data[field] as string);
+    }
+  }
+  return breadcrumb;
 }

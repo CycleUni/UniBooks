@@ -1125,8 +1125,6 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   private setEdgeMessages(edgeMsgsInput: any) {
     if (edgeMsgsInput !== undefined) {
       this.rawEdgeMsgs = this.extractArray(edgeMsgsInput);
-      console.log('[setEdgeMessages] extracted messages count:', this.rawEdgeMsgs.length,
-        'first msg body:', this.rawEdgeMsgs[0]?.content?.substring(0, 80));
     }
 
     const newMessages = this.rawEdgeMsgs.map(m => this.toViewMessage(m));
