@@ -303,6 +303,9 @@ orderRoutes.get('/:id', async (c) => {
 
 orderRoutes.patch('/:id', async (c) => {
   const userId = c.get('userId')!;
+  // A meetup edit posts a notice to the other party's chat; cap how often.
+  // Generous: a seller accepting and handing over many orders stays well under.
+  await checkRate(c, 'order_update', '60/hour');
   const o = await findVisibleOrder(c, c.req.param('id'));
   if (!o) return notFound(c);
   await assertVerifiedIn(c, o.regionCode);
