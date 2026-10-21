@@ -11,6 +11,10 @@ describe('chat image checks', () => {
     expect(isChatImageUrl(`${base}/chat/../avatars/a.png`, base)).toBe(false);
     expect(isChatImageUrl(`https://evil.example/chat/a.png`, base)).toBe(false);
     expect(isChatImageUrl(`${base}/chat/u1/a.png?x=1`, base)).toBe(false);
+    // Given a sender, only their own folder.
+    expect(isChatImageUrl(`${base}/chat/u1/a.png`, base, 'u1')).toBe(true);
+    expect(isChatImageUrl(`${base}/chat/u2/a.png`, base, 'u1')).toBe(false);
+    expect(isChatImageUrl(`${base}/chat/u1x/a.png`, base, 'u1')).toBe(false);
   });
 });
 

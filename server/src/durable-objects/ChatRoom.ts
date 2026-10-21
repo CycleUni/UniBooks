@@ -244,7 +244,7 @@ export class ChatRoom extends DurableObject<Env> {
       const metadata = body.metadata ?? null;
 
       if (!content || typeof content !== 'string') return new Response('Missing content', { status: 400 });
-      const check = this.validate(role, content, messageType, metadata);
+      const check = this.validate(role, userId, content, messageType, metadata);
       if (!check.ok) {
         return check.code
           ? new Response(JSON.stringify({ code: check.code, message: check.message }), { status: check.status })
@@ -373,7 +373,7 @@ export class ChatRoom extends DurableObject<Env> {
           this.sendToSender(ws, { type: 'error', message: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` });
           return;
         }
-        const check = this.validate(state.role, data.content, messageType, metadata);
+        const check = this.validate(state.role, userId, data.content, messageType, metadata);
         if (!check.ok) {
           this.sendToSender(ws, { type: 'error', ...(check.code ? { code: check.code } : {}), message: check.message });
           return;
@@ -404,7 +404,7 @@ export class ChatRoom extends DurableObject<Env> {
   // ─── Internals ──────────────────────────────────────────────────────────
 
   /** The checks every user/observer message passes, on both the socket and REST paths. */
-  private validate(role: ConnectionState['role'], content: unknown, messageType: unknown, metadata: unknown): Validation {
+  private validate(role: ConnectionState['role'], senderId: string, content: unknown, messageType: unknown, metadata: unknown): Validation {
     if (role === 'observer') {
       return { ok: false, status: 403, code: 'READ_ONLY_TOKEN', message: 'This token may read the room but not write to it' };
     }
@@ -415,7 +415,7 @@ export class ChatRoom extends DurableObject<Env> {
     if (messageType === 'text' && content.length > MAX_MESSAGE_LENGTH) {
       return { ok: false, status: 400, message: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` };
     }
-    if (messageType === 'image' && !this.imageAllowed(content)) {
+    if (messageType === 'image' && !this.imageAllowed(content, senderId)) {
       return {
         ok: false,
         status: 400,
@@ -430,9 +430,12 @@ export class ChatRoom extends DurableObject<Env> {
     return { ok: true };
   }
 
-  /** An image message may only show a chat upload on our own media host. */
-  private imageAllowed(url: string): boolean {
-    return isImageUrlAllowed(url, this.env.ALLOWED_IMAGE_HOSTS || this.env.R2_PUBLIC_URL) && isChatImageUrl(url, this.env.R2_PUBLIC_URL);
+  /** An image message may only show the sender's own chat upload on our own media host. */
+  private imageAllowed(url: string, senderId: string): boolean {
+    return (
+      isImageUrlAllowed(url, this.env.ALLOWED_IMAGE_HOSTS || this.env.R2_PUBLIC_URL) &&
+      isChatImageUrl(url, this.env.R2_PUBLIC_URL, senderId)
+    );
   }
 
   private async rememberRoom(roomId: string, participantIdsParam: string | null) {
