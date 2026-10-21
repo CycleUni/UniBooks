@@ -38,7 +38,8 @@ async function makeUser(name: string, verified = true) {
   if (verified) {
     await db.insert(regionVerifications).values({ userId: id, regionCode: 'TW', isManualVerification: 1, verifiedAt: now(), isActive: 1 });
   }
-  const token = await signToken('access', { user_id: id }, env);
+  // As a sign-in now: account deletion needs a recent one.
+  const token = await signToken('access', { user_id: id, auth_time: Math.floor(Date.now() / 1000) }, env);
   return { id, token };
 }
 

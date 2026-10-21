@@ -239,7 +239,7 @@ export const zhHK: Record<string, string> = {
   'auth.errNotLoggedIn': '登入後才能進行此操作',
   'auth.errPasskeyChallenge': '通行密匙請求已過期或無效，請再試一次。',
   'auth.errPasskeyRegistration': '未能登記通行密匙，請再試一次。',
-  'auth.errReauthRequired': '為咗保障你嘅帳戶，更改通行密匙或者兩步驟登入之前，請重新登入。',
+  'auth.errReauthRequired': '為咗保障你嘅帳戶，做呢個更改之前請重新登入。',
   'auth.errPasskeyLogin': '未能用通行密匙登入，請檢查後再試多次。',
   'auth.errPasskeyNotFound': '搵唔到呢個通行密匙。',
   'auth.registerSuccess': '註冊成功！我們已寄送啟用連結到你的電郵，請點擊連結後再登入。',

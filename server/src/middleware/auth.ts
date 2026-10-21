@@ -79,8 +79,8 @@ export const RECENT_SIGN_IN_SECONDS = 15 * 60;
 /**
  * 403 auth.errReauthRequired unless the user signed in (password, Google or
  * passkey) within RECENT_SIGN_IN_SECONDS. A session alone — possibly a stolen
- * one, kept alive by refreshes — must not be able to plant a passkey or take
- * one away. Use after authMiddleware.
+ * one, kept alive by refreshes — must not be able to plant a passkey, take one
+ * away, or delete the account. Use after authMiddleware.
  */
 export const requireRecentSignIn = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   assertRecentSignIn(c);

@@ -6,6 +6,7 @@ import { ROTATION_GRACE_SECONDS } from '../../src/services/accounts/tokens';
 import { PASSWORD, call, createUser, login, seedReference, sessionOf } from './helpers';
 import { hashPassword } from '../../src/services/accounts/passwords';
 import { tokenFor } from '../ads/helpers';
+import { signToken } from '../../src/lib/jwt';
 
 beforeAll(async () => {
   await seedReference();
@@ -529,6 +530,15 @@ describe('profile', () => {
     expect(res.status).toBe(204);
     expect(await userRow('leaving@example.com')).toBeNull();
     expect((await call('/api/v1/auth/refresh', { body: { refresh } })).status).toBe(401);
+  });
+
+  it('DELETE /me needs a recent sign-in', async () => {
+    const id = await createUser('leaving-stale@example.com');
+    const stale = await signToken('access', { user_id: id, auth_time: Math.floor(Date.now() / 1000) - 3600 }, env);
+    const res = await call('/api/v1/auth/me', { method: 'DELETE', token: stale });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: { code: 'auth.errReauthRequired' } });
+    expect(await userRow('leaving-stale@example.com')).not.toBeNull();
   });
 
   it('public profile by id; unknown id is 404', async () => {

@@ -1155,7 +1155,8 @@ accountRoutes.patch('/me', authMiddleware(), async (c) => {
   return c.json(await serializeUser(c, fresh));
 });
 
-accountRoutes.delete('/me', authMiddleware(), async (c) => {
+accountRoutes.delete('/me', authMiddleware(), requireRecentSignIn(), async (c) => {
+  // Irreversible: a session alone (a stolen cookie, a browser left open) is not enough.
   // Anonymizes rather than removes. (A 204 cannot carry a body.)
   await deleteAccount(c.env, c.get('user')!.id);
   clearSession(c);

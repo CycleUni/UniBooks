@@ -773,8 +773,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.isLoading = false;
-        this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
         this.cdr.markForCheck();
+        if (this.offerSignInAgain(err)) return;
+        this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
       },
     });
   }
@@ -907,8 +908,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Adding or removing a passkey, or turning two-step off, needs a recent
-   * sign-in. When the server says this one is too old, offer to sign in again
+   * Adding or removing a passkey, turning two-step off, and deleting the
+   * account need a recent sign-in. When the server says this one is too old, offer to sign in again
    * and come back here. True when `err` was that refusal.
    */
   private offerSignInAgain(err: any): boolean {

@@ -239,7 +239,7 @@ export const zhTW: Record<string, string> = {
   'auth.errNotLoggedIn': '登入後才能進行此操作',
   'auth.errPasskeyChallenge': '通行密鑰請求已過期或無效，請再試一次。',
   'auth.errPasskeyRegistration': '無法註冊通行密鑰，請再試一次。',
-  'auth.errReauthRequired': '為了保護你的帳號，變更通行密鑰或兩步驟登入前請重新登入。',
+  'auth.errReauthRequired': '為了保護你的帳號，進行這項變更前請重新登入。',
   'auth.errPasskeyLogin': '無法使用通行密鑰登入，請確認後再試一次。',
   'auth.errPasskeyNotFound': '找不到此通行密鑰。',
   'auth.registerSuccess': '註冊成功！我們已寄送啟用連結到你的信箱，請點擊連結後再登入。',

@@ -243,7 +243,7 @@ export const en: Record<string, string> = {
   'auth.errPasskeyChallenge':
     'The passkey sign-in request has expired or is invalid. Please try again.',
   'auth.errPasskeyRegistration': 'Could not register passkey. Please try again.',
-  'auth.errReauthRequired': 'For your security, sign in again before changing your passkeys or two-step sign-in.',
+  'auth.errReauthRequired': 'For your security, sign in again before making this change.',
   'auth.errPasskeyLogin':
     'Could not sign in with passkey. Please check your passkey and try again.',
   'auth.errPasskeyNotFound': 'Passkey not found.',
