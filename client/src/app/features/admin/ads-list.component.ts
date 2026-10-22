@@ -78,7 +78,7 @@ import { BulkController } from './bulk';
             <td>{{ ad.all_regions ? ('admin.allRegions' | t) : formatRegions(ad.regions) }}</td>
             <td>
               {{ ad.title }}
-              <a *ngIf="ad.target_url" [href]="ad.target_url" target="_blank" title="跳轉連結">🔗</a>
+              <a *ngIf="ad.target_url" [href]="ad.target_url" target="_blank" rel="noopener noreferrer" [title]="'admin.adTargetUrl' | t" [attr.aria-label]="'admin.adTargetUrl' | t">🔗</a>
             </td>
             <td>{{ ad.advertiser_name }}</td>
             <td>{{ ad.position }}</td>

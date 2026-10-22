@@ -130,7 +130,7 @@ import { AuthStore, isAdminUser } from '../../core/auth.store';
               <div *ngFor="let school of filteredSchools"  style="display: flex; align-items: center; gap: 8px;">
                 <ui-checkbox [checked]="formData.schools?.includes(school.id)" (change)="toggleSchool(school.id)" [label]="school.display_name || school.name"></ui-checkbox>
               </div>
-              <div *ngIf="filteredSchools.length === 0"  style="color: var(--muted); text-align: center; padding: 12px;">找不到符合的學校</div>
+              <div *ngIf="filteredSchools.length === 0"  style="color: var(--muted); text-align: center; padding: 12px;">{{ 'common.noMatches' | t }}</div>
             </div>
           </div>
         </div>
