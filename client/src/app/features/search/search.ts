@@ -25,6 +25,7 @@ import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
 import { UiInfiniteScroll } from '../../shared/ui/infinite-scroll.component';
 import { injectIsPhone } from '../../core/viewport';
 import { PhonePager } from '../../core/phone-pager';
+import { SearchSnapshot } from '../../core/search-snapshot';
 import { isbnFromScan } from '../../core/isbn';
 import { POPULAR_SEARCH_KEYS, RecentSearches } from '../../core/search-suggestions';
 import { UiFacetList, FacetOption } from '../../shared/ui/facet-list.component';
@@ -679,8 +680,52 @@ export class Search implements OnInit {
     destroyRef: this.destroyRef
   });
 
+  private snapshots = inject(SearchSnapshot);
+  /** This visit is a Back/Forward onto the page: its first search may come from the snapshot. */
+  private cameBack = false;
+
   constructor(private route: ActivatedRoute, private router: Router) {
     effect(() => { this.i18n.lang(); untracked(() => this.loadMetadata()); });
+    this.cameBack = this.router.getCurrentNavigation()?.trigger === 'popstate';
+    // Leaving on a phone keeps what was loaded, for a Back to put it back.
+    this.destroyRef.onDestroy(() => {
+      if (!this.isPhone || !this.results.length || !this.lastFetchKey || typeof window === 'undefined') return;
+      this.snapshots.save({
+        fetchKey: this.lastFetchKey,
+        results: this.results,
+        totalCount: this.totalCount,
+        localCount: this.localCount,
+        searchScope: this.searchScope,
+        searchCity: this.searchCity,
+        cityCount: this.cityCount,
+        googleUnavailable: this.googleUnavailable,
+        resultsTruncated: this.resultsTruncated,
+        loadedPage: this.pager.loadedPage,
+        scrollY: window.scrollY,
+        at: Date.now(),
+      });
+    });
+  }
+
+  /** Put back the results a phone had loaded before following one of them (Back). */
+  private restoreSnapshot(fetchKey: string): boolean {
+    const s = this.snapshots.take(fetchKey);
+    if (!s) return false;
+    this.results = s.results;
+    this.totalCount = s.totalCount;
+    this.localCount = s.localCount;
+    this.searchScope = s.searchScope;
+    this.searchCity = s.searchCity;
+    this.cityCount = s.cityCount;
+    this.googleUnavailable = s.googleUnavailable;
+    this.resultsTruncated = s.resultsTruncated;
+    this.loading = false;
+    this.fetchError = false;
+    this.pager.reset(s.loadedPage, s.totalCount);
+    this.cdr.markForCheck();
+    // Once the restored list is on the page, back to where the visitor was.
+    setTimeout(() => window.scrollTo(0, s.scrollY));
+    return true;
   }
 
   loadMetadata(onComplete?: () => void) {
@@ -746,6 +791,11 @@ export class Search implements OnInit {
       if (fetchKey === this.lastFetchKey) { this.cdr.markForCheck(); return; }
       this.lastFetchKey = fetchKey;
 
+      const cameBack = this.cameBack;
+      this.cameBack = false;
+      if (this.searching && cameBack && this.isPhone && this.restoreSnapshot(fetchKey)) {
+        return;
+      }
       if (this.searching) {
         this.fetchResults();
       } else {
