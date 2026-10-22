@@ -220,7 +220,7 @@ const PAGE_SIZE = 20;
           </details>
         </div>
         <div class="actions app-modal-actions modal-footer-actions">
-          <ui-button variant="ghost" class="text-danger" (onClick)="onDelete(editingListing.id)">{{ 'common.delete' | t }}</ui-button>
+          <ui-button variant="ghost" class="text-danger" [disabled]="saving" (onClick)="onDelete(editingListing.id)">{{ 'common.delete' | t }}</ui-button>
           <div class="modal-footer-right">
             <ui-button variant="ghost" (onClick)="closeEdit()">{{ 'common.cancel' | t }}</ui-button>
             <ui-button [disabled]="saving" (onClick)="submitEdit()">{{ (saving ? 'acct.saving' : 'acct.save') | t }}</ui-button>
@@ -605,6 +605,9 @@ export class ListingsComponent implements OnInit {
   }
 
   async onDelete(id: number | string) {
+    // Not while an edit of this listing is being saved: the save would land
+    // after the delete, or the delete after a save the seller then expects.
+    if (this.saving) return;
     const confirmed = await this.confirms.askDanger(this.i18n.t('acct.confirmDelete'), {
       confirmLabel: this.i18n.t('common.delete'),
     });

@@ -212,6 +212,19 @@ describe('ListingsComponent listing management', () => {
     expect(toast.success).toHaveBeenCalledWith('acct.listingDeleted');
   });
 
+  it('does not delete a listing while its edit is being saved', async () => {
+    const askDanger = vi.fn().mockResolvedValue(true);
+    const deleteListing = vi.fn().mockReturnValue(of({}));
+    (component as any).confirms = { askDanger };
+    (component as any).listingService = { updateListing, deleteListing };
+    component.saving = true;
+
+    await component.onDelete('l1');
+
+    expect(askDanger).not.toHaveBeenCalled();
+    expect(deleteListing).not.toHaveBeenCalled();
+  });
+
   it('saves a status change through the edit form', () => {
     component.editingListing = listing();
     component.editForm = {
