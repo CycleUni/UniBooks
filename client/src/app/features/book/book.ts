@@ -3,7 +3,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule, Router } from '@angular/router';
 import { Subscription, of } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { map, finalize } from 'rxjs/operators';
+import { parseApiError } from '../../core/api-error.util';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiBackButton } from '../../shared/ui/back-button.component';
 import { UiBreadcrumb, BreadcrumbItem } from '../../shared/ui/breadcrumb.component';
@@ -104,8 +105,8 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
               <span class="waitlist-count" [class.hot]="book.waiting_count > 0">
                 {{ (book.waiting_count > 0 ? 'book.waitingBanner' : 'book.waitingBannerZero') | t:{n: book.waiting_count} }}
               </span>
-              <ui-button *ngIf="!book.is_subscribed" variant="white" (onClick)="subscribeBook()">{{ 'search.notifyMe' | t }}</ui-button>
-              <ui-button *ngIf="book.is_subscribed" variant="white"  style="color: var(--muted); border-color: var(--muted);" (onClick)="unsubscribeBook()">{{ 'search.cancelNotify' | t }}</ui-button>
+              <ui-button *ngIf="!book.is_subscribed" variant="white" [disabled]="notifyBusy" (onClick)="subscribeBook()">{{ 'search.notifyMe' | t }}</ui-button>
+              <ui-button *ngIf="book.is_subscribed" variant="white" [disabled]="notifyBusy" style="color: var(--muted); border-color: var(--muted);" (onClick)="unsubscribeBook()">{{ 'search.cancelNotify' | t }}</ui-button>
             </div>
           </div>
         </div>
@@ -711,14 +712,23 @@ export class Book implements OnInit {
     this.router.navigate(this.regionLink.path(['/checkout', listingId]));
   }
 
+  /** A notify request is in flight: the button waits, so a double tap is one request. */
+  notifyBusy = false;
+
+  private notifyDone() {
+    this.notifyBusy = false;
+    this.cdr.markForCheck();
+  }
+
   subscribeBook() {
     if (!this.auth.isLoggedIn()) {
       this.toast.info(this.i18n.t('alert.loginToSubscribe'));
       this.router.navigate(this.regionLink.path(['/login']));
       return;
     }
-    if (this.bookId) {
-      this.bookService.subscribe(this.bookId).subscribe({
+    if (this.bookId && !this.notifyBusy) {
+      this.notifyBusy = true;
+      this.bookService.subscribe(this.bookId).pipe(finalize(() => this.notifyDone())).subscribe({
         next: (res) => {
           this.ga.trackRequestBook(this.bookId, 'book');
           this.toast.success(this.i18n.t('alert.subscribed'));
@@ -729,14 +739,15 @@ export class Book implements OnInit {
             this.cdr.markForCheck();
           }
         },
-        error: () => this.toast.error(this.i18n.t('alert.subscribeFailed'))
+        error: (err) => this.toast.error(parseApiError(err, this.i18n, 'alert.subscribeFailed'))
       });
     }
   }
 
   unsubscribeBook() {
-    if (this.book && this.book.subscription_id) {
-      this.bookService.unsubscribe(this.book.subscription_id).subscribe({
+    if (this.book && this.book.subscription_id && !this.notifyBusy) {
+      this.notifyBusy = true;
+      this.bookService.unsubscribe(this.book.subscription_id).pipe(finalize(() => this.notifyDone())).subscribe({
         next: () => {
           this.toast.success(this.i18n.t('alert.unsubscribed'));
           this.book.waiting_count--;
@@ -744,7 +755,7 @@ export class Book implements OnInit {
           this.book.subscription_id = null;
           this.cdr.markForCheck();
         },
-        error: () => this.toast.error(this.i18n.t('alert.unsubscribeFailed'))
+        error: (err) => this.toast.error(parseApiError(err, this.i18n, 'alert.unsubscribeFailed'))
       });
     }
   }

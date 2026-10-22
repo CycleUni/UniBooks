@@ -29,7 +29,8 @@ import { isbnFromScan } from '../../core/isbn';
 import { POPULAR_SEARCH_KEYS, RecentSearches } from '../../core/search-suggestions';
 import { UiFacetList, FacetOption } from '../../shared/ui/facet-list.component';
 import { Subject, combineLatest, merge, Subscription } from 'rxjs';
-import { map, distinctUntilChanged, switchMap } from 'rxjs/operators';
+import { map, distinctUntilChanged, switchMap, finalize } from 'rxjs/operators';
+import { parseApiError } from '../../core/api-error.util';
 import { RegionLinkService } from '../../core/region-link.service';
 import { ToastService } from '../../core/services/toast.service';
 import { bookPreviewState, bookQueryParams } from '../../core/book-preview';
@@ -262,8 +263,8 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
               >
                 <div tile-actions class="tile-actions-inner">
                   <ng-container *ngIf="item.activeListings === 0">
-                    <ui-button *ngIf="!item.is_subscribed" variant="ghost" (onClick)="$event.stopPropagation(); subscribeBook(item)">{{ 'search.notifyMe' | t }}</ui-button>
-                    <ui-button *ngIf="item.is_subscribed" variant="ghost"  style="color: var(--muted); border-color: var(--muted);" (onClick)="$event.stopPropagation(); unsubscribeBook(item)">{{ 'search.cancelNotify' | t }}</ui-button>
+                    <ui-button *ngIf="!item.is_subscribed" variant="ghost" [disabled]="notifyBusy.has(item)" (onClick)="$event.stopPropagation(); subscribeBook(item)">{{ 'search.notifyMe' | t }}</ui-button>
+                    <ui-button *ngIf="item.is_subscribed" variant="ghost" [disabled]="notifyBusy.has(item)" style="color: var(--muted); border-color: var(--muted);" (onClick)="$event.stopPropagation(); unsubscribeBook(item)">{{ 'search.cancelNotify' | t }}</ui-button>
                   </ng-container>
                   <ng-container *ngIf="item.activeListings > 0">
                     <ui-button>{{ 'search.viewAll' | t }}</ui-button>
@@ -1030,39 +1031,51 @@ export class Search implements OnInit {
     }
   }
 
+  /** Results with a notify request in flight: their button waits, so a double tap is one request. */
+  readonly notifyBusy = new Set<any>();
+
+  private notifyDone(item: any) {
+    this.notifyBusy.delete(item);
+    this.cdr.markForCheck();
+  }
+
   subscribeBook(item: any) {
     if (!this.auth.isLoggedIn()) {
       this.toast.info(this.i18n.t('alert.loginToSubscribe')); this.router.navigate(this.regionLink.path(['/login'])); return;
     }
+    if (this.notifyBusy.has(item)) return;
+    this.notifyBusy.add(item);
+    const failed = (err: unknown) => this.toast.error(parseApiError(err, this.i18n, 'alert.subscribeFailed'));
     const doSubscribe = (id: string) => {
-      this.bookService.subscribe(id).subscribe({
+      this.bookService.subscribe(id).pipe(finalize(() => this.notifyDone(item))).subscribe({
         next: res => {
           this.ga.trackRequestBook(id, 'search');
           this.toast.success(this.i18n.t('alert.subscribed'));
           item.waitlistCount++; item.is_subscribed = true; item.subscription_id = res.id; item.id = id;
           this.cdr.markForCheck();
         },
-        error: () => this.toast.error(this.i18n.t('alert.unsubscribeFailed'))
+        error: failed
       });
     };
     if (item.id) { doSubscribe(item.id); } else {
       const bookData = { isbn13: item.isbn || '', title: item.title, authors: item.author || '', publisher: item.publisher || '', published_date: item.published_date || '', cover_url: item.coverUrl || '', source: item.source || 'manual' };
       this.bookService.createManualBook(bookData).subscribe({
         next: created => doSubscribe(created.id),
-        error: () => this.toast.error(this.i18n.t('alert.subscribeFailed'))
+        error: (err) => { this.notifyDone(item); failed(err); }
       });
     }
   }
 
   unsubscribeBook(item: any) {
-    if (item.subscription_id) {
-      this.bookService.unsubscribe(item.subscription_id).subscribe({
+    if (item.subscription_id && !this.notifyBusy.has(item)) {
+      this.notifyBusy.add(item);
+      this.bookService.unsubscribe(item.subscription_id).pipe(finalize(() => this.notifyDone(item))).subscribe({
         next: () => {
           this.toast.success(this.i18n.t('alert.unsubscribed'));
           item.waitlistCount--; item.is_subscribed = false; item.subscription_id = null;
           this.cdr.markForCheck();
         },
-        error: () => this.toast.error(this.i18n.t('alert.unsubscribeFailed'))
+        error: (err) => this.toast.error(parseApiError(err, this.i18n, 'alert.unsubscribeFailed'))
       });
     }
   }
