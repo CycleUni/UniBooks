@@ -18,6 +18,7 @@ import { injectIsPhone } from '../../core/viewport';
 import { PhonePager } from '../../core/phone-pager';
 import { UiBreadcrumb, BreadcrumbItem } from '../../shared/ui/breadcrumb.component';
 import { TPipe, I18nService } from '../../core/i18n.service';
+import { intlLocale } from '../../core/i18n';
 import { RegionLinkService } from '../../core/region-link.service';
 import { isSameRegion } from '../../core/region-path';
 import { isUserVerifiedIn } from '../../core/verification';
@@ -410,8 +411,7 @@ export class SellerPageComponent implements OnInit {
     if (!dateString) return '';
     try {
       const date = new Date(dateString);
-      // zh-HK too: it formats as 2024年3月5日, not as an English date.
-      const lang = this.i18n.lang() === 'en' ? 'en-US' : this.i18n.lang();
+      const lang = intlLocale(this.i18n.lang());
       return new Intl.DateTimeFormat(lang, { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
     } catch (e) {
       return dateString.substring(0, 10);

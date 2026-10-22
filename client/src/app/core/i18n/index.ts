@@ -2,6 +2,12 @@ export type Lang = 'en' | 'zh-TW' | 'zh-HK';
 
 export const SUPPORTED_LANGS: readonly Lang[] = ['en', 'zh-TW', 'zh-HK'];
 
+/** The locale Intl formats dates in for an app language: en is US English;
+ *  zh-TW and zh-HK are locales already, each with its own conventions. */
+export function intlLocale(lang: Lang): string {
+  return lang === 'en' ? 'en-US' : lang;
+}
+
 /** Maps URL region prefixes to their corresponding language. */
 export const REGION_TO_LANG: Record<string, Lang> = {
  tw: 'zh-TW',

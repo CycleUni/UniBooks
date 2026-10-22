@@ -2,6 +2,7 @@ import { Component, EventEmitter, Input, Output, OnInit, inject } from '@angular
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { I18nService, TPipe } from '../../core/i18n.service';
+import { intlLocale } from '../../core/i18n';
 import { UiButton } from './button.component';
 import { UiInput } from './input.component';
 import { UiFocusTrapDirective } from './focus-trap.directive';
@@ -297,7 +298,7 @@ export class MeetupModalComponent implements OnInit {
   /** The day as a full date, for a screen reader. */
   dayLabel(day: number): string {
     const d = new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth(), day);
-    return d.toLocaleDateString(this.i18n.lang() === 'en' ? 'en-US' : this.i18n.lang(), { year: 'numeric', month: 'long', day: 'numeric' });
+    return d.toLocaleDateString(intlLocale(this.i18n.lang()), { year: 'numeric', month: 'long', day: 'numeric' });
   }
 
   // --- Calendar helpers ---

@@ -20,6 +20,7 @@ import { MeetupDetailsService } from '../../core/services/meetup-details.service
 import { GoogleAnalyticsService } from '../../core/services/google-analytics.service';
 import { ChangeDetectorRef, OnDestroy } from '@angular/core';
 import { TPipe, I18nService } from '../../core/i18n.service';
+import { intlLocale } from '../../core/i18n';
 import { BookCoverPipe } from '../../shared/pipes/book-cover.pipe';
 import { ThemeService } from '../../core/services/theme.service';
 import { Subscription, of } from 'rxjs';
@@ -686,7 +687,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   formatMessageTime(dateString: string): string {
-    const lang = this.i18n.lang() === 'en' ? 'en-US' : 'zh-TW';
+    const lang = intlLocale(this.i18n.lang());
     return formatMessageTime(dateString, lang);
   }
 

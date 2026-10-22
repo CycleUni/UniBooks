@@ -19,7 +19,7 @@ export const IMAGE_PREVIEW_TOKEN = '[SYSTEM:msg.imagePlaceholder]';
 
 /** Format a message timestamp relative to "now": time-only if today, weekday
  * if within the last week, month/day if this year, else full date. */
-export function formatMessageTime(dateString: string, lang: 'en-US' | 'zh-TW'): string {
+export function formatMessageTime(dateString: string, lang: string): string {
   if (!dateString) return '';
   const date = new Date(dateString);
   const now = new Date();
@@ -61,7 +61,7 @@ export function formatMessageTime(dateString: string, lang: 'en-US' | 'zh-TW'): 
  * Time of day for today, short weekday within the week, then month/day, and
  * the year only once it is no longer this year. Invalid or missing → ''.
  */
-export function formatInboxTime(dateString: string | null | undefined, lang: 'en-US' | 'zh-TW', now: Date = new Date()): string {
+export function formatInboxTime(dateString: string | null | undefined, lang: string, now: Date = new Date()): string {
   if (!dateString) return '';
   const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) return '';

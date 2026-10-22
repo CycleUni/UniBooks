@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { I18nService, TPipe } from '../../core/i18n.service';
+import { intlLocale } from '../../core/i18n';
 import { BookCoverPipe } from '../../shared/pipes/book-cover.pipe';
 import { UiRoleBadge } from '../../shared/ui/role-badge.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
@@ -217,7 +218,7 @@ export class MessagesInboxList {
    * messages sent or received while it is open.
    */
   formatTime(updatedAt: string): string {
-    return formatInboxTime(updatedAt, this.i18n.lang() === 'en' ? 'en-US' : 'zh-TW');
+    return formatInboxTime(updatedAt, intlLocale(this.i18n.lang()));
   }
 
   /**

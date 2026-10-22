@@ -1,3 +1,4 @@
+import { intlLocale } from '../../core/i18n';
 import { formatInboxTime, isMeetupDetailsMessage, isMeetupRequest, systemMessageKey } from './message-formatting.util';
 
 describe('formatInboxTime', () => {
@@ -17,6 +18,8 @@ describe('formatInboxTime', () => {
     const yesterday = new Date(2026, 8, 13, 23, 59).toISOString();
     expect(formatInboxTime(yesterday, 'en-US', now)).toBe('Sun');
     expect(formatInboxTime(yesterday, 'zh-TW', now)).toBe('週日');
+    expect(formatInboxTime(yesterday, intlLocale('zh-HK'), now)).toBe('週日');
+    expect(formatInboxTime(yesterday, intlLocale('en'), now)).toBe('Sun');
   });
 
   it('shows month/day for older messages from this year, and the year once it differs', () => {
