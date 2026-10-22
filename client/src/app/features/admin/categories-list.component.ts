@@ -144,7 +144,8 @@ import { BulkController } from './bulk';
             </app-translation-editor>
           </div>
 
-          <ui-button variant="primary" (onClick)="saveCategory()">{{ 'admin.save' | t }}</ui-button>
+          <div *ngIf="formError" class="inline-msg error" role="alert">{{ formError }}</div>
+          <ui-button variant="primary" [disabled]="saving" (onClick)="saveCategory()">{{ (saving ? 'admin.saving' : 'admin.save') | t }}</ui-button>
         </div>
       </div>
     </ng-container>
@@ -194,6 +195,9 @@ export class AdminCategoriesListComponent implements OnInit {
   showModal = false;
   showImportModal = false;
   editingId: number | null = null;
+  saving = false;
+  /** Why the last save was refused, shown under the form. */
+  formError = '';
   form: Partial<AdminCategory> = { slug: '', title: '', description: '', sort_order: 0, is_active: true };
   
   translationFields: TranslationField[] = [
@@ -236,6 +240,7 @@ export class AdminCategoriesListComponent implements OnInit {
   openCreateModal() {
     this.form = { slug: '', title: '', description: '', sort_order: 0, is_active: true, translations: {} };
     this.editingId = null;
+    this.formError = '';
     this.showModal = true;
   }
 
@@ -249,26 +254,33 @@ export class AdminCategoriesListComponent implements OnInit {
       translations: category.translations || {}
     };
     this.editingId = category.id;
+    this.formError = '';
     this.showModal = true;
   }
 
   saveCategory() {
-    if (!this.form.slug || !this.form.title) return;
-    const payload = { ...this.form };
+    if (!this.form.slug || !this.form.title || this.saving) return;
+    // A category belongs to a region; the server refuses a new one without
+    // it, and a create used to fail with nothing on screen to say so.
+    const payload = this.editingId ? { ...this.form } : { ...this.form, region: this.regionService.region().toUpperCase() };
+    const editing = this.editingId;
+    const request = editing ? this.adminService.updateCategory(editing, payload) : this.adminService.createCategory(payload);
 
-    if (this.editingId) {
-      this.adminService.updateCategory(this.editingId, payload).subscribe(() => {
+    this.saving = true;
+    this.formError = '';
+    request.subscribe({
+      next: () => {
+        this.saving = false;
         this.showModal = false;
-        this.loadPage(this.currentPage);
+        this.loadPage(editing ? this.currentPage : 1);
         this.cdr.markForCheck();
-      });
-    } else {
-      this.adminService.createCategory(payload).subscribe(() => {
-        this.showModal = false;
-        this.loadPage(1);
+      },
+      error: (err) => {
+        this.saving = false;
+        this.formError = parseAdminError(err, this.i18n);
         this.cdr.markForCheck();
-      });
-    }
+      },
+    });
   }
 
   
