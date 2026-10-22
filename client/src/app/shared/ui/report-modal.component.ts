@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, Input, OnDestroy, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -35,12 +35,12 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
         <ui-textarea [(ngModel)]="detail" [placeholder]="'msg.reportDetail' | t"></ui-textarea>
         <div class="report-actions">
           <ui-button variant="ghost" (onClick)="close.emit()">{{ 'msg.reportCancel' | t }}</ui-button>
-          <ui-button [disabled]="!reason || submitting" (onClick)="submit()">
+          <ui-button [disabled]="!reason || submitting || !!success" (onClick)="submit()">
             {{ submitting ? ('msg.reportSubmitting' | t) : ('msg.reportSubmit' | t) }}
           </ui-button>
         </div>
         <div *ngIf="error" class="error-msg">{{ error }}</div>
-        <div *ngIf="success" class="success-msg">{{ success }}</div>
+        <div *ngIf="success" class="success-msg" role="status">{{ success }}</div>
       </div>
     </div>
   `,
@@ -55,7 +55,7 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
     .success-msg { color: var(--accent); font-size: var(--text-sm); margin-top: 8px; }
   `]
 })
-export class UiReportModal implements OnInit {
+export class UiReportModal implements OnInit, OnDestroy {
   @Input() conversationId!: string;
   /** The other party in the conversation — the user being reported. */
   @Input() reportedPartyId!: string | number;
@@ -67,6 +67,7 @@ export class UiReportModal implements OnInit {
   error = '';
   success = '';
   submitting = false;
+  private closeTimer?: ReturnType<typeof setTimeout>;
 
   private http = inject(HttpClient);
   private i18n = inject(I18nService);
@@ -82,7 +83,8 @@ export class UiReportModal implements OnInit {
   }
 
   submit() {
-    if (!this.conversationId || this.submitting) return;
+    // Once sent, a second tap would file the same report again.
+    if (!this.conversationId || this.submitting || this.success) return;
     this.submitting = true;
     this.error = '';
 
@@ -97,7 +99,7 @@ export class UiReportModal implements OnInit {
         this.submitting = false;
         // Leave the confirmation up briefly so it's actually readable before
         // the dialog disappears.
-        setTimeout(() => this.close.emit(), 2000);
+        this.closeTimer = setTimeout(() => this.close.emit(), 2000);
         this.cdr.markForCheck();
       },
       error: (err: any) => {
@@ -108,5 +110,10 @@ export class UiReportModal implements OnInit {
         this.cdr.markForCheck();
       },
     });
+  }
+
+  ngOnDestroy() {
+    // Closed by hand before the timer: it must not close whatever the host shows next.
+    clearTimeout(this.closeTimer);
   }
 }
