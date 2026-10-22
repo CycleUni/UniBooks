@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { ListingDetail } from './listing-detail';
 
 // Only a 404 means the listing is gone; any other failure used to read
@@ -42,4 +42,20 @@ describe('ListingDetail load failures', () => {
     expect(component.listing).not.toBeNull();
     expect(component.errorMsg).toBe('');
   });
+
+  it("ignores a slower answer for the listing the visitor already left", () => {
+    const first = new Subject<any>();
+    const second = new Subject<any>();
+    getListing.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    component.currentId = 'l1';
+    component.startLoad('l1');
+    component.currentId = 'l2';
+    component.startLoad('l2');
+
+    second.next({ id: 'l2', book_title: 'Second', photos: [] });
+    first.next({ id: 'l1', book_title: 'First', photos: [] });
+
+    expect(component.listing?.id).toBe('l2');
+  });
 });
+

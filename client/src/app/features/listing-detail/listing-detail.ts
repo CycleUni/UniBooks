@@ -1,3 +1,4 @@
+import { Subscription } from 'rxjs';
 import { onLanguageChange } from '../../core/on-language-change';
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, effect, ViewChild, ElementRef, PLATFORM_ID, NgZone, untracked } from '@angular/core';
@@ -159,6 +160,8 @@ export class ListingDetail implements OnInit, OnDestroy {
   /** Load the listing with the skeleton up, and give up after 8s. Also the
    *  error state's retry. */
   startLoad(id: string) {
+    // A retry starts its own wait: the previous one's timer must not cut it short.
+    clearTimeout(this.loadTimer);
     this.isLoading = true;
     this.errorMsg = '';
     this.notFound = false;
@@ -167,7 +170,7 @@ export class ListingDetail implements OnInit, OnDestroy {
     // Fallback in case the API hangs. Running outside Angular's zone
     // so the timeout doesn't trigger unnecessary change detection.
     this.ngZone.runOutsideAngular(() => {
-      setTimeout(() => {
+      this.loadTimer = setTimeout(() => {
         if (this.isLoading && this.currentId === id) {
           this.ngZone.run(() => {
             this.isLoading = false;
@@ -179,9 +182,19 @@ export class ListingDetail implements OnInit, OnDestroy {
     });
   }
 
+  /** The listing request in flight and its other-copies lookup: replaced by the next listing's. */
+  private listingSub?: Subscription;
+  private otherSub?: Subscription;
+  private loadTimer?: ReturnType<typeof setTimeout>;
+
   private loadListing(id: string) {
-    this.listingService.getListing(id).subscribe({
+    // Only the listing now asked for may land: a slower answer for the one
+    // tapped before must not overwrite it.
+    this.listingSub?.unsubscribe();
+    this.otherSub?.unsubscribe();
+    this.listingSub = this.listingService.getListing(id).subscribe({
       next: (data) => {
+        if (this.currentId !== id) return;
         this.listing = data;
         this.isLoading = false;
         // A late answer after the 8s timeout replaces its error.
@@ -221,8 +234,9 @@ export class ListingDetail implements OnInit, OnDestroy {
         this.otherListings = [];
         const bookIdentifier = data.isbn || data.book;
         if (bookIdentifier && isPlatformBrowser(this.platformId) && !this.regionMismatch) {
-          this.bookService.getBook(bookIdentifier).subscribe({
+          this.otherSub = this.bookService.getBook(bookIdentifier).subscribe({
             next: (bookData) => {
+              if (this.currentId !== id) return;
               if (bookData && bookData.listings) {
                 const listingsArray = Array.isArray(bookData.listings) 
                   ? bookData.listings 
@@ -237,6 +251,7 @@ export class ListingDetail implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       },
       error: (err) => {
+        if (this.currentId !== id) return;
         this.isLoading = false;
         // A language switch reloads a listing already on screen; keep it.
         if (this.listing && String(this.listing.id) === id) {
@@ -385,6 +400,9 @@ export class ListingDetail implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.listingSub?.unsubscribe();
+    this.otherSub?.unsubscribe();
+    clearTimeout(this.loadTimer);
     if (this.scrollHandler) {
       window.removeEventListener('scroll', this.scrollHandler);
       this.scrollHandler = undefined;
