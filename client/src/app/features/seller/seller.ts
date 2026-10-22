@@ -410,7 +410,8 @@ export class SellerPageComponent implements OnInit {
     if (!dateString) return '';
     try {
       const date = new Date(dateString);
-      const lang = this.i18n.lang() === 'zh-TW' ? 'zh-TW' : 'en-US';
+      // zh-HK too: it formats as 2024年3月5日, not as an English date.
+      const lang = this.i18n.lang() === 'en' ? 'en-US' : this.i18n.lang();
       return new Intl.DateTimeFormat(lang, { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
     } catch (e) {
       return dateString.substring(0, 10);

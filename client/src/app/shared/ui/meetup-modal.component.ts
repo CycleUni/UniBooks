@@ -1,7 +1,7 @@
-import { Component, EventEmitter, Input, Output, OnInit } from '@angular/core';
+import { Component, EventEmitter, Input, Output, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { TPipe } from '../../core/i18n.service';
+import { I18nService, TPipe } from '../../core/i18n.service';
 import { UiButton } from './button.component';
 import { UiInput } from './input.component';
 import { UiFocusTrapDirective } from './focus-trap.directive';
@@ -254,6 +254,8 @@ export class MeetupModalComponent implements OnInit {
   errorMsg: string = '';
   isSubmitting: boolean = false;
 
+  private i18n = inject(I18nService);
+
   weekDays: string[] = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
   ngOnInit(): void {
@@ -295,7 +297,7 @@ export class MeetupModalComponent implements OnInit {
   /** The day as a full date, for a screen reader. */
   dayLabel(day: number): string {
     const d = new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth(), day);
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    return d.toLocaleDateString(this.i18n.lang() === 'en' ? 'en-US' : this.i18n.lang(), { year: 'numeric', month: 'long', day: 'numeric' });
   }
 
   // --- Calendar helpers ---

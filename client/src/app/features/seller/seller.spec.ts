@@ -17,7 +17,7 @@ describe('SellerPageComponent', () => {
   let getListings: ReturnType<typeof vi.fn>;
 
   const i18n = {
-    lang: () => 'en',
+    lang: vi.fn(() => 'en'),
     t: (key: string, params?: Record<string, string | number>) => {
       let text = en[key] ?? key;
       for (const [name, value] of Object.entries(params ?? {})) {
@@ -55,6 +55,13 @@ describe('SellerPageComponent', () => {
     fixture = TestBed.createComponent(SellerPageComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
+  });
+
+  it('dates the join in the reader\'s language, Hong Kong included', () => {
+    i18n.lang.mockReturnValue('zh-HK');
+    expect(component.getFormattedDate('2025-03-05')).toBe('2025年3月5日');
+    i18n.lang.mockReturnValue('en');
+    expect(component.getFormattedDate('2025-03-05')).toBe('March 5, 2025');
   });
 
   it('loads seller and listings initially', () => {
