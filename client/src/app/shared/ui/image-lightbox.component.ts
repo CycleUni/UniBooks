@@ -45,18 +45,21 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
       border-radius: 8px;
       box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
     }
+    /* Pinned to the screen corner, not above the image: a tall image fills
+       the screen and pushed a button sitting above it off the top. */
     .image-modal-close {
-      position: absolute;
-      top: -44px;
-      right: 0;
-      width: 36px;
-      height: 36px;
+      position: fixed;
+      top: calc(12px + env(safe-area-inset-top, 0px));
+      right: calc(12px + env(safe-area-inset-right, 0px));
+      z-index: 1;
+      width: var(--tap-min);
+      height: var(--tap-min);
       border: none;
       border-radius: 50%;
       background: rgba(255, 255, 255, 0.2);
       color: white;
       font-size: var(--text-2xl);
-      line-height: 36px;
+      line-height: var(--tap-min);
       cursor: pointer;
       transition: background-color var(--motion-base);
     }
