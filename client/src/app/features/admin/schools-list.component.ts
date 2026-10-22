@@ -181,7 +181,9 @@ export class AdminSchoolsListComponent implements OnInit {
     this.currentPage = page;
     this.loadFailed = false;
     this.loading = true;
-    this.adminService.getSchools({ page: this.currentPage, q: this.q }).subscribe({
+    // The picked region's schools, like every other admin list; a superuser
+    // otherwise got every region's schools mixed together.
+    this.adminService.getSchools({ page: this.currentPage, q: this.q, region: this.regionService.region().toUpperCase() }).subscribe({
       next: (data) => {
         this.schoolsData = data;
         this.total = data.count;
