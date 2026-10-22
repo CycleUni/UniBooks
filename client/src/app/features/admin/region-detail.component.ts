@@ -53,7 +53,7 @@ import { UiButton } from '../../shared/ui/button.component';
         <label>{{ 'admin.translationsSection' | t }}</label>
         <div *ngFor="let lang of item.languages" class="translation-row">
           <span class="lang-tag">{{ lang }}</span>
-          <input type="text" class="admin-form-control" [placeholder]="'admin.regionName' | t" [(ngModel)]="item.translations[lang].name">
+          <input type="text" class="admin-form-control" [placeholder]="'admin.regionName' | t" [(ngModel)]="translations[lang]">
         </div>
         <div *ngIf="transError" class="inline-msg error">{{ transError | t }}</div>
       </div>
@@ -123,6 +123,7 @@ export class AdminRegionDetailComponent implements OnInit {
 
   availableLangs: string[] = ['en', 'zh-TW', 'zh-HK'];
   allSearchEngines = ['googlebooks', 'openlibrary', 'isbnnet'];
+  /** The name in each language, as edited; save() builds item.translations from it. */
   translations: Record<string, string> = {};
   errorMsg = '';
   savedMsg = '';
