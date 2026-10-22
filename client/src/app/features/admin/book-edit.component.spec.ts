@@ -44,7 +44,7 @@ describe('AdminBookEditComponent', () => {
       ],
     });
     const fixture = TestBed.createComponent(AdminBookEditComponent);
-    fixture.componentInstance.bookId = 6;
+    fixture.componentInstance.bookId = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006';
     fixture.componentInstance.book = { ...MISREAD };
     fixture.componentInstance.currentSource = currentSource;
     fixture.detectChanges();
@@ -66,20 +66,20 @@ describe('AdminBookEditComponent', () => {
 
   it('fills the form from the lookup and saves it with the catalogue as the source', () => {
     admin.lookupBook.mockReturnValue(of(FOUND));
-    admin.updateBook.mockReturnValue(of({ merged_into: null, book: { id: 6, ...FOUND } }));
+    admin.updateBook.mockReturnValue(of({ merged_into: null, book: { id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006', ...FOUND } }));
     const editor = create();
     const saved = vi.fn();
     editor.saved.subscribe(saved);
 
     editor.form.isbn13 = '978-986-06-2920-0';
     editor.lookUp();
-    expect(admin.lookupBook).toHaveBeenCalledWith(6, '9789860629200');
+    expect(admin.lookupBook).toHaveBeenCalledWith('9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006', '9789860629200');
     expect(editor.form.title).toBe(FOUND.title);
     expect(editor.hasUnsavedChanges()).toBe(true);
 
     editor.save();
     expect(admin.updateBook).toHaveBeenCalledWith(
-      6,
+      '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006',
       expect.objectContaining({
         isbn13: '9789860629200',
         title: FOUND.title,
@@ -156,7 +156,7 @@ describe('AdminBookEditComponent', () => {
   });
 
   it('saves the other details without touching an old ISBN that fails the check', () => {
-    admin.updateBook.mockReturnValue(of({ merged_into: null, book: { id: 6 } }));
+    admin.updateBook.mockReturnValue(of({ merged_into: null, book: { id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006' } }));
     const editor = create();
     expect(editor.storedIsbnKept).toBe(true);
 
@@ -189,7 +189,7 @@ describe('AdminBookEditComponent', () => {
 
   it('stops labelling the details as catalogue data once the ISBN is changed', () => {
     admin.lookupBook.mockReturnValue(of(FOUND));
-    admin.updateBook.mockReturnValue(of({ merged_into: null, book: { id: 6 } }));
+    admin.updateBook.mockReturnValue(of({ merged_into: null, book: { id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006' } }));
     const editor = create();
     editor.form.isbn13 = '9789860629200';
     editor.lookUp();

@@ -65,7 +65,7 @@ export interface AdminStatsTimeseries {
 }
 
 export interface StatsBook {
-  id: number;
+  id: string;
   title: string;
   authors: string;
   isbn13: string | null;
@@ -292,7 +292,7 @@ export class AdminStatsService {
     return this.http.get<AdminStatsRetention>('/admin/stats/retention', { params: params({ region, role, terms }) });
   }
 
-  getBookStats(id: number, region: string, days: StatsDays): Observable<AdminBookStats> {
+  getBookStats(id: string, region: string, days: StatsDays): Observable<AdminBookStats> {
     return this.http.get<AdminBookStats>(`/admin/stats/books/${id}`, { params: params({ region, days }) });
   }
 }

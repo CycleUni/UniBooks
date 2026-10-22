@@ -189,7 +189,7 @@ export class AdminBookEditComponent implements OnInit, OnDestroy {
   private confirms = inject(ConfirmService);
   private cdr = inject(ChangeDetectorRef);
 
-  @Input({ required: true }) bookId!: number;
+  @Input({ required: true }) bookId!: string;
   @Input({ required: true }) book!: AdminBookRecord;
   /** Start with the form open, on a page whose purpose is the edit. */
   @Input() initiallyOpen = false;
@@ -198,13 +198,13 @@ export class AdminBookEditComponent implements OnInit, OnDestroy {
   /** The record was saved; the page should reload it. */
   @Output() saved = new EventEmitter<void>();
   /** The book was folded into this one and no longer exists. */
-  @Output() merged = new EventEmitter<number>();
+  @Output() merged = new EventEmitter<string>();
 
   open = false;
   form: AdminBookRecord = this.blank();
   /** Where the looked-up details came from, sent with them on Save. */
   lookedUpSource: string | null = null;
-  mergeTarget: { id: number; title: string } | null = null;
+  mergeTarget: { id: string; title: string } | null = null;
   isbnError = '';
   /** Why the last Save failed; shown above the button. */
   formError = '';

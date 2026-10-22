@@ -169,7 +169,8 @@ export class AdminBookDetailComponent implements HasUnsavedChanges {
   private confirms = inject(ConfirmService);
   private toast = inject(ToastService);
 
-  bookId = Number(this.route.snapshot.paramMap.get('id'));
+  // A UUID: Number() made it NaN, and every request for the book a 404.
+  bookId = this.route.snapshot.paramMap.get('id') ?? '';
   book: AdminBook | null = null;
   /** The book's details as the edit form takes them. */
   record: AdminBookRecord | null = null;
@@ -184,7 +185,7 @@ export class AdminBookDetailComponent implements HasUnsavedChanges {
     this.load();
     // A merge sends this same component to the book it merged into.
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
-      const id = Number(params.get('id'));
+      const id = params.get('id') ?? '';
       if (id === this.bookId) return;
       this.bookId = id;
       this.book = null;
@@ -203,7 +204,7 @@ export class AdminBookDetailComponent implements HasUnsavedChanges {
   }
 
   /** This book was folded into another; its page no longer exists. */
-  openMerged(id: number) {
+  openMerged(id: string) {
     this.router.navigate(['..', id], { relativeTo: this.route, replaceUrl: true });
   }
 

@@ -7,7 +7,7 @@ import { Chart, ChartTokens, onThemeChange, readChartTokens, tooltipTheme } from
 
 export interface RankingBar {
   /** Target of a click; bars without one (e.g. a course name) are not links. */
-  id?: number | null;
+  id?: string | number | null;
   label: string;
   value: number;
 }

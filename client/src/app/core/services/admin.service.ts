@@ -214,12 +214,13 @@ export interface AdminBookRecord {
  *  region's other book already under it, which saving would merge into. */
 export interface AdminBookLookup extends AdminBookRecord {
   source: string;
-  existing_book: { id: number; title: string } | null;
+  existing_book: { id: string; title: string } | null;
 }
 
 /** A book as the admin's book list and page show it. */
 export interface AdminBook {
-  id: number;
+  /** A UUID, like every catalogue id. */
+  id: string;
   region: string;
   isbn13: string | null;
   title: string;
@@ -242,8 +243,8 @@ export type AdminBookReviewFilter = 'pending' | 'confirmed';
 
 export interface AdminBookUpdate {
   /** Set when the book was folded into another one and no longer exists. */
-  merged_into: number | null;
-  book: AdminBookRecord & { id: number; source: string };
+  merged_into: string | null;
+  book: AdminBookRecord & { id: string; source: string };
 }
 
 @Injectable({
@@ -361,32 +362,32 @@ export class AdminService {
     return this.http.get<Paginated<AdminBook>>('/admin/books', { params: buildParams(opts) });
   }
 
-  getBook(id: number): Observable<AdminBook> {
+  getBook(id: string): Observable<AdminBook> {
     return this.http.get<AdminBook>(`/admin/books/${id}`);
   }
 
   /** Records that no catalogue has this manual book, taking it out of review. */
-  confirmManualBook(id: number): Observable<AdminBook> {
+  confirmManualBook(id: string): Observable<AdminBook> {
     return this.http.post<AdminBook>(`/admin/books/${id}/confirm-manual`, {});
   }
 
   /** The same for several books; `confirmed` lists those this call confirmed
    *  (others were not pending manual books, or not this admin's). */
-  confirmManualBooks(ids: number[]): Observable<{ confirmed: number[] }> {
-    return this.http.post<{ confirmed: number[] }>('/admin/books/confirm-manual', { ids });
+  confirmManualBooks(ids: string[]): Observable<{ confirmed: string[] }> {
+    return this.http.post<{ confirmed: string[] }>('/admin/books/confirm-manual', { ids });
   }
 
   /** Puts confirmed manual books back in review; `reopened` lists those it did. */
-  reopenBookReviews(ids: number[]): Observable<{ reopened: number[] }> {
-    return this.http.post<{ reopened: number[] }>('/admin/books/reopen-review', { ids });
+  reopenBookReviews(ids: string[]): Observable<{ reopened: string[] }> {
+    return this.http.post<{ reopened: string[] }>('/admin/books/reopen-review', { ids });
   }
 
-  lookupBook(id: number, isbn: string): Observable<AdminBookLookup> {
+  lookupBook(id: string, isbn: string): Observable<AdminBookLookup> {
     return this.http.get<AdminBookLookup>(`/admin/books/${id}/lookup`, { params: buildParams({ isbn }) });
   }
 
   /** 409 `admin.errBookIsbnTaken` when another book has the ISBN, unless `merge`. */
-  updateBook(id: number, changes: Partial<AdminBookRecord> & { source?: string; merge?: boolean }): Observable<AdminBookUpdate> {
+  updateBook(id: string, changes: Partial<AdminBookRecord> & { source?: string; merge?: boolean }): Observable<AdminBookUpdate> {
     return this.http.patch<AdminBookUpdate>(`/admin/books/${id}`, changes);
   }
 

@@ -184,7 +184,7 @@ export class AdminBooksListComponent {
   loading = true;
   /** Why the last load failed; the table would otherwise read as empty. */
   loadError = '';
-  bulk = new BulkController<number>(() => this.reload());
+  bulk = new BulkController<string>(() => this.reload());
   private sub?: Subscription;
 
   constructor() {
@@ -203,7 +203,7 @@ export class AdminBooksListComponent {
     this.reload();
   }
 
-  get pageIds(): number[] {
+  get pageIds(): string[] {
     return this.books.map((b) => b.id);
   }
 

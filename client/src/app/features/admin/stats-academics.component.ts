@@ -349,7 +349,7 @@ export class AdminStatsAcademicsComponent {
 
   /** A bar opens its row's books; the bar's id is the row's index on this page. */
   onBarClick(bar: RankingBar) {
-    const row = bar.id != null ? this.data?.results[bar.id] : undefined;
+    const row = typeof bar.id === 'number' ? this.data?.results[bar.id] : undefined;
     if (!row) return;
     if (this.expanded !== this.rowKey(row)) this.toggle(row);
     requestAnimationFrame(() =>
