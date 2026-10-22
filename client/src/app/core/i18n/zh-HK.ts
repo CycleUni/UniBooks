@@ -701,6 +701,8 @@ export const zhHK: Record<string, string> = {
   'order.markHandedOver': '標記已面交',
   'order.meetupModalTitle': '夾面交時間同地點',
   'order.meetupDateLabel': '面交日期',
+  'order.meetupPrevMonth': '上個月',
+  'order.meetupNextMonth': '下個月',
   'order.meetupTimeLabel': '面交時間',
   'order.meetupLocationLabel': '面交地點',
   'order.meetupLocationPlaceholder': '例如：圖書館門口',

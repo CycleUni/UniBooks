@@ -24,22 +24,28 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
             <!-- Desktop calendar -->
             <div class="desktop-calendar">
               <div class="calendar-nav">
-                <button class="nav-btn" (click)="prevMonth()" [disabled]="isCurrentMonth()">&lsaquo;</button>
-                <span class="month-label">{{ monthLabel() }}</span>
-                <button class="nav-btn" (click)="nextMonth()">&rsaquo;</button>
+                <button type="button" class="nav-btn" (click)="prevMonth()" [disabled]="isCurrentMonth()" [attr.aria-label]="'order.meetupPrevMonth' | t">&lsaquo;</button>
+                <span class="month-label" aria-live="polite">{{ monthLabel() }}</span>
+                <button type="button" class="nav-btn" (click)="nextMonth()" [attr.aria-label]="'order.meetupNextMonth' | t">&rsaquo;</button>
               </div>
               <div class="calendar-grid">
                 <div class="day-header" *ngFor="let d of weekDays">{{ d }}</div>
                 <ng-container *ngFor="let week of calendarWeeks()">
-                  <div
-                    *ngFor="let day of week"
-                    class="day-cell"
-                    [class.empty]="day === null"
-                    [class.today]="day !== null && isToday(day)"
-                    [class.selected]="day !== null && isSelectedDay(day)"
-                    (click)="day !== null && selectDay(day)">
-                    {{ day !== null ? day : '' }}
-                  </div>
+                  <ng-container *ngFor="let day of week">
+                    <span *ngIf="day === null" class="day-cell empty"></span>
+                    <button
+                      *ngIf="day !== null"
+                      type="button"
+                      class="day-cell"
+                      [class.today]="isToday(day)"
+                      [class.selected]="isSelectedDay(day)"
+                      [disabled]="isPastDay(day)"
+                      [attr.aria-pressed]="isSelectedDay(day)"
+                      [attr.aria-label]="dayLabel(day)"
+                      (click)="selectDay(day)">
+                      {{ day }}
+                    </button>
+                  </ng-container>
                 </ng-container>
               </div>
             </div>
@@ -152,6 +158,9 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
       padding: 4px 0;
     }
     .day-cell {
+      font: inherit;
+      background: none;
+      border: none;
       padding: 6px 0;
       font-size: var(--text-sm);
       border-radius: 4px;
@@ -164,6 +173,12 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
     }
     .day-cell.empty {
       cursor: default;
+    }
+    .day-cell:disabled {
+      color: var(--muted);
+      opacity: 0.4;
+      cursor: not-allowed;
+      background: none;
     }
     .day-cell.today {
       outline: 1.5px solid var(--accent);
@@ -265,9 +280,22 @@ export class MeetupModalComponent implements OnInit {
     return d;
   }
 
+  /** Today's local date as YYYY-MM-DD. toISOString() is UTC, which in
+   *  Taiwan and Hong Kong is still yesterday until 08:00. */
   todayStr(): string {
     const d = new Date();
-    return d.toISOString().split('T')[0];
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  /** A day of the shown month before today: a meetup cannot be arranged there. */
+  isPastDay(day: number): boolean {
+    return new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth(), day) < this.today;
+  }
+
+  /** The day as a full date, for a screen reader. */
+  dayLabel(day: number): string {
+    const d = new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth(), day);
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
   }
 
   // --- Calendar helpers ---
@@ -351,6 +379,7 @@ export class MeetupModalComponent implements OnInit {
   }
 
   selectDay(day: number): void {
+    if (this.isPastDay(day)) return;
     this.selectedDay = day;
     this.selectedMonth = this.currentMonth.getMonth();
     this.selectedYear = this.currentMonth.getFullYear();
@@ -396,6 +425,8 @@ export class MeetupModalComponent implements OnInit {
   validateTime(): void {
     const selDate = this.getSelectedDate();
     if (!selDate) { this.timeError = ''; return; }
+    // A past day is wrong whatever the time (or with none).
+    if (selDate < this.today) { this.timeError = 'invalid'; return; }
     if (!this.meetupTime) { this.timeError = ''; return; }
 
     const [h, m] = this.meetupTime.split(':').map(Number);
@@ -420,6 +451,8 @@ export class MeetupModalComponent implements OnInit {
   // --- Actions ---
 
   close(): void {
+    // Not while the accept it started is still on its way.
+    if (this.isSubmitting) return;
     this.onClosed.emit();
   }
 

@@ -708,6 +708,8 @@ export const en: Record<string, string> = {
   'order.markHandedOver': 'Mark as Handed Over',
   'order.meetupModalTitle': 'Set Meetup Time & Location',
   'order.meetupDateLabel': 'Meetup Date',
+  'order.meetupPrevMonth': 'Previous month',
+  'order.meetupNextMonth': 'Next month',
   'order.meetupTimeLabel': 'Meetup Time',
   'order.meetupLocationLabel': 'Meetup Location',
   'order.meetupLocationPlaceholder': 'e.g., Library entrance',
