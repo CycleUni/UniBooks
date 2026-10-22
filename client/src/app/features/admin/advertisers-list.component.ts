@@ -137,7 +137,7 @@ import { AuthStore, isAdminUser } from '../../core/auth.store';
         
         <div class="app-modal-actions">
           <ui-button variant="outline" (onClick)="closeModal()">{{ 'common.cancel' | t }}</ui-button>
-          <ui-button variant="primary" (onClick)="save()">{{ 'common.save' | t }}</ui-button>
+          <ui-button variant="primary" [disabled]="saving" (onClick)="save()">{{ (saving ? 'admin.saving' : 'common.save') | t }}</ui-button>
         </div>
       </div>
     </div>
@@ -285,11 +285,14 @@ export class AdminAdvertisersListComponent implements OnInit {
     }
   }
 
+  saving = false;
+
   closeModal() {
     this.showModal = false;
   }
 
   save() {
+    if (this.saving) return;
     if (!this.formData.company_name || !this.formData.contact_email) {
       this.toast.error(this.i18n.t('admin.errFillRequired'));
       return;
@@ -310,12 +313,19 @@ export class AdminAdvertisersListComponent implements OnInit {
       ? this.adminService.updateAdvertiser(this.editingId, payload)
       : this.adminService.createAdvertiser(payload);
 
+    // One request at a time: a double click created the same row twice.
+    this.saving = true;
     obs.subscribe({
       next: () => {
+        this.saving = false;
         this.closeModal();
         this.loadPage(this.currentPage);
       },
-      error: (err) => this.toast.error(parseAdminError(err, this.i18n, 'admin.errSaveFailed'))
+      error: (err) => {
+        this.saving = false;
+        this.toast.error(parseAdminError(err, this.i18n, 'admin.errSaveFailed'));
+        this.cdr.markForCheck();
+      },
     });
   }
 

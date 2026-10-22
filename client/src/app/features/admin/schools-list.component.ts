@@ -121,7 +121,7 @@ import { BulkController } from './bulk';
         </div>
         <div class="app-modal-actions">
           <ui-button variant="secondary" (onClick)="showCreateModal = false">{{ 'common.cancel' | t }}</ui-button>
-          <ui-button variant="primary" (onClick)="createSchool()">{{ 'admin.save' | t }}</ui-button>
+          <ui-button variant="primary" [disabled]="creating" (onClick)="createSchool()">{{ (creating ? 'admin.saving' : 'admin.save') | t }}</ui-button>
         </div>
       </div>
     </div>
@@ -239,8 +239,11 @@ export class AdminSchoolsListComponent implements OnInit {
     this.showCreateModal = true;
   }
 
+  /** A create is on its way. */
+  creating = false;
+
   createSchool() {
-    if (!this.newSchool.name || !this.newSchool.email_domain) return;
+    if (!this.newSchool.name || !this.newSchool.email_domain || this.creating) return;
     // The region is part of the school's identity now — its code only has
     // to be unique inside it — so it is sent rather than left for the
     // backend to reject as missing.
@@ -256,14 +259,18 @@ export class AdminSchoolsListComponent implements OnInit {
     if (Object.keys(translations).length) {
       payload.translations = translations;
     }
+    // One request at a time: a double click created the school twice.
+    this.creating = true;
     this.adminService.createSchool(payload).subscribe({
       next: () => {
+        this.creating = false;
         this.showCreateModal = false;
         this.cdr.markForCheck();
         this.loadPage(1);
       },
       // Kept open on failure so a clashing code can be corrected in place.
       error: (err) => {
+        this.creating = false;
         this.toast.error(parseAdminError(err, this.i18n));
         this.cdr.markForCheck();
       }

@@ -184,7 +184,7 @@ import { BulkController } from './bulk';
         
         <div class="app-modal-actions">
           <ui-button variant="outline" (onClick)="closeModal()">{{ 'common.cancel' | t }}</ui-button>
-          <ui-button variant="primary" (onClick)="save()">{{ 'common.save' | t }}</ui-button>
+          <ui-button variant="primary" [disabled]="saving" (onClick)="save()">{{ (saving ? 'admin.saving' : 'common.save') | t }}</ui-button>
         </div>
       </div>
     </div>
@@ -364,6 +364,7 @@ export class AdminAdsListComponent implements OnInit {
   }
 
   save() {
+    if (this.saving) return;
     if (!this.formData.advertiser || !this.formData.title || !this.formData.image_url || !this.formData.start_date || !this.formData.end_date || !this.formData.slot_index) {
       this.toast.error(this.i18n.t('admin.errFillRequired'));
       return;
@@ -401,12 +402,19 @@ export class AdminAdsListComponent implements OnInit {
       ? this.adminService.updateAd(this.editingId, payload)
       : this.adminService.createAd(payload);
 
+    // One request at a time: a double click created the same row twice.
+    this.saving = true;
     obs.subscribe({
       next: () => {
+        this.saving = false;
         this.closeModal();
         this.loadPage(this.currentPage);
       },
-      error: (err) => this.toast.error(parseAdminError(err, this.i18n, 'admin.errSaveFailed'))
+      error: (err) => {
+        this.saving = false;
+        this.toast.error(parseAdminError(err, this.i18n, 'admin.errSaveFailed'));
+        this.cdr.markForCheck();
+      },
     });
   }
 

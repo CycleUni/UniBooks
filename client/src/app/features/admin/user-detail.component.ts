@@ -71,7 +71,7 @@ import { schoolKeywords } from '../../core/school-search';
             <div  style="flex: 2;" *ngIf="newRegion">
               <ui-dropdown [label]="'admin.colSchool' | t" [options]="getSchoolOptionsForRegion(newRegion)" [(ngModel)]="newRegionSchool"></ui-dropdown>
             </div>
-            <ui-button *ngIf="newRegion" [disabled]="!newRegionSchool" (onClick)="addNewRegion()">{{ 'common.create' | t }}</ui-button>
+            <ui-button *ngIf="newRegion" [disabled]="!newRegionSchool || saving" (onClick)="addNewRegion()">{{ 'common.create' | t }}</ui-button>
           </div>
         </div>
       </div>
@@ -170,7 +170,7 @@ export class AdminUserDetailComponent implements OnInit {
   }
 
   addNewRegion() {
-    if (!this.newRegion || !this.newRegionSchool || !this.user) return;
+    if (!this.newRegion || !this.newRegionSchool || !this.user || this.saving) return;
     this.saving = true;
     this.errorMsg = '';
     this.savedMsg = '';

@@ -69,7 +69,7 @@ import { CityOption } from '../../core/services/school-state.service';
           </app-translation-editor>
         </div>
 
-        <ui-button variant="primary" (onClick)="saveSchool()">{{ 'admin.save' | t }}</ui-button>
+        <ui-button variant="primary" [disabled]="saving" (onClick)="saveSchool()">{{ (saving ? 'admin.saving' : 'admin.save') | t }}</ui-button>
       </div>
     </div>
   `,
@@ -143,10 +143,15 @@ export class AdminSchoolDetailComponent implements OnInit {
     });
   }
 
+  saving = false;
+
   saveSchool() {
+    if (this.saving) return;
     const payload = { ...this.editData, code: (this.editData.code || '').trim().toUpperCase(), city: this.editCity || null };
+    this.saving = true;
     this.adminService.updateSchool(this.schoolId, payload).subscribe({
       next: data => {
+        this.saving = false;
         this.school = data;
         this.editData = { name: data.name, email_domain: data.email_domain, code: data.code, translations: data.translations || {} };
         this.editCity = data.city || '';
@@ -155,6 +160,7 @@ export class AdminSchoolDetailComponent implements OnInit {
       // Silently doing nothing left the old code on the page looking saved;
       // a code already used in this region is the likely reason, and says so.
       error: err => {
+        this.saving = false;
         this.toast.error(parseAdminError(err, this.i18n));
         this.cdr.markForCheck();
       }
