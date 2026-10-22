@@ -11,6 +11,7 @@ import { AccountService } from '../../core/services/account.service';
 import { RegionLinkService } from '../../core/region-link.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
+import { bookQueryParams } from '../../core/book-preview';
 
 
 @Component({
@@ -42,8 +43,8 @@ import { ConfirmService } from '../../core/services/confirm.service';
         [coverUrl]="sub.bookCoverUrl"
         mode="waitlist"
         [waitingCount]="sub.newListingsCount"
-        [link]="sub.isbn ? ['/search'] : undefined"
-        [linkParams]="{ q: sub.isbn }"
+        [link]="['/book']"
+        [linkParams]="bookParams(sub)"
       >
         <div tile-actions class="tile-actions-inner">
           <span class="sub-status" [class.available]="sub.newListingsCount > 0">
@@ -140,9 +141,12 @@ export class SubscriptionsComponent implements OnInit {
     }
   }
 
+  /** The book's page, by ISBN or, for a book without one, by its id. */
+  bookParams(sub: any): Record<string, string | number> {
+    return bookQueryParams({ isbn: sub.isbn, id: sub.book });
+  }
+
   viewBook(sub: any) {
-    if (sub.isbn) {
-      this.router.navigate(this.regionLink.path(['/search']), { queryParams: { q: sub.isbn } });
-    }
+    this.router.navigate(this.regionLink.path(['/book']), { queryParams: this.bookParams(sub) });
   }
 }
