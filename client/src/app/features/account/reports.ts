@@ -1,7 +1,7 @@
-import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { Observable, Subscription, forkJoin, map, of, switchMap, tap } from 'rxjs';
 import { AccountService, ChatReportItem, ListingReportItem } from '../../core/services/account.service';
 import { TPipe } from '../../core/i18n.service';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
@@ -27,6 +27,30 @@ export interface UserReportItem {
     id: string;
     listing_title?: string;
     listing_deleted?: boolean;
+  };
+}
+
+function toListingItem(r: ListingReportItem): UserReportItem {
+  return {
+    id: r.id,
+    type: 'listing',
+    reason: r.reason,
+    detail: r.detail,
+    status: r.status,
+    created_at: r.created_at,
+    listing: r.listing,
+  };
+}
+
+function toChatItem(r: ChatReportItem): UserReportItem {
+  return {
+    id: r.id,
+    type: 'chat',
+    reason: r.reason,
+    detail: r.detail,
+    status: r.status,
+    created_at: r.created_at,
+    conversation: r.conversation,
   };
 }
 
@@ -226,7 +250,7 @@ export interface UserReportItem {
     }
   `]
 })
-export class ReportsComponent implements OnInit {
+export class ReportsComponent implements OnInit, OnDestroy {
   private accountService = inject(AccountService);
   private cdr = inject(ChangeDetectorRef);
 
@@ -241,8 +265,21 @@ export class ReportsComponent implements OnInit {
   pageSize = 20;
   currentPage = 1;
 
+  /**
+   * The "all" tab merges two paginated lists by date. Page N of the merge is
+   * within the first N pages of each side, so those are fetched (each only
+   * once while the tab is open) and the merge is cut to page N.
+   */
+  private allPages = this.emptyAllPages();
+  /** The load in flight: a newer one (another tab or page) cancels it. */
+  private loadSub?: Subscription;
+
   ngOnInit() {
     this.loadReports();
+  }
+
+  ngOnDestroy() {
+    this.loadSub?.unsubscribe();
   }
 
   setFilter(filter: 'all' | 'listing' | 'chat') {
@@ -253,104 +290,81 @@ export class ReportsComponent implements OnInit {
   }
 
   loadReports(page = 1) {
+    this.loadSub?.unsubscribe();
     this.isLoading = true;
     this.loadFailed = false;
     this.currentPage = page;
+    // Pages fetched for an earlier visit to "all" may be stale by now.
+    if (page === 1) this.allPages = this.emptyAllPages();
 
-    if (this.activeFilter === 'all') {
-      forkJoin({
-        // No per-side fallback to an empty page: half the list passed off
-        // as all of it is worse than saying the load failed.
-        listingRes: this.accountService.getMyListingReports(page),
-        chatRes: this.accountService.getMyChatReports(page),
-      }).subscribe({
-        next: ({ listingRes, chatRes }) => {
-          const listingItems: UserReportItem[] = (listingRes.results || []).map(r => ({
-            id: r.id,
-            type: 'listing',
-            reason: r.reason,
-            detail: r.detail,
-            status: r.status,
-            created_at: r.created_at,
-            listing: r.listing,
-          }));
-          const chatItems: UserReportItem[] = (chatRes.results || []).map(r => ({
-            id: r.id,
-            type: 'chat',
-            reason: r.reason,
-            detail: r.detail,
-            status: r.status,
-            created_at: r.created_at,
-            conversation: r.conversation,
-          }));
+    const load: Observable<{ reports: UserReportItem[]; total: number }> =
+      this.activeFilter === 'all'
+        ? this.loadAll(page)
+        : this.activeFilter === 'listing'
+          ? this.accountService.getMyListingReports(page).pipe(
+              map(res => ({ reports: (res.results || []).map(toListingItem), total: res.count || 0 })))
+          : this.accountService.getMyChatReports(page).pipe(
+              map(res => ({ reports: (res.results || []).map(toChatItem), total: res.count || 0 })));
 
-          this.reports = [...listingItems, ...chatItems].sort(
-            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-          this.totalReports = (listingRes.count || 0) + (chatRes.count || 0);
-          this.isLoading = false;
-          this.cdr.markForCheck();
-        },
-        error: (err) => {
-          console.error('Failed to load reports', err);
-          this.reports = [];
-          this.totalReports = 0;
-          this.isLoading = false;
-          this.loadFailed = true;
-          this.cdr.markForCheck();
-        }
-      });
-    } else if (this.activeFilter === 'listing') {
-      this.accountService.getMyListingReports(page).subscribe({
-        next: (res) => {
-          this.reports = (res.results || []).map(r => ({
-            id: r.id,
-            type: 'listing',
-            reason: r.reason,
-            detail: r.detail,
-            status: r.status,
-            created_at: r.created_at,
-            listing: r.listing,
-          }));
-          this.totalReports = res.count || 0;
-          this.isLoading = false;
-          this.cdr.markForCheck();
-        },
-        error: (err) => {
-          console.error('Failed to load listing reports', err);
-          this.reports = [];
-          this.totalReports = 0;
-          this.isLoading = false;
-          this.loadFailed = true;
-          this.cdr.markForCheck();
-        }
-      });
-    } else {
-      this.accountService.getMyChatReports(page).subscribe({
-        next: (res) => {
-          this.reports = (res.results || []).map(r => ({
-            id: r.id,
-            type: 'chat',
-            reason: r.reason,
-            detail: r.detail,
-            status: r.status,
-            created_at: r.created_at,
-            conversation: r.conversation,
-          }));
-          this.totalReports = res.count || 0;
-          this.isLoading = false;
-          this.cdr.markForCheck();
-        },
-        error: (err) => {
-          console.error('Failed to load chat reports', err);
-          this.reports = [];
-          this.totalReports = 0;
-          this.isLoading = false;
-          this.loadFailed = true;
-          this.cdr.markForCheck();
-        }
-      });
-    }
+    this.loadSub = load.subscribe({
+      next: ({ reports, total }) => {
+        this.reports = reports;
+        this.totalReports = total;
+        this.isLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        // No per-side fallback to an empty page in "all": half the list
+        // passed off as all of it is worse than saying the load failed.
+        console.error('Failed to load reports', err);
+        this.reports = [];
+        this.totalReports = 0;
+        this.isLoading = false;
+        this.loadFailed = true;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  private emptyAllPages() {
+    return {
+      listing: new Map<number, UserReportItem[]>(),
+      chat: new Map<number, UserReportItem[]>(),
+      listingCount: 0,
+      chatCount: 0,
+    };
+  }
+
+  private loadAll(page: number): Observable<{ reports: UserReportItem[]; total: number }> {
+    const cache = this.allPages;
+    const listingPage = (p: number) => this.accountService.getMyListingReports(p).pipe(
+      tap(res => { cache.listing.set(p, (res.results || []).map(toListingItem)); cache.listingCount = res.count || 0; }));
+    const chatPage = (p: number) => this.accountService.getMyChatReports(p).pipe(
+      tap(res => { cache.chat.set(p, (res.results || []).map(toChatItem)); cache.chatCount = res.count || 0; }));
+    const lastPage = (count: number) => Math.min(page, Math.ceil(count / this.pageSize));
+
+    // The first page of each side gives its count, which says how many more exist.
+    const firsts = [
+      ...(cache.listing.has(1) ? [] : [listingPage(1)]),
+      ...(cache.chat.has(1) ? [] : [chatPage(1)]),
+    ];
+    return (firsts.length ? forkJoin(firsts) : of([])).pipe(
+      switchMap(() => {
+        const rest: Observable<unknown>[] = [];
+        for (let p = 2; p <= lastPage(cache.listingCount); p++) if (!cache.listing.has(p)) rest.push(listingPage(p));
+        for (let p = 2; p <= lastPage(cache.chatCount); p++) if (!cache.chat.has(p)) rest.push(chatPage(p));
+        return rest.length ? forkJoin(rest) : of([]);
+      }),
+      map(() => {
+        const merged: UserReportItem[] = [];
+        for (let p = 1; p <= page; p++) merged.push(...(cache.listing.get(p) ?? []), ...(cache.chat.get(p) ?? []));
+        merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        return {
+          reports: merged.slice((page - 1) * this.pageSize, page * this.pageSize),
+          total: cache.listingCount + cache.chatCount,
+        };
+      }),
+    );
   }
 
   onPageChange(page: number) {

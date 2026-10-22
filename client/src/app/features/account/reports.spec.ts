@@ -4,7 +4,7 @@ import { provideRouter } from '@angular/router';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { I18nService } from '../../core/i18n.service';
 import { AccountService } from '../../core/services/account.service';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { RegionService } from '../../core/region.service';
 
 
@@ -158,5 +158,37 @@ describe('ReportsComponent', () => {
     fixture.detectChanges();
     expect(component.loadFailed).toBe(false);
     expect(el.querySelectorAll('.report-card').length).toBe(3);
+  });
+
+  it('"all" merges both lists by date, a page at a time, with no page longer than 20', () => {
+    // 25 listing reports on the hour from 00:00, 15 chat reports on the half hour.
+    const at = (h: number, m: number) => new Date(Date.UTC(2026, 0, 2, 0, 0) - (h * 60 + m) * 60000).toISOString();
+    const listing = Array.from({ length: 25 }, (_, i) => ({ id: `l${i}`, reason: 'fake', status: 'open', created_at: at(i, 0), listing: { id: 'x' } }));
+    const chat = Array.from({ length: 15 }, (_, i) => ({ id: `c${i}`, reason: 'spam', status: 'open', created_at: at(i, 30), conversation: { id: 'y' } }));
+    const pageOf = (rows: any[]) => (p: number) => of({ count: rows.length, results: rows.slice((p - 1) * 20, p * 20) });
+    mockAccountService.getMyListingReports = vi.fn(pageOf(listing));
+    mockAccountService.getMyChatReports = vi.fn(pageOf(chat));
+
+    component.loadReports(1);
+    expect(component.reports.length).toBe(20);
+    expect(component.totalReports).toBe(40);
+    expect(component.reports.map(r => r.id).slice(0, 4)).toEqual(['l0', 'c0', 'l1', 'c1']);
+
+    component.onPageChange(2);
+    expect(component.reports.length).toBe(20);
+    // 15 chat reports are all on page 1 of the chat side: it is not fetched again.
+    expect(mockAccountService.getMyChatReports).toHaveBeenCalledTimes(1);
+    expect(mockAccountService.getMyListingReports).toHaveBeenCalledWith(2);
+    expect(component.reports.map(r => r.id).slice(0, 3)).toEqual(['l10', 'c10', 'l11']);
+    expect(component.reports.at(-1)!.id).toBe('l24');
+  });
+
+  it('an answer for a tab already left does not replace the one now shown', () => {
+    const listing$ = new Subject<any>();
+    mockAccountService.getMyListingReports = vi.fn(() => listing$);
+    component.setFilter('listing');
+    component.setFilter('chat');
+    listing$.next({ count: 1, results: [{ id: 'stale', reason: 'fake', status: 'open', created_at: '2026-01-01T00:00:00Z' }] });
+    expect(component.reports.map(r => r.id)).toEqual(['report-1', 'report-2']);
   });
 });
