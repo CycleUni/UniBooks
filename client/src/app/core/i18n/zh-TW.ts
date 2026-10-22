@@ -525,6 +525,7 @@ export const zhTW: Record<string, string> = {
   'sell.photoLabel': '書籍照片（最多五張）',
   'sell.uploadBox': '點擊或拖曳上傳',
   'sell.uploading': '上傳中…',
+  'sell.photoAlt': '刊登照片',
   'sell.uploadFailed': '圖片上傳失敗，請再試一次。',
   'sell.photoLimitReached': '照片上限為 {max} 張，超出的照片未加入。',
   'sell.errValidation': '上架資料格式不正確，請重新確認',

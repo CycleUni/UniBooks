@@ -535,6 +535,7 @@ export const en: Record<string, string> = {
   'sell.photoLabel': 'Book Photos (Max 5)',
   'sell.uploadBox': 'Click or drag to upload',
   'sell.uploading': 'Uploading...',
+  'sell.photoAlt': 'Listing photo',
   'sell.uploadFailed': 'Failed to upload the photo. Please try again.',
   'sell.photoLimitReached': 'A listing can have at most {max} photos. Additional photos were not added.',
   'sell.prev': 'Previous',

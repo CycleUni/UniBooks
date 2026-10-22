@@ -655,6 +655,8 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
   }
 
   nextStep() {
+    // A photo still uploading would be left behind by the next step.
+    if (this.isUploading) return;
     this.apiError = '';
     this.attemptedSteps[this.step] = true;
     if (!this.isStepValid(this.step)) {
@@ -786,6 +788,9 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
   }
 
   async submit() {
+    // Wait for every photo: one still uploading would be missing from the
+    // listing, then land in a form already cleared.
+    if (this.isUploading || this.isSubmitting) return;
     this.apiError = '';
 
     if (!this.isVerified) {
@@ -865,6 +870,10 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
 
       this.bookService.createManualBook(bookData).subscribe({
         next: (createdBook) => {
+          // Kept, so a retry after a failed listing reuses this book rather
+          // than creating it again (a book without an ISBN has nothing to
+          // de-duplicate on).
+          this.bookPreview = { ...this.bookPreview, id: createdBook.id };
           executeListingCreation(createdBook.id);
         },
         error: (err) => {

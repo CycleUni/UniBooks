@@ -574,6 +574,35 @@ describe('Sell listing form guarding, drafts and field validation', () => {
       expect(books().createManualBook).toHaveBeenCalledWith(expect.objectContaining({ isbn13: expected }));
     });
 
+    it('reuses the book it created when the listing failed and is retried', () => {
+      create();
+      const createListing = (TestBed.inject(ListingService) as any).createListing;
+      createListing.mockReturnValueOnce(throwError(() => ({ status: 500 }))).mockReturnValue(of({}));
+      component.isVerified = true;
+      component.enterManually();
+      component.bookPreview.title = 'Handout';
+      component.bookPreview.authors = 'Dept.';
+      component.nextStep();
+      component.nextStep();
+      component.price = 100;
+
+      component.submit();
+      component.submit();
+
+      expect(books().createManualBook).toHaveBeenCalledTimes(1);
+      expect(createListing).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not submit while a photo is still uploading', () => {
+      create();
+      const createListing = (TestBed.inject(ListingService) as any).createListing;
+      component.isVerified = true;
+      (component as any).pendingUploads = 1;
+      component.submit();
+      expect(createListing).not.toHaveBeenCalled();
+      expect(books().createManualBook).not.toHaveBeenCalled();
+    });
+
     it('summarises the title, condition, price and photo count above Confirm Listing', () => {
       create();
       toPricing({ id: 42, title: 'Clean Code' });

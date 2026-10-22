@@ -525,6 +525,7 @@ export const zhHK: Record<string, string> = {
   'sell.photoLabel': '書籍相片（最多五張）',
   'sell.uploadBox': '撳或拖入嚟上載',
   'sell.uploading': '上載中…',
+  'sell.photoAlt': '刊登相片',
   'sell.uploadFailed': '圖片上載失敗，請再試一次。',
   'sell.photoLimitReached': '相片上限為 {max} 張，超出的相片未有加入。',
   'sell.errValidation': '上架資料格式不正確，請重新確認',

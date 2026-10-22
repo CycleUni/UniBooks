@@ -148,7 +148,7 @@
             <label>{{ 'sell.photoLabel' | t }}</label>
             <div class="upload-container">
               <div class="preview-box" *ngFor="let url of uploadedPhotos; let i = index">
-                <img *ngIf="!isPhotoBroken(url)" [src]="url" alt="Uploaded photo" (error)="onPhotoError(url)">
+                <img *ngIf="!isPhotoBroken(url)" [src]="url" [alt]="'sell.photoAlt' | t" (error)="onPhotoError(url)">
                 <div class="preview-missing" *ngIf="isPhotoBroken(url)" role="img" [attr.aria-label]="'sell.photoUnavailable' | t">
                   <svg viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="24" height="24" aria-hidden="true">
                     <rect x="3" y="5" width="18" height="14" rx="2"></rect>
@@ -182,7 +182,7 @@
 
           <div class="actions split">
             <ui-button variant="ghost" (onClick)="prevStep()">{{ 'sell.prev' | t }}</ui-button>
-            <ui-button (onClick)="nextStep()">{{ 'sell.next' | t }}</ui-button>
+            <ui-button (onClick)="nextStep()" [disabled]="isUploading">{{ (isUploading ? 'sell.uploading' : 'sell.next') | t }}</ui-button>
           </div>
         </div>
 
@@ -235,7 +235,7 @@
 
           <div class="actions split">
             <ui-button variant="ghost" (onClick)="prevStep()" [disabled]="isSubmitting">{{ 'sell.prev' | t }}</ui-button>
-            <ui-button (onClick)="submit()" [disabled]="isSubmitting">
+            <ui-button (onClick)="submit()" [disabled]="isSubmitting || isUploading">
               {{ (isSubmitting ? 'sell.submitting' : 'sell.submit') | t }}
             </ui-button>
           </div>
