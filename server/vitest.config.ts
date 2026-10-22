@@ -10,8 +10,20 @@ export default defineConfig({
       return {
         wrangler: { configPath: './wrangler.jsonc' },
         miniflare: {
-          // The ISBNnet resolver is a separate Worker; tests get a stub that knows no ISBN.
-          serviceBindings: { ISBNNET: () => new Response('not found', { status: 404 }) },
+          // The ISBNnet resolver is a separate Worker, called over RPC; tests get a
+          // stub that knows no ISBN.
+          serviceBindings: { ISBNNET: 'isbnnet-resolver' },
+          workers: [
+            {
+              name: 'isbnnet-resolver',
+              modules: true,
+              compatibilityDate: '2026-10-01',
+              script: `import { WorkerEntrypoint } from 'cloudflare:workers';
+                export default class extends WorkerEntrypoint {
+                  async lookup() { return { status: 'not_found' }; }
+                }`,
+            },
+          ],
           // A tiny stand-in for the Angular build, so the tests need no client build.
           assets: {
             directory: path.join(import.meta.dirname, 'test/fixtures/assets'),

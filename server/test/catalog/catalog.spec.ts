@@ -2,7 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { cleanAndValidateIsbn, isbnChecksumOk, isbnForms, validateBookIsbn } from '../../src/services/catalog/isbn';
 import { cleanCoverUrl, cleanPublisher, describeSource } from '../../src/services/catalog/common';
-import { engineOrder, regionSearchEngines, ISBN_FALLBACK_ORDER } from '../../src/services/catalog/lookups';
+import {
+  engineOrder,
+  getIsbnnetBookByIsbn,
+  regionSearchEngines,
+  ISBN_FALLBACK_ORDER,
+  type LookupMeta,
+} from '../../src/services/catalog/lookups';
 import { PhotoError, acceptListingPhotos, settlePhotos } from '../../src/services/listings/photos';
 import { seedListing, seedRegion, seedUser } from '../messaging/helpers';
 import { sniffImage as detectImageExtension, publicBase, storageKeyFromUrl, validatedContentLength } from '../../src/lib/media';
@@ -19,6 +25,15 @@ describe('ISBN helpers', () => {
     expect(validateBookIsbn('9780131103628')).toBeNull(); // bad check digit
     expect(validateBookIsbn('0131103628')).toBe('0131103628');
     expect([...isbnForms('9780131103627')]).toContain('0131103628');
+  });
+});
+
+describe('ISBNnet resolver', () => {
+  it('asks the resolver over RPC and takes its answer', async () => {
+    // The stub resolver (vitest.config.ts) answers every lookup not_found.
+    const meta = {} as LookupMeta;
+    expect(await getIsbnnetBookByIsbn(env, '9789570000017', meta)).toBeNull();
+    expect(meta.status).toBe('not_found');
   });
 });
 

@@ -1,5 +1,10 @@
 import type { Region } from './db';
 
+/** What the ISBNnet resolver's lookup() RPC answers (its src/index.ts, IsbnLookup). */
+export type IsbnnetLookup =
+  | { status: 'found'; book: Partial<Record<'title' | 'authors' | 'publisher' | 'published_date' | 'cover_url' | 'isbn', string>> }
+  | { status: 'not_found' | 'invalid_isbn' | 'upstream_error' };
+
 /**
  * Bindings and variables of the single UniBooks Worker (wrangler.jsonc).
  */
@@ -20,8 +25,8 @@ export interface Env {
   API_WRITE_LIMIT?: RateLimit;
   /** Per-client cap on fresh builds for a `?v=` the edge has not caught up with (lib/cache.ts). */
   CACHE_BYPASS_LIMIT?: RateLimit;
-  /** The ISBNnet resolver Worker (service binding); falls back to ISBNNET_RESOLVER_URL. */
-  ISBNNET?: Fetcher;
+  /** The ISBNnet resolver Worker (service binding, called over RPC); falls back to ISBNNET_RESOLVER_URL. */
+  ISBNNET?: Fetcher & { lookup(isbn: string): Promise<IsbnnetLookup> };
   CHAT_ROOM: DurableObjectNamespace;
   USER_HUB: DurableObjectNamespace;
   ORDER_LOCK: DurableObjectNamespace;

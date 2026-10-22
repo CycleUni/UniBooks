@@ -4,7 +4,7 @@
  * (keyword), confirmed misses for an hour, and a global 10-second "Google is rate-limiting us" flag.
  * A KV failure degrades to a live call, never to an error.
  */
-import type { Env } from '../../env';
+import type { Env, IsbnnetLookup } from '../../env';
 import type { Region } from '../../db';
 import { cleanPublisher, type Engine, cleanCoverUrl } from './common';
 import { isbnForms } from './isbn';
@@ -401,25 +401,20 @@ export async function searchOpenLibraryBooks(env: Env, rawQuery: string, meta?: 
 
 /**
  * The ISBNnet resolver (a separate Worker over National Central Library
- * data), GET /isbn/<isbn>. Called through the ISBNNET service binding — an
- * in-process call that never leaves Cloudflare — or, where the binding is not
- * connected (local dev without the resolver running), over HTTPS at
- * ISBNNET_RESOLVER_URL. The shared secret goes in X-Resolver-Secret when set.
+ * data). Called over RPC through the ISBNNET service binding — an in-process
+ * call that never leaves Cloudflare and needs no secret — or, where the
+ * binding is not connected (local dev without the resolver running), over
+ * HTTPS at ISBNNET_RESOLVER_URL, GET /isbn/<isbn> with the shared secret in
+ * X-Resolver-Secret when set.
  */
-async function callIsbnnet(env: Env, isbn: string): Promise<Response | null> {
-  const path = `/isbn/${encodeURIComponent(isbn)}`;
-  const headers: Record<string, string> = { 'User-Agent': USER_AGENT };
-  if (env.ISBNNET_RESOLVER_SECRET) headers['X-Resolver-Secret'] = env.ISBNNET_RESOLVER_SECRET;
-  // No redirects: the shared secret must only ever reach the resolver itself.
-  const init: RequestInit = { headers, signal: AbortSignal.timeout(EXTERNAL_API_TIMEOUT_MS), redirect: 'manual' };
+async function callIsbnnet(env: Env, isbn: string): Promise<IsbnnetLookup | null> {
   if (env.ISBNNET) {
     try {
-      const res = await env.ISBNNET.fetch(`https://isbnnet-resolver${path}`, init);
-      // A binding with no Worker behind it (wrangler dev without the resolver)
-      // answers 503; only then is the public URL worth a try.
-      if (res.status < 500 || !env.ISBNNET_RESOLVER_URL) return res;
+      return await withTimeout(env.ISBNNET.lookup(isbn), EXTERNAL_API_TIMEOUT_MS);
     } catch (e) {
-      if (!env.ISBNNET_RESOLVER_URL) throw e;
+      // A binding with no Worker behind it (wrangler dev without the resolver)
+      // throws; only then is the public URL worth a try.
+      if (!env.ISBNNET_RESOLVER_URL || isTimeout(e)) throw e;
     }
   }
   const base = (env.ISBNNET_RESOLVER_URL ?? '').replace(/\/+$/, '');
@@ -431,7 +426,24 @@ async function callIsbnnet(env: Env, isbn: string): Promise<Response | null> {
   }
   // HTTPS, or plain HTTP only to this machine during local development.
   if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsed.hostname))) return null;
-  return fetch(`${base}${path}`, init);
+  const headers: Record<string, string> = { 'User-Agent': USER_AGENT };
+  if (env.ISBNNET_RESOLVER_SECRET) headers['X-Resolver-Secret'] = env.ISBNNET_RESOLVER_SECRET;
+  // No redirects: the shared secret must only ever reach the resolver itself.
+  const res = await fetch(`${base}/isbn/${encodeURIComponent(isbn)}`, {
+    headers,
+    signal: AbortSignal.timeout(EXTERNAL_API_TIMEOUT_MS),
+    redirect: 'manual',
+  });
+  if (res.status === 200) return { status: 'found', book: await res.json() };
+  // 404 is either answer the resolver caches: not listed, or not an ISBN.
+  return { status: res.status === 404 ? 'not_found' : 'upstream_error' };
+}
+
+/** An RPC call has no AbortSignal; this gives it the same deadline a fetch gets. */
+function withTimeout<T>(call: Promise<T>, ms: number): Promise<T> {
+  const signal = AbortSignal.timeout(ms);
+  const deadline = new Promise<never>((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+  return Promise.race([call, deadline]);
 }
 
 export async function getIsbnnetBookByIsbn(env: Env, isbn: string, meta?: LookupMeta): Promise<BookRecord | null> {
@@ -444,8 +456,8 @@ export async function getIsbnnetBookByIsbn(env: Env, isbn: string, meta?: Lookup
       if (meta) meta.status = 'error';
       return null;
     }
-    if (res.status === 200) {
-      const data = (await res.json()) as Partial<Record<keyof BookRecord, string>>;
+    if (res.status === 'found') {
+      const data = res.book;
       const result: BookRecord = {
         title: data.title ?? '',
         authors: data.authors ?? '',
@@ -458,7 +470,7 @@ export async function getIsbnnetBookByIsbn(env: Env, isbn: string, meta?: Lookup
       if (meta) meta.status = 'found';
       return result;
     }
-    if (res.status === 404) {
+    if (res.status === 'not_found' || res.status === 'invalid_isbn') {
       await cacheSet(env, key, NOT_FOUND_SENTINEL, NOT_FOUND_TTL);
       if (meta) meta.status = 'not_found';
       return null;
