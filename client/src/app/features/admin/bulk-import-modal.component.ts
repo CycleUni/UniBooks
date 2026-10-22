@@ -356,20 +356,21 @@ export class BulkImportModalComponent implements OnChanges {
   }
 
   /**
-   * What went wrong, for the "failed" message. Most failures here are a plain
-   * string in `error`; a school code that is malformed or already used in
-   * this region comes back as a code to translate plus the domains at fault,
-   * and printing that object as-is showed "[object Object]".
+   * What went wrong, for the "failed" message. The server answers with a
+   * code to translate; a school code that is malformed or already used in
+   * this region also names the domains at fault, and printing that object
+   * as-is showed "[object Object]". Anything else (a 500, no connection) is
+   * the generic message: err.message is Angular's "Http failure response
+   * for …", not something to show.
    */
   private errorDetail(err: any): string {
     const body = err?.error?.error;
-    if (typeof body === 'string') return body;
     const translated = translateApiError(err, this.i18n);
     if (translated) {
       const domains: unknown = body?.domains;
       return Array.isArray(domains) && domains.length ? `${translated} (${domains.join(', ')})` : translated;
     }
-    return err?.message || '';
+    return this.i18n.t('admin.errGeneric');
   }
 
   private isValidItem(item: any): boolean {

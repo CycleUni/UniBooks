@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { SimpleChange } from '@angular/core';
-import { of } from 'rxjs';
-import { HttpClient } from '@angular/common/http';
+import { of, throwError } from 'rxjs';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { BulkImportModalComponent, defaultSchoolsJsonUrl } from './bulk-import-modal.component';
 import { AdminService } from '../../core/services/admin.service';
 import { RegionService } from '../../core/region.service';
@@ -40,6 +40,16 @@ describe('BulkImportModalComponent', () => {
     expect(mockAdminService.bulkImport).toHaveBeenCalledWith('schools', 'preview', items);
     expect(component.step).toBe('preview');
     expect(component.errorMsg).toBe('');
+  });
+
+  it('says the preview failed in words, not with Angular\'s raw error text', () => {
+    mockAdminService.bulkImport.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 500, url: '/api/v1/admin/schools/bulk', statusText: 'Internal Server Error' })),
+    );
+    component.jsonText = JSON.stringify([{ name: 'A', email_domain: 'a.edu.tw' }]);
+    component.preview();
+    expect(component.errorMsg).not.toContain('Http failure');
+    expect(component.errorMsg).toContain('Something went wrong');
   });
 
   it('accepts object with items array JSON in preview()', () => {
