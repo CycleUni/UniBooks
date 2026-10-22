@@ -74,4 +74,30 @@ describe('VerifyEmail (account activation)', () => {
     create();
     expect(auth.verifyEmail).toHaveBeenCalledWith('edu-token');
   });
+
+  it('moves on once: tapping the button cancels the automatic move', () => {
+    params.next({});
+    const c = TestBed.createComponent(VerifyEmail).componentInstance;
+    c.inputToken = 'edu-token';
+    c.submitVerify();
+    const navigate = TestBed.inject(Router).navigate as ReturnType<typeof vi.fn>;
+    navigate.mockClear();
+    // The success screen's button, before the 3 seconds are up.
+    c.goNext();
+    vi.advanceTimersByTime(5000);
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not move on by itself after the page is left', () => {
+    params.next({});
+    const fixture = TestBed.createComponent(VerifyEmail);
+    const c = fixture.componentInstance;
+    c.inputToken = 'edu-token';
+    c.submitVerify();
+    const navigate = TestBed.inject(Router).navigate as ReturnType<typeof vi.fn>;
+    navigate.mockClear();
+    fixture.destroy();
+    vi.advanceTimersByTime(5000);
+    expect(navigate).not.toHaveBeenCalled();
+  });
 });

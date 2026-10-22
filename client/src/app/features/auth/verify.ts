@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule, Router } from '@angular/router';
 import { ChangeDetectorRef } from '@angular/core';
@@ -125,6 +125,12 @@ export class VerifyEmail implements OnInit {
   private auth = inject(AuthStore);
   private cdr = inject(ChangeDetectorRef);
   readonly i18n = inject(I18nService);
+  /** The automatic move on after success: cancelled by leaving first. */
+  private nextTimer?: ReturnType<typeof setTimeout>;
+
+  constructor() {
+    inject(DestroyRef).onDestroy(() => clearTimeout(this.nextTimer));
+  }
 
   ngOnInit() {
     this.route.queryParams.subscribe(params => {
@@ -160,9 +166,7 @@ export class VerifyEmail implements OnInit {
       next: () => {
         this.status = 'success';
         this.cdr.detectChanges();
-        setTimeout(() => {
-          this.goNext();
-        }, 3000);
+        this.nextTimer = setTimeout(() => this.goNext(), 3000);
       },
       error: (err) => {
         const code = err.error?.error?.code;
@@ -190,6 +194,8 @@ export class VerifyEmail implements OnInit {
   }
 
   goNext() {
+    // The button and the timer both lead here; only the first one moves on.
+    clearTimeout(this.nextTimer);
     // Registration verification already logs the user in (see
     // AuthStore.verifyRegistration) — send them into the app rather than
     // back to a login form they no longer need.
