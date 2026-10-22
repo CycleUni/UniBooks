@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { I18nService, TPipe } from '../../core/i18n.service';
+import { BookCoverPipe } from '../../shared/pipes/book-cover.pipe';
 import { UiRoleBadge } from '../../shared/ui/role-badge.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { formatInboxTime } from './message-formatting.util';
@@ -18,7 +19,7 @@ import { formatInboxTime } from './message-formatting.util';
 @Component({
   selector: 'messages-inbox-list',
   standalone: true,
-  imports: [CommonModule, TPipe, UiRoleBadge, UiSkeleton],
+  imports: [CommonModule, TPipe, UiRoleBadge, UiSkeleton, BookCoverPipe],
   // Checked with its parent, not only on a new `chats` array. The Messages
   // page updates rows in place — a live message's preview and time, the
   // unread dot — and under OnPush (Angular's default) those never showed
@@ -39,7 +40,7 @@ import { formatInboxTime } from './message-formatting.util';
         [class.unread]="chat._hubUnread"
         (click)="select.emit(chat)"
       >
-        <img *ngIf="chat.listing_photo" [src]="chat.listing_photo" [attr.alt]="chat.listing_title || ('common.bookCover' | t)" class="chat-thumb">
+        <img *ngIf="chat.listing_photo" [src]="chat.listing_photo | bookCover" [attr.alt]="chat.listing_title || ('common.bookCover' | t)" class="chat-thumb">
         <div class="chat-thumb placeholder-thumb" *ngIf="!chat.listing_photo"></div>
         <div class="chat-body">
           <div class="chat-meta">

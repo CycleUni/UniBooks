@@ -42,7 +42,7 @@
               <!-- Disabled once the seller deletes the listing: there is no
                    page to go back to, only this conversation's history. -->
               <button type="button" class="listing-banner-left" (click)="goToListing(activeChat.listing_id)" [disabled]="activeChat.listing_deleted">
-                <img *ngIf="activeChat.listing_photo" [src]="activeChat.listing_photo" [attr.alt]="activeChat.listing_title || ('common.bookCover' | t)" class="listing-thumb">
+                <img *ngIf="activeChat.listing_photo" [src]="activeChat.listing_photo | bookCover" [attr.alt]="activeChat.listing_title || ('common.bookCover' | t)" class="listing-thumb">
                 <span class="placeholder-thumb" *ngIf="!activeChat.listing_photo"></span>
                 <span class="listing-details">
                   <span class="listing-title">{{ activeChat.listing_title }}</span>

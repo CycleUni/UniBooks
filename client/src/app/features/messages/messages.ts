@@ -20,6 +20,7 @@ import { MeetupDetailsService } from '../../core/services/meetup-details.service
 import { GoogleAnalyticsService } from '../../core/services/google-analytics.service';
 import { ChangeDetectorRef, OnDestroy } from '@angular/core';
 import { TPipe, I18nService } from '../../core/i18n.service';
+import { BookCoverPipe } from '../../shared/pipes/book-cover.pipe';
 import { ThemeService } from '../../core/services/theme.service';
 import { Subscription, of } from 'rxjs';
 import { tap } from 'rxjs/operators';
@@ -46,7 +47,7 @@ const MEETUP_DETAIL_STATUSES = ['accepted', 'handed_over'];
 @Component({
   selector: 'app-messages',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, UiEmpty, UiButton, UiInput, UiMeetupCard, TPipe, UiImageLightbox, UiReportModal, UiRoleBadge, MessagesInboxList, PricePipe, UiVerificationPrompt, UiSkeleton, UiErrorState, UiPullToRefresh],
+  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, UiEmpty, UiButton, UiInput, UiMeetupCard, TPipe, UiImageLightbox, UiReportModal, UiRoleBadge, MessagesInboxList, PricePipe, UiVerificationPrompt, UiSkeleton, UiErrorState, UiPullToRefresh, BookCoverPipe],
   templateUrl: './messages.html',
   styleUrls: ['./messages.css']
 })

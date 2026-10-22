@@ -36,6 +36,20 @@ describe('MessagesInboxList', () => {
     expect(partners[1].textContent?.trim()).toBe('周恭煥');
   });
 
+  it('shows a book cover thumbnail through the cover proxy, and a listing photo as it is', () => {
+    const fixture = TestBed.createComponent(MessagesInboxList);
+    fixture.componentInstance.chats = [
+      { id: 'c1', other_party: 'A', other_party_role: 'seller', listing_title: 'A', listing_photo: 'https://books.google.com/books/content?id=x&img=1' },
+      { id: 'c2', other_party: 'B', other_party_role: 'seller', listing_title: 'B', listing_photo: 'https://assets.unibooks.app/listings/p.jpg' },
+    ];
+    fixture.detectChanges();
+
+    const thumbs = Array.from(fixture.nativeElement.querySelectorAll('img.chat-thumb')) as HTMLImageElement[];
+    // A direct Google Books image is blocked by the production CSP.
+    expect(thumbs[0].getAttribute('src')).toContain('/api/cover?src=');
+    expect(thumbs[1].getAttribute('src')).toBe('https://assets.unibooks.app/listings/p.jpg');
+  });
+
   it('shows a row changed in place by the page, as a live message does', () => {
     const fixture = TestBed.createComponent(InboxHost);
     fixture.detectChanges();

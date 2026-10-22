@@ -3,6 +3,7 @@ import type { Env } from '../../env';
 import { chatReports, conversations, createDb, type Database } from '../../db';
 import { loadPeople, schoolNamesIn } from './people';
 import { parsePhotos } from '../../lib/json';
+import { coverUrlFor } from '../catalog/covers';
 
 /**
  * Inbox-preview placeholder for an image message. An i18n key rather than
@@ -154,7 +155,7 @@ export async function serializeConversations(
     // Raw: `IN json_each(...)` over the page's ids, and listings as `l.*` rows.
     listingIds.length
       ? env.DB.prepare(
-          `SELECT l.*, b.cover_url AS _cover FROM listings l LEFT JOIN books b ON b.id = l.book_id
+          `SELECT l.*, b.cover_url AS _cover, b.cover_r2_key AS _cover_r2_key FROM listings l LEFT JOIN books b ON b.id = l.book_id
             WHERE l.id IN (SELECT value FROM json_each(?))`,
         )
           .bind(JSON.stringify(listingIds))
@@ -188,7 +189,14 @@ export async function serializeConversations(
     let photo = '';
     if (listing) {
       const photos = parsePhotos(listing.photos);
-      photo = photos[0] ?? (typeof listing._cover === 'string' ? listing._cover : '') ?? '';
+      // No photo: the book's cover, from its R2 copy when there is one, the
+      // same as everywhere else a cover is served.
+      photo =
+        photos[0] ??
+        coverUrlFor(env, undefined, {
+          cover_url: typeof listing._cover === 'string' ? listing._cover : null,
+          cover_r2_key: typeof listing._cover_r2_key === 'string' ? listing._cover_r2_key : null,
+        });
     }
 
     return {

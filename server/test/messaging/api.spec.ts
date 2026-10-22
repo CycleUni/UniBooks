@@ -4,6 +4,8 @@ import { api, hasMessagingSchema, seedConversation, seedListing, seedRegion, see
 import { signToken } from '../../src/lib/jwt';
 import { mintChatToken } from '../../src/services/chatTokens';
 import { app } from '../../src/index';
+import { books, createDb, listings } from '../../src/db';
+import { eq } from 'drizzle-orm';
 import { CONVERSATION_CREATE_RATE } from '../../src/routes/messaging';
 import { parseRate } from '../../src/middleware/rateLimit';
 import type { RateLimiter } from '../../src/durable-objects/RateLimiter';
@@ -105,6 +107,27 @@ describe.skipIf(!ready)('messaging API', () => {
     const { token } = (await obs.json()) as { token: string };
     const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
     expect(payload.role).toBe('observer');
+  });
+
+  it('a listing without photos shows its book cover in the inbox, from the R2 copy when there is one', async () => {
+    const seller = await seedUser();
+    const buyer = await seedUser();
+    const db = createDb(env.DB);
+    const photoOf = async (coverR2Key: string | null) => {
+      const listing = await seedListing(seller.id);
+      const [row] = await db.select({ bookId: listings.bookId }).from(listings).where(eq(listings.id, listing));
+      await db
+        .update(books)
+        .set({ coverUrl: 'https://books.google.com/books/content?id=x&img=1', coverR2Key })
+        .where(eq(books.id, row.bookId));
+      const conv = await seedConversation(buyer.id, seller.id, listing);
+      const res = await api('/api/v1/messaging/conversations', { token: buyer.token });
+      const page = (await res.json()) as { results: { id: string; listing_photo: string }[] };
+      return page.results.find((r) => r.id === conv)!.listing_photo;
+    };
+
+    expect(await photoOf('covers/b-0123456789.jpg')).toBe(`${env.R2_PUBLIC_URL}/covers/b-0123456789.jpg`);
+    expect(await photoOf(null)).toBe('https://books.google.com/books/content?id=x&img=1');
   });
 
   it('hides a deleted conversation for one side and removes it when both delete', async () => {
