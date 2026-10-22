@@ -254,8 +254,8 @@ export class AdminService {
   private http = inject(HttpClient);
 
   // Regions
-  getRegions(): Observable<Paginated<AdminRegion>> {
-    return this.http.get<Paginated<AdminRegion>>('/admin/regions');
+  getRegions(page = 1): Observable<Paginated<AdminRegion>> {
+    return this.http.get<Paginated<AdminRegion>>('/admin/regions', { params: buildParams({ page }) });
   }
   
   getRegion(code: string): Observable<AdminRegion> {
@@ -271,8 +271,8 @@ export class AdminService {
   }
 
   // Currencies
-  getCurrencies(): Observable<Paginated<AdminCurrency>> {
-    return this.http.get<Paginated<AdminCurrency>>('/admin/currencies');
+  getCurrencies(page = 1): Observable<Paginated<AdminCurrency>> {
+    return this.http.get<Paginated<AdminCurrency>>('/admin/currencies', { params: buildParams({ page }) });
   }
   
   getCurrency(code: string): Observable<AdminCurrency> {

@@ -188,7 +188,7 @@ export class AdminRegionsListComponent implements OnInit {
     this.currentPage = page;
     this.loadFailed = false;
     this.loading = true;
-    this.adminService.getRegions().subscribe({
+    this.adminService.getRegions(page).subscribe({
       next: (res) => {
         if (Array.isArray(res)) {
            this.data = { count: res.length, results: res } as any;

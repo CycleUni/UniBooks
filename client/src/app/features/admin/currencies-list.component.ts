@@ -117,7 +117,7 @@ export class AdminCurrenciesListComponent implements OnInit {
     this.currentPage = page;
     this.loadFailed = false;
     this.loading = true;
-    this.adminService.getCurrencies().subscribe({
+    this.adminService.getCurrencies(page).subscribe({
       next: (res) => {
         if (Array.isArray(res)) {
            this.data = { count: res.length, results: res } as any;
