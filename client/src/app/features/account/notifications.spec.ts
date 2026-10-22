@@ -161,6 +161,23 @@ describe('NotificationsComponent', () => {
       expect(toast.success).toHaveBeenCalledWith('acct.notifySaved');
     });
 
+    it('holds still while another setting is being saved', async () => {
+      const pending = new Subject<any>();
+      account.updateNotificationSettings.mockReturnValue(pending);
+      create();
+
+      click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(dropdown().disabled).toBe(true);
+
+      pending.next({ new_message_email: false, push: false, email_language: 'auto' });
+      pending.complete();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(dropdown().disabled).toBe(false);
+    });
+
     it('puts the choice back and says so when saving fails', () => {
       account.updateNotificationSettings.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
       create();

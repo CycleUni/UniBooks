@@ -93,6 +93,7 @@ import { PushAvailability, PushService } from '../../core/services/push.service'
           [ngModel]="current.email_language"
           (ngModelChange)="setEmailLanguage($event)"
           [searchable]="false"
+          [disabled]="saving()"
           [triggerAriaLabel]="'acct.emailLanguage' | t"
         ></ui-dropdown>
       </li>
