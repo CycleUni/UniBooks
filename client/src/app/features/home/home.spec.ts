@@ -152,6 +152,19 @@ describe('HomeComponent', () => {
     expect(component.heroCovers[2].id).toBe(2);
   });
 
+  it('draws the hero ad in the hero only, and every other ad in the grid', () => {
+    const heroAd: any = { id: 99, title: 'Hero', image_url: 'http://h.png', target_url: 'http://h.com', show_in_hero: true, slot_index: 1 };
+    const secondHero: any = { id: 98, title: 'Also hero', image_url: 'http://s.png', target_url: 'http://s.com', show_in_hero: true, slot_index: 2 };
+    const gridAd: any = { id: 7, title: 'Grid', image_url: 'http://g.png', target_url: 'http://g.com', show_in_hero: false, slot_index: 3 };
+    mockMetadataService.getActiveAds.mockReturnValue(of({ results: [heroAd, secondHero, gridAd] }));
+
+    component.loadAds();
+
+    expect(component.heroCovers[0].id).toBe(99);
+    // Only one ad fits the hero; a second one marked for it is not dropped.
+    expect(component.gridAds.map(a => a.id)).toEqual([98, 7]);
+  });
+
   it('shows the hero ad alone when there is no waitlist', () => {
     const heroAd: any = { id: 99, title: 'Ad Title', image_url: 'http://img.png', target_url: 'http://link.com', show_in_hero: true, slot_index: 1 };
     mockListingService.getRecentBooks.mockReturnValue(of({ results: [], waitlist: [] }));

@@ -79,7 +79,7 @@ import { hasCoverFailed, markCoverFailed } from '../../shared/ui/book-cover.comp
             <h2 class="section-heading" id="recent-listings-heading">{{ 'home.recentTitleAll' | t }}</h2>
             <ui-skeleton variant="discover-grid" [count]="4"></ui-skeleton>
           </ng-container>
-          <ui-recent-listings *ngIf="schoolReady" [school]="currentSchool" [ads]="activeAds" (adClick)="onAdClick($event)"></ui-recent-listings>
+          <ui-recent-listings *ngIf="schoolReady" [school]="currentSchool" [ads]="gridAds" (adClick)="onAdClick($event)"></ui-recent-listings>
         </section>
 
         <section
@@ -420,6 +420,9 @@ export class Home implements OnInit, OnDestroy {
   categories: any[] = [];
   waitlist: any[] = [];
   activeAds: PublicAd[] = [];
+  /** The ads for the book grid: all but the one in the hero cover stack,
+   *  which was otherwise drawn twice on one screen. */
+  gridAds: PublicAd[] = [];
   currentSchool: string = '';
   /** Set once the opening school is known; the recent listings wait for it. */
   schoolReady = false;
@@ -630,6 +633,8 @@ export class Home implements OnInit, OnDestroy {
       next: (resp: any) => {
         // BE returns paginated format { count, results } after adding pagination_class
         this.activeAds = resp?.results ?? (Array.isArray(resp) ? resp : []);
+        const heroAd = this.heroAd();
+        this.gridAds = this.activeAds.filter(ad => ad !== heroAd);
         this.updateHeroCovers();
         onComplete?.();
         this.cdr.markForCheck();
@@ -638,6 +643,7 @@ export class Home implements OnInit, OnDestroy {
       },
       error: () => {
         this.activeAds = [];
+        this.gridAds = [];
         this.updateHeroCovers();
         onComplete?.();
         this.cdr.markForCheck();
@@ -646,8 +652,11 @@ export class Home implements OnInit, OnDestroy {
   }
 
   private recordAdImpressions() {
+    const heroAd = this.heroAd();
     this.activeAds.forEach(ad => {
-      if (ad.show_in_hero && (this.isPhone && this.seenHero)) {
+      // Only the hero's own ad is unseen when the hero is not drawn; any
+      // other ad marked for the hero is in the grid.
+      if (ad === heroAd && (this.isPhone && this.seenHero)) {
         return;
       }
       const viewedKey = `ad_viewed_${ad.id}`;
@@ -672,8 +681,13 @@ export class Home implements OnInit, OnDestroy {
       .subscribe({ error: () => {} });
   }
 
+  /** The ad the hero cover stack shows: the first one marked for it. */
+  private heroAd(): PublicAd | undefined {
+    return this.activeAds.find(ad => ad.show_in_hero);
+  }
+
   private updateHeroCovers() {
-    const heroAd = this.activeAds.find(ad => ad.show_in_hero);
+    const heroAd = this.heroAd();
     const maxWaitlist = heroAd ? Math.max(0, Home.HERO_COVERS_MAX - 1) : Home.HERO_COVERS_MAX;
     const waitlistCovers: HeroCover[] = this.waitlist.slice(0, maxWaitlist).map(w => ({
       id: w.book_id,
