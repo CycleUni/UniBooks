@@ -207,3 +207,18 @@ describe("an advertiser's schools", () => {
     ).toBe(201);
   });
 });
+
+describe('admin ad list region filter', () => {
+  it('lists only the picked region’s ads (and global ones), as the advertiser list does', async () => {
+    const tw = await ad(await advertiser({ regions: ['TW'] }), { title: 'TW only' });
+    const hk = await ad(await advertiser({ regions: ['HK'] }), { title: 'HK only' });
+    const everywhere = await ad(await advertiser({ allRegions: true }), { title: 'Everywhere' });
+
+    const res = await call('/api/v1/admin/promotions?region=HK&page_size=100', { token: admin.token });
+    expect(res.status).toBe(200);
+    const ids = ((await res.json()) as { results: { id: number }[] }).results.map((r) => r.id);
+    expect(ids).toContain(hk);
+    expect(ids).toContain(everywhere);
+    expect(ids).not.toContain(tw);
+  });
+});

@@ -554,6 +554,16 @@ adRoutes.get('/promotions', async (c) => {
     const like = likeContains(q);
     conds.push(sql`(${ads.title} LIKE ${like} ESCAPE '\\' OR ${advertisers.companyName} LIKE ${like} ESCAPE '\\')`);
   }
+  // The region picked in the admin: its advertisers' ads, as /sponsors lists them.
+  const region = regionParam(c);
+  if (region) {
+    conds.push(
+      or(
+        eq(advertisers.allRegions, 1),
+        sql`EXISTS (SELECT 1 FROM ${advertiserRegions} ar WHERE ar.advertiser_id = ${advertisers.id} AND ar.region_code = ${region})`,
+      ),
+    );
+  }
   const where = and(...conds);
   const [{ n }] = await db.select({ n: count() }).from(ads).innerJoin(advertisers, eq(advertisers.id, ads.advertiserId)).where(where);
   const rows = await adSelect(db).where(where).orderBy(desc(ads.createdAt), desc(ads.id)).limit(page.limit).offset(page.offset);
