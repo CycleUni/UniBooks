@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
-import { BehaviorSubject, of, throwError } from 'rxjs';
+import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
+import { SeoService } from '../../core/services/seo.service';
 import { Book, BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from './book';
 import { BookService } from '../../core/services/book.service';
 import { I18nService } from '../../core/i18n.service';
@@ -112,6 +113,22 @@ describe('Book page data source footer', () => {
     expect(render('amazon_api').querySelector('.data-source')).toBeNull();
     fixture.destroy();
     expect(render(undefined).querySelector('.data-source')).toBeNull();
+  });
+
+  it('a book answer that arrives after the page is left changes nothing', () => {
+    const answer = new Subject<any>();
+    getBook.mockReturnValue(answer);
+    fixture = TestBed.createComponent(Book);
+    fixture.detectChanges();
+    const setPage = vi.spyOn(TestBed.inject(SeoService), 'setPage');
+    const ga = TestBed.inject(GoogleAnalyticsService) as unknown as { trackViewBook: ReturnType<typeof vi.fn> };
+    ga.trackViewBook.mockClear();
+
+    fixture.destroy();
+    answer.next({ id: 'b1', isbn13: '9786264140720', title: '微積分', listings: { count: 0, results: [] } });
+
+    expect(setPage).not.toHaveBeenCalled();
+    expect(ga.trackViewBook).not.toHaveBeenCalled();
   });
 
   describe('opened from a search result', () => {

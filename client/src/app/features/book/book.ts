@@ -387,6 +387,7 @@ export class Book implements OnInit {
   private regionLink = inject(RegionLinkService);
   private seo = inject(SeoService);
   private destroyRef = inject(DestroyRef);
+  private bookSub?: Subscription;
 
   readonly pager = new PhonePager<any>({
     fetchPage: (page) => {
@@ -559,7 +560,13 @@ export class Book implements OnInit {
     // the cached preview is exactly what the user just saw and clicked,
     // prefer it over a possibly-worse live re-lookup for this identity data.
     const previewToKeep = (silent && this.isLocalCache) ? this.book : null;
-    this.bookService.getBook(this.bookId!, this.currentPage, this.currentSchool, this.engine ?? undefined).subscribe({
+    // One book load at a time, and none after the page is left: a late
+    // answer re-titled whichever page the visitor had moved on to and
+    // counted a book view they did not make.
+    this.bookSub?.unsubscribe();
+    this.bookSub = this.bookService.getBook(this.bookId!, this.currentPage, this.currentSchool, this.engine ?? undefined).pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
       next: (data) => {
         // `data.id` set means this came from our own catalog (an
         // authoritative record), not another external lookup — always
