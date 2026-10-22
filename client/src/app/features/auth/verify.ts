@@ -178,7 +178,8 @@ export class VerifyEmail implements OnInit {
           return;
         }
         this.status = 'error';
-        this.errorMessage = code ? this.i18n.t(code) : this.i18n.t('verify.errUnknown');
+        // tOrNull: a code no locale declares would otherwise show as a raw key.
+        this.errorMessage = (code && this.i18n.tOrNull(code)) || this.i18n.t('verify.errUnknown');
         this.cdr.detectChanges();
       }
     });

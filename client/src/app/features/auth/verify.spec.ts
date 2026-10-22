@@ -32,7 +32,7 @@ describe('VerifyEmail (account activation)', () => {
         },
         { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
         { provide: RegionLinkService, useValue: { path: (p: string[]) => p } },
-        { provide: I18nService, useValue: { t: (k: string) => k, tOrNull: (k: string) => k } },
+        { provide: I18nService, useValue: { t: (k: string) => k, tOrNull: (k: string) => (k.startsWith('auth.') || k.startsWith('verify.') ? k : null) } },
       ],
     }).overrideComponent(VerifyEmail, { set: { template: '' } });
   });
@@ -99,5 +99,15 @@ describe('VerifyEmail (account activation)', () => {
     fixture.destroy();
     vi.advanceTimersByTime(5000);
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('says the link failed, not a raw code, for a code no locale declares', () => {
+    auth.verifyEmail.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 400, error: { error: { code: 'something.new' } } })),
+    );
+    params.next({ token: 'edu-token' });
+    const c = create();
+    expect(c.status).toBe('error');
+    expect(c.errorMessage).toBe('verify.errUnknown');
   });
 });
