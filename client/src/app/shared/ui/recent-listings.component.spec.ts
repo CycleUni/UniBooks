@@ -112,6 +112,18 @@ describe('UiRecentListings', () => {
     expect(listingService.getRecentBooks.mock.calls[0][0]).toBe('NTU');
   });
 
+  it('a different school starts at page 1', async () => {
+    const fixture = await render();
+    fixture.componentInstance.onPageChange(3);
+    await new Promise(resolve => setTimeout(resolve));
+    expect(listingService.getRecentBooks.mock.calls.at(-1)![1]).toBe(3);
+
+    fixture.componentRef.setInput('school', 'NTU');
+    fixture.detectChanges();
+    await new Promise(resolve => setTimeout(resolve));
+    expect(listingService.getRecentBooks.mock.calls.at(-1)!.slice(0, 2)).toEqual(['NTU', 1]);
+  });
+
   describe('when the school has no books', () => {
     beforeEach(() => {
       listingService.getRecentBooks.mockReturnValue(of({

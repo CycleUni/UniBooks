@@ -141,6 +141,9 @@ export const RECENT_BOOKS_PAGE_SIZE = 20;
 })
 export class UiRecentListings {
   @Input() set school(val: string) {
+    // Another school's list starts at its first page: page 4 of the last
+    // school may not exist for this one, and would show "no books".
+    if (val !== this._school) this.currentPage = 1;
     this._school = val;
     this.fetchRecentBooks();
   }
