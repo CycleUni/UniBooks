@@ -82,6 +82,7 @@ function selectReports(db: Database) {
 /** A listing report as the app reads it. */
 const serializeReport = (r: ReportRow) => ({
   id: r.id,
+  region: r.region_code,
   listing: { id: r.listing_ref, title: r.book_title, deleted: r.listing_id === null },
   reporter: { id: r.reporter_id, email: r.reporter_email ?? '' },
   reason: r.reason,

@@ -257,6 +257,11 @@ describe.skipIf(!ready)('moderation API', () => {
     expect(await dup.json()).toMatchObject({ error: { code: 'moderation.errAlreadyReported' } });
 
     expect((await api('/api/v1/moderation/all', { token: reporter.token })).status).toBe(403);
+    // Staff see which region each report is in: the admin table has a column for it.
+    const all = (await (await api('/api/v1/moderation/all', { token: staff.token })).json()) as {
+      results: { id: string; region: string }[];
+    };
+    expect(all.results.find((r) => r.id === id)?.region).toBe('TW');
     const acted = await api(`/api/v1/moderation/${id}`, {
       method: 'PATCH',
       token: staff.token,
