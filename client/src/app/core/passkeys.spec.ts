@@ -276,10 +276,21 @@ describe('AuthStore Passkey API', () => {
   });
 
   describe('Passkey management endpoints', () => {
-    it('cancelPasskey calls WebAuthnAbortService.cancelCeremony', () => {
-      const cancelSpy = vi.spyOn(webauthnBrowser.WebAuthnAbortService, 'cancelCeremony');
+    it('cancelPasskey cancels the ceremony in progress', () => {
+      const cancelSpy = vi.spyOn(webauthnBrowser, 'cancelCeremony');
       authStore.cancelPasskey();
       expect(cancelSpy).toHaveBeenCalled();
+    });
+
+    it('cancels a ceremony through the library once it is loaded, and is a no-op before', async () => {
+      // Before any passkey use the library is not loaded: nothing to cancel, nothing thrown.
+      expect(() => webauthnBrowser.cancelCeremony()).not.toThrow();
+      const lib = await import('@simplewebauthn/browser');
+      const cancel = vi.spyOn(lib.WebAuthnAbortService, 'cancelCeremony');
+      // Loading happens on first use; a rejected prompt still loads it.
+      await webauthnBrowser.startRegistration({ optionsJSON: {} as any }).catch(() => undefined);
+      webauthnBrowser.cancelCeremony();
+      expect(cancel).toHaveBeenCalled();
     });
 
     it('listPasskeys calls GET /auth/passkeys', () => {

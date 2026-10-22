@@ -3,12 +3,7 @@ import { sentry } from './sentry';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { tap, catchError, filter, take, finalize, shareReplay, switchMap } from 'rxjs/operators';
 import { Observable, from, of, throwError } from 'rxjs';
-import {
-  browserSupportsWebAuthn,
-  startAuthentication,
-  startRegistration,
-  WebAuthnAbortService,
-} from '@simplewebauthn/browser';
+import type { StartAuthenticationOpts, StartRegistrationOpts } from '@simplewebauthn/browser';
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
 import { PushService } from './services/push.service';
@@ -54,11 +49,25 @@ export function isUserCancellation(err: unknown): boolean {
   return false;
 }
 
+/**
+ * The WebAuthn library, fetched the first time a passkey is used. Only
+ * passkey sign-in and registration need it, and as a static import it was
+ * 10 kB of every first page load. Kept once loaded, so a ceremony it started
+ * can be cancelled.
+ */
+let webauthnModule: typeof import('@simplewebauthn/browser') | null = null;
+async function loadWebAuthn() {
+  return (webauthnModule ??= await import('@simplewebauthn/browser'));
+}
+
 export const webauthnBrowser = {
-  browserSupportsWebAuthn,
-  startAuthentication,
-  startRegistration,
-  WebAuthnAbortService,
+  /** The library's own test, without loading it: is there a WebAuthn API at all. */
+  browserSupportsWebAuthn: (): boolean =>
+    globalThis?.PublicKeyCredential !== undefined && typeof globalThis.PublicKeyCredential === 'function',
+  startAuthentication: async (opts: StartAuthenticationOpts) => (await loadWebAuthn()).startAuthentication(opts),
+  startRegistration: async (opts: StartRegistrationOpts) => (await loadWebAuthn()).startRegistration(opts),
+  /** Ends a prompt in progress; with the library not loaded yet, none can be. */
+  cancelCeremony: (): void => webauthnModule?.WebAuthnAbortService.cancelCeremony(),
 };
 
 /** What the account may do: 'staff' reaches the admin area, 'admin' also manages staff and advertisers. */
@@ -759,7 +768,7 @@ export class AuthStore {
 
   cancelPasskey(): void {
     try {
-      webauthnBrowser.WebAuthnAbortService.cancelCeremony();
+      webauthnBrowser.cancelCeremony();
     } catch {
       // ignore
     }

@@ -4,7 +4,6 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 
 import { Subscription } from 'rxjs';
-import { WebAuthnAbortService } from '@simplewebauthn/browser';
 
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { RegionLinkService } from '../../core/region-link.service';
@@ -352,11 +351,6 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     if (typeof this.auth.cancelPasskey === 'function') {
       this.auth.cancelPasskey();
-    }
-    try {
-      WebAuthnAbortService.cancelCeremony();
-    } catch {
-      // ignore
     }
   }
 
