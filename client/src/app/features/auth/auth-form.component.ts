@@ -181,10 +181,9 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.lastAuthAction === 'login') {
       const code = err.error?.error?.code;
       // tOrNull, not t: the backend can return a code no locale declares, and
-      // t() would echo it, putting a raw key on the sign-in screen.
-      return this.i18n.tOrNull(code)
-        ?? err.error?.error?.message
-        ?? this.i18n.t('auth.errLoginFailed');
+      // t() would echo it, putting a raw key on the sign-in screen. Nor a
+      // `message` from the body: it is English, or a proxy's error page text.
+      return this.i18n.tOrNull(code) ?? this.i18n.t('auth.errLoginFailed');
     } else {
       const msg = this.i18n.t('auth.errRegisterFailed');
       let errorDetails = '';

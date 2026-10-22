@@ -295,6 +295,16 @@ describe('AuthFormComponent', () => {
     expect(component.authMessage).toBe('信箱或密碼錯誤');
   });
 
+  it('does not show a message from the error body', () => {
+    mockAuth.login.mockReturnValue(throwError(() => ({ error: { error: { message: 'Internal Server Error' } } })));
+    build('login');
+    component.email = 'me@example.com';
+    component.password = 'wrong';
+    component.onLogin();
+
+    expect(component.authMessage).toBe('auth.errLoginFailed');
+  });
+
   it('falls back rather than showing a backend code no locale declares', () => {
     // This used to assert the opposite — that the raw code reached the screen —
     // and the code it used, auth.errBadCredentials, is declared in no locale.
