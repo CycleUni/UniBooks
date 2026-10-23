@@ -416,11 +416,12 @@
     }
 
     /* Desktop already links the admin console from the header, keeps
-       signing out in the profile card, and region and language in the
-       footer. */
+       signing out in the profile card, and region, language and the about
+       and legal links in the footer. */
     @media (min-width: 901px) {
       .admin-group,
       .prefs-group,
+      .about-group,
       .menu-logout {
         display: none;
       }

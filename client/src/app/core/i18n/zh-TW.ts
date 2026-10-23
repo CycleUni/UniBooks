@@ -266,6 +266,7 @@ export const zhTW: Record<string, string> = {
   'acct.navGroupMine': '我的',
   'acct.navGroupTrade': '交易',
   'acct.navGroupPrefs': '地區與語言',
+  'acct.navGroupAbout': '關於與條款',
   'acct.prefRegion': '地區',
   'acct.prefLanguage': '語言',
   'acct.tabSubs': '我的求書',

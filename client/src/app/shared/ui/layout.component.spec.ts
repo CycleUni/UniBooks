@@ -172,6 +172,35 @@ describe('UiLayout', () => {
     });
   });
 
+  describe('footer links on phones', () => {
+    const onPhone = () => (component as any).isPhone.set(true);
+
+    it('leave the page on a signed-in phone, whose account menu carries them', async () => {
+      (TestBed.inject(AuthStore).isAuthenticated as any).set(true);
+      onPhone();
+      await router.navigateByUrl('/');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.app-footer')).toBeNull();
+    });
+
+    it('stay on a signed-out phone, which has no account menu', async () => {
+      onPhone();
+      await router.navigateByUrl('/');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.footer-links')).toBeTruthy();
+    });
+
+    it('stay on wide screens when signed in', async () => {
+      (TestBed.inject(AuthStore).isAuthenticated as any).set(true);
+      await router.navigateByUrl('/');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.footer-links')).toBeTruthy();
+    });
+  });
+
   describe('account link while the profile is loading', () => {
     const accountLink = () =>
       (fixture.nativeElement as HTMLElement).querySelector('.nav-links a[href$="/account"]') as HTMLAnchorElement;

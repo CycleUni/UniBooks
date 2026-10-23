@@ -271,6 +271,7 @@ export const en: Record<string, string> = {
   'acct.navGroupMine': 'Personal',
   'acct.navGroupTrade': 'Trading',
   'acct.navGroupPrefs': 'Region & language',
+  'acct.navGroupAbout': 'About & legal',
   'acct.prefRegion': 'Region',
   'acct.prefLanguage': 'Language',
   'acct.tabSubs': 'My book requests',

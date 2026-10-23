@@ -182,6 +182,15 @@ export class UiLayout implements OnDestroy {
     return UiLayout.PHONE_PREFS_ROUTES.includes(path);
   }
 
+  /**
+   * Phones that are signed in carry the footer's links in the account menu
+   * (as they already do region and language), so the footer goes. A
+   * signed-out visitor has no menu, so they keep it.
+   */
+  get footerInAccountMenu(): boolean {
+    return this.isPhone() && this.authStore.isAuthenticated();
+  }
+
   private unreadCountSubscription: Subscription;
   /** Route of the page on screen, so query-only navigations are not page changes. */
   private currentPath = '';

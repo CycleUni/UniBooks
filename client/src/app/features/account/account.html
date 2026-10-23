@@ -69,6 +69,16 @@
                 <ui-prefs-selector variant="rows"></ui-prefs-selector>
               </div>
             </div>
+            <!-- Phones only, for the same reason: a signed-in phone has no
+                 footer, so the about and legal pages are reached from here. -->
+            <div class="nav-group about-group" role="group" aria-labelledby="acct-nav-about">
+              <h4 class="nav-group-title" id="acct-nav-about">{{ 'acct.navGroupAbout' | t }}</h4>
+              <div class="nav-links">
+                <a [href]="aboutUrl" target="_blank" rel="noopener noreferrer">{{ 'footer.about' | t }}</a>
+                <a [href]="termsUrl" target="_blank" rel="noopener noreferrer">{{ 'footer.terms' | t }}</a>
+                <a [href]="privacyUrl" target="_blank" rel="noopener noreferrer">{{ 'footer.privacy' | t }}</a>
+              </div>
+            </div>
             <!-- Phones: the menu ends with signing out, as account screens in
                  apps do; wide screens keep the button in the profile card. -->
             <div class="nav-group menu-logout">

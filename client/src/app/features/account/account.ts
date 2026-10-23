@@ -13,6 +13,7 @@ import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
 import { stripRegionPrefix } from '../../core/region-path';
+import { aboutUrl as aboutSiteUrl } from '../../core/about-site';
 
 /** The signed-in dashboard. It used to double as the login wall on the same
  *  URL; that half now lives at /login and /register, and the route's authGuard
@@ -67,6 +68,18 @@ export class Account {
    *  longer a bottom tab (the desktop header still links it directly). */
   get isStaff(): boolean {
     return this.auth.isAuthenticated() && hasStaffAccess(this.auth.user());
+  }
+
+  get aboutUrl(): string {
+    return aboutSiteUrl(this.i18n.lang());
+  }
+
+  get termsUrl(): string {
+    return aboutSiteUrl(this.i18n.lang(), 'about/terms');
+  }
+
+  get privacyUrl(): string {
+    return aboutSiteUrl(this.i18n.lang(), 'about/privacy');
   }
 
   constructor(public auth: AuthStore) {
