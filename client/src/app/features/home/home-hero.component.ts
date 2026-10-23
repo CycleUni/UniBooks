@@ -44,9 +44,10 @@ export interface HeroCover {
   standalone: true,
   imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, UiInput, UiButton, TPipe, UiBookCover, CountCapPipe],
   template: `
-      <section class="hero-search" aria-labelledby="hero-title">
-        <div class="hero-inner container">
-          <div class="hero-copy">
+      <section class="hero-search container" aria-labelledby="hero-title">
+        <div class="hero-card">
+          <div class="hero-inner">
+            <div class="hero-copy">
             <h1 class="search-title" id="hero-title">{{ 'home.heroTitle' | t }}</h1>
             <p class="hero-subtitle">{{ 'home.heroSubtitle' | t }}</p>
 
@@ -170,7 +171,8 @@ export interface HeroCover {
             </div>
           </div>
         </div>
-      </section>  `,
+      </div>
+    </section>  `,
   styles: [`
     :host { display: block; }
     @media (max-width: 900px) {
@@ -189,10 +191,15 @@ export interface HeroCover {
 
     /* ---- hero ------------------------------------------------------- */
     .hero-search {
-      padding-block: var(--space-5);
-      background-color: var(--paper-warm);
-      border-bottom: 1px solid var(--line);
+      margin-top: var(--space-4);
       margin-bottom: var(--space-4);
+    }
+    .hero-card {
+      background-color: var(--paper-warm);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow-card-lg);
+      padding: var(--space-5) var(--space-6);
     }
     .hero-inner {
       display: grid;
@@ -439,7 +446,8 @@ export interface HeroCover {
     }
 
     @media (max-width: 768px) {
-      .hero-search { padding-block: var(--space-4); margin-bottom: var(--space-4); }
+      .hero-search { margin-block: var(--space-3); }
+      .hero-card { padding: var(--space-4); border-radius: 12px; }
       .hero-inner { grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: var(--space-3); }
       .hero-stack, .hero-cta { display: none; }
       .search-title { line-height: 1.2; max-width: 100%; overflow-wrap: anywhere; }
