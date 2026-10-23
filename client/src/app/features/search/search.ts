@@ -87,10 +87,6 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
           </ng-container>
           <ng-template #desktopSearchHeader>
             <div class="search-page-input-wrap">
-              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true">
-                <circle cx="10.5" cy="10.5" r="6.5"/>
-                <line x1="20" y1="20" x2="15.4" y2="15.4"/>
-              </svg>
               <!-- No visible label: the placeholder was the only name, and it
                    stops naming anything once text is typed. -->
               <ui-input
@@ -102,7 +98,7 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
                 class="search-page-input"
               ></ui-input>
             </div>
-            <ui-button (onClick)="onSearch()" class="search-button"><span class="submit-label">{{ 'common.search' | t }}</span></ui-button>
+            <ui-button (onClick)="onSearch()" class="search-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="20" y1="20" x2="15.4" y2="15.4"/></svg><span class="submit-label">{{ 'common.search' | t }}</span></ui-button>
             <!-- Wide screens: the filters open as a panel under this button
                  rather than taking a column beside the results. Choices there
                  are a draft, as in the phone sheet: the panel's button applies
@@ -143,7 +139,7 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
         <!-- The filter groups, rendered in the panel under the search bar's
              filter button on wide screens and in a bottom sheet on phones. -->
         <ng-template #filterGroups>
-          <div class="filter-group">
+          <div class="filter-group fg-condition">
             <ui-facet-list
               [title]="'common.condition' | t"
               [options]="conditionFacetOptions"
@@ -151,7 +147,7 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
               (optionToggle)="toggleCondition($event)"
             ></ui-facet-list>
           </div>
-          <div class="filter-group">
+          <div class="filter-group fg-category">
             <ui-facet-list
               [title]="'search.categoryTitle' | t"
               [options]="categoryFacetOptions"
@@ -159,7 +155,7 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
               (optionToggle)="onCategoryChange($event)"
             ></ui-facet-list>
           </div>
-          <div class="filter-group">
+          <div class="filter-group fg-course">
             <ui-facet-list
               [title]="'search.courseTitle' | t"
               [options]="courseFacetOptions"
@@ -167,12 +163,12 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
               (optionToggle)="onCourseChange($event)"
             ></ui-facet-list>
           </div>
-          <div class="filter-group">
+          <div class="filter-group fg-stock">
             <h4 class="filter-title">{{ 'search.stockTitle' | t }}</h4>
             <!-- 單向綁定 + 明確的 handler：狀態由網址還原，radio 只負責發動導頁。 -->
             <ui-radio-group [options]="stockOptions" [ngModel]="shownFilters.inStock ? 'inStock' : 'all'" (ngModelChange)="onStockChange($event)"></ui-radio-group>
           </div>
-          <div class="filter-group">
+          <div class="filter-group fg-price">
             <h4 class="filter-title">{{ 'search.priceTitle' | t }}</h4>
             <!-- ngModel 留著讓輸入當下就能重排目前這頁，但只有離開欄位或按
                  Enter 才寫進網址 —— 每個字元都 navigate 一次會塞爆上一頁紀錄，
@@ -338,6 +334,7 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
     .search-header { margin-block: var(--space-4) 32px; }
     .header-inner {
       display: flex;
+      align-items: center;
       gap: 8px;
       background-color: var(--paper-warm);
       border: 1px solid var(--line);
@@ -347,7 +344,6 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
     }
     .phone-search-field { width: 100%; }
     .search-page-input-wrap { position: relative; flex: 1; min-width: 0; }
-    .search-page-input-wrap .search-icon { position: absolute; left: 2px; bottom: 10px; color: var(--muted); pointer-events: none; }
     .search-page-input { display: inline-block !important; width: 100%; }
     .search-page-input ::ng-deep .input-wrapper { margin-bottom: 0; }
     .search-page-input ::ng-deep input {
@@ -355,7 +351,7 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
       border-bottom: 1.5px solid var(--ink);
       border-radius: 0;
       background: none;
-      padding-left: 24px;
+      padding-left: 2px;
       font-size: var(--text-md);
     }
     .search-page-input ::ng-deep input:focus {
@@ -366,12 +362,15 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
     .filter-anchor { position: relative; flex-shrink: 0; }
     /* --line-strong: an interactive boundary (see .filter-toggle below). */
     .filter-button {
-      display: inline-flex; align-items: center; gap: 8px; height: 100%; min-height: var(--tap-min);
+      display: inline-flex; align-items: center; gap: 8px; min-height: 40px;
       padding: 0 var(--space-4);
       border: 1px solid var(--line-strong); border-radius: var(--radius-control);
       background: var(--paper); color: var(--ink);
       font: inherit; font-size: var(--text-base); font-weight: 500; cursor: pointer;
       transition: background-color var(--motion-base);
+    }
+    @media (pointer: coarse) {
+      .filter-button { min-height: var(--tap-min); }
     }
     .filter-button:hover, .filter-button[aria-expanded="true"] { background: var(--accent-soft); }
     .filter-button .filter-count {
@@ -392,10 +391,25 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
       box-shadow: var(--shadow-card-lg);
     }
     .filter-popover:focus { outline: none; }
+    /* Short groups stack in column one so Availability does not sit below the tall category list. */
     .popover-filters {
-      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5);
-      padding: var(--space-5); overflow-y: auto;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-areas:
+        "condition category course"
+        "stock     category course"
+        "price     category course";
+      grid-template-rows: auto auto 1fr;
+      align-items: start;
+      gap: var(--space-5);
+      padding: var(--space-5);
+      overflow-y: auto;
     }
+    .popover-filters .fg-condition { grid-area: condition; }
+    .popover-filters .fg-category { grid-area: category; }
+    .popover-filters .fg-course { grid-area: course; }
+    .popover-filters .fg-stock { grid-area: stock; }
+    .popover-filters .fg-price { grid-area: price; }
     .popover-filters .filter-group { margin: 0; padding: 0; border: none; }
     .popover-footer {
       display: flex; justify-content: flex-end;
