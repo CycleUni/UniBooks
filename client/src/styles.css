@@ -66,6 +66,11 @@
   --radius-sm: 3px;
   --radius-control: 6px;
   --radius-lg: 8px; /* large surfaces only: promo banners, modals */
+  /* Rounded floating surfaces. --radius-card: page-level panels that float
+     (home hero, side panels, dialogs); --radius-panel: secondary boxes,
+     alerts, popovers and anything nested inside a card. */
+  --radius-card: 16px;
+  --radius-panel: 10px;
 
   /* Semantic status tokens (not brand colors): a warm warning tint in the
      same hue family as --flag, used for alert/warning boxes and "no stock"
@@ -1142,3 +1147,8 @@ button:not(:disabled):active {
   /* Slower, not stopped: a frozen ring would not say anything is happening. */
   .switch.is-busy .switch-thumb::after { animation-duration: 2.4s; }
 }
+
+@media (max-width: 768px) {
+  :root { --radius-card: 12px; --radius-panel: 8px; }
+}
+

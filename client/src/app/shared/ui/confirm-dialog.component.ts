@@ -69,7 +69,7 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
       padding: var(--space-5);
       background: var(--surface-raised);
       border: 1px solid var(--surface-raised-border);
-      border-radius: var(--radius-lg);
+      border-radius: var(--radius-card);
       box-shadow: var(--shadow-card-lg);
       color: var(--ink);
     }

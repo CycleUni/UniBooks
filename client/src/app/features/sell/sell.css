@@ -47,7 +47,7 @@
       border: 1px solid var(--line);
       border-left: 3px solid var(--accent);
       margin-top: 16px;
-      border-radius: var(--radius-xs);
+      border-radius: var(--radius-panel);
     }
     /* The selectable variant is a <button>, so it needs the UA styles reset —
        centred text, its own font and a border of its own would otherwise
@@ -123,7 +123,7 @@
       justify-content: center;
       gap: 8px;
       min-height: 100px;
-      border-radius: var(--radius-xs);
+      border-radius: var(--radius-panel);
       transition: background-color var(--motion-base), border-color var(--motion-base);
     }
     .dropzone.drag-over {
@@ -141,7 +141,7 @@
       height: 100px;
       position: relative;
       border: 1px solid var(--line);
-      border-radius: 4px;
+      border-radius: var(--radius-panel);
     }
     .preview-box img {
       width: 100%;
@@ -228,7 +228,7 @@
     }
     .alert-box {
       padding: 24px;
-      border-radius: 4px;
+      border-radius: var(--radius-panel);
       text-align: center;
       background-color: var(--warn-bg);
       border: 1px solid var(--line);
@@ -253,7 +253,7 @@
       background-color: var(--warn-bg);
       border: 1px solid var(--line);
       border-left: 3px solid var(--accent);
-      border-radius: var(--radius-xs);
+      border-radius: var(--radius-panel);
       color: var(--warn-ink);
     }
     .draft-banner-text {
@@ -295,7 +295,7 @@
       margin: 8px 0 16px;
       padding: 12px 16px;
       border: 1px solid var(--line);
-      border-radius: var(--radius-xs);
+      border-radius: var(--radius-panel);
       background-color: var(--paper-warm);
     }
     .listing-summary-title {

@@ -36,7 +36,7 @@ import { TPipe } from '../../core/i18n.service';
       padding: var(--space-6) var(--space-5);
       text-align: center;
       border: 1px solid var(--line-strong);
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-panel);
       background-color: var(--paper-warm);
     }
     .error-message {

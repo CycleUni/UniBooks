@@ -106,7 +106,7 @@ import { PushAvailability, PushService } from '../../core/services/push.service'
       margin: 0;
       padding: 0;
       border: 1px solid var(--line);
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-panel);
       background: var(--surface-card);
     }
     .notification-row {

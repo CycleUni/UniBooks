@@ -197,7 +197,7 @@ export interface HeroCover {
     .hero-card {
       background-color: var(--paper-warm);
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: var(--radius-card);
       box-shadow: var(--shadow-card-lg);
       padding: var(--space-5) var(--space-6);
     }
@@ -447,7 +447,7 @@ export interface HeroCover {
 
     @media (max-width: 768px) {
       .hero-search { margin-block: var(--space-3); }
-      .hero-card { padding: var(--space-4); border-radius: 12px; }
+      .hero-card { padding: var(--space-4); }
       .hero-inner { grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: var(--space-3); }
       .hero-stack, .hero-cta { display: none; }
       .search-title { line-height: 1.2; max-width: 100%; overflow-wrap: anywhere; }

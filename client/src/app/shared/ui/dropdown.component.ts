@@ -214,7 +214,7 @@ export interface DropdownRow {
       padding: 4px;
       background-color: var(--surface-raised);
       border: 1px solid var(--surface-raised-border);
-      border-radius: var(--radius-control);
+      border-radius: var(--radius-panel);
       box-shadow: var(--shadow-card-lg);
       z-index: 200;
     }

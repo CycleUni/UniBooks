@@ -268,7 +268,7 @@ import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
       padding: 12px 16px;
       background: var(--paper-warm);
       border: 1px solid var(--line);
-      border-radius: var(--radius-xs);
+      border-radius: var(--radius-panel);
       font-size: var(--text-base);
     }
     .order-details dl {
@@ -330,7 +330,7 @@ import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
       background: var(--warn-bg);
       color: var(--warn-ink);
       padding: 12px;
-      border-radius: 4px;
+      border-radius: var(--radius-panel);
       border: 1px solid color-mix(in srgb, var(--warn-ink) 40%, transparent);
       margin-bottom: 16px;
       display: flex;

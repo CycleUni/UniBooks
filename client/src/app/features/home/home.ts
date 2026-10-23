@@ -209,7 +209,8 @@ import { hasCoverFailed, markCoverFailed } from '../../shared/ui/book-cover.comp
     .col-side {
       background: var(--paper-warm);
       border: 1px solid var(--line-strong);
-      border-radius: var(--radius-xs);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-card-lg);
       padding: var(--space-5);
     }
     .col-side .section-heading { margin-bottom: var(--space-4); }

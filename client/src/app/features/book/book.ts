@@ -222,7 +222,7 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
       padding: 16px 24px;
       background-color: var(--paper-warm);
       border: 1px solid var(--line);
-      border-radius: 4px;
+      border-radius: var(--radius-panel);
     }
     .waitlist-banner.hot {
       background-color: var(--flag-light);
@@ -254,7 +254,7 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
       margin-bottom: 24px;
       background-color: var(--danger-light);
       color: var(--danger);
-      border-radius: 8px;
+      border-radius: var(--radius-panel);
       font-size: var(--text-base);
       text-align: center;
     }

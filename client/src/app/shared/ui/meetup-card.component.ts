@@ -69,7 +69,7 @@ export type MeetupMessageType = 'REQUEST' | 'ACCEPT' | 'UPDATE' | 'DECLINE' | 'C
       max-width: 360px;
     }
     .meetup-card {
-      border-radius: 10px;
+      border-radius: var(--radius-panel);
       padding: 14px 16px;
       box-shadow: var(--shadow-card);
       /* Enumerated, not 'all': the card's height changes when the status line
@@ -151,7 +151,7 @@ export type MeetupMessageType = 'REQUEST' | 'ACCEPT' | 'UPDATE' | 'DECLINE' | 'C
     .meetup-details {
       margin: 10px 0 0;
       padding: 10px 12px;
-      border-radius: 8px;
+      border-radius: var(--radius-panel);
       background: var(--paper);
       border: 1px solid var(--line);
       display: grid;

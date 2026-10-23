@@ -90,7 +90,7 @@ import { Toast, ToastService } from '../../core/services/toast.service';
       max-width: 420px;
       padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
       border: 1px solid var(--line-strong);
-      border-radius: var(--radius-control);
+      border-radius: var(--radius-panel);
       box-shadow: var(--shadow-card-lg);
       /* A toast floats over the page rather than sitting on it. */
       background-color: var(--surface-raised);

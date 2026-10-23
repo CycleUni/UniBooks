@@ -1,7 +1,7 @@
     .verify-section { margin-bottom: 24px; }
     .alert-box {
       padding: 16px;
-      border-radius: 4px;
+      border-radius: var(--radius-panel);
       margin-bottom: 24px;
     }
     .alert-box.warning {
@@ -35,7 +35,7 @@
   margin-top: 16px;
   padding: 16px;
   background-color: var(--paper-warm);
-  border-radius: 4px;
+  border-radius: var(--radius-panel);
   border: 1px solid var(--line);
 }
 .auto-verify-box label {
