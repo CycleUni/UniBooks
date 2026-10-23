@@ -73,8 +73,8 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
   imports: [CommonModule, RouterModule, FormsModule, UiInput, UiButton, UiSkeleton, UiRecentListings, UiPagination, UiBookTile, UiFacetList, UiRadioGroup, UiBottomSheet, UiBarcodeScanner, UiPullToRefresh, UiInfiniteScroll, UiSearchField, TPipe],
   template: `
     <ui-pull-to-refresh [refreshing]="refreshing" (refresh)="onRefresh()">
-      <div class="search-header">
-        <div class="header-inner container">
+      <div class="search-header container">
+        <div class="header-inner">
           <ng-container *ngIf="isPhone; else desktopSearchHeader">
             <ui-search-field
               class="phone-search-field"
@@ -303,10 +303,19 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
     </ui-pull-to-refresh>
   `,
   styles: [`
-    /* The band is full-bleed and its inner element carries .container, so the
-       gutter is the shared one rather than a second 16px added on top of it. */
-    .search-header { background-color: var(--paper-warm); border-bottom: 1px solid var(--line); padding-block: 24px; margin-bottom: 32px; }
-    .header-inner { display: flex; gap: 8px; }
+    /* A rounded card floating in the content column, as the home hero is.
+       The outer element carries .container so the card's edges line up with
+       the filter rail and results below it. */
+    .search-header { margin-block: var(--space-4) 32px; }
+    .header-inner {
+      display: flex;
+      gap: 8px;
+      background-color: var(--paper-warm);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-card-lg);
+      padding: 24px var(--space-6);
+    }
     .phone-search-field { width: 100%; }
     .search-page-input-wrap { position: relative; width: 400px; max-width: 100%; }
     .search-page-input-wrap .search-icon { position: absolute; left: 2px; bottom: 10px; color: var(--muted); pointer-events: none; }
@@ -378,9 +387,10 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
     /* Phones (the app's 900px breakpoint, core/viewport.ts): filters open as a
        bottom sheet, and a pill-shaped search field replaces the desktop header. */
     @media (max-width: 900px) {
-      /* No band: the pill carries its own fill and border, and sits on the
+      /* No card: the pill carries its own fill and border, and sits on the
          page as it does on the phone home page, so the two screens match. */
-      .search-header { background-color: transparent; border-bottom: none; padding-block: var(--space-3) 0; margin-bottom: var(--space-4); }
+      .search-header { margin-block: var(--space-3) var(--space-4); }
+      .header-inner { background-color: transparent; border: none; border-radius: 0; box-shadow: none; padding: 0; }
       .search-layout { flex-direction:column; gap:0; }
       /* --line-strong, not --line: this is a real button, i.e. an
          interactive boundary, and --line is 1.48:1 — below the 3:1
