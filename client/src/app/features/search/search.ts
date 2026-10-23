@@ -20,6 +20,7 @@ import { UiPagination } from '../../shared/ui/pagination.component';
 import { UiBookTile } from '../../shared/ui/book-tile.component';
 import { UiRadioGroup } from '../../shared/ui/radio-group.component';
 import { UiBottomSheet } from '../../shared/ui/bottom-sheet.component';
+import { UiFocusTrapDirective } from '../../shared/ui/focus-trap.directive';
 import { UiBarcodeScanner } from '../../shared/ui/barcode-scanner.component';
 import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
 import { UiInfiniteScroll } from '../../shared/ui/infinite-scroll.component';
@@ -70,7 +71,7 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
 @Component({
   selector: 'app-search',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, UiInput, UiButton, UiSkeleton, UiRecentListings, UiPagination, UiBookTile, UiFacetList, UiRadioGroup, UiBottomSheet, UiBarcodeScanner, UiPullToRefresh, UiInfiniteScroll, UiSearchField, TPipe],
+  imports: [CommonModule, RouterModule, FormsModule, UiInput, UiButton, UiSkeleton, UiRecentListings, UiPagination, UiBookTile, UiFacetList, UiRadioGroup, UiBottomSheet, UiBarcodeScanner, UiPullToRefresh, UiInfiniteScroll, UiSearchField, UiFocusTrapDirective, TPipe],
   template: `
     <ui-pull-to-refresh [refreshing]="refreshing" (refresh)="onRefresh()">
       <div class="search-header container">
@@ -102,13 +103,45 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
               ></ui-input>
             </div>
             <ui-button (onClick)="onSearch()" class="search-button"><span class="submit-label">{{ 'common.search' | t }}</span></ui-button>
+            <!-- Wide screens: the filters open as a panel under this button
+                 rather than taking a column beside the results. Choices there
+                 are a draft, as in the phone sheet: the panel's button applies
+                 them, and Esc or a click outside drops them. -->
+            <div class="filter-anchor">
+              <button
+                type="button"
+                class="filter-button"
+                (click)="filtersOpen ? discardFilters() : openFilters()"
+                aria-haspopup="dialog"
+                [attr.aria-expanded]="filtersOpen"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+                  <line x1="4" y1="6" x2="20" y2="6"/>
+                  <line x1="7" y1="12" x2="17" y2="12"/>
+                  <line x1="10" y1="18" x2="14" y2="18"/>
+                </svg>
+                <span>{{ 'search.filters' | t }}</span>
+                <span class="filter-count" *ngIf="activeFilterCount > 0">{{ activeFilterCount }}</span>
+              </button>
+              <ng-container *ngIf="filtersOpen">
+                <div class="filter-backdrop" (click)="discardFilters()" aria-hidden="true"></div>
+                <div class="filter-popover" uiFocusTrap [attr.aria-label]="'search.filters' | t" (escape)="discardFilters()">
+                  <div class="popover-filters">
+                    <ng-container *ngTemplateOutlet="filterGroups"></ng-container>
+                  </div>
+                  <div class="popover-footer">
+                    <ui-button (onClick)="applyFilters()">{{ 'search.showResults' | t }}</ui-button>
+                  </div>
+                </div>
+              </ng-container>
+            </div>
           </ng-template>
         </div>
       </div>
 
       <div class="container search-layout">
-        <!-- The filter groups, rendered in the sidebar on wide screens and in
-             a bottom sheet on phones. -->
+        <!-- The filter groups, rendered in the panel under the search bar's
+             filter button on wide screens and in a bottom sheet on phones. -->
         <ng-template #filterGroups>
           <div class="filter-group">
             <ui-facet-list
@@ -168,7 +201,7 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
             <polyline points="6 9 12 15 18 9"/>
           </svg>
         </button>
-        <ui-bottom-sheet *ngIf="filtersOpen" [title]="'search.filters' | t" (closed)="discardFilters()">
+        <ui-bottom-sheet *ngIf="filtersOpen && isPhone" [title]="'search.filters' | t" (closed)="discardFilters()">
           <div class="sheet-filters">
             <ng-container *ngTemplateOutlet="filterGroups"></ng-container>
           </div>
@@ -176,10 +209,6 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
             <ui-button block (onClick)="applyFilters()">{{ 'search.showResults' | t }}</ui-button>
           </div>
         </ui-bottom-sheet>
-
-        <aside class="sidebar">
-          <ng-container *ngTemplateOutlet="filterGroups"></ng-container>
-        </aside>
 
         <main class="results">
           <!-- 保留在結果欄而不是側欄：這不是使用者選出來的條件，是後端自動降級
@@ -317,7 +346,7 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
       padding: 24px var(--space-6);
     }
     .phone-search-field { width: 100%; }
-    .search-page-input-wrap { position: relative; width: 400px; max-width: 100%; }
+    .search-page-input-wrap { position: relative; flex: 1; min-width: 0; }
     .search-page-input-wrap .search-icon { position: absolute; left: 2px; bottom: 10px; color: var(--muted); pointer-events: none; }
     .search-page-input { display: inline-block !important; width: 100%; }
     .search-page-input ::ng-deep .input-wrapper { margin-bottom: 0; }
@@ -334,6 +363,45 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
       box-shadow: none;
     }
     .search-button { flex-shrink: 0; }
+    .filter-anchor { position: relative; flex-shrink: 0; }
+    /* --line-strong: an interactive boundary (see .filter-toggle below). */
+    .filter-button {
+      display: inline-flex; align-items: center; gap: 8px; height: 100%; min-height: var(--tap-min);
+      padding: 0 var(--space-4);
+      border: 1px solid var(--line-strong); border-radius: var(--radius-control);
+      background: var(--paper); color: var(--ink);
+      font: inherit; font-size: var(--text-base); font-weight: 500; cursor: pointer;
+      transition: background-color var(--motion-base);
+    }
+    .filter-button:hover, .filter-button[aria-expanded="true"] { background: var(--accent-soft); }
+    .filter-button .filter-count {
+      min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+      background-color: var(--btn-primary-bg); color: var(--btn-primary-ink);
+      font-size: var(--text-xs); line-height: 20px; text-align: center;
+    }
+    /* Transparent: it only catches the click outside the panel. */
+    .filter-backdrop { position: fixed; inset: 0; z-index: 40; }
+    .filter-popover {
+      position: absolute; top: calc(100% + 12px); right: 0; z-index: 41;
+      width: min(760px, calc(100vw - 2 * var(--space-4)));
+      display: flex; flex-direction: column;
+      max-height: min(70vh, 640px);
+      background: var(--surface-card);
+      border: 1px solid var(--surface-raised-border);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-card-lg);
+    }
+    .filter-popover:focus { outline: none; }
+    .popover-filters {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5);
+      padding: var(--space-5); overflow-y: auto;
+    }
+    .popover-filters .filter-group { margin: 0; padding: 0; border: none; }
+    .popover-footer {
+      display: flex; justify-content: flex-end;
+      padding: var(--space-3) var(--space-5);
+      border-top: 1px solid var(--line);
+    }
     /* Layout only. This used to redeclare .container at 1120px, which with
        border-box padding yields a 1088px column — 16px narrower than the
        header above it, so the filter rail started 16px inside the logo. */
@@ -352,7 +420,6 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
     .popular-chip { min-height: 36px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--paper); font: inherit; color: var(--ink); cursor: pointer; }
     .scan-hint { margin: 12px 8px 4px; text-align: center; color: var(--muted); font-size: var(--text-sm); }
     .scan-hint.error { color: var(--flag); }
-    .sidebar { width: 240px; flex-shrink: 0; }
     .filter-group { margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
     .filter-group:last-of-type { border-bottom: none; }
     .filter-title { font-size: var(--text-base); font-weight: 500; margin-top: 0; margin-bottom: 12px; color: var(--ink); }
@@ -398,7 +465,6 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
       .filter-toggle { display:flex; align-items:center; justify-content:space-between; width:100%; padding:12px 16px; margin-bottom:16px; border:1px solid var(--line-strong); border-radius:4px; background-color:var(--paper); color:var(--ink); font-size: var(--text-base); font-weight:500; font-family:inherit; cursor:pointer; }
       .filter-toggle-caret { flex-shrink:0; margin-left:auto; color:var(--muted); }
       .filter-count { margin-left:8px; min-width:20px; height:20px; padding:0 6px; border-radius:10px; background-color:var(--btn-primary-bg); color:var(--btn-primary-ink); font-size:var(--text-xs); line-height:20px; text-align:center; }
-      .sidebar { display:none; }
       .sheet-filters { padding: 8px 8px 0; }
       .sheet-filters .filter-group { margin-bottom:20px; padding-bottom:20px; }
       .sheet-footer { flex: 1; }
@@ -522,7 +588,7 @@ export class Search implements OnInit {
     };
   }
 
-  /** Applies a filter change at once (sidebar), or to the sheet's draft. */
+  /** Applies a filter change at once, or to the open panel's or sheet's draft. */
   private changeFilters(patch: Partial<FilterDraft>) {
     if (!this.filterDraft) {
       this.navigateWithState(patch);

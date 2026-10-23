@@ -134,7 +134,7 @@ describe('Search page', () => {
       expect(getTopCourses).toHaveBeenLastCalledWith('NTU', 'engineering');
     });
 
-    it('applies each change at once from the sidebar, with no sheet open', () => {
+    it('applies a change at once when no filter panel is open', () => {
       component.toggleCondition('new');
 
       expect(lastQueryParams()).toEqual({ q: 'calculus', condition: 'like_new,noted,damaged' });
@@ -349,6 +349,34 @@ describe('Search page', () => {
 
         const searchBtn = fixture.nativeElement.querySelector('.search-button');
         expect(searchBtn).toBeTruthy();
+      });
+
+      it('opens the filters as a panel under the search bar, not a sheet or a sidebar', async () => {
+        await setUp({ q: 'calculus' });
+        const el = fixture.nativeElement as HTMLElement;
+        expect(el.querySelector('.sidebar')).toBeNull();
+        expect(el.querySelector('.filter-popover')).toBeNull();
+
+        (el.querySelector('.filter-button') as HTMLButtonElement).click();
+        fixture.detectChanges();
+
+        expect(el.querySelector('.filter-popover ui-facet-list')).toBeTruthy();
+        expect(el.querySelector('ui-bottom-sheet')).toBeNull();
+        expect(el.querySelector('.filter-button')?.getAttribute('aria-expanded')).toBe('true');
+      });
+
+      it('drops the panel\'s draft on a click outside it', async () => {
+        await setUp({ q: 'calculus' });
+        const el = fixture.nativeElement as HTMLElement;
+        (el.querySelector('.filter-button') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        component.toggleCondition('new');
+
+        (el.querySelector('.filter-backdrop') as HTMLElement).click();
+        fixture.detectChanges();
+
+        expect(navigate).not.toHaveBeenCalled();
+        expect(el.querySelector('.filter-popover')).toBeNull();
       });
     });
   });
