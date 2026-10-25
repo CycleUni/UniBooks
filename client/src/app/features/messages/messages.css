@@ -10,17 +10,19 @@
 }
 
     .messages-container {
-      /* Fills the shell rather than sitting in it. This used to be a 1120px
-         box with its own border and a calc(100vh - 200px) height, floating in
-         a scrolling page with the site footer beneath — a small page inside
-         the page. The height was also a guess: any change to the header or
-         footer left it short or overflowing. The layout now hands it the
-         remaining space and the panes scroll internally. */
+      /* A rounded card floating in the shell, matching the hero card and search
+         header. Panes keep flex:1/min-height:0 so they scroll internally without
+         producing a page-level scroll; overflow:hidden clips the sidebar's
+         paper-warm fill and border-right to the card's radius. */
       flex: 1;
       min-height: 0;
       display: flex;
-      width: 100%;
+      margin: var(--space-4);
       background-color: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-card-lg);
+      overflow: hidden;
     }
     .sidebar {
       width: 320px;
@@ -479,6 +481,14 @@
        bottom tab bar takes over and this view must switch to single-pane so
        the back button exists. */
     @media (max-width: 900px) {
+      /* Phones (<=900px): fill the shell edge to edge for single-pane chat. */
+      .messages-container {
+        margin: 0;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        overflow: visible;
+      }
       /* Single-pane pattern: show the inbox list, or the active chat with a back button */
       .sidebar {
         width: 100%;

@@ -264,17 +264,23 @@
     .bottom-tab-bar {
       display: none;
     }
+    /* A rounded card floating in the content column, matching the hero card
+       and search header. The outer element carries .container so the card
+       aligns with the page column, and floats off the bottom with a margin. */
     .app-footer {
-      border-top: 1px solid var(--line-strong);
-      background-color: var(--paper-warm);
-      padding-block: var(--space-5);
       margin-top: var(--space-8);
+      margin-bottom: var(--space-6);
     }
     .footer-content {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: var(--space-5);
+      background-color: var(--paper-warm);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-card-lg);
+      padding: var(--space-5) var(--space-6);
     }
     .footer-brand-area {
       display: flex;
@@ -307,6 +313,9 @@
       color: var(--ink-soft);
       text-decoration: none;
       font-size: var(--text-sm);
+      /* The card's inner padding narrows the row; a two-word link must not
+         break across lines. */
+      white-space: nowrap;
     }
     @media (pointer: coarse) {
       .footer-links a { min-height: var(--tap-min); }
@@ -505,14 +514,21 @@
         font-variant-numeric: tabular-nums;
         letter-spacing: normal;
       }
+      /* Phones (<=900px): the footer reverts to the full-bleed band anchored
+         above the bottom tab bar. Card styling on .footer-content is reset. */
       .app-footer {
-        /* Inline padding lives on .footer-content's .container; adding it to
-           the band as well doubled the footer's gutter to 32px against the
-           page's 16px. */
+        border-top: 1px solid var(--line-strong);
+        background-color: var(--paper-warm);
         padding-block: 16px calc(16px + 56px + env(safe-area-inset-bottom, 0px));
         margin-top: 48px;
+        margin-bottom: 0;
       }
       .footer-content {
+        background-color: transparent;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        padding: 0;
         flex-direction: column;
         align-items: center;
         text-align: center;
