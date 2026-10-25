@@ -514,31 +514,7 @@
         font-variant-numeric: tabular-nums;
         letter-spacing: normal;
       }
-      /* Phones (<=900px): the footer reverts to the full-bleed band anchored
-         above the bottom tab bar. Card styling on .footer-content is reset. */
-      .app-footer {
-        border-top: 1px solid var(--line-strong);
-        background-color: var(--paper-warm);
-        padding-block: 16px calc(16px + 56px + env(safe-area-inset-bottom, 0px));
-        margin-top: 48px;
-        margin-bottom: 0;
-      }
-      .footer-content {
-        background-color: transparent;
-        border: none;
-        border-radius: 0;
-        box-shadow: none;
-        padding: 0;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        gap: 8px;
-      }
-      .footer-brand-area {
-        flex-direction: column;
-        gap: 4px;
-        margin-right: 0;
-      }
+      /* No footer rules here: phones never render it (footerHiddenOnPhone). */
     }
 
     @media (max-width: 480px) {

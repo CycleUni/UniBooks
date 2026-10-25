@@ -14,7 +14,6 @@ import { ThemeService } from '../../core/services/theme.service';
 import { MobileLayoutService } from '../../core/services/mobile-layout.service';
 import { RegionService } from '../../core/region.service';
 
-
 @Component({ standalone: true, template: '' })
 class DummyRouteComponent {}
 
@@ -27,7 +26,15 @@ describe('UiLayout', () => {
     await TestBed.configureTestingModule({
       imports: [UiLayout],
       providers: [
-        { provide: RegionService, useValue: { regions: () => [{ code: 'tw', currency: { code: 'TWD', decimal_places: 0 } }], currency: () => ({ code: 'TWD', decimal_places: 0 }), region: () => 'tw', currentRegionObj: () => ({ search_engines: ['googlebooks'] }) } },
+        {
+          provide: RegionService,
+          useValue: {
+            regions: () => [{ code: 'tw', currency: { code: 'TWD', decimal_places: 0 } }],
+            currency: () => ({ code: 'TWD', decimal_places: 0 }),
+            region: () => 'tw',
+            currentRegionObj: () => ({ search_engines: ['googlebooks'] }),
+          },
+        },
         provideRouter([
           { path: '', component: DummyRouteComponent },
           { path: 'search', component: DummyRouteComponent },
@@ -35,17 +42,61 @@ describe('UiLayout', () => {
           { path: 'account', component: DummyRouteComponent },
           { path: 'messages', component: DummyRouteComponent },
           { path: 'book/:id', component: DummyRouteComponent },
-          { path: '**', component: DummyRouteComponent }
+          { path: '**', component: DummyRouteComponent },
         ]),
-        { provide: MetadataService, useValue: { getMetadata: () => of({ schools: [] }), getMetadataWithRetry: vi.fn(() => of({ schools: [] })) } },
-        { provide: AuthStore, useValue: { isAuthenticated: signal(false), user: signal(null), profileSettled: signal(false) } },
+        {
+          provide: MetadataService,
+          useValue: {
+            getMetadata: () => of({ schools: [] }),
+            getMetadataWithRetry: vi.fn(() => of({ schools: [] })),
+          },
+        },
+        {
+          provide: AuthStore,
+          useValue: {
+            isAuthenticated: signal(false),
+            user: signal(null),
+            profileSettled: signal(false),
+          },
+        },
         { provide: AccountService, useValue: {} },
-        { provide: SchoolStateService, useValue: { currentSchool: '', selectedSchool$: of(''), hasInitialized: false, ready: false, markReady: vi.fn(), getManualSchool: () => null, hasManualPick: () => false, setSchools: vi.fn(), setSchool: vi.fn(), clearManualSchool: vi.fn() } },
-        { provide: MessageService, useValue: { unreadCount$: of(0), openHub: vi.fn(), closeHub: vi.fn(), retryHubIfOwed: vi.fn() } },
-        { provide: I18nService, useValue: { t: (k: string) => k, lang: signal('zh-TW'), suggestionSettled: () => true } },
-        { provide: ThemeService, useValue: { mode: signal('system'), resolved: signal('light'), setMode: vi.fn() } },
-        { provide: MobileLayoutService, useValue: { hideBottomNav: signal(false), setHideBottomNav: vi.fn() } },
-      ]
+        {
+          provide: SchoolStateService,
+          useValue: {
+            currentSchool: '',
+            selectedSchool$: of(''),
+            hasInitialized: false,
+            ready: false,
+            markReady: vi.fn(),
+            getManualSchool: () => null,
+            hasManualPick: () => false,
+            setSchools: vi.fn(),
+            setSchool: vi.fn(),
+            clearManualSchool: vi.fn(),
+          },
+        },
+        {
+          provide: MessageService,
+          useValue: {
+            unreadCount$: of(0),
+            openHub: vi.fn(),
+            closeHub: vi.fn(),
+            retryHubIfOwed: vi.fn(),
+          },
+        },
+        {
+          provide: I18nService,
+          useValue: { t: (k: string) => k, lang: signal('zh-TW'), suggestionSettled: () => true },
+        },
+        {
+          provide: ThemeService,
+          useValue: { mode: signal('system'), resolved: signal('light'), setMode: vi.fn() },
+        },
+        {
+          provide: MobileLayoutService,
+          useValue: { hideBottomNav: signal(false), setHideBottomNav: vi.fn() },
+        },
+      ],
     }).compileComponents();
 
     router = TestBed.inject(Router);
@@ -168,7 +219,9 @@ describe('UiLayout', () => {
       await router.navigateByUrl('/login');
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.querySelector('.standalone-prefs-container ui-prefs-selector')).toBeTruthy();
+      expect(
+        fixture.nativeElement.querySelector('.standalone-prefs-container ui-prefs-selector'),
+      ).toBeTruthy();
     });
   });
 
@@ -184,12 +237,12 @@ describe('UiLayout', () => {
       expect(fixture.nativeElement.querySelector('.app-footer')).toBeNull();
     });
 
-    it('stay on a signed-out phone, which has no account menu', async () => {
+    it('leave the page on a signed-out phone too, whose sign-in form carries them', async () => {
       onPhone();
       await router.navigateByUrl('/');
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.querySelector('.footer-links')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.app-footer')).toBeNull();
     });
 
     it('stay on wide screens when signed in', async () => {
@@ -203,7 +256,9 @@ describe('UiLayout', () => {
 
   describe('account link while the profile is loading', () => {
     const accountLink = () =>
-      (fixture.nativeElement as HTMLElement).querySelector('.nav-links a[href$="/account"]') as HTMLAnchorElement;
+      (fixture.nativeElement as HTMLElement).querySelector(
+        '.nav-links a[href$="/account"]',
+      ) as HTMLAnchorElement;
 
     it('shows a placeholder, not the signed-out label, while signed in without a profile', () => {
       const auth = TestBed.inject(AuthStore) as any;
@@ -296,7 +351,9 @@ describe('UiLayout', () => {
 
     it('handles a final failure and asks again on the next navigation', async () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-      metadata.getMetadataWithRetry.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      metadata.getMetadataWithRetry.mockReturnValueOnce(
+        throwError(() => new HttpErrorResponse({ status: 503 })),
+      );
       // The language effect re-loads metadata; this load fails for good.
       (TestBed.inject(I18nService) as any).lang.set('en');
       TestBed.tick();
@@ -315,23 +372,28 @@ describe('UiLayout', () => {
       expect(metadata.getMetadataWithRetry).not.toHaveBeenCalled();
     });
 
-    it('groups the schools under their cities, in the cities\' order, cityless ones last', () => {
-      metadata.getMetadataWithRetry.mockReturnValue(of({
-        schools: [
-          { id: 1, code: 'NCKU', name: 'NCKU', city: 'TNN' },
-          { id: 2, code: 'NTU', name: 'NTU', city: 'TPE' },
-          { id: 3, code: 'X', name: 'Nowhere', city: null },
-        ],
-        cities: [
-          { code: 'TPE', name: 'Taipei City', display_name: 'Taipei' },
-          { code: 'TNN', name: 'Tainan City' },
-        ],
-      }));
+    it("groups the schools under their cities, in the cities' order, cityless ones last", () => {
+      metadata.getMetadataWithRetry.mockReturnValue(
+        of({
+          schools: [
+            { id: 1, code: 'NCKU', name: 'NCKU', city: 'TNN' },
+            { id: 2, code: 'NTU', name: 'NTU', city: 'TPE' },
+            { id: 3, code: 'X', name: 'Nowhere', city: null },
+          ],
+          cities: [
+            { code: 'TPE', name: 'Taipei City', display_name: 'Taipei' },
+            { code: 'TNN', name: 'Tainan City' },
+          ],
+        }),
+      );
       (TestBed.inject(I18nService) as any).lang.set('en');
       TestBed.tick();
 
-      expect(component.schools.slice(1).map(o => `${o.group}:${o.value}`))
-        .toEqual(['Taipei:NTU', 'Tainan City:NCKU', 'layout.otherCity:X']);
+      expect(component.schools.slice(1).map((o) => `${o.group}:${o.value}`)).toEqual([
+        'Taipei:NTU',
+        'Tainan City:NCKU',
+        'layout.otherCity:X',
+      ]);
       expect(component.schools[0]).toEqual({ value: '', label: expect.any(String) });
     });
 
@@ -377,12 +439,15 @@ describe('UiLayout', () => {
 
   describe('phone app bar scroll hide/show', () => {
     const stubPhone = (isPhone: boolean) => {
-      vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
-        matches: query.includes('max-width: 900px') ? isPhone : false,
-        media: query,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      })));
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn().mockImplementation((query: string) => ({
+          matches: query.includes('max-width: 900px') ? isPhone : false,
+          media: query,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        })),
+      );
     };
 
     beforeEach(() => {

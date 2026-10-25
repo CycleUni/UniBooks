@@ -183,12 +183,12 @@ export class UiLayout implements OnDestroy {
   }
 
   /**
-   * Phones that are signed in carry the footer's links in the account menu
-   * (as they already do region and language), so the footer goes. A
-   * signed-out visitor has no menu, so they keep it.
+   * Phones never show the footer. Signed in, its links are in the account
+   * menu (as region and language are); signed out, the account tab opens
+   * sign-in, whose form already links the terms and privacy policy.
    */
-  get footerInAccountMenu(): boolean {
-    return this.isPhone() && this.authStore.isAuthenticated();
+  get footerHiddenOnPhone(): boolean {
+    return this.isPhone();
   }
 
   private unreadCountSubscription: Subscription;
