@@ -34,7 +34,7 @@ const CRAWLER_UA = /bot|crawl|spider|slurp|lighthouse|headless/i;
         [attr.lang]="lang"
         [attr.aria-label]="i18n.tIn(lang, 'app.langSuggestTitle')"
       >
-        <div class="lang-suggestion-inner container">
+        <div class="lang-suggestion-inner">
           <svg
             class="lang-suggestion-icon"
             viewBox="0 0 24 24"
@@ -67,48 +67,56 @@ const CRAWLER_UA = /bot|crawl|spider|slurp|lighthouse|headless/i;
   `,
   styles: [
     `
+      /* A rounded card floating over the page, as the hero and footer are,
+         rather than a band pushing the header down. Bottom-left, because
+         toasts stack bottom-right (toast-host) and must not cover it. */
       .lang-suggestion {
-        background-color: var(--info-bg);
-        border-bottom: 1px solid var(--info-border);
+        position: fixed;
+        left: var(--space-5);
+        bottom: var(--space-5);
+        z-index: 200;
+        width: min(420px, calc(100vw - 2 * var(--space-4)));
+        background-color: var(--paper-warm);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-card);
+        box-shadow: var(--shadow-card-lg);
         color: var(--ink);
       }
       .lang-suggestion-inner {
         display: flex;
         align-items: center;
         flex-wrap: wrap;
-        gap: var(--space-2) var(--space-3);
-        padding-block: var(--space-2);
+        gap: var(--space-3);
+        padding: var(--space-4) var(--space-5);
       }
       .lang-suggestion-icon {
         flex: none;
         color: var(--info-ink);
       }
       .lang-suggestion-text {
-        flex: 1 1 12rem;
+        flex: 1 1 0;
         min-width: 0;
         font-size: var(--text-sm);
         font-weight: 500;
       }
+      /* The buttons get their own row under the question and share it. */
       .lang-suggestion-actions {
         display: flex;
-        flex-wrap: wrap;
+        flex: 1 1 100%;
         gap: var(--space-2);
       }
-      /* Phones: the buttons wrap under the question, so the banner needs room
-         around and between its two rows, and the buttons share the full width
-         instead of huddling at the left. */
-      @media (max-width: 600px) {
-        .lang-suggestion-inner {
-          gap: var(--space-3);
-          padding-block: var(--space-4);
-        }
-        .lang-suggestion-actions {
-          flex: 1 1 100%;
-          gap: var(--space-3);
-        }
-        .lang-suggestion-actions ui-button {
-          flex: 1 1 0;
-          min-width: 0;
+      .lang-suggestion-actions ui-button {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      /* Phones: full width inside the page gutter, clear of the bottom tab
+         bar (56px plus the home-indicator inset, as the toasts do). */
+      @media (max-width: 900px) {
+        .lang-suggestion {
+          left: var(--space-4);
+          right: var(--space-4);
+          width: auto;
+          bottom: calc(var(--space-3) + 56px + env(safe-area-inset-bottom, 0px));
         }
       }
     `,
