@@ -63,6 +63,11 @@ import { scrollBehavior } from '../../core/reduced-motion';
     .scroll-btn:hover { background-color: var(--paper-warm); }
     .scroll-btn.left { left: 0; }
     .scroll-btn.right { right: 0; }
+    /* Keep vertical centering while pressed; global button:active scale(0.97)
+       would otherwise drop translateY(-50%) and make the button jump downward. */
+    .scroll-btn:not(:disabled):active {
+      transform: translateY(-50%) scale(0.97);
+    }
     .categories-grid {
       display: flex;
       overflow-x: auto;
@@ -76,7 +81,7 @@ import { scrollBehavior } from '../../core/reduced-motion';
       display: flex;
       flex-direction: column;
       border: 1px solid var(--line-strong);
-      border-radius: var(--radius-xs);
+      border-radius: var(--radius-panel);
       background-color: var(--surface-card);
       padding: var(--space-5);
       text-decoration: none;
