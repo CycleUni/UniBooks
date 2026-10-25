@@ -113,7 +113,7 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
 
         <div class="listings-section">
           <h3 class="section-heading" *ngIf="!isLoadingListings && !listingsFailed">{{ 'book.currentListings' | t:{n: totalListings} }}</h3>
-          <h3 class="section-heading" *ngIf="isLoadingListings || listingsFailed">{{ 'book.currentListings' | t:{n: '-'} }}</h3>
+          <h3 class="section-heading" *ngIf="isLoadingListings || listingsFailed">{{ 'book.listingsHeading' | t }}</h3>
           
           <ui-skeleton *ngIf="isLoadingListings" variant="list" [count]="3"></ui-skeleton>
 

@@ -384,6 +384,9 @@ import { hasCoverFailed, markCoverFailed } from '../../shared/ui/book-cover.comp
       -webkit-overflow-scrolling: touch;
       scrollbar-width: none;
       padding-block: var(--space-1);
+      padding-inline-end: 32px;
+      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+      mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
     }
     .phone-category-chips::-webkit-scrollbar {
       display: none;
