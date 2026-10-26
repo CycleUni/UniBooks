@@ -4,9 +4,12 @@ import { environment } from '../../environments/environment';
 
 /**
  * Sentry without its weight. The SDK (core/sentry-sdk.ts) is about a third of
- * the initial bundle, so it is loaded after the app is up, when the browser is
- * idle. Until then, calls made through this file wait in a short queue and are
- * replayed once it is ready, so nothing reported early is lost.
+ * the initial bundle, so it is loaded once the first page has settled (main.ts,
+ * core/page-settled): loaded on idle alone, its three-second timeout fired
+ * while a slow phone was still drawing the page, and parsing it was the
+ * longest task before the first paint. Until then, calls made through this
+ * file wait in a short queue and are replayed once it is ready, so nothing
+ * reported early is lost.
  *
  * Errors thrown before the SDK exists reach the queue through two window
  * listeners; the SDK's own handlers take over when it loads. With no DSN
@@ -64,25 +67,22 @@ export function watchEarlyErrors(): void {
   window.addEventListener('unhandledrejection', onRejection);
 }
 
-/** Loads the SDK when the browser is idle, then replays what was queued. */
+/** Loads the SDK, then replays what was queued. Call once the page has settled. */
 export function startSentry(): void {
   if (!enabled() || started || typeof window === 'undefined') return;
   started = true;
-  const load = () =>
-    import('./sentry-sdk')
-      .then((loaded) => {
-        loaded.initSentry();
-        window.removeEventListener('error', onError);
-        window.removeEventListener('unhandledrejection', onRejection);
-        sdk = loaded;
-        const pending = queue;
-        queue = [];
-        pending.forEach((job) => job(loaded));
-      })
-      .catch(() => {
-        // The chunk could not load (offline, blocked): reporting stays off.
-        queue = [];
-      });
-  if ('requestIdleCallback' in window) window.requestIdleCallback(load, { timeout: 3000 });
-  else setTimeout(load, 1500);
+  import('./sentry-sdk')
+    .then((loaded) => {
+      loaded.initSentry();
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+      sdk = loaded;
+      const pending = queue;
+      queue = [];
+      pending.forEach((job) => job(loaded));
+    })
+    .catch(() => {
+      // The chunk could not load (offline, blocked): reporting stays off.
+      queue = [];
+    });
 }
