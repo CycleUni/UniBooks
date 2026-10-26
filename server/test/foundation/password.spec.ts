@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { hashPassword, needsRehash, PBKDF2_ITERATIONS, verifyPassword } from '../../src/lib/crypto';
 
-describe('password hashing (PBKDF2-SHA256, Django format)', () => {
+describe('password hashing (PBKDF2-SHA256, pbkdf2_sha256$iterations$salt$hash)', () => {
   it('hashes with a fresh salt and verifies only the right password', async () => {
     const a = await hashPassword('Correct-Pass-123!');
     const b = await hashPassword('Correct-Pass-123!');
@@ -12,12 +12,12 @@ describe('password hashing (PBKDF2-SHA256, Django format)', () => {
     expect(needsRehash(a)).toBe(false);
   });
 
-  it('verifies a Django-made hash with fewer iterations and flags it for an upgrade', async () => {
-    // Django's PBKDF2PasswordHasher with iterations=10000, salt 'seasalt' (vector from hashlib.pbkdf2_hmac).
-    const django = 'pbkdf2_sha256$10000$seasalt$p2Nf8SH5q1HFJUvFvVd4Nj71pVA5fI7cpL2WDbb86bc=';
-    expect(await verifyPassword('password', django)).toBe(true);
-    expect(await verifyPassword('Password', django)).toBe(false);
-    expect(needsRehash(django)).toBe(true);
+  it('verifies a hash made with fewer iterations and flags it for an upgrade', async () => {
+    // iterations=10000, salt 'seasalt' (vector from Python's hashlib.pbkdf2_hmac).
+    const older = 'pbkdf2_sha256$10000$seasalt$p2Nf8SH5q1HFJUvFvVd4Nj71pVA5fI7cpL2WDbb86bc=';
+    expect(await verifyPassword('password', older)).toBe(true);
+    expect(await verifyPassword('Password', older)).toBe(false);
+    expect(needsRehash(older)).toBe(true);
   });
 
   it('rejects anything it cannot parse, including bcrypt and over-limit iteration counts', async () => {

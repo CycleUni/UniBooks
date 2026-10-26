@@ -1,6 +1,6 @@
 # Feature inventory and test checklist
 
-Derived from the Django URL map (`UniBooks-BE-Django/*/urls.py`), CFEdgeChat, the
+Derived from the old backend's URL map, CFEdgeChat, the
 ISBNnet resolver and the Angular routes (`client/src/app/app.routes.ts`). Every row
 is tested in the browser against `wrangler dev` (launch config `unibooks`, port
 8787) unless marked API. Mark `[x]` when verified; note the evidence.

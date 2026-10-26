@@ -8,12 +8,12 @@ owner: claude (unattended run, 2026-10-13)
 **RESUME HERE after an interruption:** read this file top to bottom, then continue
 with the first unchecked item in "Work queue". Update the checkboxes and the
 "Log" section as each item lands. Old reference code (read-only):
-`/Users/kenchou2006/Documents/GitHub/UniBooks-Old` (Django BE, CFEdgeChat, ISBNnet).
+`/Users/kenchou2006/Documents/GitHub/UniBooks-Old` (old backend, CFEdgeChat, ISBNnet).
 
 ## Requirements (from the user, 2026-10-13)
 1. Finish interrupted work (security-review fixes).
 2. Full feature parity: frontend, backend, chat. Mailjet email. Search identical to
-   Django (external APIs + DB queries, every search field). Region settings etc.
+   the old backend (external APIs + DB queries, every search field). Region settings etc.
    List every site feature, then browser-test each (admin included).
 3. Env vars: copied by user into `server/.dev.vars`; fill gaps from UniBooks-Old.
 4. Move the frontend into `client/` after testing; remove the submodule reference
@@ -33,12 +33,12 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
 14. ISBNnet via service binding instead of cross-site HTTP (fallback to URL).
 15. Commit when done — **no Co-Authored-By trailer**. Don't push.
 16. Final: best practice / security / stability / scalability review; write the
-    Django Postgres → D1 data migration guide (keep users + books/listings; drop
+    old Postgres → D1 data migration guide (keep users + books/listings; drop
     passwords and chat messages).
 17. Budget: few subagents at a time; small tasks → sonnet subagent or `agy`.
 
 ## Decisions
-- API contract (revised 2026-10-15, Django/DRF conventions dropped): no trailing
+- API contract (revised 2026-10-15, old backend conventions dropped): no trailing
   slashes; one error shape `{error:{code, fields?, ...extra}}` with i18n codes only
   (no `detail` prose, no top-level field dicts, no `non_field_errors`); pages are
   `{count, results}` and a page past the end is empty, not 404; users expose `role`
@@ -72,7 +72,7 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
 - [x] UniBooks-FE → client/ (git history backed up at ../UniBooks-FE-git-backup), submodule removed; server chat → /api/chat/*.
 - [x] Client: cookie auth + /api/chat paths + proxy (1052 client tests green; i18n contract checks now read ../server/src).
 - [x] Feature inventory + browser/API test pass (see features.md). Bugs found & fixed: ISBNnet 5xx fallback, datetime offset label, queue names, entry-module export crash, 16 missing i18n codes.
-- [x] Data migration guide docs/migrate-from-django.md + server/scripts/import-django.ts (8 tests, applied to local D1).
+- [x] One-off Postgres → D1 import script and guide (8 tests, applied to local D1; removed 2026-10-26 once the move was done).
 - [x] Final review: M-1 origin KV fail-open, M-2 validated cache keys + rate limits, M-3 hub socket expiry, L-1 cookie clear on refused refresh, L-2 best-effort logout, L-4 per-request pagination links, L-5 origin flip-flop, L-6 resolver URL/redirects, L-7 chat header allowlist + 16 KB cap, L-8 Vary, L-10 docs. Left by design: L-3 (grace pair in D1 ≤60 s, purged by cleanup), L-9 (15-min access tokens).
 - [x] Verified: server tsc 0 / 211 tests / prettier / audit 0; client 1052 tests; dry-run bundle OK. Committed.
 - [x] Root CI (.github/workflows/ci.yml): server typecheck/format/test/import self-test, client test/build, wrangler dry-run bundle.
@@ -121,7 +121,7 @@ with the first unchecked item in "Work queue". Update the checkboxes and the
 - 2026-10-13: tests: 41 accounts green after cookie auth; frontend route tests fail until client/ is built.
 - 2026-10-13: dev vars filled from UniBooks-Old (GOOGLE_BOOKS_API_KEY,
   ISBNNET_RESOLVER_URL, CHAT_JWT_SECRET). Accounts 39/39, orders 15/15 green.
-- 2026-10-15: de-Django review: contract above applied server + client; password
+- 2026-10-15: old-convention review: contract above applied server + client; password
   validator and account validation answer i18n codes; security: email-change rate
   limit + current password, staff is_active scope, no activating unconfirmed sign-ups.
   Gates: server tsc / prettier / 278 tests / import self-test, client 1063 tests + build,
