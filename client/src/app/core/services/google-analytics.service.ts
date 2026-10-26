@@ -34,10 +34,14 @@ export class GoogleAnalyticsService {
 
     this.gaId = gaId;
 
-    // Load Google Analytics script once the first page is up (see
-    // whenPageSettled). Until then gtag() only queues onto dataLayer, which
-    // the script replays when it arrives, so nothing tracked is lost.
+    // The Google tag gateway already adds the tag to every page (its
+    // /metrics/ script, at page start), and it reads the dataLayer below.
+    // Loading our own copy too downloaded and ran the ~200 kB tag twice. So
+    // ours is only a fallback, for a page the gateway did not tag, and waits
+    // for the first page to be up (see whenPageSettled). Until a tag runs,
+    // gtag() only queues onto dataLayer, so nothing tracked is lost.
     whenPageSettled(this.appRef).then(() => {
+      if (document.querySelector(`script[src^="${GA_GATEWAY_PATH}/"]`)) return;
       const script = document.createElement('script');
       script.async = true;
       // Google tag gateway: this site's own /metrics path proxies gtag.js and

@@ -4,6 +4,8 @@ import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import { GoogleAnalyticsService } from './google-analytics.service';
 import { RegionService } from '../region.service';
+import { MAX_WAIT_MS } from '../page-settled';
+import { environment } from '../../../environments/environment';
 
 const HKD = { code: 'HKD', symbol: 'HK$', decimal_places: 2, symbol_position: 'prefix' as const };
 const TWD = { code: 'TWD', symbol: 'NT$', decimal_places: 0, symbol_position: 'prefix' as const };
@@ -80,5 +82,39 @@ describe('GoogleAnalyticsService', () => {
   it('does nothing when gtag is not loaded', () => {
     delete (window as any).gtag;
     expect(() => TestBed.inject(GoogleAnalyticsService).trackRequestBook(1, 'book')).not.toThrow();
+  });
+
+  describe('the gtag script', () => {
+    const ownTag = () => document.querySelector('script[src^="/metrics/gtag/js"]');
+    // Past whenPageSettled however the test app reports stable: its cap, then
+    // the idle wait.
+    const settled = () => vi.advanceTimersByTimeAsync(MAX_WAIT_MS + 3000);
+
+    // The test environment has no measurement ID, which leaves GA off.
+    const configuredId = environment.gaMeasurementId;
+    beforeEach(() => {
+      environment.gaMeasurementId = 'G-TEST';
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      environment.gaMeasurementId = configuredId;
+      vi.useRealTimers();
+      document.head.querySelectorAll('script[src^="/metrics/"]').forEach(el => el.remove());
+    });
+
+    it('is not loaded again when the tag gateway already added it', async () => {
+      const injected = document.createElement('script');
+      injected.src = '/metrics/';
+      document.head.appendChild(injected);
+      TestBed.inject(GoogleAnalyticsService);
+      await settled();
+      expect(ownTag()).toBeNull();
+    });
+
+    it('is loaded through the gateway path when the page has no tag', async () => {
+      TestBed.inject(GoogleAnalyticsService);
+      await settled();
+      expect(ownTag()?.getAttribute('src')).toBe('/metrics/gtag/js?id=G-TEST');
+    });
   });
 });
