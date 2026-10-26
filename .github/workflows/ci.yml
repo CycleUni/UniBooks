@@ -26,8 +26,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run format:check
       - run: npm test
-      - name: Import script self-test
-        run: node --experimental-strip-types --test scripts/import-django.test.ts
 
   client:
     runs-on: ubuntu-latest

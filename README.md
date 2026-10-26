@@ -15,7 +15,7 @@
 |---|---|
 | `client/` | Angular 22 CSR SPA（PWA）。建置輸出 `client/dist/unibooks/browser` 即 Worker 的靜態資產 |
 | `server/` | Hono Worker：`src/routes`（API）、`src/durable-objects`（ChatRoom / UserHub / OrderLock / RateLimiter）、`src/queues`（Mailjet 信件、FCM 推播）、`src/jobs`（排程）、`src/db`（D1 schema 與 migration） |
-| `docs/` | 設計紀錄、[舊資料遷移指南](docs/migrate-from-django.md) |
+| `docs/` | 設計紀錄 |
 
 ## 使用的 Cloudflare 服務
 
@@ -181,7 +181,6 @@ npx --prefix server wrangler d1 execute unibooks --remote --config server/wrangl
 `UPDATE users SET role = 'admin' WHERE email = 'you@example.com'`。角色每次請求都從資料庫讀取，改完重新整理
 頁面即可，不必重新登入。之後的區域管理員（`staff`）可由超級使用者在後台使用者頁面設定；降級超級使用者可用
 `--role staff` 或 `--role user`（同樣會重設密碼；只想改角色就用上面的 SQL）。
-從舊 Postgres 匯入資料時，`is_superuser` / `is_staff` 會自動轉成 `admin` / `staff`（見 `docs/migrate-from-django.md`）。
 
 ## 安全設計摘要
 
