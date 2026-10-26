@@ -76,18 +76,26 @@ export class OrderService {
   }
 
   checkUnreadOrders(userId: string, lastSeenBoughtAt: string | null | undefined, lastSeenSoldAt: string | null | undefined) {
-    this.ordersForUnreadCheck().subscribe(orders => {
-      const boughtOrders = orders.filter(o => String(o.buyer) === String(userId));
-      const soldOrders = orders.filter(o => String(o.seller) === String(userId));
-      
-      const lastSeenBought = lastSeenBoughtAt ? new Date(lastSeenBoughtAt).getTime() : 0;
-      const lastSeenSold = lastSeenSoldAt ? new Date(lastSeenSoldAt).getTime() : 0;
-      
-      const maxBought = boughtOrders.reduce((max, o) => Math.max(max, new Date(o.updated_at || o.created_at || 0).getTime()), 0);
-      const maxSold = soldOrders.reduce((max, o) => Math.max(max, new Date(o.updated_at || o.created_at || 0).getTime()), 0);
-      
-      this.unreadOrders$.next(maxBought > lastSeenBought || maxSold > lastSeenSold);
+    this.ordersForUnreadCheck().subscribe({
+      next: orders => this.unreadOrders$.next(this.hasUnread(orders, userId, lastSeenBoughtAt, lastSeenSoldAt)),
+      // The dot is a hint; a failed check leaves it as it was. Without this a
+      // 401 (the session expired) reached the ErrorHandler and Sentry as an
+      // unhandled error.
+      error: () => {},
     });
+  }
+
+  private hasUnread(orders: Order[], userId: string, lastSeenBoughtAt: string | null | undefined, lastSeenSoldAt: string | null | undefined): boolean {
+    const boughtOrders = orders.filter(o => String(o.buyer) === String(userId));
+    const soldOrders = orders.filter(o => String(o.seller) === String(userId));
+    
+    const lastSeenBought = lastSeenBoughtAt ? new Date(lastSeenBoughtAt).getTime() : 0;
+    const lastSeenSold = lastSeenSoldAt ? new Date(lastSeenSoldAt).getTime() : 0;
+    
+    const maxBought = boughtOrders.reduce((max, o) => Math.max(max, new Date(o.updated_at || o.created_at || 0).getTime()), 0);
+    const maxSold = soldOrders.reduce((max, o) => Math.max(max, new Date(o.updated_at || o.created_at || 0).getTime()), 0);
+    
+    return maxBought > lastSeenBought || maxSold > lastSeenSold;
   }
 
   /**

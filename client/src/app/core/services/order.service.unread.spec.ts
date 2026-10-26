@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { config } from 'rxjs';
 import { OrderService } from './order.service';
 
 // The account shell's unread dot fetched the whole order list on every
@@ -62,5 +63,19 @@ describe('OrderService.checkUnreadOrders', () => {
     service.getOrders().subscribe();
     expect(orders()).toHaveLength(1);
     vi.useRealTimers();
+  });
+
+  it('leaves the dot alone when the check fails, instead of throwing an unhandled error', async () => {
+    const unhandled = vi.fn();
+    config.onUnhandledError = unhandled;
+    try {
+      service.checkUnreadOrders('1', null, null);
+      orders()[0].flush({}, { status: 401, statusText: 'Unauthorized' });
+      await new Promise(resolve => setTimeout(resolve));
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(service.unreadOrders$.value).toBe(false);
+    } finally {
+      config.onUnhandledError = null;
+    }
   });
 });
