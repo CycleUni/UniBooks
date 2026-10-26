@@ -16,13 +16,14 @@ import { coverUrlFor } from '../services/catalog/covers';
 import { getGoogleBooksByIsbn } from '../services/catalog/lookups';
 import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
+import type { SubscriptionDto } from '../api-types';
 
 export const subscriptionRoutes = new Hono<AppEnv>();
 
 subscriptionRoutes.use('*', authMiddleware());
 
 /** Subscriptions with new_listings_count = active listings created after subscribing. */
-async function serialize(env: Env, subs: Subscription[]): Promise<Record<string, unknown>[]> {
+async function serialize(env: Env, subs: Subscription[]): Promise<SubscriptionDto[]> {
   if (!subs.length) return [];
   const db = createDb(env.DB);
   const bookIds = [...new Set(subs.map((s) => s.bookId))];

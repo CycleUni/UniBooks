@@ -12,6 +12,7 @@ import { RegionLinkService } from '../../core/region-link.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { bookQueryParams } from '../../core/book-preview';
+import type { SubscriptionDto } from '../../../../../server/src/api-types';
 
 
 @Component({
@@ -78,7 +79,7 @@ import { bookQueryParams } from '../../core/book-preview';
   `]
 })
 export class SubscriptionsComponent implements OnInit {
-  mySubscriptions: any[] = [];
+  mySubscriptions: SubscriptionDto[] = [];
   loading = true;
   loadFailed = false;
 
@@ -142,11 +143,11 @@ export class SubscriptionsComponent implements OnInit {
   }
 
   /** The book's page, by ISBN or, for a book without one, by its id. */
-  bookParams(sub: any): Record<string, string | number> {
+  bookParams(sub: Pick<SubscriptionDto, 'isbn' | 'book'>): Record<string, string | number> {
     return bookQueryParams({ isbn: sub.isbn, id: sub.book });
   }
 
-  viewBook(sub: any) {
+  viewBook(sub: Pick<SubscriptionDto, 'isbn' | 'book'>) {
     this.router.navigate(this.regionLink.path(['/book']), { queryParams: this.bookParams(sub) });
   }
 }

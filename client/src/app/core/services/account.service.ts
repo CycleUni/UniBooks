@@ -8,6 +8,7 @@ import { AuthStore, AuthUser, PasskeyItem, UserRole } from '../auth.store';
 import { RegionService } from '../region.service';
 import { SKIP_AUTH } from '../auth.interceptor';
 import { isSameRegion, stripRegionPrefix } from '../region-path';
+import type { SubscriptionDto } from '../../../../../server/src/api-types';
 export interface ChatReportItem {
   id: string;
   conversation?: {
@@ -468,16 +469,16 @@ export class AccountService {
     );
   }
 
-  unsubscribe(subscriptionId: string): Observable<any> {
-    return this.http.delete(`/subscriptions/${subscriptionId}`);
+  unsubscribe(subscriptionId: string): Observable<void> {
+    return this.http.delete<void>(`/subscriptions/${subscriptionId}`);
   }
 
-  unsubscribeAll(): Observable<any> {
-    return this.http.delete('/subscriptions');
+  unsubscribeAll(): Observable<void> {
+    return this.http.delete<void>('/subscriptions');
   }
 
-  getMySubscriptions(): Observable<any[]> {
-    return this.http.get<any[]>('/subscriptions');
+  getMySubscriptions(): Observable<SubscriptionDto[]> {
+    return this.http.get<SubscriptionDto[]>('/subscriptions');
   }
 
   getMyListingReports(page: number = 1): Observable<PaginatedResponse<ListingReportItem>> {

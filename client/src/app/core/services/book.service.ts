@@ -3,6 +3,7 @@ import { HttpClient, HttpContext } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
 import { SKIP_LANG_PARAM } from '../api-url.interceptor';
 import { SKIP_AUTH } from '../auth.interceptor';
+import type { SubscriptionDto } from '../../../../../server/src/api-types';
 
 /** A course the search facet can offer. `count` is absent on a backend that
  *  still returns the old plain-string list. */
@@ -109,11 +110,11 @@ export class BookService {
     );
   }
 
-  subscribe(bookId: string): Observable<any> {
-    return this.http.post<any>('/subscriptions', { book_id: bookId });
+  subscribe(bookId: string): Observable<SubscriptionDto> {
+    return this.http.post<SubscriptionDto>('/subscriptions', { book_id: bookId });
   }
 
-  unsubscribe(subscriptionId: string | number): Observable<any> {
-    return this.http.delete<any>(`/subscriptions/${subscriptionId}`);
+  unsubscribe(subscriptionId: string | number): Observable<void> {
+    return this.http.delete<void>(`/subscriptions/${subscriptionId}`);
   }
 }
