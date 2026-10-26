@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/angular';
 import { environment } from '../../environments/environment';
 import { redactSensitiveUrl } from './sensitive-url';
+import { isChunkLoadError, isReloadingForMissingChunk } from './chunk-recovery';
 
 /**
  * The Sentry SDK itself. Nothing but core/sentry.ts imports this file, and
@@ -36,13 +37,24 @@ export function initSentry(): void {
     // Google Identity Services throws minified errors (e.g. "pa") from its
     // own event handlers when the account chooser is closed or blocked. They
     // are not ours to fix and reach Sentry through Angular's error handler.
-    denyUrls: [/\/gsi\/client/],
+    // Browser extensions inject scripts into the page and wrap its
+    // XMLHttpRequest; what they throw (e.g. "reading 'M_ID'") lands here too.
+    denyUrls: [/\/gsi\/client/, /^(chrome|moz|safari(-web)?|ms-browser)-extension:\/\//],
     // Reset and email-change links carry their token in the address, and
     // every event records the page URL; see core/sensitive-url.
-    beforeSend: (event) => scrubEventUrls(event),
+    beforeSend: (event, hint) => (isRecoveredChunkError(hint.originalException) ? null : scrubEventUrls(event)),
     beforeSendTransaction: (event) => scrubEventUrls(event),
     beforeBreadcrumb: (breadcrumb) => scrubBreadcrumb(breadcrumb),
   });
+}
+
+/**
+ * A missing lazy chunk the page is already reloading to recover from
+ * (core/chunk-recovery): the visitor lands on the current build and never
+ * sees it. One the loop guard refused to reload for is still reported.
+ */
+export function isRecoveredChunkError(error: unknown): boolean {
+  return isChunkLoadError(error) && isReloadingForMissingChunk();
 }
 
 /**

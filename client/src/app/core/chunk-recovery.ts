@@ -27,6 +27,17 @@ export function chunkUrlFromError(error: unknown): string | null {
 }
 
 const RELOAD_KEY = 'unibooks.chunkReload';
+let reloading = false;
+
+/**
+ * Whether this page is already being replaced to recover from a missing
+ * chunk. The error that started it still reaches Sentry after the reload is
+ * under way (the router emits NavigationError, then rejects to the
+ * ErrorHandler); core/sentry-sdk drops it, as the visitor never sees it.
+ */
+export function isReloadingForMissingChunk(): boolean {
+  return reloading;
+}
 
 /**
  * Load `url` (default: this page) as a full page, once per URL within ten
@@ -50,6 +61,7 @@ export function reloadForMissingChunk(error: unknown, url: string = location.hre
     // chunk would reload the page forever: leave the error to the caller.
     return false;
   }
+  reloading = true;
   const chunkUrl = chunkUrlFromError(error);
   const refreshed = chunkUrl ? fetch(chunkUrl, { cache: 'reload' }).then(() => undefined, () => undefined) : Promise.resolve();
   refreshed.then(() => location.assign(url));
