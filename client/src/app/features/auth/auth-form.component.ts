@@ -16,6 +16,7 @@ import { ThemeService } from '../../core/services/theme.service';
 import { aboutUrl as aboutSiteUrl } from '../../core/about-site';
 import { RegionService } from '../../core/region.service';
 import { TurnstileService } from '../../core/services/turnstile.service';
+import { isEventPath } from '../../core/event-path';
 
 /** The container Google's SDK renders its button into. A DOM id rather than a
  *  ViewChild because the SDK takes an element and writes an iframe into it —
@@ -489,6 +490,10 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     // visibly does nothing.
     const target = this.returnUrl || this.regionLink.path(['/account']);
     if (typeof target === 'string') {
+      if (isEventPath(target)) {
+        window.location.replace(target);
+        return;
+      }
       this.router.navigateByUrl(target, { replaceUrl: true });
     } else {
       this.router.navigate(target, { replaceUrl: true });

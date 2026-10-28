@@ -14,6 +14,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
 import { stripRegionPrefix } from '../../core/region-path';
 import { aboutUrl as aboutSiteUrl } from '../../core/about-site';
+import { MemberCodeComponent } from './member-code.component';
 
 /** The signed-in dashboard. It used to double as the login wall on the same
  *  URL; that half now lives at /login and /register, and the route's authGuard
@@ -21,13 +22,14 @@ import { aboutUrl as aboutSiteUrl } from '../../core/about-site';
 @Component({
   selector: 'app-account',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, UiButton, UiPrefsSelector, TPipe],
+  imports: [RegionLinkDirective, CommonModule, RouterModule, UiButton, UiPrefsSelector, TPipe, MemberCodeComponent],
   templateUrl: './account.html',
   styleUrls: ['./account.css']
 })
 export class Account {
   activeTab = 'listings';
   hasUnreadOrders = false;
+  showMemberPass = false;
 
   firstName = '';
   lastName = '';

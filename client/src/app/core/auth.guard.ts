@@ -5,6 +5,7 @@ import { RegionService } from './region.service';
 import { regionUrlTree } from './region-path';
 import { AuthStore } from './auth.store';
 import { requiresAuth } from './signed-out-redirect';
+import { isEventPath } from './event-path';
 
 /** Where this guard family puts a visitor who is not signed in. Registered
  *  alongside each guard so a session that ends *without* a navigation lands
@@ -38,6 +39,10 @@ export const guestGuard: CanActivateFn = (route) => {
 
   const returnUrl = route.queryParamMap.get('returnUrl');
   if (returnUrl) {
+    if (isEventPath(returnUrl) && typeof window !== 'undefined') {
+      window.location.replace(returnUrl);
+      return false;
+    }
     return router.parseUrl(returnUrl);
   }
   return regionUrlTree(router, regionService, ['/account']);

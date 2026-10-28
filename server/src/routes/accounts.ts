@@ -58,6 +58,7 @@ import {
 import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
 import { isUniqueViolation } from '../lib/db';
+import { issueMemberToken } from '../lib/member-token';
 
 /**
  * /api/v1/auth/*
@@ -96,6 +97,7 @@ const RATES = {
   publicProfile: '30/min',
   passkeyLogin: '10/min',
   passkeyRegister: '10/hour',
+  memberToken: '60/min',
 } as const;
 
 const PUSH_TOKEN_MAX_LENGTH = 512;
@@ -1291,6 +1293,10 @@ accountRoutes.put('/me/site-region', authMiddleware(), async (c) => {
     .run();
   return c.body(null, 204);
 });
+
+accountRoutes.get('/member-token', authMiddleware(), rateLimit('member_token', RATES.memberToken), async (c) =>
+  c.json(await issueMemberToken(c.env, c.get('user')!.id)),
+);
 
 accountRoutes.get('/users/:id', optionalAuthMiddleware(), rateLimit('public_profile', RATES.publicProfile), async (c) => {
   const id = c.req.param('id');

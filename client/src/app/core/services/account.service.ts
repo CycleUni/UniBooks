@@ -491,6 +491,11 @@ export class AccountService {
     return this.http.get<PaginatedResponse<ChatReportItem>>('/moderation/chat-reports/mine', { params });
   }
 
+  /** The member pass QR payload; it changes every step_seconds. */
+  getMemberToken(): Observable<{ token: string; step_seconds: number; expires_in_ms: number }> {
+    return this.http.get<{ token: string; step_seconds: number; expires_in_ms: number }>('/auth/member-token');
+  }
+
   deleteAccount(): Observable<any> {
     return this.http.delete<any>('/auth/me');
   }
