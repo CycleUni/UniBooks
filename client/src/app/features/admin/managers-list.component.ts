@@ -30,18 +30,18 @@ import { UiButton } from '../../shared/ui/button.component';
       <ui-dropdown [label]="'admin.filterActive' | t" [options]="activeOptions" [(ngModel)]="isActiveFilter" (ngModelChange)="reload()" [searchable]="false"></ui-dropdown>
     </div>
 
-    <admin-bulk-bar *ngIf="!loading && !loadError && isSuperuser && users.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
+    <admin-bulk-bar *ngIf="!loadError && isSuperuser && users.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
       <ui-button size="sm" variant="danger" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkRevoke()">{{ 'admin.revokeAdmin' | t }}</ui-button>
     </admin-bulk-bar>
 
-    <ui-skeleton *ngIf="loading" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="loading && !loaded" variant="table" [count]="5"></ui-skeleton>
 
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="reload()"></ui-error-state>
 
     <div class="table-container">
 
 
-      <table class="admin-table" *ngIf="!loading && !loadError">
+      <table class="admin-table" *ngIf="loaded && !loadError" [class.stale]="loading">
       <thead>
         <tr>
           <th adminPick
@@ -147,6 +147,8 @@ export class AdminManagersListComponent implements OnInit {
   q = '';
   isActiveFilter = 'true';
   loading = true;
+  /** Set by the first successful load; later reloads keep the table on screen, dimmed. */
+  loaded = false;
   /** Why the last load failed; the table would otherwise read as empty. */
   loadError = '';
   bulk = new BulkController<string | number>(() => this.reload());
@@ -205,6 +207,7 @@ export class AdminManagersListComponent implements OnInit {
         this.users = res.results;
         this.total = res.count;
         this.loading = false;
+        this.loaded = true;
         this.cdr.markForCheck();
       },
       error: (err) => {

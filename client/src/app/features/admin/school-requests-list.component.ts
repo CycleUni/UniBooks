@@ -42,18 +42,18 @@ interface Draft {
       <ui-dropdown [label]="'admin.colStatus' | t" [options]="statusFilterOptions" [(ngModel)]="statusFilter" (ngModelChange)="onFilterChange()" [searchable]="false"></ui-dropdown>
     </div>
 
-    <admin-bulk-bar *ngIf="!loading && !loadError && requests.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
+    <admin-bulk-bar *ngIf="!loadError && requests.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
       <ui-button *ngFor="let s of statusOptions" size="sm" variant="outline" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkStatus(s.value)">{{
         'admin.bulk.markAs' | t: { status: s.label }
       }}</ui-button>
     </admin-bulk-bar>
 
-    <ui-skeleton *ngIf="loading" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="loading && !loaded" variant="table" [count]="5"></ui-skeleton>
 
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="reload()"></ui-error-state>
 
     <div class="table-container">
-      <table class="admin-table" *ngIf="!loading && !loadError">
+      <table class="admin-table" *ngIf="loaded && !loadError" [class.stale]="loading">
         <thead>
           <tr>
             <th adminPick
@@ -148,6 +148,8 @@ export class AdminSchoolRequestsListComponent implements OnInit {
   // Opens on the queue that needs work; "all" is one option away.
   statusFilter: SchoolRequestStatus | '' = 'pending';
   loading = true;
+  /** Set by the first successful load; later reloads keep the table on screen, dimmed. */
+  loaded = false;
   /** Why the last load failed; the table would otherwise read as empty. */
   loadError = '';
   savingId: number | null = null;
@@ -227,6 +229,7 @@ export class AdminSchoolRequestsListComponent implements OnInit {
         this.drafts = {};
         for (const req of res.results) this.resetDraft(req);
         this.loading = false;
+        this.loaded = true;
         this.cdr.markForCheck();
       },
       error: (err) => {

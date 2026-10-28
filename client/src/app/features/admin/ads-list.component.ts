@@ -40,13 +40,13 @@ import { BulkController } from './bulk';
     </div>
 
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="loadPage(currentPage)"></ui-error-state>
-    <admin-bulk-bar *ngIf="!loading && !loadError && adsData?.results?.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
+    <admin-bulk-bar *ngIf="!loadError && adsData?.results?.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
       <ui-button size="sm" variant="outline" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkActive(true)">{{ 'admin.bulk.enable' | t }}</ui-button>
       <ui-button size="sm" variant="outline" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkActive(false)">{{ 'admin.bulk.disable' | t }}</ui-button>
       <ui-button size="sm" variant="danger" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkDelete()">{{ 'common.delete' | t }}</ui-button>
     </admin-bulk-bar>
 
-    <div class="table-container" *ngIf="!loading && !loadError && adsData">
+    <div class="table-container" *ngIf="!loadError && adsData" [class.stale]="loading">
       <table class="admin-table">
         <thead>
           <tr>
@@ -103,7 +103,7 @@ import { BulkController } from './bulk';
       <ui-pagination [total]="total" [pageSize]="pageSize" [currentPage]="currentPage" (pageChange)="loadPage($event)"></ui-pagination>
     </div>
 
-    <ui-skeleton *ngIf="loading" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="loading && !adsData" variant="table" [count]="5"></ui-skeleton>
 
     <div class="app-modal-overlay" *ngIf="showModal">
       <div class="app-modal">

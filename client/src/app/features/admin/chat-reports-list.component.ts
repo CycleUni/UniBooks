@@ -29,16 +29,16 @@ import { BulkController } from './bulk';
       <ui-dropdown [label]="'admin.colStatus' | t" [options]="statusOptions" [(ngModel)]="statusFilter" (ngModelChange)="reload()" [searchable]="false"></ui-dropdown>
     </div>
 
-    <admin-bulk-bar *ngIf="!loading && !loadError && statusFilter === 'open' && reports.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
+    <admin-bulk-bar *ngIf="!loadError && statusFilter === 'open' && reports.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
       <ui-button size="sm" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkAction('actioned')">{{ 'admin.bulk.handle' | t }}</ui-button>
       <ui-button size="sm" variant="outline" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkAction('dismissed')">{{ 'admin.reportActionDismiss' | t }}</ui-button>
     </admin-bulk-bar>
 
-    <ui-skeleton *ngIf="loading" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="loading && !loaded" variant="table" [count]="5"></ui-skeleton>
 
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="reload()"></ui-error-state>
 
-    <table class="admin-table admin-table-clickable" *ngIf="!loading && !loadError">
+    <table class="admin-table admin-table-clickable" *ngIf="loaded && !loadError" [class.stale]="loading">
       <thead>
         <tr>
           <th *ngIf="statusFilter === 'open'" adminPick
@@ -135,6 +135,8 @@ export class AdminChatReportsListComponent implements OnInit {
   pageSize = 20;
   statusFilter = 'open';
   loading = true;
+  /** Set by the first successful load; later reloads keep the table on screen, dimmed. */
+  loaded = false;
   /** Why the last load failed; the table would otherwise read as empty. */
   loadError = '';
   actingId: string | null = null;
@@ -190,6 +192,7 @@ export class AdminChatReportsListComponent implements OnInit {
         this.reports = res.results;
         this.total = res.count;
         this.loading = false;
+        this.loaded = true;
         this.cdr.markForCheck();
       },
       error: (err) => {

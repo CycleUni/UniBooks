@@ -836,6 +836,14 @@ button:not(:disabled):active {
   box-shadow: var(--shadow-card);
 }
 
+/* 重新載入時保留舊資料並變淡，不換成骨架屏，避免版面跳動 */
+.admin-table.stale,
+.table-container.stale {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity var(--motion-fast);
+}
+
 /*
  * 後台共用的篩選列容器，解決搜尋輸入框與下拉選單基線對齊問題
  */

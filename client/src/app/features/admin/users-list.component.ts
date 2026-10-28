@@ -35,19 +35,19 @@ import { UiCheckbox } from '../../shared/ui/checkbox.component';
       [ngModel]="emailVisibility.revealed()" (ngModelChange)="onShowEmails($event)"
       [label]="'admin.showEmails' | t"></ui-checkbox>
 
-    <admin-bulk-bar *ngIf="!loading && !loadError && users.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
+    <admin-bulk-bar *ngIf="!loadError && users.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
       <ui-button size="sm" variant="danger" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkActive(false)">{{ 'admin.bulk.deactivate' | t }}</ui-button>
       <ui-button size="sm" variant="outline" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkActive(true)">{{ 'admin.bulk.activate' | t }}</ui-button>
     </admin-bulk-bar>
 
-    <ui-skeleton *ngIf="loading" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="loading && !loaded" variant="table" [count]="5"></ui-skeleton>
 
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="reload()"></ui-error-state>
 
     <div class="table-container">
 
 
-      <table class="admin-table admin-table-clickable" *ngIf="!loading && !loadError">
+      <table class="admin-table admin-table-clickable" *ngIf="loaded && !loadError" [class.stale]="loading">
       <thead>
         <tr>
           <th adminPick
@@ -116,6 +116,8 @@ export class AdminUsersListComponent {
   q = '';
   isActiveFilter = '';
   loading = true;
+  /** Set by the first successful load; later reloads keep the table on screen, dimmed. */
+  loaded = false;
   /** Why the last load failed; the table would otherwise read as empty. */
   loadError = '';
   bulk = new BulkController<string | number>(() => this.reload());
@@ -219,6 +221,7 @@ export class AdminUsersListComponent {
         this.users = res.results;
         this.total = res.count;
         this.loading = false;
+        this.loaded = true;
         this.cdr.markForCheck();
       },
       error: (err) => {

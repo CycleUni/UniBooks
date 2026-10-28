@@ -32,7 +32,7 @@ import { UiButton } from '../../shared/ui/button.component';
       <ui-dropdown [label]="'admin.colStatus' | t" [options]="statusOptions" [(ngModel)]="statusFilter" (ngModelChange)="reload()" [searchable]="false"></ui-dropdown>
     </div>
 
-    <admin-bulk-bar *ngIf="!loading && !loadError && listings.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
+    <admin-bulk-bar *ngIf="!loadError && listings.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
       <ui-button size="sm" variant="outline" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkLock()">{{ 'admin.bulk.lock' | t }}</ui-button>
       <ui-button size="sm" variant="outline" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkUnlock()">{{ 'admin.bulk.unlock' | t }}</ui-button>
       <ui-button size="sm" variant="danger" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkDelete()">{{ 'common.delete' | t }}</ui-button>
@@ -44,14 +44,14 @@ import { UiButton } from '../../shared/ui/button.component';
       (submitted)="p.run($event)" (closed)="bulk.reasonPrompt = null"
     ></admin-bulk-reason-modal>
 
-    <ui-skeleton *ngIf="loading" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="loading && !loaded" variant="table" [count]="5"></ui-skeleton>
 
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="reload()"></ui-error-state>
 
     <div class="table-container">
 
 
-      <table class="admin-table admin-table-clickable" *ngIf="!loading && !loadError">
+      <table class="admin-table admin-table-clickable" *ngIf="loaded && !loadError" [class.stale]="loading">
       <thead>
         <tr>
           <th adminPick
@@ -114,6 +114,8 @@ export class AdminListingsListComponent implements OnInit {
   q = '';
   statusFilter = '';
   loading = true;
+  /** Set by the first successful load; later reloads keep the table on screen, dimmed. */
+  loaded = false;
   /** Why the last load failed; the table would otherwise read as empty. */
   loadError = '';
   bulk = new BulkController<string>(() => this.reload());
@@ -211,6 +213,7 @@ export class AdminListingsListComponent implements OnInit {
         this.listings = res.results;
         this.total = res.count;
         this.loading = false;
+        this.loaded = true;
         this.cdr.markForCheck();
       },
       error: (err) => {
