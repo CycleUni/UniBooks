@@ -114,6 +114,10 @@
     .main-image-wrapper:hover .nav-btn {
       opacity: 1;
     }
+    /* Same as the search button: keep translateY(-50%) under the global press scale. */
+    .nav-btn:not(:disabled):active {
+      transform: translateY(-50%) scale(0.97);
+    }
     .nav-btn:hover {
       background: rgba(0,0,0,0.6);
     }

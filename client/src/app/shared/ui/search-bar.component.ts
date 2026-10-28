@@ -74,6 +74,11 @@ import { TPipe } from '../../core/i18n.service';
         inset: -12px;
       }
     }
+    /* Keep vertical centering while pressed; global button:active scale(0.97)
+       would otherwise drop translateY(-50%) and make the button jump downward. */
+    .search-btn:not(:disabled):active {
+      transform: translateY(-50%) scale(0.97);
+    }
     .search-btn:hover {
       color: var(--accent);
       /* Not rgba(0,0,0,.05): a black wash over the dark palette's near-black
