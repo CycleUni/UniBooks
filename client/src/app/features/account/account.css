@@ -442,9 +442,10 @@
 
     /* Desktop already links the admin console from the header, keeps
        signing out in the profile card, and region, language and the about
-       and legal links in the footer. */
+       and legal links in the footer. The admin group stays for the event
+       system, which has no other way in. */
     @media (min-width: 901px) {
-      .admin-group,
+      .admin-console-link,
       .prefs-group,
       .about-group,
       .menu-logout {

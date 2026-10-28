@@ -72,11 +72,14 @@
               </div>
             </div>
             <!-- Staff only, and a group of its own: running the site is not
-                 one of the user's personal pages. -->
+                 one of the user's personal pages. The event system is a
+                 separate app on this origin, so its link is a full page load
+                 (the service worker leaves /event alone). -->
             <div *ngIf="isStaff" class="nav-group admin-group" role="group" aria-labelledby="acct-nav-admin">
               <h4 class="nav-group-title" id="acct-nav-admin">{{ 'acct.navGroupAdmin' | t }}</h4>
               <div class="nav-links">
-                <a regionLink="/admin">{{ 'nav.admin' | t }}</a>
+                <a regionLink="/admin" class="admin-console-link">{{ 'nav.admin' | t }}</a>
+                <a href="/event/admin">{{ 'acct.navEvents' | t }}</a>
               </div>
             </div>
             <!-- Phones only: region and language live here rather than under

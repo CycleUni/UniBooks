@@ -62,3 +62,22 @@ export async function issueMemberToken(source: SecretSource, userId: string, now
     expires_in_ms: (step + 1) * stepMs - nowMs,
   };
 }
+
+const TOKEN_RE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(\d{1,12})\.([0-9a-f]{32})$/;
+
+export type MemberTokenCheck =
+  { valid: true; userId: string; step: number } | { valid: false; reason: 'malformed' | 'expired' | 'bad_signature' };
+
+/** Checks a member pass: its format, a step within one of now, and the signature (constant-time). */
+export async function verifyMemberToken(source: SecretSource, token: string, nowMs = Date.now()): Promise<MemberTokenCheck> {
+  const m = TOKEN_RE.exec(token.trim().toLowerCase());
+  if (!m) return { valid: false, reason: 'malformed' };
+  const [, userId, rawStep, sig] = m;
+  const step = Number(rawStep);
+  if (Math.abs(Math.floor(nowMs / (MEMBER_TOKEN_STEP_SECONDS * 1000)) - step) > 1) return { valid: false, reason: 'expired' };
+
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', await key(source), new TextEncoder().encode(`${userId}:${step}`)));
+  let diff = 0;
+  for (let i = 0; i < SIGNATURE_BYTES; i++) diff |= mac[i] ^ parseInt(sig.slice(i * 2, i * 2 + 2), 16);
+  return diff === 0 ? { valid: true, userId, step } : { valid: false, reason: 'bad_signature' };
+}

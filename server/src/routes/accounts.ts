@@ -5,7 +5,7 @@ import { and, asc, desc, eq, isNull, like, ne, or, sql, type SQL } from 'drizzle
 import type { AppEnv } from '../env';
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { getRegion, isVerifiedIn } from '../lib/region';
-import { authMiddleware, optionalAuthMiddleware, requireRecentSignIn } from '../middleware/auth';
+import { authMiddleware, optionalAuthMiddleware, requireRecentSignIn, requireStaff } from '../middleware/auth';
 import { outcomeLimit, rateLimit, takeRate } from '../middleware/rateLimit';
 import { turnstileEnabled, verifyTurnstile } from '../lib/turnstile';
 import { InvalidTokenError, verifyToken } from '../lib/jwt';
@@ -34,6 +34,7 @@ import { EMAIL_LANGUAGE_AUTO, EMAIL_LANGUAGES, resolveLanguage } from '../servic
 import {
   accountDisabled,
   deleteAccount,
+  displayName,
   getUser,
   getUserByEmail,
   isStaffRole,
@@ -41,6 +42,7 @@ import {
   serializePublicUser,
   serializeUser,
   touchLastLogin,
+  verificationsOf,
 } from '../services/accounts/users';
 import {
   beginSecondFactor,
@@ -58,7 +60,7 @@ import {
 import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
 import { isUniqueViolation } from '../lib/db';
-import { issueMemberToken } from '../lib/member-token';
+import { issueMemberToken, verifyMemberToken } from '../lib/member-token';
 
 /**
  * /api/v1/auth/*
@@ -98,6 +100,7 @@ const RATES = {
   passkeyLogin: '10/min',
   passkeyRegister: '10/hour',
   memberToken: '60/min',
+  memberTokenVerify: '120/min',
 } as const;
 
 const PUSH_TOKEN_MAX_LENGTH = 512;
@@ -1296,6 +1299,55 @@ accountRoutes.put('/me/site-region', authMiddleware(), async (c) => {
 
 accountRoutes.get('/member-token', authMiddleware(), rateLimit('member_token', RATES.memberToken), async (c) =>
   c.json(await issueMemberToken(c.env, c.get('user')!.id)),
+);
+
+/**
+ * What staff may know of a member they are checking in: who it is and whether
+ * the account is in good standing and verified. The full email stays here.
+ */
+async function memberForStaff(c: C, userId: string) {
+  const member = await getUser(c.env, userId);
+  if (!member || accountDisabled(member)) apiError(404, 'auth.errMemberNotFound');
+  const verifications = await verificationsOf(c.env, member.id);
+  const at = member.email.indexOf('@');
+  return {
+    user_id: member.id,
+    display_name: displayName(member.firstName, member.lastName),
+    email_masked: at > 0 ? `${member.email[0]}***${member.email.slice(at)}` : '',
+    is_verified: verifications.length > 0,
+    verified_regions: verifications.map((v) => v.region_code.toUpperCase()),
+  };
+}
+
+/**
+ * Staff check a member pass someone shows them on site. The step lets a
+ * caller treat one shown code as one check-in.
+ */
+accountRoutes.post(
+  '/member-token/verify',
+  authMiddleware(),
+  requireStaff(),
+  rateLimit('member_token_verify', RATES.memberTokenVerify, (c) => c.get('user')?.id),
+  async (c) => {
+    const { token } = await readJson(c.req);
+    if (typeof token !== 'string') apiError(400, 'common.errValidation', { fields: { token: ['auth.errMemberTokenInvalid'] } });
+    const check = await verifyMemberToken(c.env, token);
+    if (!check.valid) apiError(400, check.reason === 'expired' ? 'auth.errMemberTokenExpired' : 'auth.errMemberTokenInvalid');
+    return c.json({ ...(await memberForStaff(c, check.userId)), step: check.step });
+  },
+);
+
+/** Staff look a member up by the member ID their account page shows (for adding someone by hand). */
+accountRoutes.get(
+  '/members/:id',
+  authMiddleware(),
+  requireStaff(),
+  rateLimit('member_lookup', RATES.memberTokenVerify, (c) => c.get('user')?.id),
+  async (c) => {
+    const id = c.req.param('id');
+    if (!UUID_RE.test(id)) apiError(404, 'auth.errMemberNotFound');
+    return c.json(await memberForStaff(c, id.toLowerCase()));
+  },
 );
 
 accountRoutes.get('/users/:id', optionalAuthMiddleware(), rateLimit('public_profile', RATES.publicProfile), async (c) => {
