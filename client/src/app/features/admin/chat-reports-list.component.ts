@@ -1,4 +1,5 @@
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
+import { AdminEmailPipe } from './admin-email.pipe';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
@@ -22,7 +23,7 @@ import { BulkController } from './bulk';
 @Component({
   selector: 'app-admin-chat-reports-list',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiButton, UiDropdown, UiPagination, AdminBulkBarComponent, AdminPickCellComponent],
+  imports: [AdminEmailPipe, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiButton, UiDropdown, UiPagination, AdminBulkBarComponent, AdminPickCellComponent],
   template: `
     <div class="admin-filters">
       <ui-dropdown [label]="'admin.colStatus' | t" [options]="statusOptions" [(ngModel)]="statusFilter" (ngModelChange)="reload()" [searchable]="false"></ui-dropdown>
@@ -64,8 +65,8 @@ import { BulkController } from './bulk';
               [label]="'admin.bulk.selectRow' | t: { name: report.listing_title || report.id }"
               (toggle)="bulk.selection.toggle(report.id)"></td>
             <td>{{ getRegionName(report.region) }}</td>
-            <td>{{ report.reporter_email }}</td>
-            <td>{{ report.reported_party_email }}</td>
+            <td>{{ report.reporter_email | adminEmail }}</td>
+            <td>{{ report.reported_party_email | adminEmail }}</td>
             <td>{{ report.listing_title }} <span class="conv-id">({{ report.conversation_id }})</span></td>
             <td>{{ reasonLabel(report.reason) | t }}</td>
             <td><span class="admin-status-badge" [class.warn]="report.status === 'open'">{{ ('admin.chatReportStatus.' + report.status) | t }}</span></td>

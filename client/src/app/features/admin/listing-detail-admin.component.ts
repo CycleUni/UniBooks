@@ -1,4 +1,5 @@
 import { parseAdminError } from '../../core/admin-error.util';
+import { AdminEmailPipe } from './admin-email.pipe';
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -20,7 +21,7 @@ import { RegionLinkService } from '../../core/region-link.service';
 @Component({
   selector: 'app-admin-listing-detail',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, TPipe, UiErrorState, UiSkeleton, UiButton, UiDropdown, UiCheckbox, UiInput, PricePipe, ForceCancelModalComponent, RegionLinkDirective],
+  imports: [AdminEmailPipe, CommonModule, RouterModule, FormsModule, TPipe, UiErrorState, UiSkeleton, UiButton, UiDropdown, UiCheckbox, UiInput, PricePipe, ForceCancelModalComponent, RegionLinkDirective],
   template: `
     <a [regionLink]="['/admin', 'listings']" class="back-link">&larr; {{ 'admin.backToList' | t }}</a>
 
@@ -32,7 +33,7 @@ import { RegionLinkService } from '../../core/region-link.service';
       <h2>{{ listing.book?.title }}</h2>
 
       <div class="field-grid">
-        <div class="field"><label>{{ 'admin.colSeller' | t }}</label><span>{{ listing.seller?.email }}</span></div>
+        <div class="field"><label>{{ 'admin.colSeller' | t }}</label><span>{{ listing.seller?.email | adminEmail }}</span></div>
         <div class="field"><label>{{ 'admin.colSchool' | t }}</label><span>{{ listing.school?.name || '—' }}</span></div>
         <div class="field"><label>{{ 'admin.colPrice' | t }}</label><span>{{ listing.price | price: listing.currency }}</span></div>
         <div class="field"><label>{{ 'admin.colCondition' | t }}</label><span>{{ ('cond.' + listing.condition) | t }}</span></div>

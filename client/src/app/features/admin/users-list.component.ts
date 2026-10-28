@@ -1,4 +1,5 @@
 import { RegionLinkDirective } from '../../core/region-link.directive';
+import { AdminEmailPipe, AdminEmailVisibility } from './admin-email.pipe';
 import { Component, inject, ChangeDetectorRef, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
@@ -18,16 +19,21 @@ import { AdminBulkBarComponent } from './bulk-bar.component';
 import { AdminPickCellComponent } from './pick-cell.component';
 import { BulkController } from './bulk';
 import { UiButton } from '../../shared/ui/button.component';
+import { UiCheckbox } from '../../shared/ui/checkbox.component';
 
 @Component({
   selector: 'app-admin-users-list',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiSearchBarComponent, UiDropdown, UiPagination, UiButton, AdminBulkBarComponent, AdminPickCellComponent],
+  imports: [AdminEmailPipe, RegionLinkDirective, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiSearchBarComponent, UiDropdown, UiPagination, UiButton, UiCheckbox, AdminBulkBarComponent, AdminPickCellComponent],
   template: `
     <div class="admin-filters">
-      <ui-search-bar [placeholder]="'admin.searchUsers' | t" [value]="q" (search)="onSearch($event)"></ui-search-bar>
+      <ui-search-bar [placeholder]="(emailVisibility.revealed() ? 'admin.searchUsers' : 'admin.searchUsersNoEmail') | t" [value]="q" (search)="onSearch($event)"></ui-search-bar>
       <ui-dropdown [label]="'admin.filterActive' | t" [options]="activeOptions" [(ngModel)]="isActiveFilter" (ngModelChange)="reload()" [searchable]="false"></ui-dropdown>
     </div>
+
+    <ui-checkbox *ngIf="emailVisibility.canReveal()" class="email-toggle"
+      [ngModel]="emailVisibility.revealed()" (ngModelChange)="onShowEmails($event)"
+      [label]="'admin.showEmails' | t"></ui-checkbox>
 
     <admin-bulk-bar *ngIf="!loading && !loadError && users.length" [count]="bulk.selection.size" [busy]="bulk.busy" (clear)="bulk.selection.clear()">
       <ui-button size="sm" variant="danger" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkActive(false)">{{ 'admin.bulk.deactivate' | t }}</ui-button>
@@ -51,7 +57,8 @@ import { UiButton } from '../../shared/ui/button.component';
             [label]="'admin.bulk.selectAll' | t"
             (toggle)="bulk.selection.toggleAll(pageIds)"></th>
           <th>{{ 'admin.colRegion' | t }}</th>
-          <th>{{ 'admin.colEmail' | t }}</th>
+          <th>{{ 'admin.colUuid' | t }}</th>
+          <th *ngIf="emailVisibility.revealed()">{{ 'admin.colEmail' | t }}</th>
           <th>{{ 'admin.colName' | t }}</th>
           <th>{{ 'admin.colSchool' | t }}</th>
           <th>{{ 'admin.colVerified' | t }}</th>
@@ -63,10 +70,11 @@ import { UiButton } from '../../shared/ui/button.component';
           <td adminPick
             [checked]="bulk.selection.has(user.id)"
             [disabled]="bulk.busy || !canToggle(user)"
-            [label]="'admin.bulk.selectRow' | t: { name: user.email }"
+            [label]="'admin.bulk.selectRow' | t: { name: user.display_name || (user.email | adminEmail) }"
             (toggle)="bulk.selection.toggle(user.id)"></td>
           <td>{{ formatRegions(user.regions) }}</td>
-          <td>{{ user.email }}</td>
+          <td class="uuid-cell" [title]="user.id">{{ user.id }}</td>
+          <td *ngIf="emailVisibility.revealed()">{{ user.email | adminEmail }}</td>
           <td>{{ user.display_name || (user.first_name + ' ' + user.last_name) }}</td>
           <td>{{ formatSchools(user) }}</td>
           <td>
@@ -77,7 +85,7 @@ import { UiButton } from '../../shared/ui/button.component';
           </td>
         </tr>
         <tr *ngIf="users.length === 0">
-          <td colspan="7" class="empty-note">{{ (hasFilters ? 'common.noMatches' : 'common.noData') | t }}</td>
+          <td [attr.colspan]="emailVisibility.revealed() ? 8 : 7" class="empty-note">{{ (hasFilters ? 'common.noMatches' : 'common.noData') | t }}</td>
         </tr>
       </tbody>
     </table>
@@ -88,9 +96,12 @@ import { UiButton } from '../../shared/ui/button.component';
     <ui-pagination [total]="total" [pageSize]="pageSize" [currentPage]="page" (pageChange)="onPageChange($event)"></ui-pagination>
   `,
   styles: [`
+    .email-toggle { display: block; margin-bottom: var(--space-2); }
+    .uuid-cell { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: var(--text-sm); }
   `]
 })
 export class AdminUsersListComponent {
+  emailVisibility = inject(AdminEmailVisibility);
   private adminService = inject(AdminService);
   private i18n = inject(I18nService);
   private toast = inject(ToastService);
@@ -179,6 +190,12 @@ export class AdminUsersListComponent {
     this.reload();
   }
 
+  /** Email matches depend on the toggle, so the current search re-runs. */
+  onShowEmails(value: boolean) {
+    this.emailVisibility.set(value);
+    if (this.q) this.onSearch(this.q);
+  }
+
   onPageChange(page: number) {
     this.page = page;
     this.reload();
@@ -197,7 +214,7 @@ export class AdminUsersListComponent {
     this.bulk.reset();
     this.loading = true;
     this.loadError = '';
-    this.adminService.getUsers({ page: this.page, q: this.q, is_active: this.isActiveFilter, region: this.regionService.region().toUpperCase() }).subscribe({
+    this.adminService.getUsers({ page: this.page, q: this.q, show_email: this.emailVisibility.revealed() ? 'true' : undefined, is_active: this.isActiveFilter, region: this.regionService.region().toUpperCase() }).subscribe({
       next: (res) => {
         this.users = res.results;
         this.total = res.count;

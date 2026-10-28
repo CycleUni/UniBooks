@@ -1,4 +1,5 @@
 import { RegionLinkDirective } from '../../core/region-link.directive';
+import { AdminEmailPipe } from './admin-email.pipe';
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
@@ -26,7 +27,7 @@ const FINAL_STATUSES = new Set(['cancelled', 'completed']);
 @Component({
   selector: 'app-admin-orders-list',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiSearchBarComponent, UiDropdown, UiPagination, PricePipe, UiButton, AdminBulkBarComponent, AdminPickCellComponent, AdminBulkReasonModalComponent],
+  imports: [AdminEmailPipe, RegionLinkDirective, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiSearchBarComponent, UiDropdown, UiPagination, PricePipe, UiButton, AdminBulkBarComponent, AdminPickCellComponent, AdminBulkReasonModalComponent],
   template: `
     <div class="admin-filters">
       <ui-search-bar [placeholder]="'admin.searchOrders' | t" [value]="q" (search)="onSearch($event)"></ui-search-bar>
@@ -76,8 +77,8 @@ const FINAL_STATUSES = new Set(['cancelled', 'completed']);
             (toggle)="bulk.selection.toggle(order.id)"></td>
           <td>{{ getRegionName(order.region) }}</td>
           <td>{{ order.listing?.book_title }}<span *ngIf="order.listing?.deleted" class="text-muted"> · {{ 'common.listingDeleted' | t }}</span></td>
-          <td>{{ order.buyer?.email }}</td>
-          <td>{{ order.seller?.email }}</td>
+          <td>{{ order.buyer?.email | adminEmail }}</td>
+          <td>{{ order.seller?.email | adminEmail }}</td>
           <td>{{ order.total_amount | price: order.currency }}</td>
           <td><span class="admin-status-badge">{{ ('order.status.' + order.status) | t }}</span></td>
         </tr>

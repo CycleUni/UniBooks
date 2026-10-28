@@ -1,4 +1,5 @@
 
+import { AdminEmailPipe, AdminEmailVisibility } from './admin-email.pipe';
 import { onLanguageChange } from '../../core/on-language-change';
 import { parseAdminError } from '../../core/admin-error.util';
 import { forkJoin, Observable } from 'rxjs';
@@ -23,7 +24,7 @@ import { schoolKeywords } from '../../core/school-search';
 @Component({
   selector: 'app-admin-user-detail',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiButton, UiDropdown, UiCheckbox],
+  imports: [AdminEmailPipe, RegionLinkDirective, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiButton, UiDropdown, UiCheckbox],
   template: `
     <a [regionLink]="['/admin', 'users']" class="back-link">&larr; {{ 'admin.backToList' | t }}</a>
 
@@ -32,12 +33,13 @@ import { schoolKeywords } from '../../core/school-search';
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="load()"></ui-error-state>
 
     <div class="detail-card" *ngIf="!loading && user">
-      <h2>{{ user.display_name || user.email }}</h2>
+      <h2>{{ user.display_name || (user.email | adminEmail) }}</h2>
 
       <div class="field-grid">
-        <div class="field"><label>{{ 'admin.colEmail' | t }}</label><span>{{ user.email }}</span></div>
+        <div class="field"><label>{{ 'admin.colUuid' | t }}</label><span class="uuid">{{ user.id }}</span></div>
+        <div class="field" *ngIf="emailVisibility.revealed()"><label>{{ 'admin.colEmail' | t }}</label><span>{{ user.email | adminEmail }}</span></div>
         <div class="field"><label>{{ 'admin.colName' | t }}</label><span>{{ user.first_name }} {{ user.last_name }}</span></div>
-        <div class="field"><label>{{ 'admin.staffBadge' | t }}</label><span class="admin-status-badge" [class.ok]="hasStaffAccess(user)">{{ (hasStaffAccess(user) ? 'admin.yes' : 'admin.no') | t }}</span></div>
+        <div class="field" *ngIf="hasStaffAccess(user)"><label>{{ 'admin.staffBadge' | t }}</label><span class="admin-status-badge" [class.ok]="hasStaffAccess(user)">{{ (hasStaffAccess(user) ? 'admin.yes' : 'admin.no') | t }}</span></div>
       </div>
 
       <div class="toggle-row">
@@ -83,6 +85,7 @@ import { schoolKeywords } from '../../core/school-search';
     </div>
   `,
   styles: [`
+    .uuid { font-family: monospace; overflow-wrap: anywhere; }
     .admin-status-badge { width: fit-content; }
 
     .detail-card {
@@ -118,6 +121,7 @@ import { schoolKeywords } from '../../core/school-search';
   `]
 })
 export class AdminUserDetailComponent implements OnInit {
+  emailVisibility = inject(AdminEmailVisibility);
   private route = inject(ActivatedRoute);
   private adminService = inject(AdminService);
   private metadataService = inject(MetadataService);

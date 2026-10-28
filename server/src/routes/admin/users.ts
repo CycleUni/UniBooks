@@ -138,11 +138,17 @@ userRoutes.get('/users', async (c) => {
   const q = c.req.query('q');
   if (q) {
     const like = likeContains(q);
+    // Emails are searchable only by an admin who has chosen to see them.
+    const byEmail =
+      c.get('user')?.role === 'admin' && c.req.query('show_email') === 'true'
+        ? sql`OR ${users.email} LIKE ${like} ESCAPE '\\'
+      OR EXISTS (SELECT 1 FROM ${regionVerifications} rv WHERE rv.user_id = ${users.id} AND rv.edu_email LIKE ${like} ESCAPE '\\')`
+        : sql``;
     conds.push(sql`(
-      ${users.email} LIKE ${like} ESCAPE '\\'
+      ${users.id} LIKE ${like} ESCAPE '\\'
       OR ${users.firstName} LIKE ${like} ESCAPE '\\'
       OR ${users.lastName} LIKE ${like} ESCAPE '\\'
-      OR EXISTS (SELECT 1 FROM ${regionVerifications} rv WHERE rv.user_id = ${users.id} AND rv.edu_email LIKE ${like} ESCAPE '\\')
+      ${byEmail}
       OR EXISTS (SELECT 1 FROM ${regionVerifications} rv JOIN ${schools} ON ${schools.id} = rv.school_id
                  WHERE rv.user_id = ${users.id} AND ${schoolSearch(q)})
     )`);

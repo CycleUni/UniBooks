@@ -1,4 +1,5 @@
 import { RegionLinkDirective } from '../../core/region-link.directive';
+import { AdminEmailPipe } from './admin-email.pipe';
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -14,7 +15,7 @@ import { PricePipe } from '../../shared/pipes/price.pipe';
 @Component({
   selector: 'app-admin-order-detail',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, TPipe, UiSkeleton, UiErrorState, UiButton, ForceCancelModalComponent, PricePipe],
+  imports: [AdminEmailPipe, RegionLinkDirective, CommonModule, RouterModule, TPipe, UiSkeleton, UiErrorState, UiButton, ForceCancelModalComponent, PricePipe],
   template: `
     <a [regionLink]="['/admin', 'orders']" class="back-link">&larr; {{ 'admin.backToList' | t }}</a>
 
@@ -26,8 +27,8 @@ import { PricePipe } from '../../shared/pipes/price.pipe';
       <h2>{{ order.listing?.book_title }}<span *ngIf="order.listing?.deleted" class="text-muted"> · {{ 'common.listingDeleted' | t }}</span></h2>
 
       <div class="field-grid">
-        <div class="field"><label>{{ 'order.buyer' | t }}</label><span>{{ order.buyer?.email }}</span></div>
-        <div class="field"><label>{{ 'order.seller' | t }}</label><span>{{ order.seller?.email }}</span></div>
+        <div class="field"><label>{{ 'order.buyer' | t }}</label><span>{{ order.buyer?.email | adminEmail }}</span></div>
+        <div class="field"><label>{{ 'order.seller' | t }}</label><span>{{ order.seller?.email | adminEmail }}</span></div>
         <div class="field"><label>{{ 'admin.colPrice' | t }}</label><span>{{ order.total_amount | price: order.currency }}</span></div>
         <div class="field"><label>{{ 'admin.colStatus' | t }}</label><span class="admin-status-badge">{{ ('order.status.' + order.status) | t }}</span></div>
       </div>

@@ -1,4 +1,5 @@
 import { AuthStore } from '../../core/auth.store';
+import { AdminEmailPipe } from './admin-email.pipe';
 import { RegionService } from '../../core/region.service';
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
@@ -21,7 +22,7 @@ import { BulkController } from './bulk';
 @Component({
   selector: 'app-admin-reports-list',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiButton, UiDropdown, UiPagination, AdminBulkBarComponent, AdminPickCellComponent],
+  imports: [AdminEmailPipe, RegionLinkDirective, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiButton, UiDropdown, UiPagination, AdminBulkBarComponent, AdminPickCellComponent],
   template: `
     <div class="admin-filters">
       <ui-dropdown [label]="'admin.colStatus' | t" [options]="statusOptions" [(ngModel)]="statusFilter" (ngModelChange)="reload()" [searchable]="false"></ui-dropdown>
@@ -61,7 +62,7 @@ import { BulkController } from './bulk';
             [label]="'admin.bulk.selectRow' | t: { name: report.listing?.title || report.id }"
             (toggle)="bulk.selection.toggle(report.id)"></td>
           <td>{{ getRegionName(report.region) }}</td>
-          <td>{{ report.reporter?.email }}</td>
+          <td>{{ report.reporter?.email | adminEmail }}</td>
           <td>
             <a *ngIf="!report.listing?.deleted" [regionLink]="['/listing', report.listing?.id]">{{ report.listing?.title || report.listing?.id }}</a>
             <span *ngIf="report.listing?.deleted">{{ report.listing?.title }} <span class="text-muted">· {{ 'common.listingDeleted' | t }}</span></span>

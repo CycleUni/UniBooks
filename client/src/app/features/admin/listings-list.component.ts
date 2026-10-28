@@ -1,4 +1,5 @@
 import { RegionLinkDirective } from '../../core/region-link.directive';
+import { AdminEmailPipe } from './admin-email.pipe';
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
@@ -24,7 +25,7 @@ import { UiButton } from '../../shared/ui/button.component';
 @Component({
   selector: 'app-admin-listings-list',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiSearchBarComponent, UiDropdown, UiPagination, PricePipe, UiButton, AdminBulkBarComponent, AdminPickCellComponent, AdminBulkReasonModalComponent],
+  imports: [AdminEmailPipe, RegionLinkDirective, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiSearchBarComponent, UiDropdown, UiPagination, PricePipe, UiButton, AdminBulkBarComponent, AdminPickCellComponent, AdminBulkReasonModalComponent],
   template: `
     <div class="admin-filters">
       <ui-search-bar [placeholder]="'admin.searchListings' | t" [value]="q" (search)="onSearch($event)"></ui-search-bar>
@@ -76,7 +77,7 @@ import { UiButton } from '../../shared/ui/button.component';
             (toggle)="bulk.selection.toggle(listing.id)"></td>
           <td>{{ getRegionName(listing.region) }}</td>
           <td>{{ listing.book?.title }}</td>
-          <td>{{ listing.seller?.email }}</td>
+          <td>{{ listing.seller?.email | adminEmail }}</td>
           <td>{{ listing.school?.display_name || listing.school?.name }}</td>
           <td>{{ listing.price | price: listing.currency }}</td>
           <td>

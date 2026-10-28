@@ -288,7 +288,7 @@ export class AdminService {
   }
 
 
-  getUsers(opts: { page?: number; q?: string; is_active?: string; school?: string; region?: string } = {}): Observable<Paginated<AdminUser>> {
+  getUsers(opts: { page?: number; q?: string; show_email?: string; is_active?: string; school?: string; region?: string } = {}): Observable<Paginated<AdminUser>> {
     return this.http.get<Paginated<AdminUser>>('/admin/users', { params: buildParams(opts) });
   }
 

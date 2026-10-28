@@ -1,4 +1,5 @@
 import { UiButton } from '../../shared/ui/button.component';
+import { AdminEmailPipe } from './admin-email.pipe';
 import { parseAdminError } from '../../core/admin-error.util';
 import { Component, inject, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -24,7 +25,7 @@ import { AuthStore, isAdminUser } from '../../core/auth.store';
 @Component({
   selector: 'app-admin-advertisers-list',
   standalone: true,
-  imports: [CommonModule, UiSkeleton, UiErrorState, RouterModule, FormsModule, TPipe, UiSearchBarComponent, UiPagination, UiCheckbox, UiButton, AdminBulkBarComponent, AdminPickCellComponent],
+  imports: [AdminEmailPipe, CommonModule, UiSkeleton, UiErrorState, RouterModule, FormsModule, TPipe, UiSearchBarComponent, UiPagination, UiCheckbox, UiButton, AdminBulkBarComponent, AdminPickCellComponent],
   template: `
     <div class="section-head-row">
       <h2>{{ 'admin.navAdvertisers' | t }}</h2>
@@ -71,7 +72,7 @@ import { AuthStore, isAdminUser } from '../../core/auth.store';
               (toggle)="bulk.selection.toggle(adv.id)"></td>
             <td>{{ adv.id }}</td>
             <td>{{ adv.company_name }}</td>
-            <td>{{ adv.contact_email }}</td>
+            <td>{{ adv.contact_email | adminEmail }}</td>
             <td>{{ adv.contact_phone }}</td>
             <td>
               <span class="admin-badge" [class.admin-badge-success]="adv.is_active" [class.admin-badge-error]="!adv.is_active">

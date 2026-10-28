@@ -23,6 +23,27 @@ async function verifyIn(userId: string, region: string) {
 const setActive = (id: string, token: string, value: boolean) =>
   call(`/api/v1/admin/users/${id}`, { token, method: 'PATCH', body: { is_active: value } });
 
+describe('searching users', () => {
+  const search = async (q: string, token: string, showEmail = false) => {
+    const res = await call(`/api/v1/admin/users?q=${encodeURIComponent(q)}${showEmail ? '&show_email=true' : ''}`, { token });
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { results: { id: string }[] }).results.map((u) => u.id);
+  };
+
+  it('matches emails only for an admin who asked to see them', async () => {
+    const id = await createUser('users-search-hidden@example.com');
+    expect(await search('search-hidden', root.token)).not.toContain(id);
+    expect(await search('search-hidden', root.token, true)).toContain(id);
+    expect(await search('search-hidden', twManager.token, true)).not.toContain(id);
+  });
+
+  it('matches the user id', async () => {
+    const id = await createUser('users-search-uuid@example.com');
+    expect(await search(id, twManager.token)).toContain(id);
+    expect(await search(id.slice(0, 8), root.token)).toContain(id);
+  });
+});
+
 describe('switching an account on or off', () => {
   it('lets a region manager switch only accounts verified solely in their regions', async () => {
     const twOnly = await createUser('users-tw-only@example.com');

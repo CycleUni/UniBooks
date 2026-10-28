@@ -1,4 +1,5 @@
 import { Component, OnInit, inject, ChangeDetectorRef, effect } from '@angular/core';
+import { AdminEmailPipe } from './admin-email.pipe';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -22,7 +23,7 @@ import { UiButton } from '../../shared/ui/button.component';
 @Component({
   selector: 'app-admin-managers-list',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiSearchBarComponent, UiDropdown, UiPagination, UiButton, AdminBulkBarComponent, AdminPickCellComponent],
+  imports: [AdminEmailPipe, CommonModule, RouterModule, FormsModule, TPipe, UiSkeleton, UiErrorState, UiSearchBarComponent, UiDropdown, UiPagination, UiButton, AdminBulkBarComponent, AdminPickCellComponent],
   template: `
     <div class="admin-filters">
       <ui-search-bar [placeholder]="'admin.searchManagers' | t" [value]="q" (search)="onSearch($event)"></ui-search-bar>
@@ -61,9 +62,9 @@ import { UiButton } from '../../shared/ui/button.component';
           <td adminPick
             [checked]="bulk.selection.has(user.id)"
             [disabled]="bulk.busy || !canRevoke(user)"
-            [label]="'admin.bulk.selectRow' | t: { name: user.email }"
+            [label]="'admin.bulk.selectRow' | t: { name: user.email | adminEmail }"
             (toggle)="bulk.selection.toggle(user.id)"></td>
-          <td>{{ user.email }}</td>
+          <td>{{ user.email | adminEmail }}</td>
           <td>{{ user.display_name || (user.first_name + ' ' + user.last_name) }}</td>
           <td>{{ user.school_name }}</td>
           <td>
