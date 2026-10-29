@@ -47,7 +47,9 @@ import QRCode from 'qrcode';
           </div>
 
           <div class="qr-canvas-container" [class.paused]="isPaused">
-            <canvas #qrCanvas [style.opacity]="isPaused ? '0.15' : '1'"></canvas>
+            <!-- The QR's own size from the start: a canvas defaults to 300x150, which
+                 made the box wide while the first code loaded. -->
+            <canvas #qrCanvas [attr.width]="qrSize" [attr.height]="qrSize" [style.opacity]="isPaused ? '0.15' : '1'"></canvas>
 
             <div *ngIf="isPaused" class="qr-paused-overlay">
               <div class="qr-paused-icon" aria-hidden="true">
@@ -393,6 +395,8 @@ export class MemberCodeComponent implements OnInit, OnDestroy {
   secondsRemaining = 30;
   refreshCount = 1;
   readonly maxRefreshes = 5;
+  /** The QR code's side in CSS pixels; the canvas has it before the first code is drawn. */
+  readonly qrSize = 190;
   isPaused = false;
   isLoading = false;
 
@@ -501,7 +505,7 @@ export class MemberCodeComponent implements OnInit, OnDestroy {
           this.qrCanvasRef.nativeElement,
           this.token,
           {
-            width: 190,
+            width: this.qrSize,
             margin: 1,
             color: {
               dark: '#1F2933',
