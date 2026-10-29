@@ -6,7 +6,7 @@ import { AccountService } from '../../core/services/account.service';
 import { PushService } from '../../core/services/push.service';
 import { ToastService } from '../../core/services/toast.service';
 import { parseApiError } from '../../core/api-error.util';
-import { UiButton } from './button.component';
+import { UiFloatingPrompt } from './floating-prompt.component';
 
 const DISMISSED_KEY = 'unibooks.push-prompt.dismissed-at';
 /** "Not now" quiets the prompt on every page for this long, then it may ask again. */
@@ -22,97 +22,29 @@ const QUIET_FOR_MS = 30 * 24 * 60 * 60 * 1000;
  * be fixed from a button, and that page already explains both. Turning it on
  * does what that switch does — browser permission and token first, then the
  * account setting — so the two never disagree.
+ *
+ * It floats over the page (ui-floating-prompt), as the language offer does,
+ * so where a page puts it does not matter and it never takes the page's room.
  */
 @Component({
   selector: 'ui-push-prompt',
   standalone: true,
-  imports: [TPipe, UiButton],
-  // Pages give the element its spacing (a margin around the inbox list, under
-  // the sell form's title); with nothing to ask, the element must take no room
-  // at all, or that margin stays behind as a blank strip.
-  host: { '[style.display]': "visible() ? null : 'none'" },
+  imports: [TPipe, UiFloatingPrompt],
   template: `
     @if (visible()) {
-      <div
-        class="push-prompt"
-        role="region"
-        [attr.aria-label]="'pushPrompt.title' | t"
-        data-testid="push-prompt"
-      >
-        <svg
-          class="push-prompt-icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          width="20"
-          height="20"
-          aria-hidden="true"
-        >
-          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-        </svg>
-        <div class="push-prompt-content">
-          <p class="push-prompt-title">{{ 'pushPrompt.title' | t }}</p>
-          <p class="push-prompt-desc">
-            {{ (context === 'sell' ? 'pushPrompt.descSell' : 'pushPrompt.descMessages') | t }}
-          </p>
-          <div class="push-prompt-actions">
-            <ui-button size="sm" [disabled]="busy()" (onClick)="enable()">{{
-              (busy() ? 'pushPrompt.enabling' : 'pushPrompt.enable') | t
-            }}</ui-button>
-            <ui-button size="sm" variant="ghost" [disabled]="busy()" (onClick)="dismiss()">{{
-              'pushPrompt.later' | t
-            }}</ui-button>
-          </div>
-        </div>
-      </div>
+      <ui-floating-prompt
+        icon="bell"
+        testId="push-prompt"
+        [title]="'pushPrompt.title' | t"
+        [description]="(context === 'sell' ? 'pushPrompt.descSell' : 'pushPrompt.descMessages') | t"
+        [acceptLabel]="(busy() ? 'pushPrompt.enabling' : 'pushPrompt.enable') | t"
+        [dismissLabel]="'pushPrompt.later' | t"
+        [busy]="busy()"
+        (accept)="enable()"
+        (dismiss)="dismiss()"
+      ></ui-floating-prompt>
     }
   `,
-  styles: [
-    `
-      .push-prompt {
-        display: flex;
-        gap: var(--space-3);
-        align-items: flex-start;
-        padding: var(--space-4);
-        background-color: var(--surface-card);
-        border: 1px solid var(--line);
-        border-radius: var(--radius-card);
-        color: var(--ink);
-        text-align: left;
-      }
-      .push-prompt-icon {
-        flex: none;
-        margin-top: 2px;
-        color: var(--info-ink);
-      }
-      .push-prompt-content {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-      }
-      .push-prompt-title {
-        margin: 0;
-        font-weight: 600;
-      }
-      .push-prompt-desc {
-        margin: 0;
-        font-size: var(--text-sm);
-        line-height: 1.4;
-        color: var(--ink-soft);
-      }
-      .push-prompt-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-2);
-      }
-    `,
-  ],
 })
 export class UiPushPrompt {
   private push = inject(PushService);
@@ -121,7 +53,7 @@ export class UiPushPrompt {
   private toast = inject(ToastService);
   private i18n = inject(I18nService);
 
-  /** Which page it sits on; only the wording changes. */
+  /** Which page asks; only the wording changes. */
   @Input() context: 'sell' | 'messages' = 'messages';
 
   readonly visible = signal(false);

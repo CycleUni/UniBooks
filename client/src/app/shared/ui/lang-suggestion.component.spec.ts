@@ -40,7 +40,7 @@ describe('UiLangSuggestion', () => {
   it('asks an English device, in English, whether to leave the region language', async () => {
     const fixture = await render();
     const el: HTMLElement = fixture.nativeElement;
-    expect(el.querySelector('.lang-suggestion')?.getAttribute('lang')).toBe('en');
+    expect(el.querySelector('.floating-prompt')?.getAttribute('lang')).toBe('en');
     expect(el.textContent).toContain('Switch to English');
     expect(el.textContent).toContain('Keep 中文 (繁體)');
   });
@@ -53,7 +53,7 @@ describe('UiLangSuggestion', () => {
     fixture.detectChanges();
     expect(i18n.lang()).toBe('en');
     expect(i18n.suggestionSettled()).toBe(true);
-    expect(fixture.nativeElement.querySelector('.lang-suggestion')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.floating-prompt')).toBeNull();
   });
 
   it('keeps the language and stops asking once declined', async () => {
@@ -63,7 +63,7 @@ describe('UiLangSuggestion', () => {
     fixture.detectChanges();
     expect(i18n.lang()).toBe('zh-TW');
     expect(i18n.suggestionSettled()).toBe(true);
-    expect(fixture.nativeElement.querySelector('.lang-suggestion')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.floating-prompt')).toBeNull();
   });
 
   it('goes away when a language is picked in the footer', async () => {
@@ -74,18 +74,18 @@ describe('UiLangSuggestion', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('.lang-suggestion')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.floating-prompt')).toBeNull();
   });
 
   it('does not ask a device already in the page language', async () => {
     languages = ['zh-TW'];
     const fixture = await render();
-    expect(fixture.nativeElement.querySelector('.lang-suggestion')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.floating-prompt')).toBeNull();
   });
 
   it('does not ask again after an answer', async () => {
     localStorage.setItem('langSuggestion', '1');
     const fixture = await render();
-    expect(fixture.nativeElement.querySelector('.lang-suggestion')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.floating-prompt')).toBeNull();
   });
 });

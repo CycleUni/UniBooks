@@ -20,7 +20,7 @@
           [message]="'sell.unverifiedDesc' | t:{suffix: (regionService.currentRegionObj()?.edu_email_suffix?.join(', ') || '.edu')}">
         </ui-verification-prompt>
 
-        <ui-push-prompt context="sell" class="push-prompt-slot"></ui-push-prompt>
+        <ui-push-prompt context="sell"></ui-push-prompt>
 
         <div class="draft-banner" *ngIf="showDraftPrompt">
           <p class="draft-banner-text">{{ 'sell.draftFound' | t }}</p>

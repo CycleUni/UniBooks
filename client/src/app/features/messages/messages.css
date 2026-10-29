@@ -33,13 +33,6 @@
       min-height: 0;
     }
 
-    /* Above the inbox list, which keeps the rest of the column's height. */
-    .sidebar .push-prompt-slot {
-      display: block;
-      flex: none;
-      margin: var(--space-3);
-    }
-
     .chat-area {
       flex: 1;
       display: flex;

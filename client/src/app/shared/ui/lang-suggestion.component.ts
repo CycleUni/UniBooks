@@ -2,7 +2,7 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { I18nService, suggestedLang } from '../../core/i18n.service';
 import { RegionService } from '../../core/region.service';
 import { LANG_LABELS, Lang } from '../../core/i18n';
-import { UiButton } from './button.component';
+import { UiFloatingPrompt } from './floating-prompt.component';
 
 /** Crawlers render with an English browser; offering them English would only put the offer in the index. */
 const CRAWLER_UA = /bot|crawl|spider|slurp|lighthouse|headless/i;
@@ -25,102 +25,22 @@ const CRAWLER_UA = /bot|crawl|spider|slurp|lighthouse|headless/i;
 @Component({
   selector: 'ui-lang-suggestion',
   standalone: true,
-  imports: [UiButton],
+  imports: [UiFloatingPrompt],
   template: `
     @if (offer(); as lang) {
-      <div
-        class="lang-suggestion"
-        role="region"
-        [attr.lang]="lang"
-        [attr.aria-label]="i18n.tIn(lang, 'app.langSuggestTitle')"
-      >
-        <div class="lang-suggestion-inner">
-          <svg
-            class="lang-suggestion-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.75"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            width="18"
-            height="18"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="9" />
-            <path
-              d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"
-            />
-          </svg>
-          <span class="lang-suggestion-text">{{ i18n.tIn(lang, 'app.langSuggestTitle') }}</span>
-          <div class="lang-suggestion-actions">
-            <ui-button variant="primary" (onClick)="accept(lang)">{{
-              i18n.tIn(lang, 'app.langSuggestSwitch')
-            }}</ui-button>
-            <ui-button variant="ghost" (onClick)="dismiss()">{{
-              i18n.tIn(lang, 'app.langSuggestKeep', { lang: currentLabel() })
-            }}</ui-button>
-          </div>
-        </div>
-      </div>
+      <!-- First in line: until it is answered the page may not be readable. -->
+      <ui-floating-prompt
+        icon="globe"
+        [lang]="lang"
+        [priority]="1"
+        [title]="i18n.tIn(lang, 'app.langSuggestTitle')"
+        [acceptLabel]="i18n.tIn(lang, 'app.langSuggestSwitch')"
+        [dismissLabel]="i18n.tIn(lang, 'app.langSuggestKeep', { lang: currentLabel() })"
+        (accept)="accept(lang)"
+        (dismiss)="dismiss()"
+      ></ui-floating-prompt>
     }
   `,
-  styles: [
-    `
-      /* A rounded card floating over the page, as the hero and footer are,
-         rather than a band pushing the header down. Bottom-left, because
-         toasts stack bottom-right (toast-host) and must not cover it. */
-      .lang-suggestion {
-        position: fixed;
-        left: var(--space-5);
-        bottom: var(--space-5);
-        z-index: 200;
-        width: min(420px, calc(100vw - 2 * var(--space-4)));
-        background-color: var(--paper-warm);
-        border: 1px solid var(--line);
-        border-radius: var(--radius-card);
-        box-shadow: var(--shadow-card-lg);
-        color: var(--ink);
-      }
-      .lang-suggestion-inner {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: var(--space-3);
-        padding: var(--space-4) var(--space-5);
-      }
-      .lang-suggestion-icon {
-        flex: none;
-        color: var(--info-ink);
-      }
-      .lang-suggestion-text {
-        flex: 1 1 0;
-        min-width: 0;
-        font-size: var(--text-sm);
-        font-weight: 500;
-      }
-      /* The buttons get their own row under the question and share it. */
-      .lang-suggestion-actions {
-        display: flex;
-        flex: 1 1 100%;
-        gap: var(--space-2);
-      }
-      .lang-suggestion-actions ui-button {
-        flex: 1 1 0;
-        min-width: 0;
-      }
-      /* Phones: full width inside the page gutter, clear of the bottom tab
-         bar (56px plus the home-indicator inset, as the toasts do). */
-      @media (max-width: 900px) {
-        .lang-suggestion {
-          left: var(--space-4);
-          right: var(--space-4);
-          width: auto;
-          bottom: calc(var(--space-3) + 56px + env(safe-area-inset-bottom, 0px));
-        }
-      }
-    `,
-  ],
 })
 export class UiLangSuggestion {
   readonly i18n = inject(I18nService);
