@@ -77,12 +77,28 @@ async function activeVerifications(db: Database, userIds: string[], scope: strin
   return out;
 }
 
+/**
+ * The regions each staff member manages, as a super admin ticked them on the
+ * managers page — nothing to do with where they verified a school email.
+ */
+async function managedRegionsFor(db: Database, userIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  for (let i = 0; i < userIds.length; i += 90) {
+    const rows = await db
+      .select({ userId: staffManagedRegions.userId, code: staffManagedRegions.regionCode })
+      .from(staffManagedRegions)
+      .where(inArray(staffManagedRegions.userId, userIds.slice(i, i + 90)));
+    for (const r of rows) out.set(r.userId, [...(out.get(r.userId) ?? []), r.code].sort());
+  }
+  return out;
+}
+
 function schoolLabel(v: VerificationRow, lang: string | null): string {
   if (v.schoolId === null || v.schoolName === null) return '';
   return lang ? localized(v.schoolTranslations, lang, 'name', v.schoolName) : v.schoolName;
 }
 
-export function userJson(u: User, verifications: VerificationRow[], lang: string | null) {
+export function userJson(u: User, verifications: VerificationRow[], lang: string | null, managed: string[] = []) {
   const primary = verifications[0];
   return {
     id: u.id,
@@ -98,6 +114,8 @@ export function userJson(u: User, verifications: VerificationRow[], lang: string
     verified_at: primary ? primary.verifiedAt : null,
     created_at: u.createdAt,
     role: u.role,
+    // A super admin manages every region (null); staff the ones ticked for them; others none.
+    managed_regions: u.role === 'admin' ? null : u.role === 'staff' ? managed : [],
     regions: verifications.map((v) => v.regionCode),
     verifications: verifications.map((v) => ({
       region: v.regionCode,
@@ -111,8 +129,8 @@ export function userJson(u: User, verifications: VerificationRow[], lang: string
 }
 
 async function serializeOne(c: Context<AppEnv>, db: Database, u: User) {
-  const vs = await activeVerifications(db, [u.id], await scopeOf(c));
-  return userJson(u, vs.get(u.id) ?? [], await resolveLanguage(c));
+  const [vs, managed] = await Promise.all([activeVerifications(db, [u.id], await scopeOf(c)), managedRegionsFor(db, [u.id])]);
+  return userJson(u, vs.get(u.id) ?? [], await resolveLanguage(c), managed.get(u.id));
 }
 
 /** Users a region manager may see: verified (any state) in a managed region, or never verified anywhere. */
@@ -155,6 +173,8 @@ userRoutes.get('/users', async (c) => {
   }
   const isActive = c.req.query('is_active');
   if (isActive !== undefined) conds.push(eq(users.isActive, isActive.toLowerCase() === 'true' ? 1 : 0));
+  // The managers page lists only accounts that hold admin rights.
+  if (c.req.query('role') === 'managers') conds.push(inArray(users.role, ['staff', 'admin']));
   const school = c.req.query('school');
   if (school) {
     const schoolId = await adminSchoolFilterId(db, (await getRegion(c))?.code ?? null, school);
@@ -181,10 +201,14 @@ userRoutes.get('/users', async (c) => {
     rows.map((u) => u.id),
     await scopeOf(c),
   );
+  const managed = await managedRegionsFor(
+    db,
+    rows.filter((u) => u.role === 'staff').map((u) => u.id),
+  );
   const lang = await resolveLanguage(c);
   return c.json(
     page.wrap(
-      rows.map((u) => userJson(u, vs.get(u.id) ?? [], lang)),
+      rows.map((u) => userJson(u, vs.get(u.id) ?? [], lang, managed.get(u.id))),
       n,
     ),
   );
@@ -376,7 +400,8 @@ userRoutes.patch('/managers/:id', requireAdmin(), async (c) => {
   if ('managed_regions' in data) {
     const v = data.managed_regions;
     if (!Array.isArray(v)) apiError(400, 'admin.errInvalidField');
-    const codes = v.filter((x): x is string => typeof x === 'string');
+    // Region codes are stored upper-case ('TW'); a lower-case one must not be dropped as unknown.
+    const codes = v.filter((x): x is string => typeof x === 'string').map((x) => x.toUpperCase());
     newRegions = codes.length
       ? (await db.select({ code: regions.code }).from(regions).where(inList(regions.code, codes))).map((r) => r.code)
       : [];
@@ -387,6 +412,8 @@ userRoutes.patch('/managers/:id', requireAdmin(), async (c) => {
     writes.push(db.update(users).set({ role: newRole, updatedAt: new Date().toISOString() }).where(eq(users.id, target.id)));
     hasChanges = true;
     metaChanges.role = newRole;
+    // Losing admin rights takes the regions with them: granting them again starts afresh.
+    if (newRole === 'user' && newRegions === undefined) newRegions = [];
   }
   if (newRegions) {
     writes.push(db.delete(staffManagedRegions).where(eq(staffManagedRegions.userId, target.id)));
@@ -412,6 +439,6 @@ userRoutes.patch('/managers/:id', requireAdmin(), async (c) => {
   }
   const [fresh] = await db.select().from(users).where(eq(users.id, target.id)).limit(1);
   // Serialized without a request context: names unlocalized. Admins only, so every region.
-  const vs = await activeVerifications(db, [fresh.id], null);
-  return c.json(userJson(fresh, vs.get(fresh.id) ?? [], null));
+  const [vs, managed] = await Promise.all([activeVerifications(db, [fresh.id], null), managedRegionsFor(db, [fresh.id])]);
+  return c.json(userJson(fresh, vs.get(fresh.id) ?? [], null, managed.get(fresh.id)));
 });

@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:workers';
-import { call, seedReference, staff } from '../ads/helpers';
-import { createUser } from '../accounts/helpers';
+import { call, seedReference, staff, tokenFor } from '../ads/helpers';
+import { call as callWorker, createUser } from '../accounts/helpers';
 
 let root: { id: string; token: string };
 let twManager: { id: string; token: string };
@@ -79,6 +79,57 @@ describe('switching an account on or off', () => {
     expect(
       (await call(`/api/v1/admin/managers/${someone}`, { token: twManager.token, method: 'PATCH', body: { role: 'user' } })).status,
     ).toBe(403);
+  });
+
+  it('gives staff the regions a super admin ticks, whatever school they verified', async () => {
+    // Never verified anywhere: being a manager is not tied to a school email.
+    const manager = await createUser('users-regions@example.com');
+    const patch = (body: unknown, token = root.token) => call(`/api/v1/admin/managers/${manager}`, { token, method: 'PATCH', body });
+
+    const granted = (await (await patch({ role: 'staff' })).json()) as any;
+    expect(granted.managed_regions).toEqual([]);
+
+    // Lower-case codes are taken as the regions they name; unknown ones are dropped.
+    const ticked = (await (await patch({ managed_regions: ['hk', 'TW', 'ZZ'] })).json()) as any;
+    expect(ticked.managed_regions).toEqual(['HK', 'TW']);
+
+    const listed = (await (await call(`/api/v1/admin/users?q=${manager}`, { token: root.token })).json()) as any;
+    expect(listed.results[0].managed_regions).toEqual(['HK', 'TW']);
+    // What the event system reads (its region scope) through /auth/me.
+    const me = (await (await callWorker('/api/v1/auth/me', { token: await tokenFor(manager) })).json()) as any;
+    expect(me.managed_regions.sort()).toEqual(['HK', 'TW']);
+
+    expect((await patch({ managed_regions: ['HK'] }, twManager.token)).status).toBe(403);
+    const cleared = (await (await patch({ managed_regions: [] })).json()) as any;
+    expect(cleared.managed_regions).toEqual([]);
+  });
+
+  it('lists only accounts with admin rights, and revoking them clears the regions', async () => {
+    const promoted = await createUser('users-listed@example.com');
+    const plain = await createUser('users-not-listed@example.com');
+    await call(`/api/v1/admin/managers/${promoted}`, {
+      token: root.token,
+      method: 'PATCH',
+      body: { role: 'staff', managed_regions: ['TW'] },
+    });
+    const ids = async () =>
+      ((await (await call('/api/v1/admin/users?role=managers&page_size=100', { token: root.token })).json()) as any).results.map(
+        (u: any) => u.id,
+      );
+    expect(await ids()).toContain(promoted);
+    expect(await ids()).toContain(root.id);
+    expect(await ids()).not.toContain(plain);
+
+    const revoked = (await (
+      await call(`/api/v1/admin/managers/${promoted}`, { token: root.token, method: 'PATCH', body: { role: 'user' } })
+    ).json()) as any;
+    expect(revoked.role).toBe('user');
+    expect(revoked.managed_regions).toEqual([]);
+    const regrant = (await (
+      await call(`/api/v1/admin/managers/${promoted}`, { token: root.token, method: 'PATCH', body: { role: 'staff' } })
+    ).json()) as any;
+    expect(regrant.managed_regions).toEqual([]);
+    expect(await ids()).toContain(promoted);
   });
 });
 

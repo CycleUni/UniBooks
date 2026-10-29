@@ -49,6 +49,8 @@ export interface AdminUser {
   verified_at: string | null;
   created_at: string;
   role: UserRole;
+  /** Regions this staff member manages, as a super admin ticked them; null for a super admin (all). */
+  managed_regions?: string[] | null;
 }
 
 export interface AdminListing {
@@ -288,7 +290,7 @@ export class AdminService {
   }
 
 
-  getUsers(opts: { page?: number; q?: string; show_email?: string; is_active?: string; school?: string; region?: string } = {}): Observable<Paginated<AdminUser>> {
+  getUsers(opts: { page?: number; q?: string; show_email?: string; is_active?: string; school?: string; region?: string; role?: 'managers' } = {}): Observable<Paginated<AdminUser>> {
     return this.http.get<Paginated<AdminUser>>('/admin/users', { params: buildParams(opts) });
   }
 
@@ -302,6 +304,16 @@ export class AdminService {
 
   setManagerRole(id: string | number, role: 'staff' | 'user'): Observable<AdminUser> {
     return this.http.patch<AdminUser>(`/admin/managers/${id}`, { role });
+  }
+
+  /** Makes an account staff with exactly these regions. */
+  setManager(id: string | number, role: 'staff', regions: string[]): Observable<AdminUser> {
+    return this.http.patch<AdminUser>(`/admin/managers/${id}`, { role, managed_regions: regions });
+  }
+
+  /** The regions a staff member manages: replaces the whole set. */
+  setManagedRegions(id: string | number, regions: string[]): Observable<AdminUser> {
+    return this.http.patch<AdminUser>(`/admin/managers/${id}`, { managed_regions: regions });
   }
 
   getListings(opts: { page?: number; q?: string; status?: string; condition?: string; school?: string; region?: string } = {}): Observable<Paginated<AdminListing>> {
