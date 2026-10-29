@@ -49,7 +49,7 @@ describe('Messages — history pagination', () => {
         { provide: MessageService, useValue: mockMessageService },
         { provide: ActivatedRoute, useValue: { queryParams: EMPTY } },
         { provide: Router, useValue: { navigate: vi.fn() } },
-        { provide: AuthStore, useValue: {} },
+        { provide: AuthStore, useValue: { user: () => null } },
         { provide: OrderService, useValue: {} },
         { provide: I18nService, useValue: { t: (k: string) => k, lang: () => 'en' } },
         { provide: RegionService, useValue: { currency: () => ({ code: 'TWD', decimal_places: 0 }), region: () => 'tw', currentRegionObj: () => ({ search_engines: ['googlebooks'] }), regions: () => [{ code: 'tw', currency: { code: 'TWD', decimal_places: 0 } }] } },

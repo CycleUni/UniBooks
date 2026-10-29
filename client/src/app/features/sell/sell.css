@@ -372,3 +372,7 @@
     }
 
 
+    .push-prompt-slot {
+      display: block;
+      margin-bottom: var(--space-5);
+    }

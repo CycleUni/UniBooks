@@ -11,6 +11,7 @@ import { UiConditionPicker } from '../../shared/ui/condition-picker.component';
 import { UiBookCover } from '../../shared/ui/book-cover.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiVerificationPrompt } from '../../shared/ui/verification-prompt.component';
+import { UiPushPrompt } from '../../shared/ui/push-prompt.component';
 import { AccountService } from '../../core/services/account.service';
 import { RegionService } from '../../core/region.service';
 import { BookService } from '../../core/services/book.service';
@@ -133,7 +134,7 @@ export interface SellDraft {
 @Component({
   selector: 'app-sell',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, RegionLinkDirective, UiInput, UiTextarea, UiButton, UiDropdown, UiConditionPicker, UiBookCover, UiVerificationPrompt, UiSkeleton, UiBarcodeScanner, TPipe, PricePipe],
+  imports: [CommonModule, RouterModule, FormsModule, RegionLinkDirective, UiInput, UiTextarea, UiButton, UiDropdown, UiConditionPicker, UiBookCover, UiVerificationPrompt, UiPushPrompt, UiSkeleton, UiBarcodeScanner, TPipe, PricePipe],
   templateUrl: './sell.html',
   styleUrls: ['./sell.css']
 })
