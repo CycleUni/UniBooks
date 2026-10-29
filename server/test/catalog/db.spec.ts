@@ -228,6 +228,50 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
     expect(body.facets.course).toEqual([{ value: 'Calculus', count: 1 }]);
   });
 
+  it('search: a Google result is what its book page shows, even when isbn: misses it', async () => {
+    const isbn = '9786263338272';
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      Response.json({
+        totalItems: 1,
+        items: [
+          {
+            volumeInfo: {
+              title: 'Python 程式入門',
+              authors: ['榮欽科技'],
+              imageLinks: { thumbnail: 'http://books.google.com/books/content?id=x&img=1' },
+              industryIdentifiers: [{ type: 'ISBN_13', identifier: isbn }],
+            },
+          },
+        ],
+      }),
+    );
+    expect((await call('/api/v1/search/books?q=python與chatgpt')).status).toBe(200);
+    // Every catalogue now comes up empty: only the search's record can answer.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ totalItems: 0, items: [] }));
+    const res = await call(`/api/v1/books?isbn=${isbn}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      title: 'Python 程式入門',
+      source: 'google_api',
+      cover_url: expect.stringContaining('books.google.com'),
+    });
+  });
+
+  it('book detail: a shared search-result link finds its Google volume by id', async () => {
+    const isbn = '9783819246562';
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = new URL(String(input instanceof Request ? input.url : input));
+      if (!u.pathname.endsWith('/volumes/L4FdEQAAQBAJ')) return Response.json({ totalItems: 0 });
+      return Response.json({
+        volumeInfo: { title: 'Learn Python with ChatGPT', industryIdentifiers: [{ type: 'ISBN_13', identifier: isbn }] },
+      });
+    });
+    expect((await call(`/api/v1/books?isbn=${isbn}`)).status).toBe(404);
+    const res = await call(`/api/v1/books?isbn=${isbn}&engine=googlebooks&gid=L4FdEQAAQBAJ`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ title: 'Learn Python with ChatGPT', source: 'google_api' });
+  });
+
   it('courses', async () => {
     const res = await call('/api/v1/search/courses');
     expect(await res.json()).toEqual([{ value: 'Calculus', count: 1 }]);

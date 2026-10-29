@@ -351,6 +351,10 @@ export class Book implements OnInit {
   // is what caused the same ISBN to show a different cover here than on
   // the search result it was opened from.
   private engine: SearchEngine | null = null;
+  // The Google volume a search-result link names (&gid=). Google's search
+  // returns volumes that no ISBN query reaches, so a shared link without
+  // it found nothing; the backend checks the volume holds this ISBN.
+  private googleId: string | null = null;
   // The catalogue the stashed search result came from, when it came from
   // one. Held back from the preview until the backend answers, but used if
   // that refresh fails: the preview on screen is that catalogue's data.
@@ -394,7 +398,7 @@ export class Book implements OnInit {
       if (!this.bookId) {
         return of({ items: [], total: this.totalListings });
       }
-      return this.bookService.getBook(this.bookId, page, this.currentSchool, this.engine ?? undefined).pipe(
+      return this.bookService.getBook(this.bookId, page, this.currentSchool, this.engine ?? undefined, this.googleId).pipe(
         map(data => {
           let items: any[] = [];
           let total = this.totalListings;
@@ -486,6 +490,7 @@ export class Book implements OnInit {
       }
       this.bookId = nextId;
       this.engine = parseSearchEngine(params.get('engine'));
+      this.googleId = params.get('gid');
 
       if (this.bookId) {
         // Only a click from a list page asks for the stashed preview, and it
@@ -564,7 +569,7 @@ export class Book implements OnInit {
     // answer re-titled whichever page the visitor had moved on to and
     // counted a book view they did not make.
     this.bookSub?.unsubscribe();
-    this.bookSub = this.bookService.getBook(this.bookId!, this.currentPage, this.currentSchool, this.engine ?? undefined).pipe(
+    this.bookSub = this.bookService.getBook(this.bookId!, this.currentPage, this.currentSchool, this.engine ?? undefined, this.googleId).pipe(
       takeUntilDestroyed(this.destroyRef),
     ).subscribe({
       next: (data) => {
@@ -572,7 +577,11 @@ export class Book implements OnInit {
         // authoritative record), not another external lookup — always
         // trust that over the preview.
         this.book = (previewToKeep && !data.id)
-          ? { ...previewToKeep, source: data.source, listings: data.listings, waiting_count: data.waiting_count, is_subscribed: data.is_subscribed, subscription_id: data.subscription_id }
+          // The title and cover on screen are the preview's, so its
+          // catalogue is the one to credit; the backend may have answered
+          // from another (Google's isbn: lookup missing a volume its search
+          // showed, then ISBNnet).
+          ? { ...previewToKeep, source: this.previewSource || data.source, listings: data.listings, waiting_count: data.waiting_count, is_subscribed: data.is_subscribed, subscription_id: data.subscription_id }
           : data;
         // handle both raw array (old API) or paginated object (new API)
         if (data.listings && !Array.isArray(data.listings)) {

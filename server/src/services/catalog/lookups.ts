@@ -20,6 +20,8 @@ export interface BookRecord {
   isbn: string | null;
   source?: string;
   debug_source?: string | null;
+  /** Google's volume id, when Google supplied the record: it addresses the volume even where no ISBN query finds it. */
+  google_id?: string;
 }
 
 export type LookupStatus = 'found' | 'not_found' | 'timeout' | 'rate_limited' | 'error';
@@ -125,9 +127,10 @@ async function cachedOr<T>(
 
 // --------------------------------------------------------- Google Books ----
 
-function googleUrl(env: Env, q: string, extra: Record<string, string> = {}): string {
-  const u = new URL(GOOGLE_BOOKS_API_URL);
-  u.searchParams.set('q', q);
+/** A search for `q`, or with `volumeId` that one volume. */
+function googleUrl(env: Env, q: string | null, extra: Record<string, string> = {}, volumeId?: string): string {
+  const u = new URL(volumeId ? `${GOOGLE_BOOKS_API_URL}/${encodeURIComponent(volumeId)}` : GOOGLE_BOOKS_API_URL);
+  if (q !== null) u.searchParams.set('q', q);
   const key = env.GOOGLE_BOOKS_API_KEY;
   if (key && !key.startsWith('dev-only')) u.searchParams.set('key', key);
   for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, v);
@@ -155,9 +158,9 @@ async function withinGoogleBudget(env: Env): Promise<boolean> {
   }
 }
 
-async function googleFetch(env: Env, q: string, extra?: Record<string, string>): Promise<Response> {
+async function googleFetch(env: Env, q: string | null, extra?: Record<string, string>, volumeId?: string): Promise<Response> {
   if (!(await withinGoogleBudget(env))) return new Response(null, { status: 429 });
-  return fetch(googleUrl(env, q, extra), {
+  return fetch(googleUrl(env, q, extra, volumeId), {
     headers: { 'User-Agent': USER_AGENT },
     signal: AbortSignal.timeout(EXTERNAL_API_TIMEOUT_MS),
   });
@@ -176,9 +179,9 @@ function googleCover(info: GoogleVolumeInfo): string {
   return cleanCoverUrl((info.imageLinks?.thumbnail ?? '').replace(/^http:/, 'https:')) ?? '';
 }
 
-/** A plain search for `isbn` whose volume carries that exact ISBN (Google's isbn: operator misses some). */
-async function googleVolumeWithIsbn(env: Env, isbn: string): Promise<GoogleVolumeInfo | null> {
-  const res = await googleFetch(env, isbn, { maxResults: '40' });
+/** A plain search for `q` (the ISBN itself by default) whose volume carries that exact ISBN (Google's isbn: operator misses some). */
+async function googleVolumeWithIsbn(env: Env, isbn: string, q = isbn): Promise<GoogleVolumeInfo | null> {
+  const res = await googleFetch(env, q, { maxResults: '40' });
   if (googleThrottled(res)) {
     await markGoogleRateLimited(env);
     throw new GoogleBooksRateLimited(`429 for plain isbn=${isbn}`);
@@ -195,28 +198,72 @@ async function googleVolumeWithIsbn(env: Env, isbn: string): Promise<GoogleVolum
   return null;
 }
 
-export async function getGoogleBooksByIsbn(env: Env, isbn: string, meta?: LookupMeta): Promise<BookRecord | null> {
+/** Google volume ids are short URL-safe tokens (e.g. Ps8SEQAAQBAJ). */
+export const GOOGLE_VOLUME_ID_RE = /^[A-Za-z0-9_-]{6,24}$/;
+
+/**
+ * The volume a link names by id, if it carries `isbn`. The id comes from the
+ * URL, so it is only a pointer: the volume must hold the ISBN on record.
+ */
+async function googleVolumeById(env: Env, isbn: string, volumeId: string): Promise<GoogleVolumeInfo | null> {
+  if (!GOOGLE_VOLUME_ID_RE.test(volumeId)) return null;
+  const res = await googleFetch(env, null, undefined, volumeId);
+  if (googleThrottled(res)) {
+    await markGoogleRateLimited(env);
+    throw new GoogleBooksRateLimited(`429 for volume=${volumeId}`);
+  }
+  if (res.status !== 200) return null;
+  const info = ((await res.json()) as { volumeInfo?: GoogleVolumeInfo }).volumeInfo ?? {};
+  const wanted = isbnForms(isbn);
+  return (info.industryIdentifiers ?? []).some((x) => wanted.has((x.identifier ?? '').toUpperCase())) ? info : null;
+}
+
+/**
+ * Some volumes no ISBN query reaches at all — neither isbn: nor the bare
+ * number, in either form (seen: 9786263338272) — though a search for their
+ * title returns them with that ISBN on record. ISBNnet names the book; its
+ * main title (the part before the subtitle) is the search, and only a volume
+ * carrying the exact ISBN counts. Without this the book page showed
+ * ISBNnet's coverless record for a book the search page showed from Google.
+ */
+async function googleVolumeByRegistryTitle(env: Env, isbn: string): Promise<GoogleVolumeInfo | null> {
+  const named = await getIsbnnetBookByIsbn(env, isbn);
+  const title = named?.title.split(/[：:]/)[0].trim();
+  return title ? googleVolumeWithIsbn(env, isbn, title) : null;
+}
+
+/**
+ * `volumeId` is the Google volume a shared search-result link names: asked
+ * first, and past a cached not-found, since many volumes Google's search
+ * returns answer no ISBN query at all (seen: 9783819246562, 9786263338272).
+ */
+export async function getGoogleBooksByIsbn(env: Env, isbn: string, meta?: LookupMeta, volumeId?: string): Promise<BookRecord | null> {
   const key = `gb:isbn:${isbn}`;
   const cached = await cachedOr<BookRecord | null>(env, key, meta, null);
-  if (cached.hit) return cached.value;
+  if (cached.hit && (cached.value !== null || !volumeId)) return cached.value;
+  if (meta) meta.cache_hit = false;
   if (await googleRateLimited(env)) {
     if (meta) meta.status = 'rate_limited';
     throw new GoogleBooksRateLimited(`cached rate-limit, isbn=${isbn}`);
   }
   try {
-    const res = await googleFetch(env, `isbn:${isbn}`);
-    if (googleThrottled(res)) {
-      await markGoogleRateLimited(env);
-      if (meta) meta.status = 'rate_limited';
-      throw new GoogleBooksRateLimited(`429 for isbn=${isbn}`);
+    let item = volumeId ? await googleVolumeById(env, isbn, volumeId) : null;
+    if (item === null) {
+      const res = await googleFetch(env, `isbn:${isbn}`);
+      if (googleThrottled(res)) {
+        await markGoogleRateLimited(env);
+        if (meta) meta.status = 'rate_limited';
+        throw new GoogleBooksRateLimited(`429 for isbn=${isbn}`);
+      }
+      if (res.status !== 200) {
+        if (meta) meta.status = 'error';
+        return null;
+      }
+      const data = (await res.json()) as { totalItems?: number; items?: Array<{ volumeInfo?: GoogleVolumeInfo }> };
+      item = (data.totalItems ?? 0) > 0 && data.items?.length ? (data.items[0].volumeInfo ?? {}) : null;
     }
-    if (res.status !== 200) {
-      if (meta) meta.status = 'error';
-      return null;
-    }
-    const data = (await res.json()) as { totalItems?: number; items?: Array<{ volumeInfo?: GoogleVolumeInfo }> };
-    let item: GoogleVolumeInfo | null = (data.totalItems ?? 0) > 0 && data.items?.length ? (data.items[0].volumeInfo ?? {}) : null;
     if (item === null) item = await googleVolumeWithIsbn(env, isbn);
+    if (item === null) item = await googleVolumeByRegistryTitle(env, isbn);
     if (item !== null) {
       const result: BookRecord = {
         title: item.title ?? '',
@@ -264,7 +311,7 @@ export async function searchGoogleBooks(env: Env, rawQuery: string, meta?: Looku
       if (meta) meta.status = 'error';
       return [];
     }
-    const data = (await res.json()) as { items?: Array<{ volumeInfo?: GoogleVolumeInfo }> };
+    const data = (await res.json()) as { items?: Array<{ id?: string; volumeInfo?: GoogleVolumeInfo }> };
     const items = data.items ?? [];
     if (!items.length) {
       await cacheSet(env, key, NOT_FOUND_SENTINEL, NOT_FOUND_TTL);
@@ -280,9 +327,19 @@ export async function searchGoogleBooks(env: Env, rawQuery: string, meta?: Looku
         published_date: info.publishedDate ?? '',
         cover_url: googleCover(info),
         isbn: (info.industryIdentifiers ?? []).find((x) => x.type === 'ISBN_13')?.identifier ?? null,
+        ...(item.id && GOOGLE_VOLUME_ID_RE.test(item.id) ? { google_id: item.id } : {}),
       };
     });
     await cacheSet(env, key, JSON.stringify(results), QUERY_HIT_TTL);
+    // Google's isbn: lookup misses volumes its own search returns, so the
+    // book page a result links to fell through to ISBNnet (no cover) — the
+    // search card and its page disagreed. Each result is the record for its
+    // ISBN that the visitor just saw; let the ISBN lookup answer with it.
+    await Promise.all(
+      results
+        .filter((r) => r.isbn && /^\d{13}$/.test(r.isbn))
+        .map((r) => cacheSet(env, `gb:isbn:${r.isbn}`, JSON.stringify(r), ISBN_HIT_TTL)),
+    );
     if (meta) meta.status = 'found';
     return results;
   } catch (e) {

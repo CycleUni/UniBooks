@@ -157,6 +157,18 @@ describe('Search page', () => {
     });
   });
 
+  describe('book links', () => {
+    it('names the Google volume, so a copied link finds a book no ISBN query reaches', () => {
+      expect(component.bookLinkParams({ isbn: '9783819246562', source: 'google_api', google_id: 'L4FdEQAAQBAJ' }))
+        .toEqual({ isbn: '9783819246562', engine: 'googlebooks', gid: 'L4FdEQAAQBAJ' });
+    });
+
+    it('carries no volume id for another catalogue', () => {
+      expect(component.bookLinkParams({ isbn: '9786263338272', source: 'isbnnet_api', google_id: 'x' }))
+        .toEqual({ isbn: '9786263338272', engine: 'isbnnet' });
+    });
+  });
+
   describe('found count', () => {
     it('counts every page, not just the one shown', async () => {
       const page = Array.from({ length: 20 }, (_, i) => book(i));

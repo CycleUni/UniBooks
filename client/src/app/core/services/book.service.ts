@@ -76,7 +76,8 @@ export class BookService {
     return this.http.get<any[]>(url, { context: OPTIONAL_AUTH_NO_LANG });
   }
 
-  getBook(idOrIsbn: string, page: number = 1, school?: string, engine?: string): Observable<any> {
+  /** `googleId`: the Google volume a search-result link names, the only way the backend finds some books. */
+  getBook(idOrIsbn: string, page: number = 1, school?: string, engine?: string, googleId?: string | null): Observable<any> {
     const isIsbn = /^\d{10,13}$/.test(idOrIsbn);
     let param = isIsbn ? `?isbn=${idOrIsbn}&page=${page}` : `?id=${idOrIsbn}&page=${page}`;
     if (school) {
@@ -84,6 +85,9 @@ export class BookService {
     }
     if (engine) {
       param += `&engine=${encodeURIComponent(engine)}`;
+    }
+    if (googleId) {
+      param += `&gid=${encodeURIComponent(googleId)}`;
     }
     return this.http.get<any>(`/books${param}`);
   }

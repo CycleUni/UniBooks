@@ -13,13 +13,16 @@ import { cleanAndValidateIsbn, validateBookIsbn } from '../services/catalog/isbn
 import { cleanCoverUrl, cleanPublisher, describeSource, isTrustedCoverUrl } from '../services/catalog/common';
 import { publicBase } from '../lib/media';
 import {
+  GOOGLE_VOLUME_ID_RE,
   ISBN_FALLBACK_ORDER,
   ISBN_LOOKUPS,
   SOURCE_BY_ENGINE,
   engineOrder,
+  getGoogleBooksByIsbn,
   lookupInOrder,
   regionSearchEngines,
   type BookRecord,
+  type LookupMeta,
 } from '../services/catalog/lookups';
 import { resolveLanguage, schoolFilterId } from '../services/listings/places';
 import { serializeBook, serializeListings } from '../services/listings/serialize';
@@ -60,11 +63,19 @@ bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
       // Unknown ISBNs fan out to external catalogues; bound that per client.
       // A book already in the catalogue is one D1 read and is not counted.
       await checkRate(c, 'book_lookup', '120/min');
-      let found = await lookupInOrder(c.env, validIsbn, engineOrder(engine, allowed, ISBN_FALLBACK_ORDER), ISBN_LOOKUPS, allowed);
+      // A search-result link names its Google volume (&gid=): many volumes
+      // Google's search returns answer no ISBN query, so without it a
+      // shared link found nothing the search page had shown.
+      const gid = c.req.query('gid');
+      const lookups =
+        gid && GOOGLE_VOLUME_ID_RE.test(gid)
+          ? { ...ISBN_LOOKUPS, googlebooks: (env: Env, q: string, meta?: LookupMeta) => getGoogleBooksByIsbn(env, q, meta, gid) }
+          : ISBN_LOOKUPS;
+      let found = await lookupInOrder(c.env, validIsbn, engineOrder(engine, allowed, ISBN_FALLBACK_ORDER), lookups, allowed);
       if (!found.result && engine) {
         const tried = new Set(found.meta.attempts.map((a) => a.engine));
         const rest = engineOrder(null, allowed, ISBN_FALLBACK_ORDER).filter((e) => !tried.has(e));
-        if (rest.length) found = await lookupInOrder(c.env, validIsbn, rest, ISBN_LOOKUPS, allowed);
+        if (rest.length) found = await lookupInOrder(c.env, validIsbn, rest, lookups, allowed);
       }
       if (found.result && found.engine) {
         const rec = found.result;

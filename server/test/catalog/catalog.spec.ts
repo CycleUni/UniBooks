@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { cleanAndValidateIsbn, isbnChecksumOk, isbnForms, validateBookIsbn } from '../../src/services/catalog/isbn';
 import { cleanCoverUrl, cleanPublisher, describeSource } from '../../src/services/catalog/common';
 import {
   engineOrder,
+  getGoogleBooksByIsbn,
   getIsbnnetBookByIsbn,
   regionSearchEngines,
   ISBN_FALLBACK_ORDER,
@@ -34,6 +35,101 @@ describe('ISBNnet resolver', () => {
     const meta = {} as LookupMeta;
     expect(await getIsbnnetBookByIsbn(env, '9789570000017', meta)).toBeNull();
     expect(meta.status).toBe('not_found');
+  });
+});
+
+describe('Google Books by ISBN', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('finds a volume no ISBN query reaches through its registry title', async () => {
+    // As Google answered for 9786263338272: isbn: and the bare number come
+    // back empty; the main title alone returns the volume with that ISBN.
+    const isbn = '9786260000011';
+    const queries: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const q = new URL(String(input instanceof Request ? input.url : input)).searchParams.get('q') ?? '';
+      queries.push(q);
+      if (q !== 'Python程式入門與ChatGPT實用技巧') return Response.json({ totalItems: 0 });
+      return Response.json({
+        totalItems: 1,
+        items: [
+          { volumeInfo: { title: 'Other', industryIdentifiers: [{ type: 'ISBN_13', identifier: '9786263334939' }] } },
+          {
+            volumeInfo: {
+              title: 'Python程式入門與ChatGPT實用技巧：聰明使用AI小幫手',
+              imageLinks: { thumbnail: 'http://books.google.com/books/content?id=x&img=1' },
+              industryIdentifiers: [{ type: 'ISBN_13', identifier: isbn }],
+            },
+          },
+        ],
+      });
+    });
+    const withRegistry = {
+      ...env,
+      ISBNNET: {
+        lookup: async () => ({ status: 'found', book: { title: 'Python程式入門與ChatGPT實用技巧: 聰明使用AI小幫手', isbn } }),
+      },
+    } as unknown as typeof env;
+
+    const rec = await getGoogleBooksByIsbn(withRegistry, isbn);
+    expect(rec).toMatchObject({
+      title: 'Python程式入門與ChatGPT實用技巧：聰明使用AI小幫手',
+      cover_url: expect.stringContaining('books.google.com'),
+    });
+    expect(queries).toEqual([`isbn:${isbn}`, isbn, 'Python程式入門與ChatGPT實用技巧']);
+  });
+
+  it('asks for the volume a link names, past a cached not-found', async () => {
+    // As Google answers for 9783819246562: no ISBN query finds it, its id does.
+    const isbn = '9786260000035';
+    const volume = (path: string) =>
+      path.endsWith('/volumes/L4FdEQAAQBAJ')
+        ? Response.json({
+            id: 'L4FdEQAAQBAJ',
+            volumeInfo: {
+              title: 'Learn Python with ChatGPT',
+              imageLinks: { thumbnail: 'http://books.google.com/books/content?id=L4FdEQAAQBAJ&img=1' },
+              industryIdentifiers: [{ type: 'ISBN_13', identifier: isbn }],
+            },
+          })
+        : Response.json({ totalItems: 0 });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      return volume(new URL(String(input instanceof Request ? input.url : input)).pathname);
+    });
+
+    expect(await getGoogleBooksByIsbn(env, isbn)).toBeNull(); // caches not-found
+    const rec = await getGoogleBooksByIsbn(env, isbn, undefined, 'L4FdEQAAQBAJ');
+    expect(rec).toMatchObject({ title: 'Learn Python with ChatGPT', cover_url: expect.stringContaining('books.google.com') });
+    // The find is cached for the next visitor, who has no id.
+    expect(await getGoogleBooksByIsbn(env, isbn)).toMatchObject({ title: 'Learn Python with ChatGPT' });
+  });
+
+  it('refuses a named volume that does not carry the ISBN', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = new URL(String(input instanceof Request ? input.url : input));
+      if (!u.pathname.endsWith('/volumes/AHIUEQAAQBAJ')) return Response.json({ totalItems: 0 });
+      return Response.json({
+        volumeInfo: { title: 'Another book', industryIdentifiers: [{ type: 'ISBN_13', identifier: '9786263338272' }] },
+      });
+    });
+    expect(await getGoogleBooksByIsbn(env, '9786260000042', undefined, 'AHIUEQAAQBAJ')).toBeNull();
+  });
+
+  it('takes no title match without the exact ISBN', async () => {
+    const isbn = '9786260000028';
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const q = new URL(String(input instanceof Request ? input.url : input)).searchParams.get('q');
+      if (q !== 'Same title') return Response.json({ totalItems: 0 });
+      return Response.json({
+        totalItems: 1,
+        items: [{ volumeInfo: { title: 'Same title', industryIdentifiers: [{ type: 'ISBN_13', identifier: '9786263334939' }] } }],
+      });
+    });
+    const withRegistry = {
+      ...env,
+      ISBNNET: { lookup: async () => ({ status: 'found', book: { title: 'Same title', isbn } }) },
+    } as unknown as typeof env;
+    expect(await getGoogleBooksByIsbn(withRegistry, isbn)).toBeNull();
   });
 });
 

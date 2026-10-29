@@ -1159,6 +1159,9 @@ export class Search implements OnInit {
     // up again in Google.
     const engine = engineForSource(item.source);
     if (engine) params['engine'] = engine;
+    // The volume itself: many Google results answer no ISBN query, so a
+    // copied link would otherwise open on nothing (book.ts's googleId).
+    if (engine === 'googlebooks' && item.google_id) params['gid'] = item.google_id;
     return params;
   }
 

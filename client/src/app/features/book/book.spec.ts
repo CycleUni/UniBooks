@@ -151,6 +151,15 @@ describe('Book page data source footer', () => {
       expect(page.querySelector('.data-source')?.textContent?.trim()).toBe('書目資料來源：Google Books');
     });
 
+    it('credits the preview\'s catalogue when the refresh answers from another', () => {
+      getBook.mockReturnValue(of({
+        id: '', isbn13: '9786264140720', title: '微積分（ISBNnet）', source: 'isbnnet_api',
+        listings: { count: 0, results: [] }, waiting_count: 0,
+      }));
+      const page = openFromSearch({ source: 'google_api' });
+      expect(page.querySelector('.data-source')?.textContent?.trim()).toBe('書目資料來源：Google Books');
+    });
+
     it('does not state a guessed source when the refresh fails', () => {
       getBook.mockReturnValue(throwError(() => new Error('404')));
       expect(openFromSearch({ source: 'manual' }).querySelector('.data-source')).toBeNull();
@@ -181,7 +190,7 @@ describe('Book page data source footer', () => {
 
       component.onLoadMore();
 
-      expect(getBook).toHaveBeenCalledWith('9786264140720', 2, '', undefined);
+      expect(getBook).toHaveBeenCalledWith('9786264140720', 2, '', undefined, null);
       expect(component.listings.length).toBe(2);
       expect(component.hasMoreListings).toBe(false);
     });
@@ -199,7 +208,7 @@ describe('Book page data source footer', () => {
       fixture.detectChanges();
 
       expect(component.currentPage).toBe(1);
-      expect(getBook).toHaveBeenCalledWith('9786264140720', 1, '', undefined);
+      expect(getBook).toHaveBeenCalledWith('9786264140720', 1, '', undefined, null);
     });
 
     it('opens page 3 on desktop when carrying ?page=3', () => {
@@ -215,7 +224,7 @@ describe('Book page data source footer', () => {
       fixture.detectChanges();
 
       expect(component.currentPage).toBe(3);
-      expect(getBook).toHaveBeenCalledWith('9786264140720', 3, '', undefined);
+      expect(getBook).toHaveBeenCalledWith('9786264140720', 3, '', undefined, null);
     });
   });
 

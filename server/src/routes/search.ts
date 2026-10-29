@@ -73,6 +73,7 @@ interface Item {
   cover_url: string;
   source: string;
   debug_source?: string | null;
+  google_id?: string;
 }
 
 const BOOK_COLS = 'b.id, b.isbn13, b.title, b.authors, b.publisher, b.published_date, b.cover_url, b.cover_r2_key, b.source';
@@ -396,6 +397,7 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
       published_date: item.published_date ?? '',
       source: item.source ?? 'manual',
       debug_source: item.debug_source ?? null,
+      google_id: item.google_id ?? null,
       activeListings: book ? Number(book.g) : 0,
       localActiveListings: book ? Number(book.lc) : 0,
       cityActiveListings: book ? Number(book.cc) : 0,

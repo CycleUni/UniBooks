@@ -71,6 +71,12 @@ describe('BookService.getBook', () => {
     http.expectOne('/books?isbn=9789865027803&page=1&school=CHIHLEE').flush({});
   });
 
+  it('names the Google volume a search-result link carries', () => {
+    service.getBook('9783819246562', 1, undefined, 'googlebooks', 'L4FdEQAAQBAJ').subscribe();
+
+    http.expectOne('/books?isbn=9783819246562&page=1&engine=googlebooks&gid=L4FdEQAAQBAJ').flush({});
+  });
+
   it('asks for a book by id without a trailing slash', () => {
     service.getBook('ab7493f8-19bb-4fe4-8dc7-dbccf09c91a0').subscribe();
 

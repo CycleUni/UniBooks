@@ -118,8 +118,12 @@ export function cacheKey(origin: string, region: string, identity: BookIdentity)
 }
 
 /** The same-origin book API URL the app itself calls. */
-export function bookApiUrl(origin: string, region: string, identity: BookIdentity): string {
+export function bookApiUrl(origin: string, region: string, identity: BookIdentity, gid?: string | null): string {
   const params = new URLSearchParams({ [identity.kind]: identity.value, region });
+  // A shared search-result link's Google volume: the only way some books
+  // are found at all (see getGoogleBooksByIsbn). Not in the cache key: it
+  // names the same book.
+  if (gid && identity.kind === 'isbn') params.set('gid', gid);
   return `${origin}/api/v1/books?${params.toString()}`;
 }
 
@@ -368,7 +372,7 @@ export async function handleBookPage(ctx: BookPageContext, deps: BookPageDeps): 
     const key = cacheKey(url.origin, region, identity);
     let result = await readCache(deps.cache, key);
     if (!result) {
-      const apiUrl = bookApiUrl(url.origin, region, identity);
+      const apiUrl = bookApiUrl(url.origin, region, identity, url.searchParams.get('gid'));
       const fetchAndStore = lookup(apiUrl, deps).then(async (fresh) => {
         await writeCache(deps.cache, key, fresh);
         return fresh;
