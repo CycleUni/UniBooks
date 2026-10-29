@@ -47,9 +47,9 @@ import QRCode from 'qrcode';
           </div>
 
           <div class="qr-canvas-container" [class.paused]="isPaused">
-            <!-- The QR's own size from the start: a canvas defaults to 300x150, which
-                 made the box wide while the first code loaded. -->
-            <canvas #qrCanvas [attr.width]="qrSize" [attr.height]="qrSize" [style.opacity]="isPaused ? '0.15' : '1'"></canvas>
+            <!-- Square from the start: a canvas defaults to 300x150, which made the
+                 box wide while the first code loaded. -->
+            <canvas #qrCanvas [attr.width]="qrRenderSize" [attr.height]="qrRenderSize" [style.opacity]="isPaused ? '0.15' : '1'"></canvas>
 
             <div *ngIf="isPaused" class="qr-paused-overlay">
               <div class="qr-paused-icon" aria-hidden="true">
@@ -232,9 +232,21 @@ import QRCode from 'qrcode';
       display: flex;
       align-items: center;
       justify-content: center;
+      /* As wide as the pass allows, so a large screen shows a large code, and
+         never under 214px (a 190px code plus padding), which scanners read. */
+      box-sizing: border-box;
+      width: 100%;
       min-width: 214px;
-      min-height: 214px;
+      aspect-ratio: 1;
       overflow: hidden;
+    }
+
+    /* Drawn at qrRenderSize and scaled to the box: sharp at any size. */
+    .qr-canvas-container canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
     }
 
     /* The QR's white backing must not show past the overlay's edges. */
@@ -395,8 +407,8 @@ export class MemberCodeComponent implements OnInit, OnDestroy {
   secondsRemaining = 30;
   refreshCount = 1;
   readonly maxRefreshes = 5;
-  /** The QR code's side in CSS pixels; the canvas has it before the first code is drawn. */
-  readonly qrSize = 190;
+  /** The QR code is drawn this many pixels across, then scaled to fit the pass (CSS). */
+  readonly qrRenderSize = 600;
   isPaused = false;
   isLoading = false;
 
@@ -501,11 +513,12 @@ export class MemberCodeComponent implements OnInit, OnDestroy {
   private renderQrCode(): void {
     setTimeout(() => {
       if (this.qrCanvasRef?.nativeElement && this.token) {
+        const canvas = this.qrCanvasRef.nativeElement;
         QRCode.toCanvas(
-          this.qrCanvasRef.nativeElement,
+          canvas,
           this.token,
           {
-            width: this.qrSize,
+            width: this.qrRenderSize,
             margin: 1,
             color: {
               dark: '#1F2933',
@@ -514,6 +527,9 @@ export class MemberCodeComponent implements OnInit, OnDestroy {
           },
           (err) => {
             if (err) console.error('Error generating QR canvas', err);
+            // The library pins the canvas to qrRenderSize in CSS pixels; the stylesheet sizes it instead.
+            canvas.style.removeProperty('width');
+            canvas.style.removeProperty('height');
           },
         );
       }
