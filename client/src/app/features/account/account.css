@@ -440,12 +440,10 @@
       }
     }
 
-    /* Desktop already links the admin console from the header, keeps
-       signing out in the profile card, and region, language and the about
-       and legal links in the footer. The admin group stays for the event
-       system, which has no other way in. */
+    /* Desktop keeps signing out in the profile card, and region, language
+       and the about and legal links in the footer. The admin group stays:
+       it is the only way into the admin console and the event system. */
     @media (min-width: 901px) {
-      .admin-console-link,
       .prefs-group,
       .about-group,
       .menu-logout {

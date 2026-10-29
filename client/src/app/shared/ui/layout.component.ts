@@ -27,7 +27,7 @@ import { UiDropdown, DropdownOption } from './dropdown.component';
 import { UiPrefsSelector } from './prefs-selector.component';
 import { RegionService } from '../../core/region.service';
 import { MetadataService } from '../../core/services/metadata.service';
-import { AuthStore, hasStaffAccess } from '../../core/auth.store';
+import { AuthStore } from '../../core/auth.store';
 import { AccountService } from '../../core/services/account.service';
 import {
   SchoolStateService,
@@ -214,15 +214,9 @@ export class UiLayout implements OnDestroy {
 
   /** Signed in, but the profile has not arrived (or failed and is being
    *  retried). Rendering the plain account label here made the header look
-   *  exactly like a signed-out one, most visibly for staff, whose admin link
-   *  also waits on the profile. */
+   *  exactly like a signed-out one. */
   get profilePending(): boolean {
     return this.authStore.isAuthenticated() && !this.authStore.user();
-  }
-
-  get isStaff(): boolean {
-    if (!this.authStore.isAuthenticated()) return false;
-    return hasStaffAccess(this.authStore.user());
   }
 
   constructor() {
