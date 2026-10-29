@@ -46,7 +46,7 @@ import QRCode from 'qrcode';
             </div>
           </div>
 
-          <div class="qr-canvas-container" [class.paused]="isPaused">
+          <div class="qr-canvas-container" [class.paused]="isPaused" [class.loading]="isLoading">
             <!-- Square from the start: a canvas defaults to 300x150, which made the
                  box wide while the first code loaded. -->
             <canvas #qrCanvas [attr.width]="qrRenderSize" [attr.height]="qrRenderSize" [style.opacity]="isPaused ? '0.15' : '1'"></canvas>
@@ -250,7 +250,8 @@ import QRCode from 'qrcode';
     }
 
     /* The QR's white backing must not show past the overlay's edges. */
-    .qr-canvas-container.paused {
+    .qr-canvas-container.paused,
+    .qr-canvas-container.loading {
       background: var(--paper-warm);
     }
 
@@ -292,19 +293,24 @@ import QRCode from 'qrcode';
       line-height: 1.3;
     }
 
+    /* The code being replaced is hidden, not blurred: a blurred square
+       code bleeds a fuzzy band along the inner edges that ignores the arc. */
+    .qr-canvas-container.loading canvas {
+      visibility: hidden;
+    }
+
     .qr-loading-overlay {
       position: absolute;
       inset: 0;
       background-color: color-mix(in srgb, var(--paper-warm) 88%, transparent);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: var(--text-sm);
       color: var(--muted);
       font-weight: 500;
-      border-radius: var(--radius-control);
+      /* No radius of its own: the container's overflow clips it to the inner
+         corner, where a copy of the outer radius left white slivers. */
     }
 
     .member-id {
