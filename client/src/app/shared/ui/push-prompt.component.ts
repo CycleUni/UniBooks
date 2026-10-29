@@ -27,6 +27,10 @@ const QUIET_FOR_MS = 30 * 24 * 60 * 60 * 1000;
   selector: 'ui-push-prompt',
   standalone: true,
   imports: [TPipe, UiButton],
+  // Pages give the element its spacing (a margin around the inbox list, under
+  // the sell form's title); with nothing to ask, the element must take no room
+  // at all, or that margin stays behind as a blank strip.
+  host: { '[style.display]': "visible() ? null : 'none'" },
   template: `
     @if (visible()) {
       <div
