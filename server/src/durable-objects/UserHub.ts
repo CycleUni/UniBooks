@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import * as Sentry from '@sentry/cloudflare';
 import type { Env } from '../env';
-import { shouldSendOfflineEmail } from './policies/offlineEmailPolicy';
+import { shouldSendOfflineEmail, shouldSendOfflinePush } from './policies/offlineEmailPolicy';
 import { completeClose } from './wsClose';
 import { getConversation } from '../services/messaging/conversations';
 import { loadPerson } from '../services/messaging/people';
@@ -110,7 +110,7 @@ export class UserHub extends DurableObject<Env> {
       if (!data.self) {
         await this.markUnread(data.room_id);
       }
-      await this.maybeSendOfflineEmail(data);
+      await this.maybeNotifyOffline(data);
       return new Response('ok');
     }
 
@@ -170,29 +170,30 @@ export class UserHub extends DurableObject<Env> {
     }
   }
 
-  private async maybeSendOfflineEmail(data: PushPayload): Promise<void> {
+  /**
+   * Email at most once per conversation until it is opened; push for every
+   * message. Both only while the recipient has the site closed.
+   */
+  private async maybeNotifyOffline(data: PushPayload): Promise<void> {
     const notifiedRooms = (await this.ctx.storage.get<string[]>(EMAIL_NOTIFIED_KEY)) || [];
-    const decision = shouldSendOfflineEmail({
-      roomId: data.room_id,
-      isSelf: !!data.self,
-      activeSocketCount: this.liveSockets().length,
-      notifiedRooms,
-    });
-    if (!decision) return;
+    const activeSocketCount = this.liveSockets().length;
+    const email = shouldSendOfflineEmail({ roomId: data.room_id, isSelf: !!data.self, activeSocketCount, notifiedRooms });
+    const push = shouldSendOfflinePush({ roomId: data.room_id, isSelf: !!data.self, activeSocketCount });
+    if (!email && !push) return;
 
     const recipientId = data.recipient_id || (await this.ctx.storage.get<string>('userId'));
     if (!recipientId) {
-      console.error('Offline email skipped: no recipient id for this hub');
-      Sentry.captureMessage('Offline email skipped: no recipient id for this hub', 'warning');
+      console.error('Offline notification skipped: no recipient id for this hub');
+      Sentry.captureMessage('Offline notification skipped: no recipient id for this hub', 'warning');
       return;
     }
 
-    // Marked before the gate below: whichever channel is
-    // off, the next notice waits until they open this conversation.
-    await this.ctx.storage.put(EMAIL_NOTIFIED_KEY, [...notifiedRooms, data.room_id]);
+    // Marked before the email switch is read: with email off, the next
+    // email still waits until they open this conversation.
+    if (email) await this.ctx.storage.put(EMAIL_NOTIFIED_KEY, [...notifiedRooms, data.room_id]);
 
     this.ctx.waitUntil(
-      this.notifyOffline(recipientId, data).catch((e) => {
+      this.notifyOffline(recipientId, data, { email, push }).catch((e) => {
         console.error('Offline notification failed', e);
         Sentry.captureException(e);
       }),
@@ -205,7 +206,7 @@ export class UserHub extends DurableObject<Env> {
    * left), then each channel on its own switch. The email and the push are
    * rendered by the queue consumers.
    */
-  private async notifyOffline(recipientId: string, data: PushPayload): Promise<void> {
+  private async notifyOffline(recipientId: string, data: PushPayload, due: { email: boolean; push: boolean }): Promise<void> {
     const conv = await getConversation(this.env, data.room_id);
     if (!conv) return;
     let hiddenAt: string | null;
@@ -220,7 +221,7 @@ export class UserHub extends DurableObject<Env> {
     if (!recipient || recipient.deleted || !recipient.isActive || !recipient.email) return;
 
     const sends: Promise<unknown>[] = [];
-    if (recipient.notifyNewMessageEmail) {
+    if (due.email && recipient.notifyNewMessageEmail) {
       const email: EmailMessage = {
         type: 'offline_chat_notification',
         recipient_id: recipientId,
@@ -233,7 +234,7 @@ export class UserHub extends DurableObject<Env> {
       };
       sends.push(this.env.EMAIL_QUEUE.send(email));
     }
-    if (recipient.notifyPush) {
+    if (due.push && recipient.notifyPush) {
       const push: PushMessage = {
         type: 'chat_message',
         recipient_id: recipientId,

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { shouldSendOfflineEmail, type OfflineEmailInput } from '../../src/durable-objects/policies/offlineEmailPolicy';
+import {
+  shouldSendOfflineEmail,
+  shouldSendOfflinePush,
+  type OfflineEmailInput,
+} from '../../src/durable-objects/policies/offlineEmailPolicy';
 
 const ROOM = '3f0b2a1e-0000-4000-8000-000000000001';
 
@@ -55,5 +59,17 @@ describe('shouldSendOfflineEmail', () => {
   it('does nothing without a room to notify about', () => {
     expect(shouldSendOfflineEmail(input({ roomId: undefined }))).toBe(false);
     expect(shouldSendOfflineEmail(input({ roomId: '' }))).toBe(false);
+  });
+});
+
+describe('shouldSendOfflinePush', () => {
+  it('pushes every message while away, even in a conversation already emailed about', () => {
+    expect(shouldSendOfflinePush(input({ notifiedRooms: [ROOM] }))).toBe(true);
+  });
+
+  it('stays silent while the site is open, or for your own message', () => {
+    expect(shouldSendOfflinePush(input({ activeSocketCount: 1 }))).toBe(false);
+    expect(shouldSendOfflinePush(input({ isSelf: true }))).toBe(false);
+    expect(shouldSendOfflinePush(input({ roomId: undefined }))).toBe(false);
   });
 });

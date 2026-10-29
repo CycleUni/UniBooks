@@ -52,9 +52,43 @@ async function markPushSent(env: Env, key: string): Promise<void> {
   }
 }
 
+/** Same recipient, same conversation: one notification on their screen (sw.js `tag`). */
+function chatThreadOf(body: PushMessage | undefined): string | null {
+  if (body?.type !== 'chat_message' || !body.recipient_id) return null;
+  return `${body.recipient_id}:${body.conversation_id || body.room_id}`;
+}
+
+/**
+ * Every chat message is queued for a push, but a burst that lands in one
+ * batch would buzz the phone once per message only to replace the same
+ * notification each time. Only the newest of them per conversation is sent;
+ * the rest are acked unsent.
+ */
+export function supersededChatPushes(messages: readonly Message<PushMessage>[]): Set<Message<PushMessage>> {
+  const newest = new Map<string, Message<PushMessage>>();
+  const superseded = new Set<Message<PushMessage>>();
+  for (const message of messages) {
+    const thread = chatThreadOf(message.body);
+    if (!thread) continue;
+    const kept = newest.get(thread);
+    const at = (m: Message<PushMessage>) => (m.body.type === 'chat_message' && m.body.timestamp) || m.timestamp.getTime();
+    if (!kept) newest.set(thread, message);
+    else if (at(message) >= at(kept)) {
+      superseded.add(kept);
+      newest.set(thread, message);
+    } else superseded.add(message);
+  }
+  return superseded;
+}
+
 export async function handlePushQueue(batch: MessageBatch<PushMessage>, env: Env): Promise<void> {
   const account = serviceAccount(env);
+  const superseded = supersededChatPushes(batch.messages);
   for (const message of batch.messages) {
+    if (superseded.has(message)) {
+      message.ack();
+      continue;
+    }
     try {
       const key = message.body && 'dedupe_key' in message.body ? message.body.dedupe_key : undefined;
       if (key && (await pushAlreadySent(env, key))) {

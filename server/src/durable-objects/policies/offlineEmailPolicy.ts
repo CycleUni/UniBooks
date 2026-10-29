@@ -37,3 +37,15 @@ export function shouldSendOfflineEmail(input: OfflineEmailInput): boolean {
   if (notifiedRooms.includes(roomId)) return false;
   return true;
 }
+
+/**
+ * Whether a new message should push to the recipient's devices.
+ *
+ * Rule 1 above, without rule 2: a push is cheap to glance at and the service
+ * worker shows one notification per conversation (sw.js `tag`), so each
+ * message pushes and replaces the last one instead of stacking. A burst that
+ * lands in the same queue batch is sent once (queues/push.ts).
+ */
+export function shouldSendOfflinePush(input: Omit<OfflineEmailInput, 'notifiedRooms'>): boolean {
+  return shouldSendOfflineEmail({ ...input, notifiedRooms: [] });
+}
