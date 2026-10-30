@@ -27,7 +27,7 @@ import { UiInfiniteScroll } from '../../shared/ui/infinite-scroll.component';
 import { injectIsPhone } from '../../core/viewport';
 import { PhonePager } from '../../core/phone-pager';
 import { SearchSnapshot } from '../../core/search-snapshot';
-import { isbnFromScan } from '../../core/isbn';
+import { cleanAndValidateIsbn, isbnFromScan } from '../../core/isbn';
 import { POPULAR_SEARCH_KEYS, RecentSearches } from '../../core/search-suggestions';
 import { UiFacetList, FacetOption } from '../../shared/ui/facet-list.component';
 import { Subject, combineLatest, merge, Subscription } from 'rxjs';
@@ -306,9 +306,20 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
             <ui-pagination *ngIf="!isPhone && totalCount > 20" [total]="totalCount" [pageSize]="20" [currentPage]="currentPage" (pageChange)="onPageChange($event)"></ui-pagination>
             <ui-infinite-scroll *ngIf="isPhone && filteredResults.length > 0" [loading]="loadingMore" [hasMore]="hasMoreResults" [error]="loadMoreError" (loadMore)="onLoadMore()"></ui-infinite-scroll>
 
+            <!-- Below the last result, once there is no more to load: the
+                 other way in, for a book the results don't hold. A title
+                 search misses on editions and spellings that its ISBN pins
+                 down; an ISBN search misses books the catalogue only knows
+                 by name. -->
+            <div *ngIf="activeQuery && filteredResults.length > 0 && !(isPhone && hasMoreResults)" class="search-tip">
+              <p>{{ (activeQueryIsIsbn ? 'search.tipSearchTitle' : 'search.tipScanIsbn') | t }}</p>
+              <ui-button *ngIf="isPhone && !activeQueryIsIsbn" variant="ghost" (onClick)="openScanner()">{{ 'search.scanBarcode' | t }}</ui-button>
+            </div>
+
             <div *ngIf="results.length === 0 && activeQuery" class="empty-state">
               <h3>{{ 'search.notFound' | t }}</h3>
-              <p>{{ 'search.notFoundDesc' | t }}</p>
+              <p>{{ (activeQueryIsIsbn ? 'search.notFoundDescIsbn' : 'search.notFoundDesc') | t }}</p>
+              <ui-button *ngIf="isPhone && !activeQueryIsIsbn" variant="ghost" (onClick)="openScanner()">{{ 'search.scanBarcode' | t }}</ui-button>
             </div>
 
             <div *ngIf="filteredResults.length === 0 && (results.length > 0 || (searching && !activeQuery))" class="empty-state">
@@ -440,6 +451,8 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
     .filter-label { display: block; margin-bottom: 12px; font-size: var(--text-base); color: var(--ink); cursor: pointer; }
     .filter-label input { margin-right: 8px; }
     .fallback-hint { margin: 0 0 16px; font-size: var(--text-xs); color: var(--flag); }
+    .search-tip { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--line); text-align: center; color: color-mix(in srgb, var(--muted) 80%, transparent); font-size: var(--text-xs); }
+    .search-tip p { margin: 0 0 var(--space-3); }
     .price-range { display: flex; gap: 8px; align-items: center; }
     /* Price stays a plain numeric range, not a facet list — strip ui-input's
        boxed border for an underline look consistent with the lighter facet
@@ -1079,6 +1092,11 @@ export class Search implements OnInit {
   /** 換頁是唯一「不重設 page」的操作，所以它是唯一要明講 page 的呼叫端。 */
   onPageChange(page: number) {
     this.navigateWithState({ page });
+  }
+
+  /** Whether the search on screen was for an ISBN rather than a title or author. */
+  get activeQueryIsIsbn(): boolean {
+    return !!cleanAndValidateIsbn(this.activeQuery);
   }
 
   /** The barcode scanner sheet (phones): scan a book to search its ISBN. */

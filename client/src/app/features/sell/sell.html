@@ -91,8 +91,9 @@
                 <span class="muted result-isbn" *ngIf="result.isbn">ISBN: {{ result.isbn }}</span>
               </span>
             </button>
-            <p class="muted mt-4" *ngIf="isTextQuery">{{ 'sell.textSearchIsbnHint' | t }}</p>
+            <p class="search-hint mt-4">{{ (isTextQuery ? 'sell.textSearchIsbnHint' : 'sell.isbnSearchTitleHint') | t }}</p>
             <div class="actions split mt-4" >
+              <ui-button variant="ghost" (onClick)="rescan()" *ngIf="isTextQuery">{{ 'sell.scanBarcode' | t }}</ui-button>
               <ui-button variant="ghost" (onClick)="enterManually()">{{ 'sell.enterManually' | t }}</ui-button>
             </div>
           </div>
@@ -126,6 +127,12 @@
 
           <div *ngIf="apiError && step === 1" class="inline-msg error">
             {{ apiError }}
+          </div>
+          <!-- A title search that found nothing: the error suggests the
+               barcode, so offer it here — the Scan button above is hidden
+               while the manual-entry fields are showing. -->
+          <div class="mt-2" *ngIf="apiError && bookPreview?.isManual && isTextQuery && !isScanning">
+            <ui-button variant="ghost" (onClick)="rescan()">{{ 'sell.scanBarcode' | t }}</ui-button>
           </div>
 
           <div class="actions">

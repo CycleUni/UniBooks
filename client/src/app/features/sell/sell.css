@@ -75,6 +75,13 @@
       border-left-color: var(--accent);
       transform: translateY(-2px);
     }
+    /* The way out when no result is the book: kept quieter than the
+       results it sits under. */
+    .search-hint {
+      color: color-mix(in srgb, var(--muted) 80%, transparent);
+      font-size: var(--text-xs);
+    }
+
     .select-hint {
       margin-top: 24px;
       margin-bottom: -4px;
