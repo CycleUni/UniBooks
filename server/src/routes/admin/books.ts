@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { inList } from '../../lib/sql';
+import { inList, outer } from '../../lib/sql';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { and, count, desc, eq, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm';
@@ -49,8 +49,8 @@ function isbnTaken(other: Pick<Book, 'id' | 'title'> | null | undefined): never 
   });
 }
 
-const activeListingsSql = sql<number>`(SELECT count(*) FROM ${listings} WHERE ${listings.bookId} = ${books.id} AND ${listings.status} = 'active')`;
-const requestCountSql = sql<number>`(SELECT count(*) FROM ${subscriptions} WHERE ${subscriptions.bookId} = ${books.id})`;
+const activeListingsSql = sql<number>`(SELECT count(*) FROM ${listings} WHERE ${listings.bookId} = ${outer(books.id)} AND ${listings.status} = 'active')`;
+const requestCountSql = sql<number>`(SELECT count(*) FROM ${subscriptions} WHERE ${subscriptions.bookId} = ${outer(books.id)})`;
 
 function bookWithCounts(db: Database) {
   return db.select({ b: books, activeListings: activeListingsSql, requestCount: requestCountSql }).from(books);

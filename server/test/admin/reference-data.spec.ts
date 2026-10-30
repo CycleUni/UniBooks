@@ -271,3 +271,39 @@ describe('regions and currencies are admin-only', () => {
     );
   });
 });
+
+describe('book list counts', () => {
+  it("counts each book's own active listings and requests", async () => {
+    const now = new Date().toISOString();
+    const book = crypto.randomUUID();
+    const other = crypto.randomUUID();
+    const run = (q: string, ...args: unknown[]) => env.DB.prepare(q).bind(...args);
+    await env.DB.batch([
+      run("INSERT INTO books (id, region_code, title, source, created_at) VALUES (?, 'TW', 'Counted Book', 'manual', ?)", book, now),
+      run("INSERT INTO books (id, region_code, title, source, created_at) VALUES (?, 'TW', 'Counted Other', 'manual', ?)", other, now),
+      ...(['active', 'active', 'sold'] as const).map((status) =>
+        run(
+          `INSERT INTO listings (id, region_code, currency_code, book_id, seller_id, price, condition, status, created_at, updated_at)
+           VALUES (?, 'TW', 'TWD', ?, ?, 100, 'new', ?, ?, ?)`,
+          crypto.randomUUID(),
+          book,
+          root.id,
+          status,
+          now,
+          now,
+        ),
+      ),
+      run(
+        "INSERT INTO subscriptions (id, region_code, user_id, book_id, created_at) VALUES (?, 'TW', ?, ?, ?)",
+        crypto.randomUUID(),
+        root.id,
+        book,
+        now,
+      ),
+    ]);
+    const res = await call(`/api/v1/admin/books?q=${encodeURIComponent('Counted')}`, { token: root.token });
+    const rows = ((await res.json()) as { results: { id: string; active_listings: number; request_count: number }[] }).results;
+    expect(rows.find((r) => r.id === book)).toMatchObject({ active_listings: 2, request_count: 1 });
+    expect(rows.find((r) => r.id === other)).toMatchObject({ active_listings: 0, request_count: 0 });
+  });
+});
