@@ -41,9 +41,44 @@ describe('ISBNnet resolver', () => {
 describe('Google Books by ISBN', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('finds a volume no ISBN query reaches through its registry title', async () => {
-    // As Google answered for 9786263338272: isbn: and the bare number come
-    // back empty; the main title alone returns the volume with that ISBN.
+  it('asks isbn: again after a miss', async () => {
+    // Google answers isbn: from replicas that disagree: a miss, then the volume.
+    const isbn = '9786260000059';
+    let calls = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      calls++;
+      if (calls === 1) return Response.json({ totalItems: 0 });
+      return Response.json({
+        totalItems: 1,
+        items: [{ volumeInfo: { title: 'Second try', industryIdentifiers: [{ type: 'ISBN_13', identifier: isbn }] } }],
+      });
+    });
+    expect(await getGoogleBooksByIsbn(env, isbn)).toMatchObject({ title: 'Second try' });
+    expect(calls).toBe(2);
+  });
+
+  it('keeps a miss no title search confirmed for minutes, a confirmed one for a day', async () => {
+    const cacheControl = async (isbn: string) =>
+      (await caches.default.match(new Request(`https://cache.internal/${encodeURIComponent(`catalog:gb:isbn:${isbn}`)}`)))?.headers.get(
+        'Cache-Control',
+      );
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ totalItems: 0 }));
+
+    // The stub resolver lists nothing, so no title search runs.
+    expect(await getGoogleBooksByIsbn(env, '9786260000066')).toBeNull();
+    expect(await cacheControl('9786260000066')).toBe('public, max-age=600');
+
+    const named = {
+      ...env,
+      ISBNNET: { lookup: async () => ({ status: 'found', book: { title: 'Not on Google', isbn: '9786260000073' } }) },
+    } as unknown as typeof env;
+    expect(await getGoogleBooksByIsbn(named, '9786260000073')).toBeNull();
+    expect(await cacheControl('9786260000073')).toBe('public, max-age=86400');
+  });
+
+  it('finds a volume isbn: keeps missing through its registry title', async () => {
+    // As Google answered for 9786263338272: isbn: came back empty, while the
+    // main title alone returns the volume with that ISBN every time.
     const isbn = '9786260000011';
     const queries: string[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -76,7 +111,7 @@ describe('Google Books by ISBN', () => {
       title: 'Python程式入門與ChatGPT實用技巧：聰明使用AI小幫手',
       cover_url: expect.stringContaining('books.google.com'),
     });
-    expect(queries).toEqual([`isbn:${isbn}`, isbn, 'Python程式入門與ChatGPT實用技巧']);
+    expect(queries).toEqual([`isbn:${isbn}`, `isbn:${isbn}`, `isbn:${isbn}`, 'Python程式入門與ChatGPT實用技巧']);
   });
 
   it('asks for the volume a link names, past a cached not-found', async () => {

@@ -1,7 +1,8 @@
 /**
  * External catalogue lookups (Google Books, Open Library, the ISBNnet
- * resolver). Results are cached in KV: hits for 30 days (ISBN) / 24 h
- * (keyword), confirmed misses for an hour, and a global 10-second "Google is rate-limiting us" flag.
+ * resolver). Results are cached at the edge: hits for 30 days (ISBN) / 24 h
+ * (keyword), misses for 24 h (a Google ISBN miss no title search confirmed:
+ * 10 minutes), and a global 10-second "Google is rate-limiting us" flag.
  * A KV failure degrades to a live call, never to an error.
  */
 import type { Env, IsbnnetLookup } from '../../env';
@@ -190,12 +191,34 @@ function googleCover(info: GoogleVolumeInfo): string {
   return cleanCoverUrl((info.imageLinks?.thumbnail ?? '').replace(/^http:/, 'https:')) ?? '';
 }
 
-/** A plain search for `q` (the ISBN itself by default) whose volume carries that exact ISBN (Google's isbn: operator misses some). */
-async function googleVolumeWithIsbn(env: Env, isbn: string, q = isbn): Promise<GoogleVolumeInfo | null> {
+/**
+ * Google answers isbn: from replicas that disagree: about half the calls for
+ * a volume every replica holds come back empty, at random (seen across ten
+ * ISBNs, 2026-10). One miss proves little, so a miss is asked again.
+ */
+const GOOGLE_ISBN_TRIES = 3;
+
+/** The volume isbn:`isbn` names, asked up to GOOGLE_ISBN_TRIES times; 'error' when Google answered with neither. */
+async function googleVolumeByIsbnQuery(env: Env, isbn: string): Promise<GoogleVolumeInfo | null | 'error'> {
+  for (let i = 0; i < GOOGLE_ISBN_TRIES; i++) {
+    const res = await googleFetch(env, `isbn:${isbn}`);
+    if (googleThrottled(res)) {
+      await markGoogleRateLimited(env);
+      throw new GoogleBooksRateLimited(`429 for isbn=${isbn}`);
+    }
+    if (res.status !== 200) return 'error';
+    const data = (await res.json()) as { totalItems?: number; items?: Array<{ volumeInfo?: GoogleVolumeInfo }> };
+    if ((data.totalItems ?? 0) > 0 && data.items?.length) return data.items[0].volumeInfo ?? {};
+  }
+  return null;
+}
+
+/** A plain search for `q` whose results include a volume carrying that exact ISBN. */
+async function googleVolumeWithIsbn(env: Env, isbn: string, q: string): Promise<GoogleVolumeInfo | null> {
   const res = await googleFetch(env, q, { maxResults: '40' });
   if (googleThrottled(res)) {
     await markGoogleRateLimited(env);
-    throw new GoogleBooksRateLimited(`429 for plain isbn=${isbn}`);
+    throw new GoogleBooksRateLimited(`429 for title search, isbn=${isbn}`);
   }
   if (res.status !== 200) return null;
   const wanted = isbnForms(isbn);
@@ -230,23 +253,30 @@ async function googleVolumeById(env: Env, isbn: string, volumeId: string): Promi
 }
 
 /**
- * Some volumes no ISBN query reaches at all — neither isbn: nor the bare
- * number, in either form (seen: 9786263338272) — though a search for their
- * title returns them with that ISBN on record. ISBNnet names the book; its
- * main title (the part before the subtitle) is the search, and only a volume
- * carrying the exact ISBN counts. Without this the book page showed
- * ISBNnet's coverless record for a book the search page showed from Google.
+ * A title search finds what isbn: missed: it answers the same every time
+ * (seen: 9786263338272), and the volume it returns carries the ISBN on
+ * record. ISBNnet names the book; its main title (the part before the
+ * subtitle) is the search, and only a volume carrying the exact ISBN counts.
+ * Without this the book page showed ISBNnet's coverless record for a book the
+ * search page showed from Google. `searched` says whether a title search ran:
+ * without one, a miss rests on isbn: alone.
  */
-async function googleVolumeByRegistryTitle(env: Env, isbn: string): Promise<GoogleVolumeInfo | null> {
+async function googleVolumeByRegistryTitle(env: Env, isbn: string): Promise<{ info: GoogleVolumeInfo | null; searched: boolean }> {
   const named = await getIsbnnetBookByIsbn(env, isbn);
   const title = named?.title.split(/[：:]/)[0].trim();
-  return title ? googleVolumeWithIsbn(env, isbn, title) : null;
+  return title ? { info: await googleVolumeWithIsbn(env, isbn, title), searched: true } : { info: null, searched: false };
 }
 
 /**
+ * How long a miss no title search confirmed is kept: ISBNnet was down or does
+ * not list the book, so the next visitor's isbn: tries may well find it.
+ */
+const UNCONFIRMED_MISS_TTL = 600;
+
+/**
  * `volumeId` is the Google volume a shared search-result link names: asked
- * first, and past a cached not-found, since many volumes Google's search
- * returns answer no ISBN query at all (seen: 9783819246562, 9786263338272).
+ * first, and past a cached not-found, since isbn: finds a volume only some
+ * of the time (seen: 9783819246562, 9786263338272).
  */
 export async function getGoogleBooksByIsbn(env: Env, isbn: string, meta?: LookupMeta, volumeId?: string): Promise<BookRecord | null> {
   const key = `gb:isbn:${isbn}`;
@@ -260,21 +290,19 @@ export async function getGoogleBooksByIsbn(env: Env, isbn: string, meta?: Lookup
   try {
     let item = volumeId ? await googleVolumeById(env, isbn, volumeId) : null;
     if (item === null) {
-      const res = await googleFetch(env, `isbn:${isbn}`);
-      if (googleThrottled(res)) {
-        await markGoogleRateLimited(env);
-        if (meta) meta.status = 'rate_limited';
-        throw new GoogleBooksRateLimited(`429 for isbn=${isbn}`);
-      }
-      if (res.status !== 200) {
+      const found = await googleVolumeByIsbnQuery(env, isbn);
+      if (found === 'error') {
         if (meta) meta.status = 'error';
         return null;
       }
-      const data = (await res.json()) as { totalItems?: number; items?: Array<{ volumeInfo?: GoogleVolumeInfo }> };
-      item = (data.totalItems ?? 0) > 0 && data.items?.length ? (data.items[0].volumeInfo ?? {}) : null;
+      item = found;
     }
-    if (item === null) item = await googleVolumeWithIsbn(env, isbn);
-    if (item === null) item = await googleVolumeByRegistryTitle(env, isbn);
+    let confirmed = true;
+    if (item === null) {
+      const byTitle = await googleVolumeByRegistryTitle(env, isbn);
+      item = byTitle.info;
+      confirmed = byTitle.searched;
+    }
     if (item !== null) {
       const result: BookRecord = {
         title: item.title ?? '',
@@ -288,7 +316,7 @@ export async function getGoogleBooksByIsbn(env: Env, isbn: string, meta?: Lookup
       if (meta) meta.status = 'found';
       return result;
     }
-    await cacheSet(env, key, NOT_FOUND_SENTINEL, NOT_FOUND_TTL);
+    await cacheSet(env, key, NOT_FOUND_SENTINEL, confirmed ? NOT_FOUND_TTL : UNCONFIRMED_MISS_TTL);
     if (meta) meta.status = 'not_found';
     return null;
   } catch (e) {
