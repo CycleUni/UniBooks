@@ -45,6 +45,8 @@ const ISBN_HIT_TTL = 86400 * 30;
 const QUERY_HIT_TTL = 86400;
 const GOOGLE_RATE_LIMIT_KEY = 'gb:rate_limited';
 const GOOGLE_RATE_LIMIT_TTL_MS = 10_000;
+const ISBNNET_DOWN_KEY = 'isbnnet:down';
+const ISBNNET_DOWN_TTL_MS = 90_000;
 const USER_AGENT = 'UniBooks Backend Service';
 
 // ---------------------------------------------------------------- cache ----
@@ -76,6 +78,15 @@ async function googleRateLimited(env: Env): Promise<boolean> {
 async function markGoogleRateLimited(env: Env): Promise<void> {
   // Stored as an expiry timestamp, so a copy that outlives its TTL still reads as expired.
   await cacheSet(env, GOOGLE_RATE_LIMIT_KEY, String(Date.now() + GOOGLE_RATE_LIMIT_TTL_MS), 60);
+}
+
+async function isbnnetDown(env: Env): Promise<boolean> {
+  const until = Number(await cacheGet(env, ISBNNET_DOWN_KEY));
+  return Number.isFinite(until) && until > Date.now();
+}
+
+async function markIsbnnetDown(env: Env): Promise<void> {
+  await cacheSet(env, ISBNNET_DOWN_KEY, String(Date.now() + ISBNNET_DOWN_TTL_MS), 120);
 }
 
 /**
@@ -507,6 +518,13 @@ export async function getIsbnnetBookByIsbn(env: Env, isbn: string, meta?: Lookup
   const key = `isbnnet:isbn:${isbn}`;
   const cached = await cachedOr<BookRecord | null>(env, key, meta, null);
   if (cached.hit) return cached.value;
+  // The National Central Library site goes quiet for hours at a time; once a
+  // call has failed, skip it for a while instead of making each visitor wait
+  // out the timeout before the next engine gets its turn.
+  if (await isbnnetDown(env)) {
+    if (meta) meta.status = 'error';
+    return null;
+  }
   try {
     const res = await callIsbnnet(env, isbn);
     if (!res) {
@@ -532,9 +550,11 @@ export async function getIsbnnetBookByIsbn(env: Env, isbn: string, meta?: Lookup
       if (meta) meta.status = 'not_found';
       return null;
     }
+    await markIsbnnetDown(env);
     if (meta) meta.status = 'error';
     return null;
   } catch (e) {
+    await markIsbnnetDown(env);
     if (meta) meta.status = isTimeout(e) ? 'timeout' : 'error';
     console.warn('[catalog] ISBNnet lookup failed', isbn, e);
     return null;

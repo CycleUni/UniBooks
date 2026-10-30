@@ -133,6 +133,29 @@ describe('Google Books by ISBN', () => {
   });
 });
 
+describe('ISBNnet outage', () => {
+  it('stops asking ISBNnet for a while after a failed call', async () => {
+    let calls = 0;
+    const down = {
+      ...env,
+      ISBNNET: {
+        lookup: async () => {
+          calls++;
+          return { status: 'upstream_error' };
+        },
+      },
+    } as unknown as typeof env;
+
+    const first: LookupMeta = {};
+    expect(await getIsbnnetBookByIsbn(down, '9786260000103', first)).toBeNull();
+    expect(first.status).toBe('error');
+    const second: LookupMeta = {};
+    expect(await getIsbnnetBookByIsbn(down, '9786260000110', second)).toBeNull();
+    expect(second.status).toBe('error');
+    expect(calls).toBe(1);
+  });
+});
+
 describe('catalogue helpers', () => {
   it('cleans publisher quotes and cover URLs', () => {
     expect(cleanPublisher('"O\'Reilly Media, Inc."')).toBe("O'Reilly Media, Inc.");
