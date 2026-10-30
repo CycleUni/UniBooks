@@ -67,6 +67,15 @@ export const CATALOGS: Record<string, Record<string, string>> = {
     'email.meetupReminder.time': 'Time: {time}',
     'email.meetupReminder.location': 'Location: {location}',
     'email.meetupReminder.viewOrder': 'View your orders: {link}',
+    'email.verificationExpiry.subject': 'UniBooks: your student verification will expire on {date}',
+    'email.verificationExpiry.intro': 'Your UniBooks student verification for {email} will expire on {date}.',
+    'email.verificationExpiry.introManual': 'Your UniBooks student verification will expire on {date}.',
+    'email.verificationExpiry.how': 'To extend it for another two years, please verify your school email again in your account settings.',
+    'email.verificationExpiry.howGoogle':
+      'To extend it for another two years, please verify your school email again in your account settings, or sign in to UniBooks with your school Google account.',
+    'email.verificationExpiry.after':
+      'Once it expires, listing books and messaging sellers will be unavailable until you complete verification again.',
+    'email.verificationExpiry.settings': 'Account settings: {link}',
   },
   'zh-HK': {
     'email.activation.subject': 'UniBooks 帳戶啟用電郵',
@@ -127,6 +136,13 @@ export const CATALOGS: Record<string, Record<string, string>> = {
     'email.meetupReminder.time': '時間：{time}',
     'email.meetupReminder.location': '地點：{location}',
     'email.meetupReminder.viewOrder': '查看訂單：{link}',
+    'email.verificationExpiry.subject': 'UniBooks 學生身份驗證將於 {date} 到期',
+    'email.verificationExpiry.intro': '閣下於 UniBooks 以 {email} 完成的學生身份驗證，將於 {date} 到期。',
+    'email.verificationExpiry.introManual': '閣下於 UniBooks 的學生身份驗證將於 {date} 到期。',
+    'email.verificationExpiry.how': '如需延長兩年，請前往帳戶設定重新驗證學校電郵。',
+    'email.verificationExpiry.howGoogle': '如需延長兩年，請前往帳戶設定重新驗證學校電郵，或以學校 Google 帳戶登入 UniBooks。',
+    'email.verificationExpiry.after': '驗證到期後，上架書籍及傳送私訊功能將暫停，完成重新驗證後即可恢復。',
+    'email.verificationExpiry.settings': '帳戶設定：{link}',
   },
   'zh-TW': {
     'email.activation.subject': 'UniBooks 帳號啟用信',
@@ -188,5 +204,12 @@ export const CATALOGS: Record<string, Record<string, string>> = {
     'email.meetupReminder.time': '時間：{time}',
     'email.meetupReminder.location': '地點：{location}',
     'email.meetupReminder.viewOrder': '查看訂單：{link}',
+    'email.verificationExpiry.subject': 'UniBooks 學生身分驗證將於 {date} 到期',
+    'email.verificationExpiry.intro': '您於 UniBooks 以 {email} 完成的學生身分驗證，將於 {date} 到期。',
+    'email.verificationExpiry.introManual': '您於 UniBooks 的學生身分驗證將於 {date} 到期。',
+    'email.verificationExpiry.how': '如需延長兩年，請至帳號設定重新驗證學校信箱。',
+    'email.verificationExpiry.howGoogle': '如需延長兩年，請至帳號設定重新驗證學校信箱，或以學校 Google 帳號登入 UniBooks。',
+    'email.verificationExpiry.after': '驗證到期後，上架書籍與傳送私訊功能將暫停，完成重新驗證後即可恢復。',
+    'email.verificationExpiry.settings': '帳號設定：{link}',
   },
 };

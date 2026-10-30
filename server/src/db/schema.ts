@@ -214,6 +214,9 @@ export const regionVerifications = sqliteTable(
     verifiedAt: text('verified_at').notNull(),
     lastReverifiedAt: text('last_reverified_at'),
     expiresAt: text('expires_at'),
+    // The expires_at the expiry reminder was sent for; a renewal moves
+    // expires_at on, so the next cycle is reminded again.
+    expiryRemindedFor: text('expiry_reminded_for'),
     isActive: integer('is_active').notNull().default(1),
     createdAt: text('created_at'),
   },

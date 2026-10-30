@@ -242,3 +242,9 @@
   align-items: center;
   gap: var(--space-2);
 }
+
+.renew-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

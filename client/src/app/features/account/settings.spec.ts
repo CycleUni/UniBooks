@@ -26,6 +26,71 @@ describe('SettingsComponent', () => {
     component = fixture.componentInstance;
   });
 
+  describe('two-year expiry', () => {
+    const tw = { code: 'TW', edu_email_suffix: ['edu.tw'] };
+    const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
+    beforeEach(() => {
+      (component as any).regionService = { currentRegionObj: () => tw };
+    });
+
+    it('offers renewal only in the last 30 days', () => {
+      component.verifications = [{ region: 'TW', edu_email: 'a@ntu.edu.tw', verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(200) }];
+      expect(component.renewalDue).toBe(false);
+      component.verifications = [{ region: 'TW', edu_email: 'a@ntu.edu.tw', verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(10) }];
+      expect(component.renewalDue).toBe(true);
+    });
+
+    it("names the region's lapsed verification only while no live one replaces it", () => {
+      component.lapsedVerifications = [{ region: 'TW', edu_email: 'a@ntu.edu.tw', expires_at: '2022-01-01T00:00:00Z' }];
+      component.verifications = [];
+      expect(component.currentLapsed?.edu_email).toBe('a@ntu.edu.tw');
+      component.verifications = [{ region: 'TW', edu_email: 'a@ntu.edu.tw', verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(700) }];
+      expect(component.currentLapsed).toBeNull();
+    });
+
+    it('renews through the server without sending any address', () => {
+      const renew = vi.fn().mockReturnValue(of({ code: 'acct.sentVerification', edu_email: 'b@ntu.edu.tw' }));
+      (component as any).accountService = { renewVerification: renew };
+      const mail = vi.spyOn(component as any, 'submitEduVerification');
+      component.verifications = [{ region: 'TW', edu_email: 'b@ntu.edu.tw', verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(5) }];
+      component.onVerifyWithOldEmail();
+      expect(renew).toHaveBeenCalledWith();
+      expect(mail).not.toHaveBeenCalled();
+      expect(component.clientVerifyMsg).toBe('acct.sentVerification');
+      expect(component.resendCooldownSeconds).toBeGreaterThan(0);
+    });
+
+    it("offers a lapsed verification's old address, and a new one when changing", () => {
+      const mail = vi.spyOn(component as any, 'submitEduVerification').mockImplementation(() => {});
+      component.verifications = [];
+      component.lapsedVerifications = [{ region: 'TW', edu_email: 'old@ntu.edu.tw', expires_at: '2022-01-01T00:00:00Z' }];
+      component.email = 'me@gmail.com';
+      expect(component.renewOldEmail).toBe('old@ntu.edu.tw');
+      component.onChangeEduEmail();
+      expect(component.changingEduEmail).toBe(true);
+      expect(component.eduEmail).toBe('');
+      component.eduEmail = 'new@ntu.edu.tw';
+      component.onSubmitNewEduEmail();
+      expect(mail).toHaveBeenLastCalledWith('new@ntu.edu.tw');
+    });
+
+    it('has no old address for a manual verification', () => {
+      component.verifications = [{ region: 'TW', edu_email: null, verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(5) }];
+      expect(component.renewOldEmail).toBeNull();
+    });
+
+    it('mentions Google sign-in only for a Google-linked account signing in with the bound campus address', () => {
+      component.verifications = [{ region: 'TW', edu_email: 'me@ntu.edu.tw', verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(5) }];
+      component.email = 'me@ntu.edu.tw';
+      component.isGoogleLinked = false;
+      expect(component.googleRenews).toBe(false);
+      component.isGoogleLinked = true;
+      expect(component.googleRenews).toBe(true);
+      component.email = 'other@ntu.edu.tw';
+      expect(component.googleRenews).toBe(false);
+    });
+  });
+
   describe('autoVerifyRegion', () => {
     it('should return region if verified_at is null', () => {
       // Mock regions and verifications

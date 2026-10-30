@@ -28,6 +28,7 @@ import {
 } from '../../db';
 import { apiError, pagination } from '../../lib/http';
 import { parseJsonObject } from '../../lib/json';
+import { liveVerification } from '../../lib/region';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { notFound, scopeOf, uuidId } from '../../services/admin/scope';
 import { coverUrlFor } from '../../services/catalog/covers';
@@ -536,7 +537,7 @@ statsRoutes.get('/stats/overview', async (c) => {
       })
       .from(users)
       .innerJoin(regionVerifications, eq(regionVerifications.userId, users.id))
-      .where(and(eq(regionVerifications.regionCode, code), eq(regionVerifications.isActive, 1), sql`${users.deletedAt} IS NULL`)),
+      .where(and(eq(regionVerifications.regionCode, code), liveVerification(), sql`${users.deletedAt} IS NULL`)),
     db
       .select({ status: reports.status, reason: reports.reason, n: count(), fresh: freshReports(reports.createdAt) })
       .from(reports)

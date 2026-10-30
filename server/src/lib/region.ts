@@ -77,20 +77,20 @@ export async function requireRegion(c: Context<AppEnv>): Promise<Region> {
   return region;
 }
 
+/** A verification that counts right now: bound, and not past its two-year expiry. */
+export function liveVerification() {
+  return and(
+    eq(regionVerifications.isActive, 1),
+    or(isNull(regionVerifications.expiresAt), gt(regionVerifications.expiresAt, new Date().toISOString())),
+  );
+}
+
 /** Whether the user holds an active, unexpired verification in `regionCode`. */
 export async function isVerifiedIn(env: AppEnv['Bindings'], userId: string, regionCode: string): Promise<boolean> {
-  const nowIso = new Date().toISOString();
   const [row] = await createDb(env.DB)
     .select({ id: regionVerifications.id })
     .from(regionVerifications)
-    .where(
-      and(
-        eq(regionVerifications.userId, userId),
-        eq(regionVerifications.regionCode, regionCode),
-        eq(regionVerifications.isActive, 1),
-        or(isNull(regionVerifications.expiresAt), gt(regionVerifications.expiresAt, nowIso)),
-      ),
-    )
+    .where(and(eq(regionVerifications.userId, userId), eq(regionVerifications.regionCode, regionCode), liveVerification()))
     .limit(1);
   return !!row;
 }

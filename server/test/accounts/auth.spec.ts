@@ -421,6 +421,81 @@ describe('campus email verification', () => {
     const me = (await (await call('/api/v1/auth/me?region=HK', { token: access })).json()) as any;
     expect(me.is_verified).toBe(true);
   });
+
+  it('renews only the stored address, whatever the request names', async () => {
+    const id = await createUser('renew-link@example.com');
+    const { access } = await login('renew-link@example.com');
+    const token = await ott.issue(env, ott.EDU_VERIFY, id, ott.EDU_VERIFY_TTL, { edu_email: 'stored@ntu.edu.tw' });
+    await call('/api/v1/auth/verify', { body: { token } });
+    await env.DB.prepare("UPDATE region_verifications SET expires_at = '2022-01-01T00:00:00.000Z' WHERE user_id = ?").bind(id).run();
+
+    // A lapsed verification renews too; an address in the body is ignored.
+    const res = await call('/api/v1/auth/verify/renew?region=TW', { body: { edu_email: 'attacker@ntu.edu.tw' }, token: access });
+    expect(await res.json()).toEqual({ code: 'acct.sentVerification', edu_email: 'stored@ntu.edu.tw' });
+    expect((await call('/api/v1/auth/verify/renew?region=TW', { body: {} })).status).toBe(401);
+  });
+
+  it('renews a campus sign-in address at once, and has nothing to renew for a manual verification', async () => {
+    const id = await createUser('renew-self@hku.hk');
+    const { access } = await login('renew-self@hku.hk');
+    await call('/api/v1/auth/verify/auto', { body: {}, token: access });
+    await env.DB.prepare("UPDATE region_verifications SET expires_at = '2022-01-01T00:00:00.000Z' WHERE user_id = ?").bind(id).run();
+    const res = await call('/api/v1/auth/verify/renew?region=HK', { body: {}, token: access });
+    expect(await res.json()).toEqual({ code: 'acct.verifySuccess' });
+    const me = (await (await call('/api/v1/auth/me?region=HK', { token: access })).json()) as any;
+    expect(me.is_verified).toBe(true);
+
+    const manual = await createUser('renew-manual@example.com');
+    await env.DB.prepare(
+      "INSERT INTO region_verifications (user_id, region_code, is_manual_verification, verified_at, expires_at, is_active, created_at) VALUES (?, 'TW', 1, '2024-01-01T00:00:00.000Z', '2022-01-01T00:00:00.000Z', 1, '2024-01-01T00:00:00.000Z')",
+    )
+      .bind(manual)
+      .run();
+    const m = await login('renew-manual@example.com');
+    const none = await call('/api/v1/auth/verify/renew?region=TW', { body: {}, token: m.access });
+    expect(await none.json()).toEqual({ error: { code: 'acct.errNoEduEmailToRenew' } });
+  });
+
+  it('lasts two years, lapses after, and verifying again renews it', async () => {
+    const id = await createUser('renew@hku.hk');
+    const { access } = await login('renew@hku.hk');
+    await call('/api/v1/auth/verify/auto', { body: {}, token: access });
+    const row = () =>
+      env.DB.prepare(
+        "SELECT verified_at, last_reverified_at, expires_at FROM region_verifications WHERE user_id = ? AND region_code = 'HK'",
+      )
+        .bind(id)
+        .first<{ verified_at: string; last_reverified_at: string | null; expires_at: string }>();
+    const first = (await row())!;
+    const twoYears = new Date(first.verified_at);
+    twoYears.setUTCFullYear(twoYears.getUTCFullYear() + 2);
+    expect(first.expires_at).toBe(twoYears.toISOString());
+    expect(first.last_reverified_at).toBeNull();
+
+    // Two years on: no longer verified, and the profile says it lapsed.
+    await env.DB.prepare(
+      "UPDATE region_verifications SET verified_at = '2020-01-01T00:00:00.000Z', expires_at = '2022-01-01T00:00:00.000Z' WHERE user_id = ?",
+    )
+      .bind(id)
+      .run();
+    const me = () => call('/api/v1/auth/me?region=HK', { token: access }).then((r) => r.json() as Promise<any>);
+    const lapsed = await me();
+    expect(lapsed.is_verified).toBe(false);
+    expect(lapsed.verifications).toEqual([]);
+    expect(lapsed.lapsed_verifications).toEqual([{ region: 'HK', edu_email: 'renew@hku.hk', expires_at: '2022-01-01T00:00:00.000Z' }]);
+    expect((await call('/api/v1/listings?region=HK', { body: {}, token: access })).status).toBe(403);
+
+    // The same address again is a re-verification: first verified_at stays.
+    expect(await (await call('/api/v1/auth/verify/auto', { body: {}, token: access })).json()).toEqual({ code: 'acct.verifySuccess' });
+    const renewed = (await row())!;
+    expect(renewed.verified_at).toBe('2020-01-01T00:00:00.000Z');
+    expect(renewed.last_reverified_at).not.toBeNull();
+    expect(renewed.expires_at > new Date().toISOString()).toBe(true);
+    const back = await me();
+    expect(back.is_verified).toBe(true);
+    expect(back.lapsed_verifications).toEqual([]);
+    expect(back.verifications[0].expires_at).toBe(renewed.expires_at);
+  });
 });
 
 describe('school requests', () => {

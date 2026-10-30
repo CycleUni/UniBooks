@@ -21,6 +21,8 @@ import { clearSensitiveParams } from '../../core/sensitive-url';
 
 /** The verification answer that means "valid campus address, unknown campus". */
 const SCHOOL_NOT_SUPPORTED = 'acct.errSchoolNotSupported';
+/** How close to its expiry a verification starts offering renewal. */
+const RENEW_WINDOW_DAYS = 30;
 
 @Component({
   selector: 'app-account-settings',
@@ -53,6 +55,90 @@ export class SettingsComponent implements OnInit, OnDestroy {
     );
   }
 
+  /** The current region's verification that passed its two-year expiry,
+   *  while no live one replaces it. */
+  get currentLapsed(): any | null {
+    if (!this.currentRegion || this.currentVerification) return null;
+    return (this.lapsedVerifications || []).find((v) => isSameRegion(v.region, this.currentRegion!.code)) || null;
+  }
+
+  /** The live verification expires within RENEW_WINDOW_DAYS: offer to renew it now. */
+  get renewalDue(): boolean {
+    const expires = this.currentVerification?.expires_at;
+    return !!expires && new Date(expires).getTime() - Date.now() < RENEW_WINDOW_DAYS * 86_400_000;
+  }
+
+  /** Whether the sign-in email itself is a campus address of the current region,
+   *  so it can be (re-)verified in one click. */
+  private get loginEmailIsCampus(): boolean {
+    const domain = this.email.split('@')[1]?.toLowerCase();
+    return !!domain && !!this.currentRegion?.edu_email_suffix.some((s) => domainMatchesSuffix(domain, s));
+  }
+
+  /** The campus address a renewal re-proves: the one bound to the live or
+   *  lapsed verification. Null for a manual (staff) verification. */
+  get renewOldEmail(): string | null {
+    return this.currentVerification?.edu_email || this.currentLapsed?.edu_email || null;
+  }
+
+  /** The student chose to renew with a different campus address. */
+  changingEduEmail = false;
+
+  /** A Google sign-in renews the verification only for an account already
+   *  linked to Google whose sign-in email is the bound campus address, so
+   *  the hint is shown only then. */
+  get googleRenews(): boolean {
+    const old = this.renewOldEmail;
+    return this.isGoogleLinked && !!old && old.toLowerCase() === this.email.toLowerCase();
+  }
+
+  /** Renew the bound address. The server reads which one from the account,
+   *  so nothing here can redirect it: it renews at once when that address is
+   *  the sign-in email, otherwise it mails a link there. */
+  onVerifyWithOldEmail() {
+    if (this.isLoading || this.resendCooldownSeconds > 0) return;
+    this.isLoading = true;
+    this.clientVerifyMsg = '';
+    this.lastVerifyError = null;
+    this.autoVerifyMessage = '';
+    this.cdr.markForCheck();
+    this.accountService.renewVerification().subscribe({
+      next: (res) => {
+        this.isLoading = false;
+        this.verifyIsError = false;
+        if (res.code === 'acct.sentVerification') {
+          this.clientVerifyMsg = 'acct.sentVerification';
+          this.startResendCooldown(180);
+        } else {
+          this.clientVerifyMsg = 'acct.verifySuccess';
+          this.loadProfile();
+        }
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.isLoading = false;
+        this.verifyIsError = true;
+        this.lastVerifyError = err;
+        const throttledSeconds = this.extractThrottleSeconds(err);
+        if (throttledSeconds !== null) this.applyCooldownUntil(Date.now() + throttledSeconds * 1000);
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  onChangeEduEmail() {
+    this.changingEduEmail = true;
+    this.eduEmail = '';
+    this.clientVerifyMsg = '';
+    this.lastVerifyError = null;
+    this.autoVerifyMessage = '';
+  }
+
+  onSubmitNewEduEmail() {
+    if (this.resendCooldownSeconds > 0) return;
+    this.submitEduVerification(this.eduEmail);
+  }
+
   private readonly verifyPendingEmailStorageKeyLegacy =
     'unibooks.account.eduVerification.pendingEmail';
   private readonly verifyCooldownUntilStorageKeyLegacy =
@@ -63,6 +149,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   lastName = '';
   eduEmail = '';
   verifications: any[] = [];
+  lapsedVerifications: any[] = [];
   pendingEduEmail: string | null = null;
   resendCooldownSeconds = 0;
   isEditingPendingEmail = false;
@@ -293,6 +380,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.lastName = data.last_name || '';
         this.eduEmail = data.edu_email || '';
         this.verifications = data.verifications || [];
+        this.lapsedVerifications = data.lapsed_verifications || [];
+        this.changingEduEmail = false;
         this.hasPassword = data.has_password ?? true;
         this.isGoogleLinked = data.is_google_linked ?? false;
         this.passkeyTwoStep = data.passkey_2fa ?? false;

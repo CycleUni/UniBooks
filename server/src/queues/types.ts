@@ -75,6 +75,18 @@ export type EmailMessage =
       meetup_location: string;
       region?: string;
       timezone?: string;
+    }
+  | {
+      /** A campus verification runs out within 30 days (jobs: runVerificationExpiryReminder). */
+      type: 'verification_expiry';
+      /** Same key, same notice: a scheduled job that enqueues it again (its "sent" mark failed to save) is not sent twice. */
+      dedupe_key?: string;
+      user_id: string;
+      region: string;
+      /** The bound campus address; null for a manual verification. */
+      edu_email: string | null;
+      /** ISO timestamp; shown as a date in the region's timezone. */
+      expires_at: string;
     };
 
 export type PushMessage =

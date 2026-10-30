@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { Env } from '../env';
 import { conversations, createDb, emailSent, users } from '../db';
 import { escapeHtml } from '../lib/html';
-import { formatMeetupTime } from '../lib/time';
+import { formatDate, formatMeetupTime } from '../lib/time';
 import { siteOrigin } from '../lib/origin';
 import type { AccountLinkKind, EmailMessage } from './types';
 import { emailLanguageFor, t } from '../services/accounts/i18n';
@@ -74,6 +74,7 @@ interface UserRow {
   notify_new_message_email: number;
   email_language: string;
   site_language: string;
+  google_id: string | null;
 }
 
 async function loadUser(env: Env, id: string | undefined | null): Promise<UserRow | null> {
@@ -90,6 +91,7 @@ async function loadUser(env: Env, id: string | undefined | null): Promise<UserRo
       notify_new_message_email: users.notifyNewMessageEmail,
       email_language: users.emailLanguage,
       site_language: users.siteLanguage,
+      google_id: users.googleId,
     })
     .from(users)
     .where(eq(users.id, id))
@@ -272,6 +274,29 @@ async function meetupReminder(env: Env, msg: Extract<EmailMessage, { type: 'meet
   );
 }
 
+async function verificationExpiry(env: Env, msg: Extract<EmailMessage, { type: 'verification_expiry' }>): Promise<RenderedEmail | null> {
+  const user = await loadUser(env, msg.user_id);
+  if (!reachable(user)) return null;
+  const details = await regionDetails(env, msg.region);
+  const lang = await languageFor(env, user, msg.region);
+  const date = formatDate(msg.expires_at, details?.timezone || 'UTC');
+  const settings = `${frontend(env)}/account/settings`;
+  // A Google sign-in renews it only for an account linked to Google whose
+  // sign-in address is the bound campus address.
+  const viaGoogle = !!user.google_id && !!msg.edu_email && user.email.toLowerCase() === msg.edu_email.toLowerCase();
+  return render(user.email, displayName(user.first_name, user.last_name), t(lang, 'email.verificationExpiry.subject', { date }), [
+    msg.edu_email
+      ? t(lang, 'email.verificationExpiry.intro', { email: msg.edu_email, date })
+      : t(lang, 'email.verificationExpiry.introManual', { date }),
+    '',
+    t(lang, viaGoogle ? 'email.verificationExpiry.howGoogle' : 'email.verificationExpiry.how'),
+    '',
+    t(lang, 'email.verificationExpiry.after'),
+    '',
+    { text: t(lang, 'email.verificationExpiry.settings', { link: settings }), link: settings },
+  ]);
+}
+
 /** Build the email for a queue message, or null when nothing should be sent. */
 export async function buildEmail(msg: EmailMessage, env: Env): Promise<RenderedEmail | null> {
   origin = siteOrigin(env);
@@ -288,6 +313,8 @@ export async function buildEmail(msg: EmailMessage, env: Env): Promise<RenderedE
       return waitlist(env, msg);
     case 'meetup_reminder':
       return meetupReminder(env, msg);
+    case 'verification_expiry':
+      return verificationExpiry(env, msg);
     default:
       console.warn('[email] unknown message type', (msg as { type?: unknown }).type);
       return null;

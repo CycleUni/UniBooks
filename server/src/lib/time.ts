@@ -3,6 +3,11 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
+/** "YYYY-MM-DD" in `timeZone`. */
+export function formatDate(iso: string, timeZone: string): string {
+  return formatMeetupTime(iso, timeZone).slice(0, 10);
+}
+
 /** "YYYY-MM-DD HH:mm" in `timeZone`. */
 export function formatMeetupTime(iso: string, timeZone: string): string {
   const date = new Date(iso);

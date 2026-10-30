@@ -6,8 +6,9 @@ import type { AppEnv } from '../../env';
 import { disconnectUser } from '../../services/messaging/disconnect';
 import { createDb, regionVerifications, regions, schools, staffManagedRegions, users, type Database, type User } from '../../db';
 import { apiError, pagination, readJson } from '../../lib/http';
-import { getRegion } from '../../lib/region';
+import { getRegion, liveVerification } from '../../lib/region';
 import { requireAdmin } from '../../middleware/auth';
+import { verificationExpiry } from '../../services/accounts/edu';
 import { displayName } from '../../services/accounts/users';
 import { writeAudit } from '../../services/admin/audit';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
@@ -63,7 +64,7 @@ async function activeVerifications(db: Database, userIds: string[], scope: strin
         })
         .from(regionVerifications)
         .leftJoin(schools, eq(schools.id, regionVerifications.schoolId))
-        .where(and(inArray(regionVerifications.userId, userIds.slice(i, i + 90)), eq(regionVerifications.isActive, 1)))),
+        .where(and(inArray(regionVerifications.userId, userIds.slice(i, i + 90)), liveVerification()))),
     );
   }
   for (const r of rows) {
@@ -348,8 +349,13 @@ userRoutes.patch('/users/:id', async (c) => {
   }
   if (verifiedUpdate) {
     const { row } = await ensureVerification(db, instance.id, verifiedUpdate.regionCode, now);
-    if (verifiedUpdate.value && !row.isActive) {
-      await db.update(regionVerifications).set({ isActive: 1, verifiedAt: now, expiresAt: null }).where(eq(regionVerifications.id, row.id));
+    // A lapsed row is not verified either: verifying it starts a fresh two years.
+    const live = !!row.isActive && (!row.expiresAt || row.expiresAt > now);
+    if (verifiedUpdate.value && !live) {
+      await db
+        .update(regionVerifications)
+        .set({ isActive: 1, verifiedAt: now, expiresAt: verificationExpiry(now) })
+        .where(eq(regionVerifications.id, row.id));
       changes.verified_at = now;
     } else if (!verifiedUpdate.value && row.isActive) {
       await db.update(regionVerifications).set({ isActive: 0 }).where(eq(regionVerifications.id, row.id));

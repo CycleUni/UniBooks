@@ -23,6 +23,8 @@ export interface RegionVerification {
   school_name?: string;
   edu_email: string;
   verified_at: string | null;
+  /** Two years after the last (re-)verification. */
+  expires_at?: string | null;
 }
 
 export interface PasskeyItem {

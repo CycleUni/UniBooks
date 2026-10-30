@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { and, asc, eq, gt, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, lte, ne, sql } from 'drizzle-orm';
 import type { AppEnv, Env } from '../../env';
 import {
   createDb,
@@ -14,7 +14,7 @@ import {
   users,
   type User,
 } from '../../db';
-import { getRegion } from '../../lib/region';
+import { getRegion, liveVerification } from '../../lib/region';
 import { resolveLanguage } from './i18n';
 import { localizedName, type Row } from './regionData';
 import { cancelEmailChangeStatement } from './oneTimeTokens';
@@ -73,6 +73,7 @@ interface VerificationRow {
   school_id: number | null;
   edu_email: string | null;
   verified_at: string;
+  expires_at: string | null;
 }
 
 /** The user's live verifications (active, verified, unexpired), sorted by region, with their schools. */
@@ -83,16 +84,10 @@ export async function verificationsOf(env: Env, userId: string): Promise<(Verifi
       school_id: regionVerifications.schoolId,
       edu_email: regionVerifications.eduEmail,
       verified_at: regionVerifications.verifiedAt,
+      expires_at: regionVerifications.expiresAt,
     })
     .from(regionVerifications)
-    .where(
-      and(
-        eq(regionVerifications.userId, userId),
-        eq(regionVerifications.isActive, 1),
-        isNotNull(regionVerifications.verifiedAt),
-        or(isNull(regionVerifications.expiresAt), gt(regionVerifications.expiresAt, new Date().toISOString())),
-      ),
-    )
+    .where(and(eq(regionVerifications.userId, userId), isNotNull(regionVerifications.verifiedAt), liveVerification()))
     .orderBy(asc(regionVerifications.regionCode));
   const ids = [...new Set(results.map((r) => r.school_id).filter((id): id is number => id !== null))];
   const schools = new Map<number, Row>();
@@ -104,6 +99,30 @@ export async function verificationsOf(env: Env, userId: string): Promise<(Verifi
     for (const s of rows) schools.set(Number(s.id), s);
   }
   return results.map((r) => ({ ...r, school: r.school_id !== null ? (schools.get(r.school_id) ?? null) : null }));
+}
+
+/**
+ * The user's verifications that are still bound but past their expiry: the
+ * student has to prove the address again (link, one-click, or a Google
+ * sign-in with it) to get them back.
+ */
+async function lapsedVerificationsOf(env: Env, userId: string) {
+  return createDb(env.DB)
+    .select({
+      region_code: regionVerifications.regionCode,
+      edu_email: regionVerifications.eduEmail,
+      expires_at: regionVerifications.expiresAt,
+    })
+    .from(regionVerifications)
+    .where(
+      and(
+        eq(regionVerifications.userId, userId),
+        eq(regionVerifications.isActive, 1),
+        isNotNull(regionVerifications.expiresAt),
+        lte(regionVerifications.expiresAt, new Date().toISOString()),
+      ),
+    )
+    .orderBy(asc(regionVerifications.regionCode));
 }
 
 /** Average rating, review count and no-show count. */
@@ -137,10 +156,11 @@ export async function managedRegionsOf(env: Env, userId: string): Promise<string
 /** The signed-in user's own view of their account. */
 export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Record<string, unknown>> {
   const isStaff = isStaffRole(user.role);
-  const [region, lang, verifications, reputation, managedRegions] = await Promise.all([
+  const [region, lang, verifications, lapsed, reputation, managedRegions] = await Promise.all([
     getRegion(c),
     resolveLanguage(c),
     verificationsOf(c.env, user.id),
+    lapsedVerificationsOf(c.env, user.id),
     reputationOf(c.env, user.id),
     isStaff ? managedRegionsOf(c.env, user.id) : Promise.resolve([]),
   ]);
@@ -180,7 +200,9 @@ export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Rec
       school_name: v.school ? localizedName(v.school, lang) : '',
       edu_email: v.edu_email,
       verified_at: v.verified_at,
+      expires_at: v.expires_at,
     })),
+    lapsed_verifications: lapsed.map((v) => ({ region: v.region_code.toUpperCase(), edu_email: v.edu_email, expires_at: v.expires_at })),
     site_language: user.siteLanguage,
     // Blank once the verification it was saved under has ended.
     site_region: regions.includes(user.siteRegion) ? user.siteRegion : '',

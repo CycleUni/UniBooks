@@ -1,0 +1,1 @@
+ALTER TABLE `region_verifications` ADD `expiry_reminded_for` text;

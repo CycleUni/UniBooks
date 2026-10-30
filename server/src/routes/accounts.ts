@@ -352,12 +352,47 @@ accountRoutes.post('/verify/auto', authMiddleware(), rateLimit('verify-request',
   if (!(await isValidEduEmail(c.env, email))) apiError(400, 'acct.errEduEmail');
   const resolved = await resolveSchoolFromEmail(c.env, email);
   if (!resolved) apiError(400, 'acct.errSchoolNotSupported');
-  if (await isVerifiedIn(c.env, user.id, resolved.regionCode)) return c.json({ code: 'acct.verifySuccess' });
+  // Already verified: verifying again renews it (see upsertVerification).
   if (await emailAlreadyUsed(c.env, email, user.id)) apiError(400, 'acct.errEmailTaken');
   if (!(await upsertVerification(c.env, user.id, resolved.regionCode, resolved.school.id, email))) {
     apiError(400, 'acct.errEmailTaken');
   }
   return c.json({ code: 'acct.verifySuccess' });
+});
+
+/**
+ * Re-verify the campus address already bound in the request's region (live
+ * or lapsed). The client names no address: the server reads the stored one,
+ * so the request cannot be pointed at another. The account's own sign-in
+ * address is proven already and renews at once; any other gets a fresh link.
+ */
+accountRoutes.post('/verify/renew', authMiddleware(), rateLimit('verify-request', RATES.verifyRequest), async (c) => {
+  const region = await getRegion(c);
+  if (!region) apiError(400, 'sys.errUnknownRegion');
+  const user = await currentUser(c);
+  const [row] = await createDb(c.env.DB)
+    .select({ eduEmail: regionVerifications.eduEmail })
+    .from(regionVerifications)
+    .where(
+      and(eq(regionVerifications.userId, user.id), eq(regionVerifications.regionCode, region.code), eq(regionVerifications.isActive, 1)),
+    )
+    .limit(1);
+  // A staff-made verification has no address to renew: the student enters one.
+  if (!row?.eduEmail) apiError(400, 'acct.errNoEduEmailToRenew');
+  const eduEmail = row.eduEmail.toLowerCase();
+  const resolved = await resolveSchoolFromEmail(c.env, eduEmail);
+  if (!resolved || resolved.regionCode !== region.code) apiError(400, 'acct.errSchoolNotSupported');
+  if (await emailAlreadyUsed(c.env, eduEmail, user.id)) apiError(400, 'acct.errEmailTaken');
+
+  if (user.email.trim().toLowerCase() === eduEmail) {
+    if (!(await upsertVerification(c.env, user.id, resolved.regionCode, resolved.school.id, eduEmail))) {
+      apiError(400, 'acct.errEmailTaken');
+    }
+    return c.json({ code: 'acct.verifySuccess' });
+  }
+  const token = await ott.issue(c.env, ott.EDU_VERIFY, user.id, ott.EDU_VERIFY_TTL, { edu_email: eduEmail });
+  await sendLinkEmail(c, 'eduVerification', user.id, eduEmail, mailName(user), `/verify?token=${token}&type=edu`);
+  return c.json({ code: 'acct.sentVerification', edu_email: eduEmail });
 });
 
 accountRoutes.post('/verify/unbind', authMiddleware(), async (c) => {

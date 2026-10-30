@@ -21,19 +21,66 @@
               </strong>
               <p *ngIf="currentVerification.edu_email">{{ 'acct.boundTo' | t:{email: currentVerification.edu_email} }}</p>
               <p  style="font-size: var(--text-xs); margin-top: 4px;">{{ 'acct.verifiedAtPrefix' | t }}{{ currentVerification.verified_at | date:'yyyy/MM/dd HH:mm' }}</p>
+              <p *ngIf="currentVerification.expires_at" style="font-size: var(--text-xs);">{{ 'acct.expiresAtPrefix' | t }}{{ currentVerification.expires_at | date:'yyyy/MM/dd' }}</p>
             </div>
             <ui-button variant="white" (onClick)="onUnbindEduEmail(currentVerification.region)" [disabled]="isLoading">{{ 'acct.unbindEmail' | t }}</ui-button>
           </div>
         </div>
+
+        <!-- Two years are almost up: renew before the account loses selling and messaging. -->
+        <div class="alert-box warning mb-4" *ngIf="renewalDue">
+          <strong>{{ 'acct.renewTitle' | t:{date: (currentVerification.expires_at | date:'yyyy/MM/dd') ?? ''} }}</strong>
+          <p>{{ (googleRenews ? 'acct.renewDescGoogle' : 'acct.renewDesc') | t }}</p>
+          <ng-container *ngTemplateOutlet="renewActions"></ng-container>
+        </div>
       </ng-container>
 
-      <ng-template #unverifiedBlock>
-        <div class="alert-box warning mb-4" >
-          <strong>{{ 'acct.unverifiedTitle' | t }}</strong>
-          <p>{{ 'acct.unverifiedDesc' | t:{suffix: currentRegion.edu_email_suffix.join(', ')} }}</p>
+      <!-- Renew with the address already bound, or switch to another one. A
+           verification with none bound (staff-made) goes straight to the field. -->
+      <ng-template #renewActions>
+        <!-- A live verification already shows its address above ("bound to"). -->
+        <p *ngIf="renewOldEmail && !currentVerification" class="mt-2">{{ 'acct.renewOldEmail' | t:{email: renewOldEmail} }}</p>
+        <div *ngIf="renewOldEmail && !changingEduEmail; else newEduEmailForm" class="renew-actions mt-2">
+          <ui-button (onClick)="onVerifyWithOldEmail()" [disabled]="isLoading || resendCooldownSeconds > 0">
+            {{ (isLoading ? 'acct.sending' : 'acct.verifyWithOldEmail') | t }}
+          </ui-button>
+          <ui-button variant="white" (onClick)="onChangeEduEmail()" [disabled]="isLoading">{{ 'acct.changeEduEmail' | t }}</ui-button>
         </div>
+        <ng-template #newEduEmailForm>
+          <div class="form-group mt-2" style="max-width: 400px;">
+            <label>{{ 'acct.eduEmailLabel' | t:{suffixesText: ' (' + currentRegion!.edu_email_suffix.join(', ') + ')'} }}</label>
+            <ui-input type="email" autocomplete="off" placeholder="student@university{{ currentRegion!.edu_email_suffix[0] }}" [(ngModel)]="eduEmail" (keydown.enter)="onSubmitNewEduEmail()"></ui-input>
+            <div class="renew-actions mt-2">
+              <ui-button (onClick)="onSubmitNewEduEmail()" [disabled]="isLoading || resendCooldownSeconds > 0">
+                {{ (isLoading ? 'acct.sending' : (resendCooldownSeconds > 0 ? ('acct.resendIn' | t:{minutes: resendCooldownMinutes, seconds: resendCooldownSecondsPart}) : 'acct.sendVerification')) | t }}
+              </ui-button>
+              <ui-button *ngIf="renewOldEmail" variant="white" (onClick)="changingEduEmail = false" [disabled]="isLoading">{{ 'common.cancel' | t }}</ui-button>
+            </div>
+          </div>
+        </ng-template>
+        <div *ngIf="verifyMessage || autoVerifyMessage" class="inline-msg" [class.error]="verifyIsError || autoVerifyIsError">
+          {{ verifyMessage || autoVerifyMessage }}
+        </div>
+        <app-school-request-form *ngIf="schoolNotSupported" [eduEmail]="eduEmail"></app-school-request-form>
+      </ng-template>
 
-        <div class="form-group auto-verify-box" *ngIf="!showPendingVerification && autoVerifyRegion">
+      <ng-template #unverifiedBlock>
+        <div class="alert-box warning mb-4" *ngIf="currentLapsed; else neverVerified">
+          <strong>{{ 'acct.lapsedTitle' | t }}</strong>
+          <p>{{ (googleRenews ? 'acct.lapsedDescGoogle' : 'acct.lapsedDesc') | t:{date: (currentLapsed.expires_at | date:'yyyy/MM/dd') ?? ''} }}</p>
+          <ng-container *ngIf="!showPendingVerification">
+            <ng-container *ngTemplateOutlet="renewActions"></ng-container>
+          </ng-container>
+        </div>
+        <ng-template #neverVerified>
+          <div class="alert-box warning mb-4" >
+            <strong>{{ 'acct.unverifiedTitle' | t }}</strong>
+            <p>{{ 'acct.unverifiedDesc' | t:{suffix: currentRegion.edu_email_suffix.join(', ')} }}</p>
+          </div>
+        </ng-template>
+
+        <!-- A lapsed verification renews from its own box above. -->
+        <div class="form-group auto-verify-box" *ngIf="!showPendingVerification && autoVerifyRegion && !currentLapsed">
           <label class="success-text">{{ 'acct.autoVerifyLabel' | t }}</label>
           <p class="desc">{{ 'acct.autoVerifyDesc' | t:{email: email, region: autoVerifyRegion.localized_name} }}</p>
           <ui-button (onClick)="onAutoVerify()" [disabled]="isLoading">
@@ -46,7 +93,7 @@
         </div>
 
         <ng-container *ngIf="!showPendingVerification; else pendingVerificationBlock">
-          <div class="form-group mt-4"  style="max-width: 400px;">
+          <div class="form-group mt-4"  style="max-width: 400px;" *ngIf="!currentLapsed">
             <label>{{ 'acct.eduEmailLabel' | t:{suffixesText: ' (' + currentRegion.edu_email_suffix.join(', ') + ')'} }}</label>
             <ui-input type="email" autocomplete="off" placeholder="student@university{{ currentRegion.edu_email_suffix[0] }}" [(ngModel)]="eduEmail" ></ui-input>
             <ui-button  class="mt-2" (onClick)="onRequestVerification()" [disabled]="isLoading || resendCooldownSeconds > 0">

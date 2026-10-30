@@ -91,6 +91,8 @@ export interface UserProfile {
   school_name?: string;
   is_active?: boolean;
   verified_at?: string | null;
+  /** Bound verifications past their two-year expiry, waiting to be renewed. */
+  lapsed_verifications?: { region: string; edu_email: string | null; expires_at: string }[];
   average_rating?: number;
   review_count?: number;
   no_show_count?: number;
@@ -439,6 +441,15 @@ export class AccountService {
 
   requestEduVerification(eduEmail: string): Observable<any> {
     return this.http.post<any>('/auth/verify/request', { edu_email: eduEmail });
+  }
+
+  /** Re-verify the campus address already bound in this region. The server
+   *  picks the address, so none is sent. Answers acct.verifySuccess (renewed
+   *  at once) or acct.sentVerification (a link went to that address). */
+  renewVerification(): Observable<{ code: string; edu_email?: string }> {
+    return this.http.post<{ code: string; edu_email?: string }>('/auth/verify/renew', {}).pipe(
+      tap(() => this.profileCache.set(null))
+    );
   }
 
   autoVerifyEduEmail(): Observable<any> {

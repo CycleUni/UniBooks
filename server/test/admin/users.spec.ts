@@ -154,4 +154,18 @@ describe("a region manager sees and sets only their regions' standing", () => {
     expect((await patch(root.token, 2)).status).toBe(400);
     expect((await patch(twManager.token, 1)).status).toBe(200);
   });
+
+  it('shows a lapsed verification as unverified, and verifying it starts two fresh years', async () => {
+    const u = await createUser('users-lapsed@example.com');
+    await verifyIn(u, 'TW');
+    await env.DB.prepare("UPDATE region_verifications SET expires_at = '2022-01-01T00:00:00.000Z' WHERE user_id = ?").bind(u).run();
+    const shown = (await (await call(`/api/v1/admin/users/${u}`, { token: root.token })).json()) as any;
+    expect(shown.verifications).toEqual([]);
+    const res = await call(`/api/v1/admin/users/${u}`, { token: root.token, method: 'PATCH', body: { region: 'TW', verified: true } });
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare('SELECT expires_at FROM region_verifications WHERE user_id = ?')
+      .bind(u)
+      .first<{ expires_at: string }>();
+    expect(row!.expires_at > new Date(Date.now() + 700 * 86400_000).toISOString()).toBe(true);
+  });
 });

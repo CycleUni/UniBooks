@@ -97,6 +97,26 @@ describe('Google sign-in', () => {
     expect(lb.user.is_verified).toBe(true);
   });
 
+  it('a Google sign-in with the campus account renews a lapsed verification', async () => {
+    const id = await createUser('lapsed@ntu.edu.tw');
+    await env.DB.prepare(
+      `INSERT INTO region_verifications (user_id, region_code, school_id, edu_email, verified_at, expires_at, is_active, created_at)
+       SELECT ?, 'TW', id, 'lapsed@ntu.edu.tw', '2020-01-01T00:00:00.000Z', '2022-01-01T00:00:00.000Z', 1, '2020-01-01T00:00:00.000Z' FROM schools WHERE code = 'NTU'`,
+    )
+      .bind(id)
+      .run();
+    const res = await call('/api/v1/auth/google?region=TW', {
+      body: { credential: await idToken({ sub: 's9', email: 'lapsed@ntu.edu.tw', email_verified: true }) },
+    });
+    expect(((await res.json()) as any).user.is_verified).toBe(true);
+    const row = await env.DB.prepare('SELECT verified_at, last_reverified_at, expires_at FROM region_verifications WHERE user_id = ?')
+      .bind(id)
+      .first<{ verified_at: string; last_reverified_at: string | null; expires_at: string }>();
+    expect(row!.verified_at).toBe('2020-01-01T00:00:00.000Z');
+    expect(row!.last_reverified_at).not.toBeNull();
+    expect(row!.expires_at > new Date().toISOString()).toBe(true);
+  });
+
   it('claims a never-activated registration for the verified Google owner, dropping its password', async () => {
     expect((await call('/api/v1/auth/register', { body: { email: 'claim@example.com', password: 'Attacker-Pass-123!' } })).status).toBe(
       201,

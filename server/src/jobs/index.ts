@@ -1,7 +1,7 @@
-import { and, asc, eq, gte, isNull, lt, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { Env } from '../env';
-import { createDb, subscriptions, books, users, orders, regions, emailSent, pushSent } from '../db';
+import { createDb, subscriptions, books, users, orders, regions, regionVerifications, emailSent, pushSent } from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
 import { orderLock } from '../services/orders/lock';
 import { AUTO_COMPLETE_AFTER_MS, lockKeyFor } from '../services/orders/transitions';
@@ -355,6 +355,86 @@ export async function runAutoComplete(env: Env) {
 }
 
 // ---------------------------------------------------------------------------
+// Verification expiry reminders ('0 3 * * *')
+// ---------------------------------------------------------------------------
+
+export const MAX_EXPIRY_REMINDERS_PER_RUN = 50;
+/** How long before a verification expires its reminder goes out (the settings page offers renewal from then too). */
+export const EXPIRY_REMINDER_LEAD_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Mail each student whose campus verification runs out within 30 days, once
+ * per expiry: expiry_reminded_for records the expires_at reminded about, and
+ * a renewal moves expires_at on, so the next cycle is due again by itself.
+ */
+export async function runVerificationExpiryReminder(env: Env) {
+  const db = createDb(env.DB);
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+  const windowEnd = new Date(nowMs + EXPIRY_REMINDER_LEAD_MS).toISOString();
+
+  const dueWhere = and(
+    eq(regionVerifications.isActive, 1),
+    gt(regionVerifications.expiresAt, now),
+    lte(regionVerifications.expiresAt, windowEnd),
+    or(isNull(regionVerifications.expiryRemindedFor), ne(regionVerifications.expiryRemindedFor, regionVerifications.expiresAt)),
+    // Nobody to mail: left due, they would hold batch slots until they lapse.
+    eq(users.isActive, 1),
+    eq(users.isBanned, 0),
+    isNull(users.deletedAt),
+    sql`${users.email} <> ''`,
+  );
+  const rows = await db
+    .select({
+      id: regionVerifications.id,
+      userId: regionVerifications.userId,
+      regionCode: regionVerifications.regionCode,
+      eduEmail: regionVerifications.eduEmail,
+      expiresAt: regionVerifications.expiresAt,
+    })
+    .from(regionVerifications)
+    .innerJoin(users, eq(users.id, regionVerifications.userId))
+    .where(dueWhere)
+    .orderBy(asc(regionVerifications.expiresAt))
+    .limit(MAX_EXPIRY_REMINDERS_PER_RUN + 1);
+  const batch = rows.slice(0, MAX_EXPIRY_REMINDERS_PER_RUN);
+
+  let reminded = 0;
+  for (const v of batch) {
+    const expiresAt = v.expiresAt!;
+    const email: EmailMessage = {
+      type: 'verification_expiry',
+      dedupe_key: `verification-expiry:${v.id}:${expiresAt}`,
+      user_id: v.userId,
+      region: v.regionCode,
+      edu_email: v.eduEmail,
+      expires_at: expiresAt,
+    };
+    try {
+      await env.EMAIL_QUEUE.send(email);
+    } catch (e) {
+      console.error(`[VerificationExpiryReminder] enqueue failed for verification ${v.id}`, e);
+      continue;
+    }
+    try {
+      // Only while it is still the expiry reminded about: a renewal meanwhile is left due for its own cycle.
+      await db
+        .update(regionVerifications)
+        .set({ expiryRemindedFor: expiresAt })
+        .where(and(eq(regionVerifications.id, v.id), eq(regionVerifications.expiresAt, expiresAt)));
+    } catch (e) {
+      console.error(`[VerificationExpiryReminder] could not mark verification ${v.id} reminded`, e);
+      continue;
+    }
+    reminded++;
+  }
+
+  const result = { reminded, more_remain: rows.length > MAX_EXPIRY_REMINDERS_PER_RUN };
+  console.log('[VerificationExpiryReminder]', JSON.stringify(result));
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Cleanup ('0 3 * * *')
 // ---------------------------------------------------------------------------
 
@@ -407,6 +487,7 @@ export async function handleScheduled(controller: Pick<ScheduledController, 'cro
       case '0 3 * * *':
         await runAlone(env, 'CoverCleanup', () => runCoverCleanup(env));
         await runAlone(env, 'Cleanup', () => runCleanup(env));
+        await runAlone(env, 'VerificationExpiryReminder', () => runVerificationExpiryReminder(env));
         break;
       default:
         console.warn(`[cron] unhandled trigger ${controller.cron}`);

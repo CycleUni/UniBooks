@@ -87,10 +87,24 @@ export async function emailAlreadyUsed(env: Env, email: string, excludingUserId:
   return !!row;
 }
 
+/** How long a verification lasts before the student must prove the address again. */
+export const VERIFICATION_TTL_YEARS = 2;
+
+/** When a verification made at `fromIso` lapses. */
+export function verificationExpiry(fromIso: string): string {
+  const d = new Date(fromIso);
+  d.setUTCFullYear(d.getUTCFullYear() + VERIFICATION_TTL_YEARS);
+  return d.toISOString();
+}
+
 /**
- * update_or_create the user's verification in `regionCode`. False when the
- * address is already some other row's (the unique constraint caught a race
- * the emailAlreadyUsed check missed).
+ * update_or_create the user's verification in `regionCode`, good for
+ * VERIFICATION_TTL_YEARS from now. Proving the same address again while
+ * still bound (link, one-click, or a Google sign-in with it) is a
+ * re-verification: it keeps verified_at and stamps last_reverified_at.
+ * A new address starts over. False when the address is already some other
+ * row's (the unique constraint caught a race the emailAlreadyUsed check
+ * missed).
  */
 export async function upsertVerification(
   env: Env,
@@ -110,7 +124,7 @@ export async function upsertVerification(
         eduEmail: eduEmail.toLowerCase(),
         isManualVerification: 0,
         verifiedAt: now,
-        expiresAt: null,
+        expiresAt: verificationExpiry(now),
         isActive: 1,
         createdAt: now,
       })
@@ -118,9 +132,10 @@ export async function upsertVerification(
         target: [regionVerifications.userId, regionVerifications.regionCode],
         set: {
           schoolId: sql`excluded.school_id`,
+          verifiedAt: sql`CASE WHEN ${regionVerifications.isActive} = 1 AND ${regionVerifications.eduEmail} = excluded.edu_email THEN ${regionVerifications.verifiedAt} ELSE excluded.verified_at END`,
+          lastReverifiedAt: sql`CASE WHEN ${regionVerifications.isActive} = 1 AND ${regionVerifications.eduEmail} = excluded.edu_email THEN excluded.verified_at END`,
           eduEmail: sql`excluded.edu_email`,
-          verifiedAt: sql`excluded.verified_at`,
-          expiresAt: null,
+          expiresAt: sql`excluded.expires_at`,
           isActive: 1,
         },
       })
