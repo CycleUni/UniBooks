@@ -599,18 +599,20 @@ describe('profile', () => {
     expect(badAvatar.status).toBe(400);
   });
 
-  it('DELETE /me/ anonymizes the account and ends its sessions', async () => {
-    await createUser('leaving@example.com');
+  it('DELETE /me/ removes an account nothing else refers to, and ends its sessions', async () => {
+    const id = await createUser('leaving@example.com');
     const { access, refresh } = await login('leaving@example.com');
     const res = await call('/api/v1/auth/me', { method: 'DELETE', token: access });
     expect(res.status).toBe(204);
     expect(await userRow('leaving@example.com')).toBeNull();
+    expect(await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(id).first()).toBeNull();
     expect((await call('/api/v1/auth/refresh', { body: { refresh } })).status).toBe(401);
   });
 
   it("DELETE /me takes the listings' photos off the media host and clears their private notes", async () => {
     await seedRegion();
     const id = await createUser('leaving-photos@example.com');
+    const other = await createUser('order-partner@example.com');
     const listing = await seedListing(id);
     const key = `listings/${id}/${'b'.repeat(32)}.png`;
     await env.R2.put(key, new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
@@ -618,11 +620,21 @@ describe('profile', () => {
     await env.DB.prepare("UPDATE listings SET photos = ?, private_note = 'my phone 0912' WHERE id = ?")
       .bind(JSON.stringify([url]), listing)
       .run();
+    // A finished order keeps the other party's history, so the account is anonymized rather than removed.
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO orders (id, region_code, currency_code, listing_id, book_title, buyer_id, seller_id, status, total_amount, created_at, updated_at)
+       VALUES (?, 'TW', 'TWD', ?, 'Book', ?, ?, 'completed', 120, ?, ?)`,
+    )
+      .bind(crypto.randomUUID(), listing, other, id, now, now)
+      .run();
 
     const { access } = await login('leaving-photos@example.com');
     expect((await call('/api/v1/auth/me', { method: 'DELETE', token: access })).status).toBe(204);
     const row = await env.DB.prepare('SELECT status, photos, private_note FROM listings WHERE id = ?').bind(listing).first<any>();
     expect(row).toEqual({ status: 'removed', photos: '[]', private_note: '' });
+    const kept = await env.DB.prepare('SELECT deleted_at FROM users WHERE id = ?').bind(id).first<any>();
+    expect(kept?.deleted_at).toBeTruthy();
     expect(await env.R2.get(key)).toBeNull();
   });
 

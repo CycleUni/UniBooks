@@ -4,8 +4,10 @@ import type { AppEnv, Env } from '../../env';
 import {
   createDb,
   listings,
+  oneTimeTokens,
   passkeys,
   pushDevices,
+  refreshTokens,
   regionVerifications,
   reviews,
   schoolRequests,
@@ -239,8 +241,9 @@ export function nameColumns(firstName: string, lastName: string) {
 }
 
 /**
- * "Deleting" an account empties it rather than removing the row: orders and reviews point at it from both sides, and a real
- * delete would take the other party's history with it.
+ * "Deleting" an account empties it rather than removing the row when other people's history points at it (orders, reviews,
+ * chats, reports): a real delete would take that with it. An account with none of that is removed outright, leaving no
+ * anonymized row behind.
  */
 export async function deleteAccount(env: Env, userId: string): Promise<void> {
   const db = createDb(env.DB);
@@ -253,6 +256,39 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
   const now = new Date().toISOString();
   const hex = newHexId();
   const own = await db.select({ photos: listings.photos }).from(listings).where(eq(listings.sellerId, userId));
+  // Reviews hang off orders, and messages off conversations, so these four cover every record kept for the other party.
+  const retained = await env.DB.prepare(
+    `SELECT 1 AS hit FROM orders WHERE buyer_id = ?1 OR seller_id = ?1
+     UNION ALL SELECT 1 FROM conversations WHERE buyer_id = ?1 OR seller_id = ?1
+     UNION ALL SELECT 1 FROM reports WHERE reporter_id = ?1 OR seller_id = ?1
+     UNION ALL SELECT 1 FROM chat_reports WHERE reporter_id = ?1 OR reported_party_id = ?1
+     LIMIT 1`,
+  )
+    .bind(userId)
+    .first();
+  if (!retained) {
+    // Nothing else refers to the account, so its listings (only referenced by the records above) go with it.
+    await db.batch([
+      db.delete(listings).where(eq(listings.sellerId, userId)),
+      db.delete(subscriptions).where(eq(subscriptions.userId, userId)),
+      db.delete(regionVerifications).where(eq(regionVerifications.userId, userId)),
+      db.delete(pushDevices).where(eq(pushDevices.userId, userId)),
+      db.delete(passkeys).where(eq(passkeys.userId, userId)),
+      db.delete(schoolRequests).where(eq(schoolRequests.userId, userId)),
+      db.delete(oneTimeTokens).where(eq(oneTimeTokens.userId, userId)),
+      db.delete(refreshTokens).where(eq(refreshTokens.userId, userId)),
+      db.delete(staffManagedRegions).where(eq(staffManagedRegions.userId, userId)),
+      db.delete(users).where(eq(users.id, userId)),
+    ]);
+    await disconnectUser(env, userId);
+    await deleteListingPhotos(
+      env,
+      siteOrigin(env),
+      userId,
+      own.flatMap((l) => parsePhotos(l.photos)),
+    );
+    return;
+  }
   await db.batch([
     // Other modules' tables. Listings stay as records (orders and reports
     // point at them) but lose what was personal: the private note and photos.
