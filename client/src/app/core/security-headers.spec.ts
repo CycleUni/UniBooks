@@ -32,16 +32,19 @@ describe('public/_headers', () => {
 
   it('caches only content-hashed files for a year, never the pages', () => {
     // Rules are "/path" lines followed by indented headers; collect which
-    // paths carry a long max-age.
+    // paths carry a year-long max-age. (Unhashed icons get a week, which a
+    // stale copy can afford.)
     const longCached: string[] = [];
     let rule = '';
     for (const line of source.split('\n')) {
       if (line.startsWith('/')) rule = line.trim();
-      else if (/^\s+Cache-Control:.*max-age=(\d{5,})/.test(line)) longCached.push(rule);
+      else if (/^\s+Cache-Control:.*max-age=(\d{8,})/.test(line)) longCached.push(rule);
     }
     // /* would also match every SPA route, all served as index.html.
     expect(longCached).not.toContain('/*');
-    expect(longCached.sort()).toEqual(['/chunk-*.js', '/main-*.js', '/polyfills-*.js', '/styles-*.css']);
+    expect(longCached.sort()).toEqual([
+      '/asset-recovery-*.js', '/chunk-*.js', '/main-*.js', '/polyfills-*.js', '/styles-*.css', '/theme-init-*.js',
+    ]);
   });
 
   describe('Content-Security-Policy', () => {

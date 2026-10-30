@@ -1,8 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import { DEFAULT_REGION, REGION_TO_LANG, SUPPORTED_LANGS, type Lang } from '../src/app/core/i18n/index';
-
+import {
+  DEFAULT_REGION,
+  REGION_TO_LANG,
+  SUPPORTED_LANGS,
+  type Lang,
+} from '../src/app/core/i18n/index';
 
 const SITE_NAME = 'UniBooks';
 const DIST_DIR = path.join(__dirname, '../dist/unibooks/browser');
@@ -15,7 +19,6 @@ const STATS_PATH = path.join(DIST_DIR, '../stats.json');
 const ENV_PROD_PATH = path.join(__dirname, '../src/environments/environment.prod.ts');
 const SITE_ORIGIN = 'https://unibooks.app';
 const ORGANIZATION_ID = `${SITE_ORIGIN}/#organization`;
-
 
 /**
  * The pages every region has and anyone can open, for the static sitemap.
@@ -66,7 +69,7 @@ async function loadStrings(lang: Lang): Promise<Strings> {
     throw new Error(`Translation file not found for language: ${lang}`);
   }
 
-  const module = await import(modulePath) as Record<string, unknown>;
+  const module = (await import(modulePath)) as Record<string, unknown>;
   const exportedStrings = Object.values(module).filter(
     (value): value is Strings =>
       !!value &&
@@ -188,7 +191,12 @@ function gateChineseFonts(html: string): string {
   return gated;
 }
 
-function replaceRequired(html: string, pattern: RegExp, replacement: string, label: string): string {
+function replaceRequired(
+  html: string,
+  pattern: RegExp,
+  replacement: string,
+  label: string,
+): string {
   if (!pattern.test(html)) {
     throw new Error(`Could not find ${label} in index.html`);
   }
@@ -212,9 +220,15 @@ function pageFile(region: string, page: string): string {
  */
 function alternateTags(page: string): string[] {
   return [
-    ...Object.entries(REGION_TO_LANG).map(([region, lang]) => ({ hreflang: lang, href: regionUrl(region, page) })),
+    ...Object.entries(REGION_TO_LANG).map(([region, lang]) => ({
+      hreflang: lang,
+      href: regionUrl(region, page),
+    })),
     { hreflang: 'x-default', href: regionUrl(DEFAULT_REGION, page) },
-  ].map((alt) => `<link rel="alternate" hreflang="${escapeHtml(alt.hreflang)}" href="${escapeHtml(alt.href)}">`);
+  ].map(
+    (alt) =>
+      `<link rel="alternate" hreflang="${escapeHtml(alt.hreflang)}" href="${escapeHtml(alt.href)}">`,
+  );
 }
 
 /**
@@ -235,7 +249,7 @@ function buildHtml(
   let html = gateChineseFonts(originalHtml);
 
   const pageName = page ? strings[PAGE_TITLE_KEYS[page]] : undefined;
-  const title = pageName ? `${pageName} · ${SITE_NAME}` : strings['seo.homeTitle'] ?? SITE_NAME;
+  const title = pageName ? `${pageName} · ${SITE_NAME}` : (strings['seo.homeTitle'] ?? SITE_NAME);
   const description = strings['seo.description'] ?? '';
 
   html = replaceRequired(
@@ -299,41 +313,48 @@ function buildHtml(
   // brand query lands here rather than on the help site.
   const searchBase = region ? `${SITE_ORIGIN}/${region}` : `${SITE_ORIGIN}/${DEFAULT_REGION}`;
   const ldJson = {
-    "@context": "https://schema.org",
-    "@graph": [
+    '@context': 'https://schema.org',
+    '@graph': [
       {
-        "@type": "Organization",
-        "@id": ORGANIZATION_ID,
-        "name": SITE_NAME,
-        "url": `${SITE_ORIGIN}/`,
-        "logo": logo,
-        "description": description,
-        "sameAs": ["https://github.com/CycleUni"]
+        '@type': 'Organization',
+        '@id': ORGANIZATION_ID,
+        name: SITE_NAME,
+        url: `${SITE_ORIGIN}/`,
+        logo: logo,
+        description: description,
+        sameAs: ['https://github.com/CycleUni'],
       },
       {
-        "@type": "WebSite",
-        "name": SITE_NAME,
-        "url": ogUrl,
-        "publisher": { "@id": ORGANIZATION_ID },
-        "potentialAction": {
-          "@type": "SearchAction",
-          "target": `${searchBase}/search?q={search_term_string}`,
-          "query-input": "required name=search_term_string"
-        }
-      }
-    ]
+        '@type': 'WebSite',
+        name: SITE_NAME,
+        url: ogUrl,
+        publisher: { '@id': ORGANIZATION_ID },
+        potentialAction: {
+          '@type': 'SearchAction',
+          target: `${searchBase}/search?q={search_term_string}`,
+          'query-input': 'required name=search_term_string',
+        },
+      },
+    ],
   };
 
   // Resource hints go first in <head>, ahead of the stylesheets and scripts
   // the browser would otherwise queue before reading them.
   const hintTags = [
-    hints.apiOrigin ? `<link rel="preconnect" href="${escapeHtml(hints.apiOrigin)}" crossorigin>` : '',
+    hints.apiOrigin
+      ? `<link rel="preconnect" href="${escapeHtml(hints.apiOrigin)}" crossorigin>`
+      : '',
     Object.keys(hints.languageChunks).length > 0
       ? `<meta name="unibooks-i18n-chunks" content="${escapeHtml(JSON.stringify(hints.languageChunks))}">`
       : '',
   ].filter(Boolean);
   if (hintTags.length > 0) {
-    html = replaceRequired(html, /(<meta charset=[^>]*>)/i, `$1\n  ${hintTags.join('\n  ')}`, 'the charset meta tag');
+    html = replaceRequired(
+      html,
+      /(<meta charset=[^>]*>)/i,
+      `$1\n  ${hintTags.join('\n  ')}`,
+      'the charset meta tag',
+    );
   }
 
   const tags = [
@@ -351,10 +372,70 @@ function buildHtml(
     `<meta name="twitter:card" content="summary_large_image">`,
     // "<" escaped so no string in the block can close the script element.
     `<script type="application/ld+json">${JSON.stringify(ldJson).replace(/</g, '\\u003c')}</script>`,
-  ].filter(Boolean).join('\n  ');
+  ]
+    .filter(Boolean)
+    .join('\n  ');
 
   // Insert tags before </head>
   html = replaceRequired(html, /<\/head>/i, `  ${tags}\n</head>`, 'the closing head tag');
+  return html;
+}
+
+/**
+ * The classic scripts index.html loads synchronously in <head>, ahead of the
+ * first paint. Angular leaves their names alone, so every visit spent a
+ * round trip revalidating them (no-cache) before anything was drawn.
+ */
+const HEAD_SCRIPTS = ['asset-recovery', 'theme-init'];
+
+/**
+ * Copy each head script to a content-hashed name, which public/_headers
+ * caches for a year, and point the page and the service worker manifest at
+ * the copy. The unhashed file stays, for pages and service worker versions
+ * that still name it.
+ *
+ * Unlike the bundles, a copy answered by the SPA fallback (an edge without
+ * the new file yet) is not repaired by asset-recovery.js: it fails as a
+ * SyntaxError until the next change to the file. Both degrade quietly — no
+ * early theme, no asset repair — and the app itself still boots.
+ */
+function fingerprintHeadScripts(html: string): string {
+  const manifest = fs.existsSync(NGSW_PATH)
+    ? (JSON.parse(fs.readFileSync(NGSW_PATH, 'utf-8')) as {
+        assetGroups?: { urls: string[] }[];
+        hashTable?: Record<string, string>;
+      })
+    : null;
+
+  for (const name of HEAD_SCRIPTS) {
+    const source = fs.readFileSync(path.join(DIST_DIR, `${name}.js`));
+    const hash = createHash('sha256').update(source).digest('base64url').slice(0, 8);
+    const file = `${name}-${hash}.js`;
+    fs.writeFileSync(path.join(DIST_DIR, file), source);
+
+    // Also matches a hashed name, so running the script twice is harmless.
+    const reference = new RegExp(`/${name}(?:-[\\w-]+)?\\.js`);
+    html = replaceRequired(
+      html,
+      new RegExp(`(<script src=")${reference.source}(")`),
+      `$1/${file}$2`,
+      `the ${name} script tag`,
+    );
+
+    if (!manifest) continue;
+    const isReference = (url: string) => new RegExp(`^${reference.source}$`).test(url);
+    for (const group of manifest.assetGroups ?? []) {
+      group.urls = group.urls.map((url) => (isReference(url) ? `/${file}` : url));
+    }
+    if (manifest.hashTable) {
+      for (const url of Object.keys(manifest.hashTable)) {
+        if (isReference(url)) delete manifest.hashTable[url];
+      }
+      manifest.hashTable[`/${file}`] = createHash('sha1').update(source).digest('hex');
+    }
+  }
+
+  if (manifest) fs.writeFileSync(NGSW_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
   return html;
 }
 
@@ -417,14 +498,13 @@ function injectRedirects(regions: string[]): void {
   const original = fs.readFileSync(REDIRECTS_PATH, 'utf-8');
 
   // Strip any previously injected region rules to ensure idempotency.
-  const stripped = original.replace(
-    /^\/[a-z0-9-]+(\/\S*)?\s+\/[a-z0-9-]+\/\S*\s+200\n?/gmi,
-    '',
-  );
+  const stripped = original.replace(/^\/[a-z0-9-]+(\/\S*)?\s+\/[a-z0-9-]+\/\S*\s+200\n?/gim, '');
 
   const regionLines = [
     ...regions.map((r) => `/${r}  /${r}/  200`),
-    ...regions.flatMap((r) => SITEMAP_PAGES.map((page) => `/${r}${page || '/'}  /${r}${page || '/'}  200`)),
+    ...regions.flatMap((r) =>
+      SITEMAP_PAGES.map((page) => `/${r}${page || '/'}  /${r}${page || '/'}  200`),
+    ),
     ...regions.map((r) => `/${r}/*  /${r}/${SHELL_PAGE}  200`),
   ].join('\n');
 
@@ -455,7 +535,6 @@ function writeSitemap(regions: string[]): void {
   console.log(`Wrote sitemap.xml (${urls.length} URLs)`);
 }
 
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -466,14 +545,21 @@ async function run(): Promise<void> {
     process.exit(1);
   }
 
-  const originalHtml = fs.readFileSync(INDEX_HTML_PATH, 'utf-8');
+  const originalHtml = fingerprintHeadScripts(fs.readFileSync(INDEX_HTML_PATH, 'utf-8'));
   const hints = { apiOrigin: apiOrigin(), languageChunks: languageChunks() };
 
   // Patch the root index.html in the default region's language: "/" never
   // renders a page of its own (rootRedirectGuard forwards it), and crawlers
   // that read it before the redirect ran were indexing an English copy.
   const defaultLanguage: Lang = REGION_TO_LANG[DEFAULT_REGION];
-  const rootHtml = buildHtml(originalHtml, null, null, defaultLanguage, await loadStrings(defaultLanguage), hints);
+  const rootHtml = buildHtml(
+    originalHtml,
+    null,
+    null,
+    defaultLanguage,
+    await loadStrings(defaultLanguage),
+    hints,
+  );
   fs.writeFileSync(INDEX_HTML_PATH, rootHtml);
   updateServiceWorkerHash(rootHtml);
   console.log(`Patched root index.html (${defaultLanguage})`);
@@ -489,9 +575,15 @@ async function run(): Promise<void> {
 
     const strings = await loadStrings(lang);
 
-    fs.writeFileSync(path.join(regionDir, `${SHELL_PAGE}.html`), buildHtml(originalHtml, region, null, lang, strings, hints));
+    fs.writeFileSync(
+      path.join(regionDir, `${SHELL_PAGE}.html`),
+      buildHtml(originalHtml, region, null, lang, strings, hints),
+    );
     for (const page of SITEMAP_PAGES) {
-      fs.writeFileSync(pageFile(region, page), buildHtml(originalHtml, region, page, lang, strings, hints));
+      fs.writeFileSync(
+        pageFile(region, page),
+        buildHtml(originalHtml, region, page, lang, strings, hints),
+      );
     }
     console.log(`Generated ${region}/ shell and ${SITEMAP_PAGES.length} pages (${lang})`);
   }

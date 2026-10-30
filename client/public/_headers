@@ -115,6 +115,29 @@
 /styles-*.css
   Cache-Control: public, max-age=31536000, immutable
 
+# The head scripts' hashed copies (scripts/build-region-html.ts). The
+# unhashed names below stay no-cache for pages that still name them.
+/asset-recovery-*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/theme-init-*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+# Unhashed but rarely changed: a week, then a background refresh, so a new
+# icon reaches a returning browser within a week. Not /zxing/: its wasm must
+# match the hashed chunk that loads it, and a stale copy breaks the scanner.
+/icons/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+
+/passkey-icons/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+
+/favicon.ico
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+
+/og-image.png
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+
 /
   Cache-Control: no-cache
 
