@@ -14,6 +14,7 @@ import { checkRate } from '../middleware/rateLimit';
 import { cleanCoverUrl, cleanPublisher } from '../services/catalog/common';
 import { coverUrlFor } from '../services/catalog/covers';
 import { getGoogleBooksByIsbn } from '../services/catalog/lookups';
+import { deleteUnusedBooks } from '../services/catalog/unused';
 import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
 import type { SubscriptionDto } from '../api-types';
@@ -65,9 +66,14 @@ subscriptionRoutes.get('/', async (c) => {
 
 subscriptionRoutes.delete('/', async (c) => {
   const region = await requireRegion(c);
-  await createDb(c.env.DB)
+  const deleted = await createDb(c.env.DB)
     .delete(subscriptions)
-    .where(and(eq(subscriptions.userId, c.get('userId')!), eq(subscriptions.regionCode, region.code)));
+    .where(and(eq(subscriptions.userId, c.get('userId')!), eq(subscriptions.regionCode, region.code)))
+    .returning({ bookId: subscriptions.bookId });
+  await deleteUnusedBooks(
+    c.env,
+    deleted.map((d) => d.bookId),
+  );
   return c.body(null, 204);
 });
 
@@ -166,6 +172,10 @@ subscriptionRoutes.delete('/:id', async (c) => {
     .where(
       and(eq(subscriptions.id, id.toLowerCase()), eq(subscriptions.userId, c.get('userId')!), eq(subscriptions.regionCode, region.code)),
     )
-    .returning({ id: subscriptions.id });
+    .returning({ id: subscriptions.id, bookId: subscriptions.bookId });
+  await deleteUnusedBooks(
+    c.env,
+    deleted.map((d) => d.bookId),
+  );
   return c.body(null, deleted.length ? 204 : 404);
 });

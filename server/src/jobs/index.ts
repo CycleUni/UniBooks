@@ -1,7 +1,7 @@
-import { and, asc, eq, gte, isNotNull, isNull, lt, lte, notExists, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lt, lte, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { Env } from '../env';
-import { createDb, subscriptions, books, users, orders, regions, listings, emailSent, pushSent } from '../db';
+import { createDb, subscriptions, books, users, orders, regions, emailSent, pushSent } from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
 import { orderLock } from '../services/orders/lock';
 import { AUTO_COMPLETE_AFTER_MS, lockKeyFor } from '../services/orders/transitions';
@@ -9,6 +9,7 @@ import { deliverNotices } from '../services/orders/notify';
 import { purgeTokenStore } from '../services/accounts/tokens';
 import { purgeOneTimeTokens } from '../services/accounts/oneTimeTokens';
 import { runCoverSweep, runCoverCleanup } from '../services/catalog/covers';
+import { deleteUnusedBooks } from '../services/catalog/unused';
 
 export { runCoverSweep, runCoverCleanup };
 
@@ -361,22 +362,8 @@ export async function runCleanup(env: Env) {
   const [{ total }] = await createDb(env.DB)
     .select({ total: sql<number>`count(*)` })
     .from(books);
-  // Books with no listings (any status) and no subscriptions.
   const db = createDb(env.DB);
-  const orphanWhere = and(
-    notExists(db.select({ id: listings.id }).from(listings).where(eq(listings.bookId, books.id))),
-    notExists(db.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.bookId, books.id))),
-  );
-  const orphanBooksWithCovers = await db
-    .select({ coverR2Key: books.coverR2Key })
-    .from(books)
-    .where(and(isNotNull(books.coverR2Key), orphanWhere));
-  for (const b of orphanBooksWithCovers) {
-    if (b.coverR2Key && b.coverR2Key.startsWith('covers/')) {
-      await env.R2.delete(b.coverR2Key).catch((e: unknown) => console.error('[Cleanup] failed to delete cover', b.coverR2Key, e));
-    }
-  }
-  const orphans = await db.delete(books).where(orphanWhere).run();
+  const orphansDeleted = await deleteUnusedBooks(env);
   const coverCleanup = await runCoverCleanup(env);
   const tokensPurged = await purgeTokenStore(env);
   const linksPurged = await purgeOneTimeTokens(env);
@@ -390,7 +377,7 @@ export async function runCleanup(env: Env) {
   // Throttle counters live in the RateLimiter Durable Object and expire on
   // their own, so there is nothing to purge here.
   const result = {
-    orphan_books_deleted: orphans.meta.changes ?? 0,
+    orphan_books_deleted: orphansDeleted,
     scanned_books: Number(total),
     unlisted_covers_cleaned: coverCleanup.cleaned,
     refresh_tokens_purged: tokensPurged,

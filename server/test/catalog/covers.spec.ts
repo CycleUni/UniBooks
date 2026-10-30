@@ -11,6 +11,7 @@ import { searchRoutes } from '../../src/routes/search';
 import { adminRoutes } from '../../src/routes/admin';
 import { copyBookCover, coverUrlFor, runCoverCleanup, runCoverSweep } from '../../src/services/catalog/covers';
 import { runCleanup } from '../../src/jobs/index';
+import { UNUSED_BOOK_GRACE_MS } from '../../src/services/catalog/unused';
 import { deleteListing } from '../../src/services/listings/lifecycle';
 import { seedRegion, seedUser } from '../messaging/helpers';
 import { staff } from '../ads/helpers';
@@ -352,11 +353,14 @@ describe('R2 Cover Cache and Lifecycle', () => {
   });
 
   it('removes R2 cover when orphan book is purged in daily cleanup job', async () => {
-    // Book with no listings and no subscriptions
+    // Book with no listings and no subscriptions, past the grace period
     const book = await createTestBook();
     const coverKey = `covers/${book.id}.jpg`;
     await env.R2.put(coverKey, fakeJpegBytes());
-    await db.update(books).set({ coverR2Key: coverKey }).where(eq(books.id, book.id));
+    await db
+      .update(books)
+      .set({ coverR2Key: coverKey, createdAt: new Date(Date.now() - UNUSED_BOOK_GRACE_MS - 60_000).toISOString() })
+      .where(eq(books.id, book.id));
 
     // Daily cleanup purge
     const result = await runCleanup(env);
