@@ -217,6 +217,7 @@ export const zhHK: Record<string, string> = {
   'auth.errEmailNotVerified': 'Google 尚未驗證這個帳戶的電郵，無法用它登入。',
   'auth.errGoogleLoginFailed': 'Google 登入失敗，請再試一次。',
   'auth.googleSigningIn': '正在以 Google 登入…',
+  'auth.googleUnavailable': '無法載入 Google 登入，廣告攔截工具或網絡設定可能封鎖了 accounts.google.com。請改用電郵，或重新整理頁面後再試一次。',
   'auth.errMissingCredential': '缺少 Google 登入憑證，請再登入一次。',
   'auth.errRegisterFailed': '註冊失敗，請檢查填寫的內容。',
   'auth.verifyingChallenge': '驗證緊…',

@@ -154,6 +154,10 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.googleAuth.buttonReady();
   }
 
+  get googleFailed(): boolean {
+    return this.googleAuth.buttonFailed();
+  }
+
   get googleSigningIn(): boolean {
     return this.googleAuth.signingIn();
   }

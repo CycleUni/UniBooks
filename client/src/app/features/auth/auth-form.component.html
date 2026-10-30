@@ -98,11 +98,13 @@
          sit around it: a placeholder until it is drawn, and a veil over it
          while the account chooser opens and while the backend signs in.
          Without them a press, or the wait after picking an account, showed
-         nothing at all. -->
+         nothing at all. If Google's script cannot load there is no button
+         coming, so the placeholder gives way to a note saying why. -->
     <ng-template #googleTpl>
       <div class="google-wrap mt-4" [attr.aria-busy]="googleBusy">
         <div id="google-btn" class="google-btn"></div>
-        <div *ngIf="!googleReady" class="google-placeholder" aria-hidden="true"></div>
+        <div *ngIf="!googleReady && !googleFailed" class="google-placeholder" aria-hidden="true"></div>
+        <p *ngIf="googleFailed" class="google-failed" role="status">{{ 'auth.googleUnavailable' | t }}</p>
         <div *ngIf="googleBusy" class="google-veil" [class.blocking]="googleSigningIn">
           <span class="spinner" aria-hidden="true"></span>
           <span *ngIf="googleSigningIn">{{ 'auth.googleSigningIn' | t }}</span>

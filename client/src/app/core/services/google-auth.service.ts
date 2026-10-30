@@ -32,6 +32,9 @@ export class GoogleAuthService {
 
   /** The Google button is drawn; until then the auth page holds its place. */
   readonly buttonReady = signal(false);
+  /** Google's script would not load (a blocker, or a network that refuses
+   *  accounts.google.com), so there will be no button to wait for. */
+  readonly buttonFailed = signal(false);
   /** The button was pressed and the browser's account chooser is on its way.
    *  Without it the press looked like nothing happened for the second or so
    *  the browser takes to show the dialog. */
@@ -216,6 +219,7 @@ export class GoogleAuthService {
     // A re-render (language, theme) draws over the button already there; only
     // an empty container — a fresh visit to the page — needs the placeholder.
     if (!document.getElementById(elementId)?.firstChild) this.buttonReady.set(false);
+    this.buttonFailed.set(false);
     
     // Bind global handler just in case
     (window as any).handleGoogleCredential = (response: any) => this.handleGoogleCredential(response);
@@ -266,8 +270,15 @@ export class GoogleAuthService {
             }
           );
           this.buttonReady.set(true);
+          this.buttonFailed.set(false);
         }
       }
+    }).catch(err => {
+      // A blocker or network that refuses accounts.google.com rejects with the
+      // script's error Event; left uncaught it reached Sentry as an unhandled
+      // "unknown error". The next renderButton (another visit) tries again.
+      console.error('Failed to load Google SDK', err);
+      this.buttonFailed.set(true);
     });
   }
 

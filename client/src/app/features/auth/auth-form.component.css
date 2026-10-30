@@ -115,6 +115,13 @@
       background-color: var(--line-strong);
       animation: google-pulse 1.5s infinite ease-in-out;
     }
+    .google-failed {
+      margin: 0 auto;
+      max-width: 400px;
+      font-size: var(--text-sm);
+      color: var(--muted);
+      text-align: center;
+    }
     /* Opening the chooser only shows the spinner and lets clicks through, in
        case the dialog was dismissed; signing in blocks a second press. */
     .google-veil {

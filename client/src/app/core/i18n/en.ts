@@ -220,6 +220,7 @@ export const en: Record<string, string> = {
   'auth.errEmailNotVerified': 'Google has not verified the email on that account, so it cannot be used to sign in here.',
   'auth.errGoogleLoginFailed': 'Google sign-in failed. Please try again.',
   'auth.googleSigningIn': 'Signing in with Google…',
+  'auth.googleUnavailable': 'Google sign-in could not be loaded. An ad blocker or network setting may be blocking accounts.google.com. Please use your email instead, or reload the page and try again.',
   'auth.errMissingCredential': 'The Google sign-in credential is missing. Please sign in again.',
   'auth.errRegisterFailed': 'Sign-up failed. Check the details you entered.',
   'auth.verifyingChallenge': 'Verifying…',

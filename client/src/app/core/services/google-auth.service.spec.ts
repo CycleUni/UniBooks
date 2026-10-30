@@ -93,6 +93,23 @@ describe('GoogleAuthService sign-in state', () => {
     }
   });
 
+  it('reports a Google script that cannot load, without an unhandled rejection', async () => {
+    const failed = Promise.reject(new Event('error'));
+    (service as any).loadGoogleScript = () => failed;
+    (service as any).googleClientId = 'client-id';
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      service.renderButton('google-btn');
+      await failed.catch(() => {});
+      await Promise.resolve();
+      expect(logged).toHaveBeenCalledWith('Failed to load Google SDK', expect.any(Event));
+      expect(service.buttonReady()).toBe(false);
+      expect(service.buttonFailed()).toBe(true);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
   it('shows the chooser opening for a while after a press, since GIS never says it was dismissed', () => {
     vi.useFakeTimers();
     (service as any).onButtonPressed();

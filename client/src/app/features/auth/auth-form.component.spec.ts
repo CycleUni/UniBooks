@@ -53,7 +53,7 @@ describe('AuthFormComponent', () => {
       cancelPasskey: vi.fn(),
     };
     mockTurnstile = { siteKey: '', render: vi.fn().mockResolvedValue('w1'), reset: vi.fn(), remove: vi.fn() };
-    mockGoogle = { renderButton: vi.fn(), buttonReady: signal(true), opening: signal(false), signingIn: signal(false) };
+    mockGoogle = { renderButton: vi.fn(), buttonReady: signal(true), buttonFailed: signal(false), opening: signal(false), signingIn: signal(false) };
     mockRouter = {
       navigate: vi.fn().mockResolvedValue(true),
       navigateByUrl: vi.fn().mockResolvedValue(true),
@@ -130,6 +130,14 @@ describe('AuthFormComponent', () => {
       mockGoogle.buttonReady.set(true);
       fixture.detectChanges();
       expect(q('.google-placeholder')).toBeNull();
+    });
+
+    it('says why there is no button when Google\'s script cannot load', () => {
+      mockGoogle.buttonReady.set(false);
+      mockGoogle.buttonFailed.set(true);
+      build('login');
+      expect(q('.google-placeholder')).toBeNull();
+      expect(q('.google-failed')?.textContent).toContain('auth.googleUnavailable');
     });
 
     it('shows a spinner, letting clicks through, while the account chooser opens', () => {
