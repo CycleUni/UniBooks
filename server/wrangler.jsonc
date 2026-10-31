@@ -7,6 +7,10 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
 
+  // The site's own domain. /about and /event are Workers Routes of their own
+  // Workers (UniBooks-About, UniBooks-Event) and win over this by being more specific.
+  "routes": [{ "pattern": "unibooks.app", "custom_domain": true }],
+
   // Only these paths invoke the Worker; every other request is served from
   // static assets without a Worker invocation (and without billing one).
   "assets": {
