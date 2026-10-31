@@ -6,8 +6,12 @@ import { environment } from '../../../environments/environment';
 import { RegionService } from '../region.service';
 import { whenPageSettled } from '../page-settled';
 import { redactSensitiveUrl } from '../sensitive-url';
+import { ClarityService } from './clarity.service';
 
 const GA_GATEWAY_PATH = '/metrics';
+
+/** Steps whose replays Clarity keeps however it samples: the funnel's money end. */
+const CLARITY_UPGRADE_EVENTS = new Set(['begin_checkout', 'place_order', 'publish_listing', 'cancel_order', 'purchase']);
 
 @Injectable({
   providedIn: 'root'
@@ -19,6 +23,7 @@ export class GoogleAnalyticsService {
   // to AuthStore, which injects this service.
   private injector = inject(Injector);
   private appRef = inject(ApplicationRef);
+  private clarity = inject(ClarityService);
   private initialized = false;
   private gaId: string | null = null;
 
@@ -90,8 +95,12 @@ export class GoogleAnalyticsService {
    * Generic GA4 event tracking. Every event carries the site `region` (TW /
    * HK) so reports can be split the way the admin statistics are; register
    * it as an event-scoped custom dimension in GA to use it.
+   *
+   * The event name also goes to Clarity, which takes no parameters.
    */
   public trackEvent(eventName: string, params: Record<string, any> = {}): void {
+    this.clarity.event(eventName);
+    if (CLARITY_UPGRADE_EVENTS.has(eventName)) this.clarity.upgrade(eventName);
     if (isPlatformBrowser(this.platformId) && (window as any).gtag) {
       (window as any).gtag('event', eventName, { region: this.region() || undefined, ...params });
     }
@@ -337,6 +346,10 @@ export class GoogleAnalyticsService {
    * Call after login/profile load; pass null to clear on logout.
    */
   public setUserId(userId: string | number | null): void {
+    // Clarity has no way to forget an identified visitor; a signed-out
+    // stretch of the session is told apart by the tag.
+    if (userId != null) this.clarity.identify(String(userId));
+    this.clarity.set('logged_in', userId != null ? 'true' : 'false');
     if (!isPlatformBrowser(this.platformId) || !this.gaId || !(window as any).gtag) return;
     if (userId != null) {
       (window as any).gtag('config', this.gaId, { user_id: String(userId) });
@@ -355,6 +368,9 @@ export class GoogleAnalyticsService {
     verified_region_count?: number;
     role?: 'buyer' | 'seller' | 'both' | null;
   }): void {
+    if (props.verified_region_count != null) this.clarity.set('verified', props.verified_region_count > 0 ? 'true' : 'false');
+    if (props.school) this.clarity.set('school', props.school);
+    if (props.role) this.clarity.set('role', props.role);
     if (!isPlatformBrowser(this.platformId) || !(window as any).gtag) return;
     (window as any).gtag('set', 'user_properties', {
       school:      props.school      ?? undefined,

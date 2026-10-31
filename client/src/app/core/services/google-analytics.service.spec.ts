@@ -4,6 +4,7 @@ import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import { GoogleAnalyticsService } from './google-analytics.service';
 import { RegionService } from '../region.service';
+import { ClarityService } from './clarity.service';
 import { MAX_WAIT_MS } from '../page-settled';
 import { environment } from '../../../environments/environment';
 
@@ -12,14 +13,17 @@ const TWD = { code: 'TWD', symbol: 'NT$', decimal_places: 0, symbol_position: 'p
 
 describe('GoogleAnalyticsService', () => {
   let gtag: ReturnType<typeof vi.fn>;
+  let clarity: { event: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn>; identify: ReturnType<typeof vi.fn>; upgrade: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     TestBed.resetTestingModule();
     gtag = vi.fn();
     (window as any).gtag = gtag;
+    clarity = { event: vi.fn(), set: vi.fn(), identify: vi.fn(), upgrade: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
+        { provide: ClarityService, useValue: clarity },
         {
           provide: RegionService,
           useValue: {
@@ -43,6 +47,23 @@ describe('GoogleAnalyticsService', () => {
   it('tags every event with the site region', () => {
     TestBed.inject(GoogleAnalyticsService).trackEvent('anything', { a: 1 });
     expect(events('anything')).toEqual([{ region: 'HK', a: 1 }]);
+  });
+
+  it('forwards event names to Clarity, keeping the replays of funnel steps', () => {
+    const ga = TestBed.inject(GoogleAnalyticsService);
+    ga.trackSearch('calculus', 3);
+    ga.trackPlaceOrder({ id: 'o1', total_amount: 100, currency: 'HKD' });
+    expect(clarity.event.mock.calls).toEqual([['search'], ['place_order']]);
+    expect(clarity.upgrade.mock.calls).toEqual([['place_order']]);
+  });
+
+  it('identifies the user and tags sign-in and verification in Clarity', () => {
+    const ga = TestBed.inject(GoogleAnalyticsService);
+    ga.setUserId(42);
+    ga.setUserProperties({ verified_region_count: 1 });
+    ga.setUserId(null);
+    expect(clarity.identify.mock.calls).toEqual([['42']]);
+    expect(clarity.set.mock.calls).toEqual([['logged_in', 'true'], ['verified', 'true'], ['logged_in', 'false']]);
   });
 
   it('sends money in major units of the order currency', () => {

@@ -1,8 +1,10 @@
 import { TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { vi } from 'vitest';
 import { ClarityService } from './clarity.service';
 import { MAX_WAIT_MS } from '../page-settled';
 import { environment } from '../../../environments/environment';
+import { RegionService } from '../region.service';
 
 describe('ClarityService', () => {
   const tag = () => document.querySelector('script[src^="https://www.clarity.ms/tag/"]');
@@ -51,5 +53,41 @@ describe('ClarityService', () => {
     TestBed.inject(ClarityService);
     await settled();
     expect(tag()).toBeNull();
+  });
+
+  const queued = () => ((window as any).clarity?.q ?? []).map((args: IArguments) => Array.from(args));
+
+  it('queues calls made before the tag has loaded', () => {
+    environment.clarityProjectId = 'abc123';
+    const clarity = TestBed.inject(ClarityService);
+    clarity.event('begin_checkout');
+    clarity.upgrade('begin_checkout');
+    clarity.identify('42');
+    clarity.set('logged_in', 'true');
+    expect(tag()).toBeNull();
+    expect(queued()).toEqual([
+      ['event', 'begin_checkout'],
+      ['upgrade', 'begin_checkout'],
+      ['identify', '42'],
+      ['set', 'logged_in', 'true'],
+    ]);
+  });
+
+  it('tags the session with the site region once the tag loads', async () => {
+    environment.clarityProjectId = 'abc123';
+    TestBed.configureTestingModule({ providers: [{ provide: RegionService, useValue: { region: signal('hk') } }] });
+    TestBed.inject(ClarityService);
+    await settled();
+    TestBed.tick();
+    expect(queued()).toContainEqual(['set', 'region', 'HK']);
+  });
+
+  it('sends nothing for a visit it does not record', async () => {
+    environment.clarityProjectId = 'abc123';
+    history.replaceState(null, '', '/tw/admin/users');
+    const clarity = TestBed.inject(ClarityService);
+    clarity.event('login');
+    clarity.identify('42');
+    expect((window as any).clarity).toBeUndefined();
   });
 });

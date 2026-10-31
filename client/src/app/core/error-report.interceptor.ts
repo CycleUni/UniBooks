@@ -1,8 +1,9 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpInterceptor, HttpRequest, HttpHandler, HttpEvent, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { sentry } from './sentry';
+import { ClarityService } from './services/clarity.service';
 import { environment } from '../../environments/environment';
 
 /**
@@ -17,9 +18,14 @@ import { environment } from '../../environments/environment';
  * Only 5xx is reported. 4xx is the API answering as designed (validation,
  * permissions), and status 0 is as often the visitor's connection as our
  * fault. The response body is never attached: it can carry user data.
+ *
+ * The same errors mark the Clarity session (an `api_error` event, its replay
+ * kept), so what the visitor saw around the failure can be watched.
  */
 @Injectable()
 export class ErrorReportInterceptor implements HttpInterceptor {
+  private clarity = inject(ClarityService);
+
   intercept(request: HttpRequest<unknown>, next: HttpHandler): Observable<HttpEvent<unknown>> {
     return next.handle(request).pipe(
       catchError((error: unknown) => {
@@ -36,6 +42,8 @@ export class ErrorReportInterceptor implements HttpInterceptor {
             fingerprint: ['http-5xx', request.method, String(error.status), route],
             extra: { route },
           });
+          this.clarity.event('api_error');
+          this.clarity.upgrade('api_error');
         }
         return throwError(() => error);
       }),

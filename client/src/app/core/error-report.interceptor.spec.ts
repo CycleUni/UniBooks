@@ -3,19 +3,23 @@ import { HTTP_INTERCEPTORS, HttpClient, provideHttpClient, withInterceptorsFromD
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { sentry } from './sentry';
 import { ErrorReportInterceptor } from './error-report.interceptor';
+import { ClarityService } from './services/clarity.service';
 import { environment } from '../../environments/environment';
 
 
 describe('ErrorReportInterceptor', () => {
   let http: HttpClient;
   let backend: HttpTestingController;
+  let clarity: { event: ReturnType<typeof vi.fn>; upgrade: ReturnType<typeof vi.fn> };
 
   afterEach(() => vi.restoreAllMocks());
 
   beforeEach(() => {
     vi.spyOn(sentry, 'captureException').mockImplementation(() => undefined);
+    clarity = { event: vi.fn(), upgrade: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
+        { provide: ClarityService, useValue: clarity },
         provideHttpClient(withInterceptorsFromDi()),
         provideHttpClientTesting(),
         { provide: HTTP_INTERCEPTORS, useClass: ErrorReportInterceptor, multi: true },
@@ -31,6 +35,14 @@ describe('ErrorReportInterceptor', () => {
     backend.expectOne(() => true).flush({ secret: 'body' }, { status, statusText: 'x' });
     return thrown;
   };
+
+  it('marks the Clarity session on a 5xx, and only then', () => {
+    failWith('/orders', 400);
+    expect(clarity.event).not.toHaveBeenCalled();
+    failWith('/orders', 503);
+    expect(clarity.event.mock.calls).toEqual([['api_error']]);
+    expect(clarity.upgrade.mock.calls).toEqual([['api_error']]);
+  });
 
   it('reports a 5xx from our backend and still passes the error on', () => {
     const thrown = failWith('/orders', 500, 'POST');
