@@ -162,6 +162,14 @@ export interface AdminCategory {
   is_active: boolean;
   region?: string;
   translations: any;
+  /** The college's departments; search matches their names and short names. */
+  departments: AdminDepartment[];
+}
+
+/** A department under a college: full name plus short names (資訊管理學系 → 資管). */
+export interface AdminDepartment {
+  name: string;
+  aliases: string[];
 }
 
 export interface AdminChatReport {

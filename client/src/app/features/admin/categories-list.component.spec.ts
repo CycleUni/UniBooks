@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { NEVER, Subject, throwError } from 'rxjs';
-import { AdminCategoriesListComponent } from './categories-list.component';
+import { AdminCategoriesListComponent, departmentsToText, textToDepartments } from './categories-list.component';
 import { AdminService } from '../../core/services/admin.service';
 import { I18nService } from '../../core/i18n.service';
 import { RegionService } from '../../core/region.service';
@@ -45,5 +45,28 @@ describe('AdminCategoriesListComponent: create', () => {
     c.saveCategory();
     expect(c.formError).not.toBe('');
     expect(c.saving).toBe(false);
+  });
+
+  it('sends the departments typed one per line, full name first', () => {
+    const c = create();
+    admin.createCategory.mockReturnValue(new Subject());
+    c.departmentsText = '資訊管理學系, 資管\n\n會計學系，會計、ACCT\n統計學系';
+    c.saveCategory();
+    expect(admin.createCategory.mock.calls[0][0].departments).toEqual([
+      { name: '資訊管理學系', aliases: ['資管'] },
+      { name: '會計學系', aliases: ['會計', 'ACCT'] },
+      { name: '統計學系', aliases: [] },
+    ]);
+  });
+});
+
+describe('department text', () => {
+  it('round-trips through the editor lines', () => {
+    const departments = [
+      { name: '資訊管理學系', aliases: ['資管', '資訊管理系'] },
+      { name: '法律學系', aliases: [] },
+    ];
+    expect(departmentsToText(departments)).toBe('資訊管理學系, 資管, 資訊管理系\n法律學系');
+    expect(textToDepartments(departmentsToText(departments))).toEqual(departments);
   });
 });

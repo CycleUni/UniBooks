@@ -92,6 +92,13 @@
       "when": 1793339839009,
       "tag": "0012_verification_expiry_reminder",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1793458470858,
+      "tag": "0013_category_departments",
+      "breakpoints": true
     }
   ]
 }

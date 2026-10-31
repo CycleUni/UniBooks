@@ -6,7 +6,7 @@ import { UiPagination } from '../../shared/ui/pagination.component';
 import { UiCheckbox } from '../../shared/ui/checkbox.component';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { AdminService, AdminCategory, Paginated } from '../../core/services/admin.service';
+import { AdminService, AdminCategory, AdminDepartment, Paginated } from '../../core/services/admin.service';
 import { parseAdminError } from '../../core/admin-error.util';
 import { TPipe, I18nService } from '../../core/i18n.service';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
@@ -19,6 +19,20 @@ import { RegionService } from '../../core/region.service';
 import { AdminBulkBarComponent } from './bulk-bar.component';
 import { AdminPickCellComponent } from './pick-cell.component';
 import { BulkController } from './bulk';
+
+/** One line per department: `資訊管理學系, 資管`. */
+export function departmentsToText(departments: AdminDepartment[]): string {
+  return departments.map((d) => [d.name, ...d.aliases].join(', ')).join('\n');
+}
+
+/** The editor's lines back to departments; blank lines are skipped, and ，or 、 separate as well as a comma. */
+export function textToDepartments(text: string): AdminDepartment[] {
+  return text
+    .split('\n')
+    .map((line) => line.split(/[,，、]/).map((s) => s.trim()).filter(Boolean))
+    .filter((parts) => parts.length > 0)
+    .map(([name, ...aliases]) => ({ name, aliases }));
+}
 
 @Component({
   selector: 'app-admin-categories-list',
@@ -125,6 +139,12 @@ import { BulkController } from './bulk';
             <ui-textarea [(ngModel)]="form.description"></ui-textarea>
           </div>
 
+          <div class="form-group">
+            <label>{{ 'admin.catDepartments' | t }}</label>
+            <ui-textarea [(ngModel)]="departmentsText" [rows]="6" [placeholder]="'admin.catDepartmentsPlaceholder' | t"></ui-textarea>
+            <p class="field-hint">{{ 'admin.catDepartmentsHint' | t }}</p>
+          </div>
+
           <div class="form-group row-group">
             <div class="col">
               <label>{{ 'admin.catSort' | t }}</label>
@@ -168,6 +188,7 @@ import { BulkController } from './bulk';
     .form-group label { display: block; margin-bottom: 8px; font-weight: 600; font-size: var(--text-base); }
     .row-group { display: flex; gap: 16px; }
     .row-group .col { flex: 1; }
+    .field-hint { margin: 4px 0 0; font-size: var(--text-sm); color: var(--muted); }
     .checkbox-col label { display: flex; align-items: center; gap: 8px; font-weight: normal; margin-top: 32px; cursor: pointer; }
   `]
 })
@@ -199,6 +220,8 @@ export class AdminCategoriesListComponent implements OnInit {
   /** Why the last save was refused, shown under the form. */
   formError = '';
   form: Partial<AdminCategory> = { slug: '', title: '', description: '', sort_order: 0, is_active: true };
+  /** The form's departments, one per line: full name first, then short names, comma-separated. */
+  departmentsText = '';
   
   translationFields: TranslationField[] = [
     { key: 'title', placeholder: 'admin.collegeName', type: 'text' },
@@ -239,6 +262,7 @@ export class AdminCategoriesListComponent implements OnInit {
   
   openCreateModal() {
     this.form = { slug: '', title: '', description: '', sort_order: 0, is_active: true, translations: {} };
+    this.departmentsText = '';
     this.editingId = null;
     this.formError = '';
     this.showModal = true;
@@ -253,6 +277,7 @@ export class AdminCategoriesListComponent implements OnInit {
       is_active: category.is_active,
       translations: category.translations || {}
     };
+    this.departmentsText = departmentsToText(category.departments ?? []);
     this.editingId = category.id;
     this.formError = '';
     this.showModal = true;
@@ -262,7 +287,8 @@ export class AdminCategoriesListComponent implements OnInit {
     if (!this.form.slug || !this.form.title || this.saving) return;
     // A category belongs to a region; the server refuses a new one without
     // it, and a create used to fail with nothing on screen to say so.
-    const payload = this.editingId ? { ...this.form } : { ...this.form, region: this.regionService.region().toUpperCase() };
+    const form = { ...this.form, departments: textToDepartments(this.departmentsText) };
+    const payload = this.editingId ? form : { ...form, region: this.regionService.region().toUpperCase() };
     const editing = this.editingId;
     const request = editing ? this.adminService.updateCategory(editing, payload) : this.adminService.createCategory(payload);
 

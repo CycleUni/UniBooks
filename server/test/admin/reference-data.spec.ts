@@ -68,6 +68,38 @@ describe('reference-data writes leave an audit trail', () => {
     expect(await audits('admin.category_deleted', id)).toHaveLength(1);
   });
 
+  it('categories: departments with short names round-trip, and a bulk re-import notices a changed list', async () => {
+    const departments = [{ name: '資訊管理學系', aliases: ['資管'] }];
+    const res = await call('/api/v1/admin/categories', {
+      token: root.token,
+      body: { slug: 'dept-cat', title: 'Dept', region: 'TW', departments },
+    });
+    expect(res.status).toBe(201);
+    const { id, departments: saved } = (await res.json()) as { id: number; departments: unknown };
+    expect(saved).toEqual(departments);
+
+    const bad = await call(`/api/v1/admin/categories/${id}`, {
+      token: root.token,
+      method: 'PATCH',
+      body: { departments: [{ name: ' ', aliases: [] }] },
+    });
+    expect(bad.status).toBe(400);
+
+    const same = await call('/api/v1/admin/categories/bulk?region=TW', {
+      token: root.token,
+      body: { action: 'preview', items: [{ slug: 'dept-cat', title: 'Dept', departments }] },
+    });
+    expect(await same.json()).toMatchObject({ unchanged: [{ slug: 'dept-cat' }] });
+    const grown = [...departments, { name: '會計學系', aliases: ['會計'] }];
+    const apply = await call('/api/v1/admin/categories/bulk?region=TW', {
+      token: root.token,
+      body: { action: 'apply', items: [{ slug: 'dept-cat', title: 'Dept', departments: grown }] },
+    });
+    expect(await apply.json()).toMatchObject({ modified: [{ new: { slug: 'dept-cat' } }] });
+    const after = (await (await call(`/api/v1/admin/categories/${id}`, { token: root.token })).json()) as { departments: unknown };
+    expect(after.departments).toEqual(grown);
+  });
+
   it('regions and currencies: create and update', async () => {
     const cur = await call('/api/v1/admin/currencies', { token: root.token, body: { code: 'JPY', symbol: 'JP¥', decimal_places: 0 } });
     expect(cur.status).toBe(201);

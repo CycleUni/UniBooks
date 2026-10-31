@@ -56,7 +56,10 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
          VALUES ('TW', 'Taiwan', 'TWD', 'zh-TW', 'Asia/Taipei', '["googlebooks"]', ?)`,
         NOW,
       ),
-      run(`INSERT INTO categories (id, region_code, slug, title) VALUES (1, 'TW', 'eng', 'Engineering')`),
+      run(
+        `INSERT INTO categories (id, region_code, slug, title, departments)
+         VALUES (1, 'TW', 'eng', 'Engineering', '[{"name":"機械工程學系","aliases":["機械","機工"]}]')`,
+      ),
       run(
         `INSERT INTO schools (id, region_code, code, name, email_domain, created_at) VALUES (1, 'TW', 'NTU', 'NTU', 'ntu.edu.tw', ?)`,
         NOW,
@@ -226,6 +229,19 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
     // Matched by its listing's course name.
     expect(byIsbn['9780131103627']).toMatchObject({ id: BOOK, activeListings: 2, conditions: expect.any(Array) });
     expect(body.facets.course).toEqual([{ value: 'Calculus', count: 1 }]);
+  });
+
+  it('search: a department name or short name finds the listings filed under its college', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ totalItems: 0, items: [] }));
+    for (const q of ['機工', '機械系', '機械工程系', '機械工程學系']) {
+      const body = (await (await call(`/api/v1/search/books?q=${encodeURIComponent(q)}`)).json()) as Record<string, any>;
+      expect(
+        body.results.map((r: any) => r.id),
+        q,
+      ).toContain(BOOK);
+    }
+    const miss = (await (await call(`/api/v1/search/books?q=${encodeURIComponent('資管')}`)).json()) as Record<string, any>;
+    expect(miss.results.map((r: any) => r.id)).not.toContain(BOOK);
   });
 
   it('search: a Google result is what its book page shows, even when isbn: misses it', async () => {

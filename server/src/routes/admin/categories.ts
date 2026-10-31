@@ -6,7 +6,7 @@ import type { AppEnv } from '../../env';
 import { invalidates } from '../../lib/cache';
 import { categories, createDb, type Category, type Database } from '../../db';
 import { apiError, fieldErrors, describeIssues, pagination, readJson, validate } from '../../lib/http';
-import { parseJsonObject } from '../../lib/json';
+import { parseDepartments, parseJsonObject } from '../../lib/json';
 import { auditInsert, changedFields, writeAudit } from '../../services/admin/audit';
 import { assertInScope, intId, notFound, regionExists, regionParam, scopeOf, scopeWhere } from '../../services/admin/scope';
 
@@ -25,6 +25,7 @@ export function categoryJson(cat: Category) {
     sort_order: cat.sortOrder,
     is_active: !!cat.isActive,
     translations: parseJsonObject(cat.translations),
+    departments: parseDepartments(cat.departments),
     region: cat.regionCode,
   };
 }
@@ -36,6 +37,18 @@ const categoryFields = {
   sort_order: z.number({ message: INVALID }).int(INVALID).min(0, INVALID).max(2147483647, INVALID),
   is_active: z.boolean({ message: INVALID }),
   translations: z.record(z.string(), z.unknown(), { message: INVALID }),
+  departments: z
+    .array(
+      z.object({
+        name: z.string({ message: INVALID }).trim().min(1, INVALID).max(100, INVALID),
+        aliases: z
+          .array(z.string({ message: INVALID }).trim().min(1, INVALID).max(50, INVALID))
+          .max(20, INVALID)
+          .default([]),
+      }),
+      { message: INVALID },
+    )
+    .max(200, INVALID),
   region: z.string({ message: INVALID }).min(1, INVALID),
 };
 const categoryCreate = z.object({
@@ -44,6 +57,7 @@ const categoryCreate = z.object({
   sort_order: categoryFields.sort_order.optional(),
   is_active: categoryFields.is_active.optional(),
   translations: categoryFields.translations.optional(),
+  departments: categoryFields.departments.optional(),
 });
 const categoryUpdate = z.object(categoryFields).partial();
 
@@ -95,6 +109,7 @@ categoryRoutes.post('/categories', invalidates('ref', 'search'), async (c) => {
       title: body.title,
       description: body.description ?? '',
       translations: JSON.stringify(body.translations ?? {}),
+      departments: JSON.stringify(body.departments ?? []),
       sortOrder: body.sort_order ?? 0,
       isActive: body.is_active === false ? 0 : 1,
     })
@@ -173,6 +188,7 @@ categoryRoutes.post('/categories/bulk', invalidates('ref', 'search'), async (c) 
     const sortOrder = data.sort_order ?? existing?.sortOrder ?? 0;
     const isActive = data.is_active ?? (existing ? !!existing.isActive : true);
     const translations: Record<string, unknown> = data.translations ?? (existing ? parseJsonObject(existing.translations) : {});
+    const departments = data.departments ?? (existing ? parseDepartments(existing.departments) : []);
 
     if (!existing) {
       newItems.push(item);
@@ -187,6 +203,7 @@ categoryRoutes.post('/categories/bulk', invalidates('ref', 'search'), async (c) 
             sortOrder,
             isActive: isActive ? 1 : 0,
             translations: JSON.stringify(translations),
+            departments: JSON.stringify(departments),
           }),
         );
       }
@@ -197,14 +214,22 @@ categoryRoutes.post('/categories/bulk', invalidates('ref', 'search'), async (c) 
       existing.description !== description ||
       existing.sortOrder !== sortOrder ||
       !!existing.isActive !== isActive ||
-      stableJson(parseJsonObject(existing.translations)) !== stableJson(translations);
+      stableJson(parseJsonObject(existing.translations)) !== stableJson(translations) ||
+      stableJson(parseDepartments(existing.departments)) !== stableJson(departments);
     if (!changed) {
       unchanged.push(item);
       continue;
     }
     modified.push({ old: categoryJson(existing), new: item });
     if (action === 'apply') {
-      const set = { title, description, sortOrder, isActive: isActive ? 1 : 0, translations: JSON.stringify(translations) };
+      const set = {
+        title,
+        description,
+        sortOrder,
+        isActive: isActive ? 1 : 0,
+        translations: JSON.stringify(translations),
+        departments: JSON.stringify(departments),
+      };
       modifiedChanges.push({ category_id: existing.id, slug, changes: changedFields(existing, set) });
       writes.push(db.update(categories).set(set).where(eq(categories.id, existing.id)));
     }
@@ -282,6 +307,7 @@ categoryRoutes.patch('/categories/:id', invalidates('ref', 'search'), async (c) 
   if (body.sort_order !== undefined) set.sortOrder = body.sort_order;
   if (body.is_active !== undefined) set.isActive = body.is_active ? 1 : 0;
   if (body.translations !== undefined) set.translations = JSON.stringify(body.translations);
+  if (body.departments !== undefined) set.departments = JSON.stringify(body.departments);
   if (body.region !== undefined) set.regionCode = body.region;
   let row = instance;
   if (Object.keys(set).length) {

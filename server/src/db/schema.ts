@@ -94,6 +94,8 @@ export type NewCity = InsertCity;
  * Homepage college category, one row per region.
  * `title`/`description` are canonical English; localized values live in
  * `translations` JSON: {"zh-TW": {"title": "商管學院", "description": "..."}}.
+ * `departments` JSON: [{"name": "資訊管理學系", "aliases": ["資管"]}] — the
+ * college's departments with their short names, which search matches too.
  */
 export const categories = sqliteTable(
   'categories',
@@ -106,6 +108,7 @@ export const categories = sqliteTable(
     title: text('title').notNull(),
     description: text('description').notNull().default(''),
     translations: text('translations').notNull().default('{}'),
+    departments: text('departments').notNull().default('[]'),
     sortOrder: integer('sort_order').notNull().default(0),
     isActive: integer('is_active').notNull().default(1),
   },

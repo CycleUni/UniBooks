@@ -57,3 +57,23 @@ export function parsePhotos(raw: unknown): string[] {
     return [];
   }
 }
+
+/** One department of a college category: its full name and short names (資訊管理學系 → 資管). */
+export interface Department {
+  name: string;
+  aliases: string[];
+}
+
+/** A category's departments column; malformed entries are dropped. */
+export function parseDepartments(value: unknown): Department[] {
+  const raw = parseJson<unknown>(value, []);
+  if (!Array.isArray(raw)) return [];
+  const out: Department[] = [];
+  for (const d of raw) {
+    if (!d || typeof d !== 'object') continue;
+    const name = (d as Record<string, unknown>).name;
+    if (typeof name !== 'string' || !name.trim()) continue;
+    out.push({ name: name.trim(), aliases: stringList((d as Record<string, unknown>).aliases) });
+  }
+  return out;
+}
