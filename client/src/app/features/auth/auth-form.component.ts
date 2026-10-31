@@ -122,11 +122,11 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   get termsUrl(): string {
-    return aboutSiteUrl(this.i18n.lang(), 'about/terms');
+    return aboutSiteUrl(this.i18n.lang(), 'terms');
   }
 
   get privacyUrl(): string {
-    return aboutSiteUrl(this.i18n.lang(), 'about/privacy');
+    return aboutSiteUrl(this.i18n.lang(), 'privacy');
   }
 
   /** Points the fields at the form message only while there is one — an

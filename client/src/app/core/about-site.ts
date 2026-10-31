@@ -6,7 +6,7 @@ import { Lang } from './i18n';
 // zh-HK edition, so zh-HK readers get the Chinese pages.
 const ABOUT_SITE = 'https://unibooks.app/about/';
 
-export type AboutPage = '' | 'about/terms' | 'about/privacy';
+export type AboutPage = '' | 'terms' | 'privacy';
 
 export function aboutUrl(lang: Lang, page: AboutPage = ''): string {
   return ABOUT_SITE + (lang === 'en' ? 'en/' : '') + page;

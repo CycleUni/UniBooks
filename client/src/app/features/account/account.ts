@@ -77,11 +77,11 @@ export class Account {
   }
 
   get termsUrl(): string {
-    return aboutSiteUrl(this.i18n.lang(), 'about/terms');
+    return aboutSiteUrl(this.i18n.lang(), 'terms');
   }
 
   get privacyUrl(): string {
-    return aboutSiteUrl(this.i18n.lang(), 'about/privacy');
+    return aboutSiteUrl(this.i18n.lang(), 'privacy');
   }
 
   constructor(public auth: AuthStore) {
