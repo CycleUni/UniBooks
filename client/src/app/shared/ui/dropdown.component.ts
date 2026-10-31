@@ -16,12 +16,17 @@ export interface DropdownOption {
   /** More text the search box matches besides the label, e.g. a school's
    *  name in the other languages, its code and its email domain. */
   keywords?: string[];
+  /** Text the search box also matches, shown in grey after the label while
+   *  it does: a college's departments the query names (資管 → 資訊管理學系). */
+  matchHint?: (query: string) => string | undefined;
 }
 
 /** One line of the open list: an option, and the group heading above it if it starts one. */
 export interface DropdownRow {
   opt: DropdownOption;
   heading: string | null;
+  /** The option's matchHint for the current search, if any. */
+  hint?: string;
 }
 
 @Component({
@@ -72,7 +77,7 @@ export interface DropdownRow {
                 [class.active]="row.opt.value === value"
                 (click)="selectOption(row.opt)"
               >
-                <span>{{ row.opt.label }}</span>
+                <span>{{ row.opt.label }}<span class="dropdown-hint" *ngIf="row.hint">{{ row.hint }}</span></span>
                 <svg *ngIf="row.opt.value === value" class="dropdown-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
                   <polyline points="20 6 9 17 4 12"/>
                 </svg>
@@ -275,6 +280,12 @@ export interface DropdownRow {
       color: var(--accent);
       font-weight: 700;
     }
+    .dropdown-hint {
+      margin-left: 6px;
+      color: var(--muted);
+      font-size: var(--text-sm);
+      font-weight: 400;
+    }
     .dropdown-check {
       flex-shrink: 0;
       color: var(--accent);
@@ -391,12 +402,14 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
    */
   get optionRows(): DropdownRow[] {
     const { options, pinned } = this.listOptions();
+    const query = this.searchable ? this.searchQuery.trim() : '';
     let previous: string | undefined;
     return options.map((opt, i) => {
-      if (pinned && i === 0) return { opt, heading: null };
+      const hint = query ? opt.matchHint?.(query) : undefined;
+      if (pinned && i === 0) return { opt, heading: null, hint };
       const heading = opt.group && opt.group !== previous ? opt.group : null;
       previous = opt.group;
-      return { opt, heading };
+      return { opt, heading, hint };
     });
   }
 
@@ -407,7 +420,7 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
       ? this.options
       : this.options.filter(o =>
           o.label.toLowerCase().includes(query) || !!o.group?.toLowerCase().includes(query)
-          || keywordsMatch(o.keywords, query));
+          || keywordsMatch(o.keywords, query) || !!o.matchHint?.(query));
     if (!this.pinSelected || !this.value) return { options: base, pinned: false };
     const idx = base.findIndex(o => o.value === this.value);
     if (idx <= 0) return { options: base, pinned: false };

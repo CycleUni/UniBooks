@@ -18,6 +18,7 @@ import { injectIsPhone } from '../../core/viewport';
 import { PhonePager } from '../../core/phone-pager';
 import { UiSearchBarComponent } from '../../shared/ui/search-bar.component';
 import { TPipe, I18nService } from '../../core/i18n.service';
+import { departmentHint } from '../../core/department-match';
 import { onLanguageChange } from '../../core/on-language-change';
 import { ListingService } from '../../core/services/listing.service';
 import { MetadataService } from '../../core/services/metadata.service';
@@ -439,7 +440,9 @@ export class ListingsComponent implements OnInit {
         if (data.categories) {
           this.categoryOptions = [{ label: this.i18n.t('sell.categoryPlaceholder'), value: '' }, ...data.categories.map((c: any) => ({
             label: c.title,
-            value: c.slug
+            value: c.slug,
+            // Typing a department (資管) finds its college, named in grey after it.
+            matchHint: (q: string) => departmentHint(c.departments, q, this.i18n.lang()),
           }))];
           this.cdr.markForCheck();
         }

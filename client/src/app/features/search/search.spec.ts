@@ -134,6 +134,30 @@ describe('Search page', () => {
       expect(getTopCourses).toHaveBeenLastCalledWith('NTU', 'engineering');
     });
 
+    it('names the department the keyword matched after its college', () => {
+      component.categories = [
+        { slug: 'management', title: '商管學院', departments: [{ name: '資訊管理學系', aliases: ['資管'] }] },
+        { slug: 'engineering', title: 'Engineering' },
+      ];
+      component.activeQuery = '資管系';
+
+      const hints = Object.fromEntries(component.categoryFacetOptions.map(o => [o.value, o.hint]));
+      expect(hints).toEqual({ '': undefined, management: '資訊管理學系', engineering: undefined });
+    });
+
+    it('lists several matched departments with the separator of the page language', () => {
+      component.categories = [
+        {
+          slug: 'engineering',
+          title: 'Engineering',
+          departments: ['Mechanical', 'Civil', 'Chemical', 'Materials'].map(n => ({ name: `${n} Engineering`, aliases: [] })),
+        },
+      ];
+      component.activeQuery = 'engineering';
+
+      expect(component.categoryFacetOptions[1].hint).toBe('Mechanical Engineering, Civil Engineering, Chemical Engineering…');
+    });
+
     it('applies a change at once when no filter panel is open', () => {
       component.toggleCondition('new');
 

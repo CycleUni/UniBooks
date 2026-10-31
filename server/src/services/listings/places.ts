@@ -9,7 +9,7 @@ import type { Context } from 'hono';
 import { eq } from 'drizzle-orm';
 import type { AppEnv, Env } from '../../env';
 import { createDb, schools, cities, categories, type Region } from '../../db';
-import { parseJson, stringList } from '../../lib/json';
+import { departmentSpellings, parseDepartments, parseJson, stringList } from '../../lib/json';
 import { normalizeCode } from '../admin/schoolCodes';
 import { pickLanguage, requestedLanguage } from '../accounts/i18n';
 import { pickTranslation } from '../accounts/regionData';
@@ -99,9 +99,23 @@ export async function categorySlugsById(env: Env, ids: number[]): Promise<Map<nu
   return new Map(rows.filter((r) => ids.includes(Number(r.id))).map((r) => [Number(r.id), categorySlug(r)]));
 }
 
-/** Category ids whose slug, title or any translated title contains `q` (case-insensitive). */
+/** Case- and space-insensitive, with 學系 read as 系 (資訊管理系 = 資訊管理學系). */
+function matchKey(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, '').replace(/學系/g, '系');
+}
+
+/**
+ * Category ids whose title, any translated title, or any department name or
+ * short name in any language contains `q`. A trailing 系 is dropped from `q` first, so 資管系
+ * and 中文系 find the departments stored as 資管 and 中國文學系 / 中文.
+ */
 export async function categoryIdsMatchingText(env: Env, regionCode: string, q: string): Promise<number[]> {
-  const needle = q.toLowerCase();
+  let needle = matchKey(q);
+  if (needle.length > 1 && needle.endsWith('系')) needle = needle.slice(0, -1);
+  if (!needle) return [];
+  // EE or IM names a department only as a whole short name: inside English
+  // names it is everywhere (engin-ee-ring, an-im-al).
+  const shortLatin = /^[a-z0-9]{1,2}$/.test(needle);
   const out: number[] = [];
   for (const c of await regionCategories(env, regionCode)) {
     const titles = [c.row.title, c.row.name];
@@ -111,7 +125,13 @@ export async function categoryIdsMatchingText(env: Env, regionCode: string, q: s
         if (v && typeof v === 'object') titles.push((v as Row).title, (v as Row).name);
       }
     }
-    if (titles.some((x) => typeof x === 'string' && x.toLowerCase().includes(needle))) out.push(c.id);
+    const spellings = parseDepartments(c.row.departments).flatMap(departmentSpellings);
+    if (
+      titles.some((x) => typeof x === 'string' && matchKey(x).includes(needle)) ||
+      spellings.some((x) => (shortLatin ? matchKey(x) === needle : matchKey(x).includes(needle)))
+    ) {
+      out.push(c.id);
+    }
   }
   return out;
 }

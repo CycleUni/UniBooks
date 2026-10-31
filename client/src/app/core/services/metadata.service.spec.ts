@@ -132,4 +132,25 @@ describe('MetadataService cache', () => {
     expect(hk.schools[0].name).toBe('The University of Hong Kong');
     httpMock.verify();
   });
+
+  it('names the payload shape it reads, so a new build skips a copy the browser kept from an old one', () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: I18nService, useValue: { lang: signal('en') } },
+        { provide: RegionService, useValue: { region: signal('tw') } },
+      ],
+    });
+    const service = TestBed.inject(MetadataService);
+    const httpMock = TestBed.inject(HttpTestingController);
+    TestBed.tick();
+
+    service.getMetadata('NTU').subscribe();
+    const req = httpMock.expectOne(r => r.url === '/core/metadata');
+    expect(req.request.params.get('shape')).toBe('2');
+    expect(req.request.params.get('school')).toBe('NTU');
+    req.flush({});
+    httpMock.verify();
+  });
 });

@@ -5,6 +5,8 @@ export interface FacetOption {
   label: string;
   value: string;
   count?: number;
+  /** Small grey text after the label, e.g. the department a keyword named. */
+  hint?: string;
   selected: boolean;
 }
 
@@ -52,7 +54,7 @@ let nextId = 0;
           (keydown.space)="select(option.value, $event)"
         >
           <span class="facet-marker"></span>
-          <span class="facet-label">{{ option.label }}</span>
+          <span class="facet-label">{{ option.label }}<span class="facet-hint" *ngIf="option.hint">{{ option.hint }}</span></span>
           <span class="facet-count" *ngIf="option.count !== undefined">{{ option.count }}</span>
         </li>
       </ul>
@@ -138,6 +140,12 @@ let nextId = 0;
     }
     .facet-label {
       flex: 1;
+    }
+    .facet-hint {
+      margin-left: 6px;
+      color: var(--muted);
+      font-size: var(--text-sm);
+      font-weight: 400;
     }
     .facet-count {
       color: var(--muted);

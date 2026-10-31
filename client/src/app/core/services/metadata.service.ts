@@ -8,6 +8,15 @@ import { isTransientHttpFailure } from '../http-failure';
 import { RegionService } from '../region.service';
 import { CacheVersionService } from '../cache-version.interceptor';
 
+/**
+ * The payload shape this build reads, sent as `?shape=`; bumped with
+ * METADATA_SHAPE in server/src/routes/core.ts when the payload gains a field
+ * this code relies on (2: each college's departments). Browsers keep the
+ * response for up to a day (stale-while-revalidate), so without a new URL a
+ * new build would read the old payload, without the field, until then.
+ */
+const METADATA_SHAPE = 2;
+
 export interface PublicAd {
   id: number;
   title: string;
@@ -60,7 +69,7 @@ export class MetadataService {
 
     // Public endpoint — do not attach Bearer token (SKIP_AUTH).
     // The `lang` query param is appended by ApiUrlInterceptor.
-    let params = new HttpParams();
+    let params = new HttpParams().set('shape', METADATA_SHAPE);
     if (schoolId) {
       params = params.set('school', String(schoolId));
     }

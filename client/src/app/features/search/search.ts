@@ -37,6 +37,7 @@ import { RegionLinkService } from '../../core/region-link.service';
 import { ToastService } from '../../core/services/toast.service';
 import { bookPreviewState, bookQueryParams } from '../../core/book-preview';
 import { SeoService } from '../../core/services/seo.service';
+import { Department, departmentHint } from '../../core/department-match';
 
 type ConditionKey = 'new' | 'like_new' | 'noted' | 'damaged';
 const CONDITION_KEYS: ConditionKey[] = ['new', 'like_new', 'noted', 'damaged'];
@@ -545,11 +546,17 @@ export class Search implements OnInit {
     return this.schoolStateService.getSchoolLabel(this.currentSchool);
   }
 
-  get categoryOptions() {
+  get categoryOptions(): Array<{ label: string; value: string; hint?: string }> {
     return [
       { label: this.i18n.t('search.allCategories'), value: '' },
-      ...this.categories.map(c => ({ label: c.title, value: c.slug }))
+      ...this.categories.map(c => ({ label: c.title, value: c.slug, hint: this.departmentHint(c) }))
     ];
+  }
+
+  /** The departments of this college the keyword named (資管 → 資訊管理學系), so a
+   *  visitor who searched a department sees which college holds it. */
+  private departmentHint(college: { departments?: Department[] }): string | undefined {
+    return departmentHint(college.departments, this.activeQuery, this.i18n.lang());
   }
 
   get courseOptions(): Array<{ label: string; value: string; count?: number }> {
@@ -673,7 +680,7 @@ export class Search implements OnInit {
   }
 
   get categoryFacetOptions(): FacetOption[] {
-    return this.categoryOptions.map(o => ({ label: o.label, value: o.value, selected: o.value === this.shownFilters.category }));
+    return this.categoryOptions.map(o => ({ label: o.label, value: o.value, hint: o.hint, selected: o.value === this.shownFilters.category }));
   }
 
   get courseFacetOptions(): FacetOption[] {

@@ -10,7 +10,7 @@ import { activeRegions, requireRegion, setSharedCache } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { resolveLanguage } from '../services/accounts/i18n';
 import { activeRegionDetails, localizedName, pickTranslation, type Row } from '../services/accounts/regionData';
-import { parseJson } from '../lib/json';
+import { localizeDepartment, parseDepartments, parseJson } from '../lib/json';
 
 /**
  * /api/v1/core/*: health check, regions, geo region and home metadata
@@ -134,6 +134,15 @@ function allNames(row: Row): string[] {
 }
 
 /**
+ * The metadata payload's shape. Bump it, with METADATA_SHAPE in the client's
+ * metadata.service.ts, when the payload gains a field the SPA relies on (2:
+ * each college's departments): the SPA's `?shape=` then gives the request a
+ * new URL that no browser or edge copy answers, and the new KV key leaves
+ * the copies built by the old code behind.
+ */
+const METADATA_SHAPE = 2;
+
+/**
  * Viewer-independent once the URL names the region (the app always sends it):
  * then an edge hit costs no rate-limit count and no session lookup. Without
  * ?region the region may come from the signed-in user, so that answer is
@@ -152,7 +161,7 @@ async function buildMetadataResponse(c: Context<AppEnv>): Promise<Response> {
   const [lang, region] = await Promise.all([resolveLanguage(c), requireRegion(c)]);
   // Reference rows only (the most-wanted list rides on recent-books):
   // admin edits invalidate 'ref'.
-  const body = await cached(c.env, 'ref', `metadata:${region.code}:${lang}`, 3600, () => buildMetadata(c, region, lang));
+  const body = await cached(c.env, 'ref', `metadata:${METADATA_SHAPE}:${region.code}:${lang}`, 3600, () => buildMetadata(c, region, lang));
   // Viewer-independent: let browsers reuse it.
   await setSharedCache(c, { maxAge: 900, staleWhileRevalidate: 86400, lang: true });
   return c.json(body);
@@ -195,7 +204,12 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string) {
   const cityList = cityRows.map((ci) => ({ code: ci.code, name: ci.name, display_name: localizedName(ci, lang) }));
   const categoryList = categoryRows.map((cat) => {
     const t = pickTranslation(cat.translations, lang);
-    return { slug: cat.slug, title: t.title || cat.title, desc: t.description || cat.description };
+    return {
+      slug: cat.slug,
+      title: t.title || cat.title,
+      desc: t.description || cat.description,
+      departments: parseDepartments(cat.departments).map((d) => localizeDepartment(d, lang)),
+    };
   });
 
   return {

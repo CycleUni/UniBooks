@@ -20,6 +20,7 @@ import { MetadataService } from '../../core/services/metadata.service';
 import { onLanguageChange } from '../../core/on-language-change';
 import { AuthStore } from '../../core/auth.store';
 import { I18nService, TPipe } from '../../core/i18n.service';
+import { departmentHint } from '../../core/department-match';
 import { translateApiError } from '../../core/api-error.util';
 import { GoogleAnalyticsService } from '../../core/services/google-analytics.service';
 // Type-only: the library (~300 KB of decoders) is pulled in with a dynamic
@@ -388,7 +389,9 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
         if (data.categories) {
           this.categoryOptions = [{ label: this.i18n.t('sell.categoryPlaceholder'), value: '' }, ...data.categories.map((c: any) => ({
             label: c.title,
-            value: c.slug
+            value: c.slug,
+            // Typing a department (資管) finds its college, named in grey after it.
+            matchHint: (q: string) => departmentHint(c.departments, q, this.i18n.lang()),
           }))];
           this.cdr.markForCheck();
         }

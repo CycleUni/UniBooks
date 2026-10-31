@@ -35,6 +35,19 @@ describe('UiDropdown groups', () => {
     expect(dropdown.filteredOptions.map((o) => o.value)).toEqual(['NTU']);
   });
 
+  it('finds an option through its matchHint and shows the hint while it matches', () => {
+    const dropdown = create();
+    dropdown.options = [
+      { value: '', label: 'Pick one' },
+      { value: 'management', label: '商管學院', matchHint: (q) => (q === '資管' ? '資訊管理學系' : undefined) },
+      { value: 'law', label: '法學院' },
+    ];
+    dropdown.searchQuery = '資管';
+    expect(dropdown.optionRows.map((r) => [r.opt.value, r.hint])).toEqual([['management', '資訊管理學系']]);
+    dropdown.searchQuery = '';
+    expect(dropdown.optionRows.every((r) => r.hint === undefined)).toBe(true);
+  });
+
   it('heads each group once, on its first option', () => {
     const dropdown = create();
     expect(headings(dropdown)).toEqual(['Taipei City:NTU', 'Tainan City:NCKU']);

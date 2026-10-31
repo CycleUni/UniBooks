@@ -234,3 +234,17 @@ describe('campus email suffixes', () => {
     expect(domainMatchesSuffix('a@x.com', '')).toBe(false);
   });
 });
+
+describe('department names', () => {
+  it('read in the visitor language, with every other spelling kept as a short name', async () => {
+    const { localizeDepartment, parseDepartments } = await import('../../src/lib/json');
+    const [im] = parseDepartments(
+      '[{"name":"資訊管理學系","aliases":["資管"],"translations":{"en":{"name":"Information Management","aliases":["IM"]},"fr":{}}}]',
+    );
+    expect(im.translations).toEqual({ en: { name: 'Information Management', aliases: ['IM'] } });
+    expect(localizeDepartment(im, 'en')).toEqual({ name: 'Information Management', aliases: ['資訊管理學系', '資管', 'IM'] });
+    expect(localizeDepartment(im, 'en-HK').name).toBe('Information Management');
+    expect(localizeDepartment(im, 'zh-HK')).toEqual({ name: '資訊管理學系', aliases: ['資管', 'Information Management', 'IM'] });
+    expect(parseDepartments('[{"name":"法律學系","aliases":[],"translations":{}}]')).toEqual([{ name: '法律學系', aliases: [] }]);
+  });
+});
