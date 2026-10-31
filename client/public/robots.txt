@@ -9,3 +9,5 @@ Disallow: /api/
 Sitemap: https://unibooks.app/sitemap.xml
 # Book and listing pages, built from the database by the server Worker.
 Sitemap: https://unibooks.app/api/v1/sitemap.xml
+# The help centre (a separate Worker under /about/).
+Sitemap: https://unibooks.app/about/sitemap.xml

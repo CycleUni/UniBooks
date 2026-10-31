@@ -308,8 +308,8 @@ function buildHtml(
 
   // Organization.logo is what Google shows beside the site in results.
   // A data block, not script, so the CSP's script-src does not apply.
-  // The @id is shared with about.unibooks.app, whose pages name this
-  // Organization as publisher, so both hosts resolve to one entity and the
+  // The @id is shared with the help centre at /about/, whose pages name this
+  // Organization as publisher, so both resolve to one entity and the
   // brand query lands here rather than on the help site.
   const searchBase = region ? `${SITE_ORIGIN}/${region}` : `${SITE_ORIGIN}/${DEFAULT_REGION}`;
   const ldJson = {
