@@ -32,7 +32,7 @@ import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
   standalone: true,
   imports: [CommonModule, RouterModule, UiSkeleton, UiErrorState, TPipe, UiButton, UiEmpty, ReviewModalComponent, DateTimeFormatPipe, PricePipe, UiSearchBarComponent, RegionLinkDirective, UiPullToRefresh],
   template: `
-    <ui-pull-to-refresh [refreshing]="refreshing" (refresh)="onRefresh()">
+    <ui-pull-to-refresh data-clarity-mask="True" [refreshing]="refreshing" (refresh)="onRefresh()">
       <h2 class="section-heading">{{ 'acct.myOrders' | t }}</h2>
 
       <div class="tabs">

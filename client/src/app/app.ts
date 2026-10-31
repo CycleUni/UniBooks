@@ -10,6 +10,7 @@ import { UiMeetupDetailsHost } from './shared/ui/meetup-details-host.component';
 import { NavigationHistoryService } from './core/services/navigation-history.service';
 import { GoogleAuthService } from './core/services/google-auth.service';
 import { GoogleAnalyticsService } from './core/services/google-analytics.service';
+import { ClarityService } from './core/services/clarity.service';
 import { SeoService } from './core/services/seo.service';
 import { SwUpdate, VersionReadyEvent, VersionInstallationFailedEvent } from '@angular/service-worker';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -83,6 +84,7 @@ export class App {
   private navHistory = inject(NavigationHistoryService);
   private googleAuth = inject(GoogleAuthService); // Initializes One Tap globally
   private googleAnalytics = inject(GoogleAnalyticsService); // Initializes GA globally
+  private clarity = inject(ClarityService); // Loads Clarity replays, off the admin console
   // Owns the document title, description, canonical and og: tags; it only
   // has to exist, so it is created here with the shell.
   private seo = inject(SeoService);

@@ -25,7 +25,7 @@ function onSuperuserRoute(router: Router): boolean {
   imports: [RegionLinkDirective, CommonModule, RouterModule, TPipe, UiErrorState],
   template: `
     <ng-container *ngIf="access() === 'granted'; else accessPending">
-    <div class="container admin-layout">
+    <div class="container admin-layout" data-clarity-mask="True">
       <!-- Desktop Sidebar / Mobile Drawer Menu -->
       <nav class="admin-sidebar" [class.drawer-open]="isDrawerOpen" [attr.aria-label]="'admin.ariaNav' | t" #sidebar (keydown)="onKeyDown($event)">
         <div class="sidebar-header">

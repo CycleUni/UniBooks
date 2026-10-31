@@ -10,7 +10,7 @@ const envDir = path.join(__dirname, '../src/environments');
 // `wrangler dev` reads. A variable already set in the environment (CI) wins.
 // Only public values are read; secrets never reach this bundle.
 // ---------------------------------------------------------------------------
-const SHARED_KEYS = ['R2_PUBLIC_URL', 'GOOGLE_CLIENT_ID', 'SENTRY_DSN', 'TURNSTILE_SITE_KEY'];
+const SHARED_KEYS = ['R2_PUBLIC_URL', 'GOOGLE_CLIENT_ID', 'SENTRY_DSN', 'TURNSTILE_SITE_KEY', 'CLARITY_PROJECT_ID'];
 const SERVER_DIR = path.join(__dirname, '../../server');
 const PRODUCTION = process.argv.includes('--production');
 
@@ -53,6 +53,8 @@ export const environment = {
   production: false,
   backendUrl: '${backendUrl}',
   gaMeasurementId: '${process.env.NG_APP_GA_MEASUREMENT_ID || ''}',
+  // Production builds only: a local session is noise in the live project.
+  clarityProjectId: '',
   sentryDsn: '${process.env.SENTRY_DSN || ''}',
   googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}',
   turnstileSiteKey: '${process.env.TURNSTILE_SITE_KEY || ''}'
@@ -64,6 +66,7 @@ export const environment = {
   production: true,
   backendUrl: '${backendUrl}',
   gaMeasurementId: '${process.env.NG_APP_GA_MEASUREMENT_ID || ''}',
+  clarityProjectId: '${process.env.CLARITY_PROJECT_ID || ''}',
   sentryDsn: '${process.env.SENTRY_DSN || ''}',
   googleClientId: '${process.env.GOOGLE_CLIENT_ID || ''}',
   turnstileSiteKey: '${process.env.TURNSTILE_SITE_KEY || ''}'
@@ -173,12 +176,19 @@ const SENTRY_INGEST = originOf(process.env.SENTRY_DSN);
 const GA_CONNECT = ['https://*.google-analytics.com', 'https://*.analytics.google.com', 'https://*.googletagmanager.com'];
 const GA_IMG = ['https://*.google-analytics.com', 'https://*.googletagmanager.com'];
 
+// Microsoft Clarity: the tag (www.clarity.ms/tag/<id>) loads its script from
+// scripts.clarity.ms and posts recordings to a regional *.clarity.ms host;
+// c.bing.com is its cookie-sync pixel. script-src names the two paths, not
+// the hosts.
+const CLARITY_CONNECT = ['https://*.clarity.ms', 'https://c.bing.com'];
+const CLARITY_IMG = ['https://*.clarity.ms', 'https://c.bing.com'];
+
 // connect-src 'self' covers the chat WebSocket (wss://<this host>/api/chat/…):
 // CSP Level 3 matches ws:/wss: on the page's own host for 'self', which every
 // supported browser implements.
 function buildCsp({ backendOrigin, mediaOrigin }) {
-  const connect = ["'self'", backendOrigin, 'https://accounts.google.com', IMPORT_LIST_SOURCE, ...FIREBASE_REGISTRATION, ...GA_CONNECT, SENTRY_INGEST];
-  const img = ["'self'", 'data:', 'blob:', mediaOrigin || 'https:', 'https://lh3.googleusercontent.com', ...GA_IMG];
+  const connect = ["'self'", backendOrigin, 'https://accounts.google.com', IMPORT_LIST_SOURCE, ...FIREBASE_REGISTRATION, ...GA_CONNECT, ...CLARITY_CONNECT, SENTRY_INGEST];
+  const img = ["'self'", 'data:', 'blob:', mediaOrigin || 'https:', 'https://lh3.googleusercontent.com', ...GA_IMG, ...CLARITY_IMG];
   return [
     "default-src 'self'",
     "base-uri 'self'",
@@ -187,7 +197,7 @@ function buildCsp({ backendOrigin, mediaOrigin }) {
     "form-action 'self'",
     // gtag.js by path: the bare host would also serve gtm.js for any
     // container id, a known way around a CSP that allows it.
-    "script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://www.googletagmanager.com/gtag/ https://static.cloudflareinsights.com https://challenges.cloudflare.com",
+    "script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://www.googletagmanager.com/gtag/ https://www.clarity.ms/tag/ https://scripts.clarity.ms/ https://static.cloudflareinsights.com https://challenges.cloudflare.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style",
     "font-src 'self' https://fonts.gstatic.com data:",
     `img-src ${[...new Set(img.filter(Boolean))].join(' ')}`,

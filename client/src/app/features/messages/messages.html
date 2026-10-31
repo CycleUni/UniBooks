@@ -1,7 +1,7 @@
       <!-- Floats over the page; not while a conversation is open, where on a
            phone it would cover the message box. -->
       <ui-push-prompt context="messages" *ngIf="!activeChat"></ui-push-prompt>
-      <div class="messages-container" [class.mobile-chat-open]="!!activeChat" *ngIf="loadingChats || chats.length > 0">
+      <div class="messages-container" data-clarity-mask="True" [class.mobile-chat-open]="!!activeChat" *ngIf="loadingChats || chats.length > 0">
         <div class="sidebar">
           <ui-pull-to-refresh [refreshing]="refreshingInbox" (refresh)="onRefreshInbox()">
             <messages-inbox-list

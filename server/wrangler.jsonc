@@ -104,7 +104,11 @@
     // secret, sign-in, registration and asking for a password reset link always
     // need a challenge (sign-in no longer locks an account after wrong
     // passwords); client/scripts/set-env.js reads the key from here. Empty: off.
-    "TURNSTILE_SITE_KEY": "0x4AAAAAAFXU0IYptAGunf16"
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFXU0IYptAGunf16",
+    // Microsoft Clarity project id (public: it is in the page source). Only the
+    // app uses it, not the Worker; client/scripts/set-env.js reads it from here.
+    // Empty: off.
+    "CLARITY_PROJECT_ID": "z62tfcnsn7"
   },
 
   "observability": {

@@ -23,7 +23,7 @@ import { translateApiError } from '../../core/api-error.util';
   standalone: true,
   imports: [CommonModule, RouterModule, FormsModule, UiButton, UiActionBar, UiSkeleton, UiErrorState, UiEmpty, UiBookCover, TPipe, PricePipe],
   template: `
-      <main class="container container--form checkout-page">
+      <main class="container container--form checkout-page" data-clarity-mask="True">
         <h2>{{ 'checkout.title' | t }}</h2>
 
         <!-- Shaped like the two cards below: a cover beside the title, then

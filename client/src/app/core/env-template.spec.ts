@@ -54,7 +54,7 @@ describe('.env.template', () => {
   it('takes shared settings from the server config instead of repeating them', () => {
     // One source for values both halves need: a copy here drifted once
     // (GOOGLE_CLIENT_ID), which breaks Google sign-in outright.
-    expect([...shared].sort()).toEqual(['GOOGLE_CLIENT_ID', 'R2_PUBLIC_URL', 'SENTRY_DSN', 'TURNSTILE_SITE_KEY']);
+    expect([...shared].sort()).toEqual(['CLARITY_PROJECT_ID', 'GOOGLE_CLIENT_ID', 'R2_PUBLIC_URL', 'SENTRY_DSN', 'TURNSTILE_SITE_KEY']);
     for (const key of shared) {
       expect(declared.has(key), `${key} must not be in .env.template`).toBe(false);
       expect(SERVER_VARS[key], `${key} must be in server/wrangler.jsonc vars`).toBeTruthy();
