@@ -200,3 +200,8 @@ npx --prefix server wrangler d1 execute unibooks --remote --config server/wrangl
 - D1 單一資料庫上限 10 GB。廣告已拆到獨立 D1、事件改用 Analytics Engine，主資料庫只剩交易資料。
 - 主資料接近 6–7 GB 時，建議改用 Hyperdrive + Postgres（例如 Neon），而不是把關聯資料分片到 Durable Objects（搜尋、篩選、跨表查詢都需要關聯式資料庫）。
 - 聊天訊息本來就分散在每個對話自己的 Durable Object，不佔 D1 空間。
+
+## 授權
+
+原始碼公開僅供檢視、學習與非商業的個人研究，採用 [PolyForm Strict License 1.0.0](LICENSE)。
+未經授權，不得散布、修改後發布、公開架設或商業使用。這是 source-available 授權，不是開源授權。

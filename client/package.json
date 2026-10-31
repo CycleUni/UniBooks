@@ -1,6 +1,7 @@
 {
   "name": "unibooks-client",
   "version": "0.0.0",
+  "license": "PolyForm-Strict-1.0.0",
   "scripts": {
     "ng": "ng",
     "start": "nodemon",
