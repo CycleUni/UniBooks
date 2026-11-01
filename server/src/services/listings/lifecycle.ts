@@ -1,7 +1,7 @@
 /**
  * Listing deletion and page bounds.
  */
-import { and, eq, inArray, ne, notExists, sql } from 'drizzle-orm';
+import { and, eq, inArray, notExists, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { books, conversations, createDb, listings, orders, subscriptions } from '../../db';
 import { parsePhotos } from '../../lib/json';
@@ -35,23 +35,7 @@ export async function deleteListing(
 ): Promise<void> {
   const db = createDb(env.DB);
   const rooms = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.listingId, listing.id));
-  const [orphanBook] = await db
-    .select({ coverR2Key: books.coverR2Key })
-    .from(books)
-    .where(
-      and(
-        eq(books.id, listing.bookId),
-        notExists(
-          db
-            .select({ id: listings.id })
-            .from(listings)
-            .where(and(eq(listings.bookId, listing.bookId), ne(listings.id, listing.id))),
-        ),
-        notExists(db.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.bookId, listing.bookId))),
-      ),
-    )
-    .limit(1);
-  await db.batch([
+  const [, , , orphans] = await db.batch([
     db
       .update(orders)
       .set({ listingRef: sql`COALESCE(${orders.listingRef}, ${listing.id})`, listingId: null })
@@ -69,12 +53,15 @@ export async function deleteListing(
           notExists(db.select({ id: listings.id }).from(listings).where(eq(listings.bookId, listing.bookId))),
           notExists(db.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.bookId, listing.bookId))),
         ),
-      ),
+      )
+      // The cover goes only with a book this batch removed: a listing added
+      // for it meanwhile keeps the book, and the book keeps its cover.
+      .returning({ coverR2Key: books.coverR2Key }),
   ]);
-  if (orphanBook?.coverR2Key && orphanBook.coverR2Key.startsWith('covers/')) {
-    await env.R2.delete(orphanBook.coverR2Key).catch((e: unknown) =>
-      console.error(`[listings] failed to delete ${orphanBook.coverR2Key}`, e),
-    );
+  for (const { coverR2Key } of orphans) {
+    if (coverR2Key?.startsWith('covers/')) {
+      await env.R2.delete(coverR2Key).catch((e: unknown) => console.error(`[listings] failed to delete ${coverR2Key}`, e));
+    }
   }
   // Chats about it are read-only now; sockets already open learn it here.
   await Promise.allSettled(

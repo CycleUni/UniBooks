@@ -385,6 +385,21 @@ describe('R2 Cover Cache and Lifecycle', () => {
     expect(await env.R2.get(coverKey)).toBeNull();
   });
 
+  it('keeps the book and its R2 cover when deleteListing leaves another listing on it', async () => {
+    const book = await createTestBook();
+    const listing = await createTestListing(book.id, 'active');
+    await createTestListing(book.id, 'active');
+    const coverKey = `covers/${book.id}.jpg`;
+    await env.R2.put(coverKey, fakeJpegBytes());
+    await db.update(books).set({ coverR2Key: coverKey }).where(eq(books.id, book.id));
+
+    await deleteListing(env, 'https://unibooks.app', listing);
+
+    const [row] = await db.select().from(books).where(eq(books.id, book.id));
+    expect(row?.coverR2Key).toBe(coverKey);
+    expect(await env.R2.get(coverKey)).not.toBeNull();
+  });
+
   it('cron sweep copies missing covers for listed books oldest first', async () => {
     const b1 = await createTestBook('https://books.google.com/b1?zoom=1');
     const b2 = await createTestBook('https://books.google.com/b2?zoom=1');
