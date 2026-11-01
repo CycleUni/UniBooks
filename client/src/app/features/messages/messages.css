@@ -488,6 +488,10 @@
         border-radius: 0;
         box-shadow: none;
         overflow: visible;
+        /* A flex item: without this a long name or school in a row (nowrap,
+           so its full width counts) stretched the inbox past the screen,
+           cutting off the role badge and the Edit button. */
+        min-width: 0;
       }
       /* Single-pane pattern: show the inbox list, or the active chat with a back button */
       .sidebar {
