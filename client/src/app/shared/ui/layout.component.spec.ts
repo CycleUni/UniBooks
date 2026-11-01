@@ -1,12 +1,11 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Component, signal } from '@angular/core';
+import { ComponentFixture, DeferBlockState, TestBed } from '@angular/core/testing';
+import { Component, NgZone, signal } from '@angular/core';
 import { UiLayout } from './layout.component';
 import { Router, provideRouter } from '@angular/router';
 import { NEVER, of, throwError } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MetadataService } from '../../core/services/metadata.service';
 import { AuthStore } from '../../core/auth.store';
-import { AccountService } from '../../core/services/account.service';
 import { SchoolStateService } from '../../core/services/school-state.service';
 import { MessageService } from '../../core/services/message.service';
 import { I18nService } from '../../core/i18n.service';
@@ -59,7 +58,6 @@ describe('UiLayout', () => {
             profileSettled: signal(false),
           },
         },
-        { provide: AccountService, useValue: {} },
         {
           provide: SchoolStateService,
           useValue: {
@@ -187,11 +185,16 @@ describe('UiLayout', () => {
 
   describe('region and language pickers', () => {
     const onPhone = () => (component as any).isPhone.set(true);
+    // The pickers wait for an idle browser; render them now instead.
+    const renderDeferred = async () => {
+      for (const block of await fixture.getDeferBlocks()) await block.render(DeferBlockState.Complete);
+    };
 
     it('stay under the page on wide screens', async () => {
       (TestBed.inject(AuthStore).isAuthenticated as any).set(true);
       await router.navigateByUrl('/');
       fixture.detectChanges();
+      await renderDeferred();
 
       expect(fixture.nativeElement.querySelector('.footer-prefs ui-prefs-selector')).toBeTruthy();
     });
@@ -218,6 +221,7 @@ describe('UiLayout', () => {
       onPhone();
       await router.navigateByUrl('/login');
       fixture.detectChanges();
+      await renderDeferred();
 
       expect(
         fixture.nativeElement.querySelector('.standalone-prefs-container ui-prefs-selector'),
@@ -300,14 +304,23 @@ describe('UiLayout', () => {
     let messages: any;
     let auth: any;
 
+    // The hub's code loads on the first sign-in. Ticked inside the zone, as
+    // the app's own ticks are: run bare, the load settled mid-tick (NG0101).
+    const tick = () => TestBed.inject(NgZone).run(() => TestBed.tick());
+    const signIn = async () => {
+      auth.isAuthenticated.set(true);
+      tick();
+      await hubLoaded();
+    };
+    const hubLoaded = () => (component as any).messageServiceLoading;
+
     beforeEach(() => {
       messages = TestBed.inject(MessageService) as any;
       auth = TestBed.inject(AuthStore) as any;
     });
 
-    it('opens the hub when the session is authenticated and closes it when it ends', () => {
-      auth.isAuthenticated.set(true);
-      TestBed.tick();
+    it('opens the hub when the session is authenticated and closes it when it ends', async () => {
+      await signIn();
       expect(messages.openHub).toHaveBeenCalledTimes(1);
 
       auth.isAuthenticated.set(false);
@@ -315,21 +328,42 @@ describe('UiLayout', () => {
       expect(messages.closeHub).toHaveBeenCalled();
     });
 
+    it('leaves the hub unloaded for a signed-out visitor', async () => {
+      await router.navigateByUrl('/search');
+
+      expect(hubLoaded()).toBeNull();
+      expect(messages.openHub).not.toHaveBeenCalled();
+      expect(messages.retryHubIfOwed).not.toHaveBeenCalled();
+    });
+
+    it('does not open the hub when the session ended while it loaded', async () => {
+      auth.isAuthenticated.set(true);
+      tick();
+      auth.isAuthenticated.set(false);
+      tick();
+      await hubLoaded();
+
+      expect(messages.openHub).not.toHaveBeenCalled();
+    });
+
     it('nudges a hub retry on navigation', async () => {
+      await signIn();
       messages.retryHubIfOwed.mockClear();
       await router.navigateByUrl('/search');
 
       expect(messages.retryHubIfOwed).toHaveBeenCalled();
     });
 
-    it('nudges a hub retry when the visitor comes back to the tab', () => {
+    it('nudges a hub retry when the visitor comes back to the tab', async () => {
+      await signIn();
       messages.retryHubIfOwed.mockClear();
       document.dispatchEvent(new Event('visibilitychange'));
 
       expect(messages.retryHubIfOwed).toHaveBeenCalled();
     });
 
-    it('stops listening for the tab coming back once destroyed', () => {
+    it('stops listening for the tab coming back once destroyed', async () => {
+      await signIn();
       fixture.destroy();
       messages.retryHubIfOwed.mockClear();
       document.dispatchEvent(new Event('visibilitychange'));

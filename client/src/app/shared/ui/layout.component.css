@@ -327,6 +327,12 @@
       display: flex;
       align-items: center;
     }
+    /* Holds the deferred selector's height (its 38px dropdown triggers) so
+       the footer doesn't jump when it loads. */
+    .prefs-placeholder {
+      display: block;
+      height: 38px;
+    }
     .footer-lang-dropdown {
       display: inline-block;
     }

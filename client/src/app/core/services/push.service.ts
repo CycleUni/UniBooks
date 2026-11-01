@@ -5,6 +5,7 @@ import { Observable, firstValueFrom } from 'rxjs';
 import { catchError, shareReplay } from 'rxjs/operators';
 import { throwError } from 'rxjs';
 import { importOrReload } from '../chunk-recovery';
+import { clearStoredDevice, readStoredDevice, writeStoredDevice } from './push-device';
 
 /** The Firebase web-app config the backend hands out (null until it is set up). */
 export interface FcmConfig {
@@ -29,15 +30,6 @@ export type PushAvailability = 'unavailable' | 'needs-install' | 'blocked' | 're
 /** `denied`: the permission prompt was refused. `failed`: anything else. */
 export type PushEnableResult = 'enabled' | 'denied' | 'failed';
 
-/** Which account turned push on for this browser, and with which token. */
-interface StoredDevice {
-  userId: string;
-  token: string;
-  /** When the token was last sent to the backend, ms since the epoch. */
-  at: number;
-}
-
-const STORAGE_KEY = 'unibooks.push-device';
 /**
  * The backend only needs telling again if the token rotated, which Firebase
  * does rarely; once a week keeps a rotated token from silencing the device
@@ -74,7 +66,7 @@ export class PushService {
 
   /** Whether this browser was set up for push by `userId`. */
   isEnabledHere(userId: string | number | undefined): boolean {
-    const stored = this.readStored();
+    const stored = readStoredDevice();
     return !!stored && !!userId && stored.userId === String(userId) && Notification.permission === 'granted';
   }
 
@@ -92,7 +84,7 @@ export class PushService {
       const token = await this.fetchToken(config);
       if (!token) return 'failed';
       await firstValueFrom(this.http.post('/auth/me/push-devices', { token }));
-      this.writeStored({ userId: String(userId), token, at: Date.now() });
+      writeStoredDevice({ userId: String(userId), token, at: Date.now() });
       return 'enabled';
     } catch (err) {
       console.error('Failed to enable push notifications', err);
@@ -105,11 +97,6 @@ export class PushService {
     await this.unregisterThisDevice();
   }
 
-  /** This browser's registered push token, for the sign-out request to remove. */
-  storedToken(): string | null {
-    return this.readStored()?.token ?? null;
-  }
-
   /**
    * Tells the backend this browser should no longer be pushed to and drops its
    * token. Also what sign-out calls: the request goes out before the session
@@ -117,9 +104,9 @@ export class PushService {
    * reach the backend must never block a sign-out.
    */
   async unregisterThisDevice(): Promise<void> {
-    const stored = this.readStored();
+    const stored = readStoredDevice();
     if (!stored) return;
-    this.clearStored();
+    clearStoredDevice();
     try {
       await firstValueFrom(this.http.request('DELETE', '/auth/me/push-devices', { body: { token: stored.token } }));
     } catch (err) {
@@ -143,7 +130,7 @@ export class PushService {
    */
   async refreshRegistration(userId: string | number): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) return;
-    const stored = this.readStored();
+    const stored = readStoredDevice();
     if (!stored || stored.userId !== String(userId)) return;
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     if (Date.now() - stored.at < REFRESH_AFTER_MS) return;
@@ -153,7 +140,7 @@ export class PushService {
       const token = await this.fetchToken(config);
       if (!token) return;
       await firstValueFrom(this.http.post('/auth/me/push-devices', { token }));
-      this.writeStored({ userId: stored.userId, token, at: Date.now() });
+      writeStoredDevice({ userId: stored.userId, token, at: Date.now() });
     } catch (err) {
       console.error('Failed to refresh push registration', err);
     }
@@ -218,30 +205,5 @@ export class PushService {
       serviceWorkerRegistration: registration,
     });
     return token || null;
-  }
-
-  private readStored(): StoredDevice | null {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? (JSON.parse(raw) as StoredDevice) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  private writeStored(device: StoredDevice) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(device));
-    } catch {
-      // Without it the page just shows the switch off on the next visit.
-    }
-  }
-
-  private clearStored() {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // See writeStored.
-    }
   }
 }

@@ -163,12 +163,22 @@
             <a [href]="privacyUrl" target="_blank" rel="noopener noreferrer">{{ 'footer.privacy' | t }}</a>
           </div>
           <div class="footer-prefs" *ngIf="showPrefs">
-            <ui-prefs-selector></ui-prefs-selector>
+            <!-- Deferred to keep the footer's selector out of the initial
+                 bundle; it sits below the fold, so nothing waits on it. -->
+            @defer (on idle) {
+              <ui-prefs-selector></ui-prefs-selector>
+            } @placeholder {
+              <span class="prefs-placeholder"></span>
+            }
           </div>
         </div>
       </footer>
 
       <div class="standalone-prefs-container container" *ngIf="!fullBleed && !showFooter && !hidePrefs && showPrefs">
-        <ui-prefs-selector></ui-prefs-selector>
+        @defer (on idle) {
+          <ui-prefs-selector></ui-prefs-selector>
+        } @placeholder {
+          <span class="prefs-placeholder"></span>
+        }
       </div>
     </div>

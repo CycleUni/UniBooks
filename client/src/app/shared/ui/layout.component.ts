@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   ChangeDetectorRef,
+  Injector,
   NgZone,
   OnDestroy,
   untracked,
@@ -28,13 +29,13 @@ import { UiPrefsSelector } from './prefs-selector.component';
 import { RegionService } from '../../core/region.service';
 import { MetadataService } from '../../core/services/metadata.service';
 import { AuthStore } from '../../core/auth.store';
-import { AccountService } from '../../core/services/account.service';
 import {
   SchoolStateService,
   SchoolOption,
   CityOption,
 } from '../../core/services/school-state.service';
-import { MessageService } from '../../core/services/message.service';
+import type { MessageService } from '../../core/services/message.service';
+import { importOrReload } from '../../core/chunk-recovery';
 import { I18nService, TPipe } from '../../core/i18n.service';
 import { Lang } from '../../core/i18n';
 import { Subscription } from 'rxjs';
@@ -106,9 +107,11 @@ export class UiLayout implements OnDestroy {
 
   private metadataService = inject(MetadataService);
   private authStore = inject(AuthStore);
-  private accountService = inject(AccountService);
   private schoolStateService = inject(SchoolStateService);
-  private messageService = inject(MessageService);
+  private injector = inject(Injector);
+  /** Loaded on the first sign-in: a signed-out visitor never needs the hub. */
+  private messageService: MessageService | null = null;
+  private messageServiceLoading: Promise<MessageService> | null = null;
   private cdr = inject(ChangeDetectorRef);
 
   readonly i18n = inject(I18nService);
@@ -191,7 +194,7 @@ export class UiLayout implements OnDestroy {
     return this.isPhone();
   }
 
-  private unreadCountSubscription: Subscription;
+  private unreadCountSubscription?: Subscription;
   /** Route of the page on screen, so query-only navigations are not page changes. */
   private currentPath = '';
 
@@ -281,7 +284,7 @@ export class UiLayout implements OnDestroy {
         this.accumulatedUp = 0;
         this.accumulatedDown = 0;
         this.cdr.markForCheck();
-        this.messageService.retryHubIfOwed();
+        this.messageService?.retryHubIfOwed();
         if (this.metadataOwed) {
           this.loadMetadata();
         }
@@ -333,17 +336,18 @@ export class UiLayout implements OnDestroy {
     // in this tab, or in another tab via AuthStore's storage-event sync).
     effect(() => {
       if (this.authStore.isAuthenticated()) {
-        untracked(() => this.messageService.openHub());
+        untracked(() =>
+          this.loadMessageService().then(
+            // Signed out again while it loaded: the else branch already ran.
+            (messages) => this.authStore.isAuthenticated() && messages.openHub(),
+            () => {},
+          ),
+        );
       } else {
-        untracked(() => this.messageService.closeHub());
+        untracked(() => this.messageService?.closeHub());
         // Clear manual school selection on logout - next session uses bound school
         this.schoolStateService.clearManualSchool();
       }
-    });
-
-    this.unreadCountSubscription = this.messageService.unreadCount$.subscribe((count) => {
-      this.unreadCount = count;
-      this.cdr.markForCheck();
     });
 
     // Automatically set the school to the user's verified school once the profile loads
@@ -411,7 +415,7 @@ export class UiLayout implements OnDestroy {
     clearTimeout(this.loadingTimer);
     this.routerSubscription?.unsubscribe();
     this.selectedSchoolSubscription?.unsubscribe();
-    this.unreadCountSubscription.unsubscribe();
+    this.unreadCountSubscription?.unsubscribe();
     this.metadataSubscription?.unsubscribe();
     if (typeof window !== 'undefined') {
       window.removeEventListener('scroll', this.onScroll);
@@ -517,10 +521,33 @@ export class UiLayout implements OnDestroy {
     );
   }
 
+  private loadMessageService(): Promise<MessageService> {
+    return (this.messageServiceLoading ??= importOrReload(
+      () => import('../../core/services/message.service'),
+    ).then(
+      ({ MessageService }) => {
+        const messages = this.injector.get(MessageService);
+        this.messageService = messages;
+        this.unreadCountSubscription = messages.unreadCount$.subscribe((count) => {
+          this.unreadCount = count;
+          this.cdr.markForCheck();
+        });
+        return messages;
+      },
+      (err) => {
+        // The next sign-in (or page load) tries again.
+        this.messageServiceLoading = null;
+        throw err;
+      },
+    ));
+  }
+
+
+
   /** A hub that failed to open gets another chance when the visitor returns. */
   private readonly onVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
-      this.messageService.retryHubIfOwed();
+      this.messageService?.retryHubIfOwed();
     }
   };
 

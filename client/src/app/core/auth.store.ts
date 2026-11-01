@@ -6,7 +6,8 @@ import { Observable, from, of, throwError } from 'rxjs';
 import type { StartAuthenticationOpts, StartRegistrationOpts } from '@simplewebauthn/browser';
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
-import { PushService } from './services/push.service';
+import { readStoredDevice } from './services/push-device';
+import { importOrReload } from './chunk-recovery';
 import { forgetSignedOutUser } from './signed-out-storage';
 import { RecentSearches } from './search-suggestions';
 import { RegionLinkService } from './region-link.service';
@@ -374,9 +375,11 @@ export class AuthStore {
         this._profileSettled.set(true);
         this.profileHasLists = wantLists;
         this.profileFetchedAt = Date.now();
-        // A week-old push token is sent to the backend again (a no-op for an
-        // account that never turned push on in this browser).
-        void this.injector.get(PushService).refreshRegistration(profile.id);
+        // A week-old push token is sent to the backend again, by an account
+        // that turned push on in this browser.
+        if (readStoredDevice()?.userId === String(profile.id)) {
+          void this.pushService().then((push) => push.refreshRegistration(profile.id), () => {});
+        }
         // Identify user in GA4 for User Explorer & cross-device reports
         this.ga.setUserId(profile.id);
         this.ga.setUserProperties({
@@ -543,6 +546,13 @@ export class AuthStore {
   }
   private injector = inject(Injector);
   private ga = inject(GoogleAnalyticsService);
+
+  /** Loaded only for a browser that turned push on: few have, so it stays
+   *  out of the first download. */
+  private async pushService() {
+    const { PushService } = await importOrReload(() => import('./services/push.service'));
+    return this.injector.get(PushService);
+  }
 
   // Lazy HttpClient: avoids circular dependency with HTTP_INTERCEPTORS.
   // AuthInterceptor → AuthStore → HttpClient → HTTP_INTERCEPTORS → AuthInterceptor
@@ -895,9 +905,8 @@ export class AuthStore {
     // and a signed-out browser should stop receiving this account's messages.
     // The token also rides on the logout request, which removes it even when
     // this separate request loses to an expired access token.
-    const push = this.injector.get(PushService);
-    const pushToken = push.storedToken();
-    void push.unregisterThisDevice();
+    const pushToken = readStoredDevice()?.token ?? null;
+    if (pushToken) void this.pushService().then((push) => push.unregisterThisDevice(), () => {});
     // Signing out on purpose may mean handing the computer over: what this
     // person typed (a sell draft with its private note, their searches) goes
     // too. A session that merely expired keeps them for when they sign back in.

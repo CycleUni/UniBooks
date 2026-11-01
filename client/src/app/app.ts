@@ -1,14 +1,14 @@
-import { Component, inject, signal, PLATFORM_ID, DestroyRef, NgZone } from '@angular/core';
+import { Component, inject, signal, PLATFORM_ID, DestroyRef, NgZone, ApplicationRef, Injector } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { RouterOutlet, Router, NavigationEnd, NavigationError } from '@angular/router';
-import { isChunkLoadError, reloadForMissingChunk } from './core/chunk-recovery';
+import { importOrReload, isChunkLoadError, reloadForMissingChunk } from './core/chunk-recovery';
+import { whenPageStable } from './core/page-settled';
 import { TPipe } from './core/i18n.service';
 import { UiLayout } from './shared/ui/layout.component';
 import { UiToastHost } from './shared/ui/toast-host.component';
 import { UiConfirmDialog } from './shared/ui/confirm-dialog.component';
 import { UiMeetupDetailsHost } from './shared/ui/meetup-details-host.component';
 import { NavigationHistoryService } from './core/services/navigation-history.service';
-import { GoogleAuthService } from './core/services/google-auth.service';
 import { GoogleAnalyticsService } from './core/services/google-analytics.service';
 import { ClarityService } from './core/services/clarity.service';
 import { SeoService } from './core/services/seo.service';
@@ -82,7 +82,6 @@ export { chunkUrlFromError, isChunkLoadError } from './core/chunk-recovery';
 })
 export class App {
   private navHistory = inject(NavigationHistoryService);
-  private googleAuth = inject(GoogleAuthService); // Initializes One Tap globally
   private googleAnalytics = inject(GoogleAnalyticsService); // Initializes GA globally
   private clarity = inject(ClarityService); // Loads Clarity replays, off the admin console
   // Owns the document title, description, canonical and og: tags; it only
@@ -92,6 +91,8 @@ export class App {
   private destroyRef = inject(DestroyRef);
   private platformId = inject(PLATFORM_ID);
   private zone = inject(NgZone);
+  private appRef = inject(ApplicationRef);
+  private injector = inject(Injector);
 
   private router = inject(Router);
 
@@ -104,6 +105,7 @@ export class App {
 
   constructor() {
     this.recoverFromMissingChunks();
+    this.startGoogleOneTap();
 
     // Without this, a tab left open across a deploy keeps running the old
     // build indefinitely — and since each build's JS/CSS chunk filenames are
@@ -201,6 +203,19 @@ export class App {
           }
         });
     }
+  }
+
+  /**
+   * One Tap, on every page. It waits for the first page to be up anyway, so
+   * its code waits too and stays out of the first download; the sign-in page
+   * loads it at once for its button.
+   */
+  private startGoogleOneTap() {
+    if (!isPlatformBrowser(this.platformId)) return;
+    whenPageStable(this.appRef)
+      .then(() => importOrReload(() => import('./core/services/google-auth.service')))
+      .then(({ GoogleAuthService }) => this.injector.get(GoogleAuthService))
+      .catch((err) => console.error('Failed to load Google sign-in', err));
   }
 
   /**
