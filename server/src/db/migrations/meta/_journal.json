@@ -99,20 +99,6 @@
       "when": 1793458470858,
       "tag": "0013_category_departments",
       "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "6",
-      "when": 1793495897308,
-      "tag": "0014_category_department_translations",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "6",
-      "when": 1793502694992,
-      "tag": "0015_chihlee_departments",
-      "breakpoints": true
     }
   ]
 }
