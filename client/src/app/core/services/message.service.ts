@@ -320,7 +320,7 @@ export class MessageService {
 
   deleteConversation(conversationId: string): Observable<{ status: string }> {
     return this.http.delete<{ status: string }>(
-      `/messaging/conversations/${conversationId}/delete`,
+      `/messaging/conversations/${conversationId}`,
     );
   }
 
