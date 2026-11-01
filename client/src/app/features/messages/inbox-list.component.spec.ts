@@ -22,6 +22,42 @@ describe('MessagesInboxList', () => {
     });
   });
 
+  it('filters by the other party\'s role, and a second press of the same one shows all again', () => {
+    const fixture = TestBed.createComponent(MessagesInboxList);
+    fixture.componentInstance.chats = [
+      { id: 'c1', other_party: 'A', other_party_role: 'seller', listing_title: 'A' },
+      { id: 'c2', other_party: 'B', other_party_role: 'buyer', listing_title: 'B' },
+    ];
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+    const names = () => Array.from(el.querySelectorAll('.chat-partner')).map(n => n.textContent?.trim());
+    const [buyer, seller] = Array.from(el.querySelectorAll('.role-chip')) as HTMLButtonElement[];
+    expect(names()).toEqual(['A', 'B']);
+
+    buyer.click();
+    fixture.detectChanges();
+    expect(names()).toEqual(['B']);
+    expect(buyer.getAttribute('aria-pressed')).toBe('true');
+
+    seller.click();
+    fixture.detectChanges();
+    expect(names()).toEqual(['A']);
+
+    seller.click();
+    fixture.detectChanges();
+    expect(names()).toEqual(['A', 'B']);
+    expect(seller.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('says so when no conversation has the chosen role', () => {
+    const fixture = TestBed.createComponent(MessagesInboxList);
+    fixture.componentInstance.chats = [{ id: 'c1', other_party: 'A', other_party_role: 'seller', listing_title: 'A' }];
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.role-chip.buyer') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.filter-empty')?.textContent).toContain('msg.noChatsForRole');
+  });
+
   it('shows the other party\'s school beside a name that may not be unique', () => {
     const fixture = TestBed.createComponent(MessagesInboxList);
     fixture.componentInstance.chats = [

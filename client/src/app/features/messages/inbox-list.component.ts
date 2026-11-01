@@ -40,12 +40,21 @@ const GESTURE_CLICK_MS = 400;
   template: `
     <div class="sidebar-header">
       <h3>{{ 'msg.inbox' | t }}</h3>
+      <!-- By the other party's role, as the badge on each row shows it.
+           Neither pressed shows everything; pressing the pressed one again
+           goes back to everything. -->
+      <div class="role-filter" role="group" [attr.aria-label]="'msg.filterByRole' | t">
+        <button *ngFor="let role of roles" type="button" class="role-chip"
+                [class.buyer]="role === 'buyer'" [class.seller]="role === 'seller'"
+                [class.on]="roleFilter === role" [attr.aria-pressed]="roleFilter === role"
+                (click)="toggleRole(role)">{{ ('msg.role_' + role) | t }}</button>
+      </div>
     </div>
     <div class="chat-list">
       <ui-skeleton *ngIf="loading" variant="chat-list" [count]="6"></ui-skeleton>
       <!-- On phones, which have no hover for the × button: swipe a row left
            to show Delete, or long-press it for a menu. -->
-      <div class="chat-row" *ngFor="let chat of chats">
+      <div class="chat-row" *ngFor="let chat of visibleChats()">
       <button class="swipe-delete" type="button" *ngIf="isPhone() && offsetFor(chat) < 0"
               tabindex="-1" aria-hidden="true" (click)="swipeDelete(chat)"
               (touchstart)="onDeleteTouchStart($event)" (touchend)="onDeleteTouchEnd($event, chat)">
@@ -92,6 +101,7 @@ const GESTURE_CLICK_MS = 400;
         </div>
       </div>
       </div>
+      <p class="filter-empty" *ngIf="!loading && roleFilter && !visibleChats().length">{{ 'msg.noChatsForRole' | t }}</p>
     </div>
     <ui-bottom-sheet *ngIf="menuChat" [title]="menuChat.other_party" (closed)="menuChat = null">
       <button class="sheet-action danger" type="button" (click)="deleteFromMenu()">
@@ -110,8 +120,58 @@ const GESTURE_CLICK_MS = 400;
       min-height: 0;
     }
     .sidebar-header {
-      padding: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
       border-bottom: 1px solid var(--line);
+    }
+    /* A small box holding the two options as boxes of their own. */
+    .role-filter {
+      display: flex;
+      gap: 2px;
+      padding: 2px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      background-color: color-mix(in srgb, var(--ink) 5%, transparent);
+    }
+    .role-chip {
+      position: relative;
+      height: 22px;
+      padding: 0 10px;
+      border: 1px solid transparent;
+      border-radius: calc(var(--radius-control) - 2px);
+      background: none;
+      color: var(--muted);
+      font: inherit;
+      font-size: var(--text-xs);
+      cursor: pointer;
+      transition: background-color var(--motion-fast), color var(--motion-fast);
+    }
+    /* Drawn small to sit beside the heading; the tap target is still 44px. */
+    .role-chip::after {
+      content: '';
+      position: absolute;
+      inset: calc((20px - var(--tap-min)) / 2) 0;
+    }
+    /* A light tint of the badge's colour: buyer is --flag, seller is --accent. */
+    .role-chip.buyer.on {
+      background-color: color-mix(in srgb, var(--flag) 18%, var(--paper));
+      border-color: color-mix(in srgb, var(--flag) 35%, transparent);
+      color: var(--flag);
+    }
+    .role-chip.seller.on {
+      background-color: color-mix(in srgb, var(--accent) 18%, var(--paper));
+      border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+      color: var(--accent);
+    }
+    .filter-empty {
+      margin: 0;
+      padding: 24px 16px;
+      text-align: center;
+      color: var(--muted);
+      font-size: var(--text-sm);
     }
     .sidebar-header h3 {
       margin: 0;
@@ -191,7 +251,7 @@ const GESTURE_CLICK_MS = 400;
       white-space: nowrap;
     }
     @media (prefers-reduced-motion: reduce) {
-      .chat-item { transition: none; }
+      .chat-item, .role-chip { transition: none; }
     }
     .chat-item:hover {
       background-color: var(--paper);
@@ -315,6 +375,10 @@ export class MessagesInboxList implements OnDestroy {
   private i18n = inject(I18nService);
   readonly isPhone = injectIsPhone();
 
+  readonly roles = ['buyer', 'seller'] as const;
+  /** Only conversations whose other party has this role; null shows all. */
+  roleFilter: 'buyer' | 'seller' | null = null;
+
   /** The row a swipe left has opened to its Delete button; one at a time. */
   openId: string | null = null;
   /** The row under a finger mid-swipe, and where it is. */
@@ -343,6 +407,16 @@ export class MessagesInboxList implements OnDestroy {
 
   ngOnDestroy() {
     if (this.gesture) clearTimeout(this.gesture.timer);
+  }
+
+  visibleChats(): any[] {
+    const role = this.roleFilter;
+    return role ? this.chats.filter(c => c.other_party_role === role) : this.chats;
+  }
+
+  toggleRole(role: 'buyer' | 'seller') {
+    this.roleFilter = this.roleFilter === role ? null : role;
+    this.openId = null;
   }
 
   offsetFor(chat: any): number {

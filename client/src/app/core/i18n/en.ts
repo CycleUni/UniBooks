@@ -481,6 +481,8 @@ export const en: Record<string, string> = {
   'msg.conversationWith': 'Conversation with {name}',
   'msg.role_buyer': 'Buyer',
   'msg.role_seller': 'Seller',
+  'msg.filterByRole': 'Filter by role',
+  'msg.noChatsForRole': 'No conversations match',
   'msg.back': '‹ Back',
   'msg.placeholder': 'Type a message...',
   'msg.send': 'Send',

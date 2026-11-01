@@ -471,6 +471,8 @@ export const zhTW: Record<string, string> = {
   'msg.conversationWith': '與 {name} 的對話',
   'msg.role_buyer': '買家',
   'msg.role_seller': '賣家',
+  'msg.filterByRole': '依身分篩選',
+  'msg.noChatsForRole': '沒有符合的對話',
   'msg.back': '‹ 返回',
   'msg.placeholder': '輸入留言…',
   'msg.send': '送出',

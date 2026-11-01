@@ -471,6 +471,8 @@ export const zhHK: Record<string, string> = {
   'msg.conversationWith': '同 {name} 嘅對話',
   'msg.role_buyer': '買家',
   'msg.role_seller': '賣家',
+  'msg.filterByRole': '按身份篩選',
+  'msg.noChatsForRole': '冇符合嘅對話',
   'msg.back': '‹ 返回',
   'msg.placeholder': '輸入訊息…',
   'msg.send': '送出',
