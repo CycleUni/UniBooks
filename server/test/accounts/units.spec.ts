@@ -248,3 +248,24 @@ describe('department names', () => {
     expect(parseDepartments('[{"name":"法律學系","aliases":[],"translations":{}}]')).toEqual([{ name: '法律學系', aliases: [] }]);
   });
 });
+
+describe('default departments', () => {
+  it('cover every department of 致理科技大學 (多媒體設計系 rides on arts-design, migration 0015)', async () => {
+    const { DEFAULT_CATEGORIES } = await import('../../src/services/admin/defaults');
+    const key = (s: string) => s.replace(/學系/g, '系');
+    const listed = DEFAULT_CATEGORIES.flatMap((c) => c.departments.map((d) => key(d.name)));
+    const chihlee = [
+      '企業管理系',
+      '財務金融系',
+      '會計資訊系',
+      '行銷與流通管理系',
+      '休閒遊憩管理系',
+      '國際貿易系',
+      '應用英語系',
+      '應用日語系',
+      '資訊管理系',
+      '商務科技應用系',
+    ];
+    expect(chihlee.filter((name) => !listed.includes(name))).toEqual([]);
+  });
+});

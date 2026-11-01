@@ -46,6 +46,12 @@ export const DEFAULT_CATEGORIES: DefaultCategory[] = [
       dept('統計學系', ['統計'], 'Statistics', 'Stats'),
       dept('風險管理與保險學系', ['風保', '保險'], 'Risk Management and Insurance', 'RMI'),
       dept('行銷學系', ['行銷'], 'Marketing'),
+      // 致理科技大學's (migration 0015), where no department above covers them.
+      dept('會計資訊系', ['會資'], 'Accounting Information'),
+      dept('行銷與流通管理系', ['行流'], 'Marketing and Logistics Management'),
+      dept('休閒遊憩管理系', ['休閒', '休遊'], 'Leisure and Recreation Management'),
+      dept('國際貿易系', ['國貿'], 'International Trade'),
+      dept('商務科技應用系', ['商務科技管理系', '商科'], 'Commerce Technology Applications', 'Commerce Technology and Management'),
     ],
   },
   {
@@ -104,6 +110,8 @@ export const DEFAULT_CATEGORIES: DefaultCategory[] = [
       dept('圖書資訊學系', ['圖資'], 'Library and Information Science', 'LIS'),
       dept('台灣文學系', ['台文'], 'Taiwanese Literature'),
       dept('戲劇學系', ['戲劇'], 'Drama and Theatre'),
+      dept('應用英語系', ['應英'], 'Applied English'),
+      dept('應用日語系', ['應日'], 'Applied Japanese'),
     ],
   },
   {
