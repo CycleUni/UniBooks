@@ -27,6 +27,7 @@ import { GoogleAnalyticsService } from '../../core/services/google-analytics.ser
 // import the first time the camera is opened, not on every visit to /sell.
 import { bookIsbn, cleanAndValidateIsbn, isbnFromScan } from '../../core/isbn';
 import { UiBarcodeScanner } from '../../shared/ui/barcode-scanner.component';
+import { UiPhotoReorderDirective, PhotoReorderEvent, movePhoto } from '../../shared/ui/photo-reorder.directive';
 import { RegionLinkService } from '../../core/region-link.service';
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
@@ -135,7 +136,7 @@ export interface SellDraft {
 @Component({
   selector: 'app-sell',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, RegionLinkDirective, UiInput, UiTextarea, UiButton, UiDropdown, UiConditionPicker, UiBookCover, UiVerificationPrompt, UiPushPrompt, UiSkeleton, UiBarcodeScanner, TPipe, PricePipe],
+  imports: [CommonModule, RouterModule, FormsModule, RegionLinkDirective, UiInput, UiTextarea, UiButton, UiDropdown, UiConditionPicker, UiBookCover, UiVerificationPrompt, UiPushPrompt, UiSkeleton, UiBarcodeScanner, UiPhotoReorderDirective, TPipe, PricePipe],
   templateUrl: './sell.html',
   styleUrls: ['./sell.css']
 })
@@ -325,6 +326,12 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
     this.listingService.deletePhoto(url).subscribe({
       error: (err) => console.error('Failed to delete orphaned photo from server', err)
     });
+  }
+
+  /** Long-press drag on the previews; the first photo becomes the cover. */
+  reorderPhotos(event: PhotoReorderEvent) {
+    this.uploadedPhotos = movePhoto(this.uploadedPhotos, event);
+    this.saveDraft();
   }
 
   /**

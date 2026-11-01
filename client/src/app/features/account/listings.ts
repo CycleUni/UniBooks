@@ -13,6 +13,7 @@ import { UiPagination } from '../../shared/ui/pagination.component';
 import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
 import { UiInfiniteScroll } from '../../shared/ui/infinite-scroll.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
+import { UiPhotoReorderDirective, PhotoReorderEvent, movePhoto } from '../../shared/ui/photo-reorder.directive';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { injectIsPhone } from '../../core/viewport';
 import { PhonePager } from '../../core/phone-pager';
@@ -60,7 +61,7 @@ const PAGE_SIZE = 20;
   standalone: true,
   imports: [
     CommonModule, FormsModule, UiButton, UiEmpty, UiInput, UiTextarea, UiListingRow, UiDropdown,
-    UiPagination, UiPullToRefresh, UiInfiniteScroll, UiSearchBarComponent, UiSkeleton, UiErrorState, TPipe,
+    UiPagination, UiPullToRefresh, UiInfiniteScroll, UiSearchBarComponent, UiSkeleton, UiErrorState, UiPhotoReorderDirective, TPipe,
   ],
   template: `
     <ui-pull-to-refresh [refreshing]="refreshing" (refresh)="onRefresh()">
@@ -187,8 +188,9 @@ const PAGE_SIZE = 20;
               {{ 'acct.photoLabel' | t }}
               <span class="photo-count">{{ editForm.photos?.length ?? 0 }}/{{ maxPhotos }}</span>
             </label>
-            <div class="photo-grid" *ngIf="editForm.photos?.length">
-              <div class="photo-preview" *ngFor="let url of editForm.photos; let i = index">
+            <p class="photo-hint" *ngIf="!editLock && (editForm.photos?.length ?? 0) > 1">{{ 'sell.photoReorderHint' | t }}</p>
+            <div class="photo-grid" *ngIf="editForm.photos?.length" uiPhotoReorder [reorderDisabled]="!!editLock" (photoReorder)="reorderPhotos($event)">
+              <div class="photo-preview" [attr.data-reorder-item]="editLock ? null : ''" *ngFor="let url of editForm.photos; let i = index">
                 <img [src]="url" loading="lazy" alt="" />
                 <button *ngIf="!editLock" class="delete-photo-btn" type="button" (click)="removePhoto(i)" [title]="'common.delete' | t" [attr.aria-label]="'common.delete' | t">✕</button>
               </div>
@@ -282,6 +284,22 @@ const PAGE_SIZE = 20;
     .photo-grid { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 12px; }
     .photo-preview { position: relative; width: 60px; height: 84px; flex: none; }
     .photo-preview img { display: block; width: 100%; height: 100%; object-fit: cover; border: 1px solid var(--line); border-radius: 4px; }
+    /* Long-press reordering (UiPhotoReorderDirective). */
+    [data-reorder-item] {
+      touch-action: manipulation;
+      -webkit-touch-callout: none;
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: grab;
+      outline: 2px dashed transparent;
+      outline-offset: 3px;
+      transition: outline-color var(--motion-fast);
+    }
+    [data-reorder-item] img { -webkit-user-drag: none; pointer-events: none; }
+    .reordering, .reordering [data-reorder-item] { cursor: grabbing; }
+    .reorder-dragging { z-index: 2; box-shadow: var(--shadow-card); opacity: 0.9; }
+    .reorder-target { outline-color: var(--accent); }
+    .photo-hint { margin: 0 0 4px; font-size: var(--text-sm); color: var(--muted); }
     .photo-error { margin-top: 8px; font-size: var(--text-sm); color: var(--danger); }
     .more { border-top: 1px solid var(--line); padding-top: 12px; }
     .more summary { cursor: pointer; color: var(--muted); font-size: var(--text-base); width: fit-content; }
@@ -660,6 +678,12 @@ export class ListingsComponent implements OnInit {
   removePhoto(index: number) {
     this.editForm.photos = this.editForm.photos.filter((_: string, i: number) => i !== index);
     this.photoError = '';
+  }
+
+  /** Long-press drag on the previews; the first photo becomes the cover. */
+  reorderPhotos(event: PhotoReorderEvent) {
+    this.editForm.photos = movePhoto(this.editForm.photos, event);
+    this.cdr.markForCheck();
   }
 
   /**

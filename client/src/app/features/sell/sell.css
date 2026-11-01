@@ -116,6 +116,26 @@
       font-weight: 500;
       font-size: var(--text-base);
     }
+    /* Long-press reordering (UiPhotoReorderDirective). */
+    [data-reorder-item] {
+      touch-action: manipulation;
+      -webkit-touch-callout: none;
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: grab;
+      outline: 2px dashed transparent;
+      outline-offset: 3px;
+      transition: outline-color var(--motion-fast);
+    }
+    [data-reorder-item] img { -webkit-user-drag: none; pointer-events: none; }
+    .reordering, .reordering [data-reorder-item] { cursor: grabbing; }
+    .reorder-dragging { z-index: 2; box-shadow: var(--shadow-card); opacity: 0.9; }
+    .reorder-target { outline-color: var(--accent); }
+    .photo-hint {
+      margin: -4px 0 0;
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
     .dropzone {
       border: 1.5px dashed var(--line);
       padding: 24px;

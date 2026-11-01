@@ -555,6 +555,7 @@ export const zhHK: Record<string, string> = {
   'sell.descriptionLabel': '書況補充說明（買家可見）',
   'sell.descriptionPlaceholder': '例如：入面大約三頁有熒光筆劃線、書皮有少少爛、可以喺校門口面交…',
   'sell.photoLabel': '書籍相片（最多五張）',
+  'sell.photoReorderHint': '長按相片拖去就可以調位，第一張係封面。',
   'sell.uploadBox': '撳或拖入嚟上載',
   'sell.uploading': '上載中…',
   'sell.photoAlt': '刊登相片',

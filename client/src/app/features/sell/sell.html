@@ -155,8 +155,9 @@
 
           <div class="photo-upload">
             <label>{{ 'sell.photoLabel' | t }}</label>
-            <div class="upload-container">
-              <div class="preview-box" *ngFor="let url of uploadedPhotos; let i = index">
+            <p class="photo-hint" *ngIf="uploadedPhotos.length > 1">{{ 'sell.photoReorderHint' | t }}</p>
+            <div class="upload-container" uiPhotoReorder (photoReorder)="reorderPhotos($event)">
+              <div class="preview-box" data-reorder-item *ngFor="let url of uploadedPhotos; let i = index">
                 <img *ngIf="!isPhotoBroken(url)" [src]="url" [alt]="'sell.photoAlt' | t" (error)="onPhotoError(url)">
                 <div class="preview-missing" *ngIf="isPhotoBroken(url)" role="img" [attr.aria-label]="'sell.photoUnavailable' | t">
                   <svg viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" width="24" height="24" aria-hidden="true">

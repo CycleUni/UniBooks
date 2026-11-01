@@ -565,6 +565,7 @@ export const en: Record<string, string> = {
   'sell.descriptionLabel': 'Item Description (Visible to buyers)',
   'sell.descriptionPlaceholder': 'e.g., Clean pages, minor highlighting in chapter 1, includes notes...',
   'sell.photoLabel': 'Book Photos (Max 5)',
+  'sell.photoReorderHint': 'Long-press a photo and drag to reorder. The first photo is the cover.',
   'sell.uploadBox': 'Click or drag to upload',
   'sell.uploading': 'Uploading...',
   'sell.photoAlt': 'Listing photo',
