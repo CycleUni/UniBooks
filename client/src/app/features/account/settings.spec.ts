@@ -237,10 +237,12 @@ describe('SettingsComponent', () => {
     it('drops the pending address when the change is cancelled', () => {
       component.pendingEmail = 'new@example.com';
       (component as any).accountService = { cancelEmailChange: () => of({}) };
-      (component as any).toast = { success: vi.fn(), error: vi.fn() };
+      const working = vi.fn(() => (source: any) => source);
+      (component as any).toast = { success: vi.fn(), error: vi.fn(), working };
 
       component.onCancelEmailChange();
 
+      expect(working).toHaveBeenCalledWith(en['common.cancelling']);
       expect(component.pendingEmail).toBeNull();
     });
   });

@@ -351,7 +351,7 @@ export class AdminAdvertisersListComponent implements OnInit {
       confirmLabel: this.i18n.t('common.delete'),
     });
     if (confirmed) {
-      this.adminService.deleteAdvertiser(id).subscribe({
+      this.adminService.deleteAdvertiser(id).pipe(this.toast.working(this.i18n.t('common.deleting'))).subscribe({
         next: () => {
           this.loadPage(this.currentPage);
         },

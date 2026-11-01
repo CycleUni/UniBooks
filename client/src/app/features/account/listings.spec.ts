@@ -128,7 +128,7 @@ describe('ListingsComponent listing management', () => {
   let updateListing: ReturnType<typeof vi.fn>;
   let deleteListing: ReturnType<typeof vi.fn>;
   let askDanger: ReturnType<typeof vi.fn>;
-  let toast: { success: any; error: any; info: any };
+  let toast: { success: any; error: any; info: any; working: any };
 
   const listing = (over: Record<string, any> = {}) => ({
     id: 'l1', book_title: 'Calculus', price: 300, condition: 'new', status: 'active', ...over,
@@ -147,7 +147,7 @@ describe('ListingsComponent listing management', () => {
     updateListing = vi.fn().mockReturnValue(of({}));
     deleteListing = vi.fn().mockReturnValue(of({}));
     askDanger = vi.fn().mockResolvedValue(true);
-    toast = { success: vi.fn(), error: vi.fn(), info: vi.fn() };
+    toast = { success: vi.fn(), error: vi.fn(), info: vi.fn(), working: vi.fn(() => (source: any) => source) };
 
     (component as any).accountService = { getMyProfile, clearProfileCache: vi.fn() };
     (component as any).listingService = { updateListing, deleteListing };
@@ -209,6 +209,8 @@ describe('ListingsComponent listing management', () => {
 
     await component.onDelete('l1');
     expect(deleteListing).toHaveBeenCalledWith('l1');
+    // Says it is deleting while the request is on its way, not only once it is done.
+    expect(toast.working).toHaveBeenCalledWith('common.deleting');
     expect(toast.success).toHaveBeenCalledWith('acct.listingDeleted');
   });
 
@@ -282,7 +284,7 @@ describe('ListingsComponent edit dialog photos', () => {
   let component: ListingsComponent;
   let updateListing: ReturnType<typeof vi.fn>;
   let uploadPhoto: ReturnType<typeof vi.fn>;
-  let toast: { success: any; error: any; info: any };
+  let toast: { success: any; error: any; info: any; working: any };
 
   const file = (name: string) => new File(['x'], name, { type: 'image/jpeg' });
   const photos = (n: number) => Array.from({ length: n }, (_, i) => `https://cdn.example/${i}.jpg`);
@@ -306,7 +308,7 @@ describe('ListingsComponent edit dialog photos', () => {
 
     updateListing = vi.fn().mockReturnValue(of({}));
     uploadPhoto = vi.fn((f: File) => of({ url: `https://cdn.example/${f.name}` }));
-    toast = { success: vi.fn(), error: vi.fn(), info: vi.fn() };
+    toast = { success: vi.fn(), error: vi.fn(), info: vi.fn(), working: vi.fn(() => (source: any) => source) };
     (component as any).listingService = { updateListing, uploadPhoto };
     (component as any).accountService = { getMyProfile: vi.fn().mockReturnValue(of({ myListings: [] })), clearProfileCache: vi.fn() };
     (component as any).metadataService = { getMetadata: vi.fn().mockReturnValue(of({})) };

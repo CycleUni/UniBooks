@@ -15,6 +15,7 @@ import { TranslationEditorComponent, TranslationField } from './translation-edit
 import { BulkImportModalComponent } from './bulk-import-modal.component';
 import { UiTextarea } from '../../shared/ui/textarea.component';
 import { AuthStore } from '../../core/auth.store';
+import { ToastService } from '../../core/services/toast.service';
 import { RegionService } from '../../core/region.service';
 import { AdminBulkBarComponent } from './bulk-bar.component';
 import { AdminPickCellComponent } from './pick-cell.component';
@@ -227,6 +228,7 @@ export class AdminCategoriesListComponent implements OnInit {
   private i18n = inject(I18nService);
   private confirms = inject(ConfirmService);
   private authStore = inject(AuthStore);
+  private toast = inject(ToastService);
   private regionService = inject(RegionService);
 
   categoriesData?: Paginated<AdminCategory>;
@@ -360,7 +362,7 @@ export class AdminCategoriesListComponent implements OnInit {
       confirmLabel: this.i18n.t('common.delete'),
     });
     if (confirmed) {
-      this.adminService.deleteCategory(id).subscribe(() => {
+      this.adminService.deleteCategory(id).pipe(this.toast.working(this.i18n.t('common.deleting'))).subscribe(() => {
         this.loadPage(this.currentPage);
         this.cdr.markForCheck();
       });

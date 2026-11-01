@@ -338,7 +338,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   private confirmEmailChange(token: string) {
-    this.accountService.confirmEmailChange(token).subscribe({
+    this.accountService.confirmEmailChange(token).pipe(this.toast.working(this.i18n.t('common.processing'))).subscribe({
       next: () => {
         this.toast.success(this.i18n.t('acct.emailChanged'));
         this.accountService.clearProfileCache();
@@ -351,7 +351,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   onCancelEmailChange() {
-    this.accountService.cancelEmailChange().subscribe({
+    this.accountService.cancelEmailChange().pipe(this.toast.working(this.i18n.t('common.cancelling'))).subscribe({
       next: () => {
         this.pendingEmail = null;
         this.toast.success(this.i18n.t('acct.emailChangeCancelled'));

@@ -221,7 +221,7 @@ export class AdminSchoolsListComponent implements OnInit {
       confirmLabel: this.i18n.t('common.delete'),
     });
     if (!confirmed) return;
-    this.adminService.deleteSchool(school.id).subscribe({
+    this.adminService.deleteSchool(school.id).pipe(this.toast.working(this.i18n.t('common.deleting'))).subscribe({
       next: () => {
         this.loadPage(this.currentPage);
         this.cdr.markForCheck();

@@ -120,7 +120,7 @@ export class SubscriptionsComponent implements OnInit {
 
   async cancelSubscription(id: string) {
     if (await this.confirms.askDanger(this.i18n.t('acct.confirmCancelSub'))) {
-      this.accountService.unsubscribe(id).subscribe({
+      this.accountService.unsubscribe(id).pipe(this.toast.working(this.i18n.t('common.cancelling'))).subscribe({
         next: () => this.loadSubscriptions(true),
         error: (err) => {
           console.error('Failed to unsubscribe', err);
@@ -132,7 +132,7 @@ export class SubscriptionsComponent implements OnInit {
 
   async cancelAllSubscriptions() {
     if (await this.confirms.askDanger(this.i18n.t('acct.confirmCancelAllSubs'))) {
-      this.accountService.unsubscribeAll().subscribe({
+      this.accountService.unsubscribeAll().pipe(this.toast.working(this.i18n.t('common.cancelling'))).subscribe({
         next: () => this.loadSubscriptions(true),
         error: (err) => {
           console.error('Failed to unsubscribe all', err);

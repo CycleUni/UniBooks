@@ -118,6 +118,7 @@
                   [isPendingApproval]="isPendingApproval(msg)"
                   [showDetails]="showsMeetupDetails(msg)"
                   [canEdit]="canEditMeetup(msg)"
+                  [busy]="orderBusy"
                   [meetupTime]="activeChat.order_meetup_time"
                   [meetupLocation]="activeChat.order_meetup_location"
                   (onEdit)="handleEditMeetup()"

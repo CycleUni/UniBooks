@@ -24,8 +24,8 @@ import { TPipe, I18nService } from '../../core/i18n.service';
 import { intlLocale } from '../../core/i18n';
 import { BookCoverPipe } from '../../shared/pipes/book-cover.pipe';
 import { ThemeService } from '../../core/services/theme.service';
-import { Subscription, of } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { Observable, Subscription, of } from 'rxjs';
+import { finalize, tap } from 'rxjs/operators';
 import { MobileLayoutService } from '../../core/services/mobile-layout.service';
 import { formatMessageTime, isMeetupRequest, isMeetupDetailsMessage, cleanMeetupBody, IMAGE_PREVIEW_TOKEN, systemMessageKey } from './message-formatting.util';
 import { PricePipe } from '../../shared/pipes/price.pipe';
@@ -1277,13 +1277,33 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     });
   }
 
+  /** An order action from the meetup card is on its way; the card's buttons wait for it. */
+  orderBusy = false;
+
+  /** `request` with the card's buttons held and `message` ("處理中…") showing until it ends. */
+  private orderAction<T>(request: Observable<T>, message: string): Observable<T> {
+    this.orderBusy = true;
+    this.cdr.markForCheck();
+    return request.pipe(
+      this.toast.working(this.i18n.t(message)),
+      finalize(() => {
+        this.orderBusy = false;
+        this.cdr.markForCheck();
+      }),
+    );
+  }
+
   async handleAcceptMeetup() {
     // Same time/place form as accepting from the orders list; accepting here
     // used to skip it and left the meetup with no time or place.
+    if (this.orderBusy) return;
     const details = await this.meetupDetails.ask(this.activeChat?.listing_title || '');
     if (!details) return;
     this.getOrFetchOrderId((orderId) => {
-      this.orderService.updateOrderStatus(orderId, 'accepted', undefined, details.time || undefined, details.location || undefined).subscribe({
+      this.orderAction(
+        this.orderService.updateOrderStatus(orderId, 'accepted', undefined, details.time || undefined, details.location || undefined),
+        'common.processing',
+      ).subscribe({
         next: (order) => {
           this.ga.trackOrderStep(orderId, 'accepted');
           if (this.activeChat) {
@@ -1303,13 +1323,13 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   /** The seller changes the agreed time/place, from the card showing them. */
   async handleEditMeetup() {
     const chat = this.activeChat;
-    if (!chat?.order_id) return;
+    if (!chat?.order_id || this.orderBusy) return;
     const details = await this.meetupDetails.ask(chat.listing_title || '', {
       time: chat.order_meetup_time || '',
       location: chat.order_meetup_location || '',
     });
     if (!details) return;
-    this.orderService.updateMeetupDetails(chat.order_id, details.time, details.location).subscribe({
+    this.orderAction(this.orderService.updateMeetupDetails(chat.order_id, details.time, details.location), 'common.saving').subscribe({
       next: (order) => {
         this.applyMeetupDetails(chat, order);
         this.cdr.markForCheck();
@@ -1357,8 +1377,9 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   handleDeclineMeetup() {
+    if (this.orderBusy) return;
     this.getOrFetchOrderId((orderId) => {
-      this.orderService.updateOrderStatus(orderId, 'cancelled', 'seller_declined').subscribe({
+      this.orderAction(this.orderService.updateOrderStatus(orderId, 'cancelled', 'seller_declined'), 'common.cancelling').subscribe({
         next: () => {
           this.ga.trackCancelOrder(orderId, 'seller_declined');
           if (this.activeChat) this.activeChat.order_status = 'cancelled';
@@ -1373,8 +1394,9 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   handleCancelMeetup() {
+    if (this.orderBusy) return;
     this.getOrFetchOrderId((orderId) => {
-      this.orderService.updateOrderStatus(orderId, 'cancelled', 'buyer_cancelled').subscribe({
+      this.orderAction(this.orderService.updateOrderStatus(orderId, 'cancelled', 'buyer_cancelled'), 'common.cancelling').subscribe({
         next: () => {
           this.ga.trackCancelOrder(orderId, 'buyer_cancelled');
           if (this.activeChat) this.activeChat.order_status = 'cancelled';
@@ -1406,7 +1428,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     // Only this browser knows of a pending chat.
     const removal = isPendingChat(chat)
       ? of({ status: 'deleted' }).pipe(tap(() => this.pendingChats.remove(chat.id)))
-      : this.messageService.deleteConversation(chat.id);
+      : this.messageService.deleteConversation(chat.id).pipe(this.toast.working(this.i18n.t('common.deleting')));
     removal.subscribe({
       next: () => {
         // Remove from sidebar

@@ -635,7 +635,7 @@ export class ListingsComponent implements OnInit {
     if (!confirmed) return;
     
     this.closeEdit();
-    this.listingService.deleteListing(id).subscribe({
+    this.listingService.deleteListing(id).pipe(this.toast.working(this.i18n.t('common.deleting'))).subscribe({
       next: () => {
         this.toast.success(this.i18n.t('acct.listingDeleted'));
         this.afterChange();

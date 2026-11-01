@@ -1,4 +1,5 @@
 import { Injectable, signal } from '@angular/core';
+import { defer, finalize, type MonoTypeOperatorFunction } from 'rxjs';
 
 export type ToastKind = 'success' | 'error' | 'info';
 
@@ -53,6 +54,21 @@ export class ToastService {
 
   info(message: unknown, durationMs?: number): number {
     return this.show('info', message, durationMs);
+  }
+
+  /**
+   * Shows `message` ("刪除中…") while the request it is piped onto is on its
+   * way, and takes it down when the request ends either way. For actions
+   * whose button is gone by then (asked in a confirm dialog, picked from a
+   * menu, a sheet that closed), where nothing else on screen would say that
+   * something is happening until the result toast arrives.
+   */
+  working<T>(message: string): MonoTypeOperatorFunction<T> {
+    return (source) =>
+      defer(() => {
+        const id = this.info(message, 0);
+        return source.pipe(finalize(() => this.dismiss(id)));
+      });
   }
 
   show(kind: ToastKind, message: unknown, durationMs = TOAST_DURATION_MS[kind]): number {

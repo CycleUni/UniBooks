@@ -37,7 +37,7 @@ export type MeetupMessageType = 'REQUEST' | 'ACCEPT' | 'UPDATE' | 'DECLINE' | 'C
       </dl>
 
       <div class="meetup-card-actions" *ngIf="canEdit">
-        <ui-button size="sm" variant="ghost" (onClick)="onEdit.emit()">
+        <ui-button size="sm" variant="ghost" [disabled]="busy" (onClick)="onEdit.emit()">
           {{ 'msg.meetupActionEdit' | t }}
         </ui-button>
       </div>
@@ -45,17 +45,17 @@ export type MeetupMessageType = 'REQUEST' | 'ACCEPT' | 'UPDATE' | 'DECLINE' | 'C
       <div class="meetup-card-actions" *ngIf="showActions">
         <!-- Seller Actions (Current User is Seller: userRole is 'seller') -->
         <ng-container *ngIf="userRole === 'seller'">
-          <ui-button size="sm" (onClick)="onAccept.emit()">
+          <ui-button size="sm" [disabled]="busy" (onClick)="onAccept.emit()">
             {{ 'msg.meetupActionAccept' | t }}
           </ui-button>
-          <ui-button size="sm" variant="ghost" (onClick)="onDecline.emit()">
+          <ui-button size="sm" variant="ghost" [disabled]="busy" (onClick)="onDecline.emit()">
             {{ 'msg.meetupActionDecline' | t }}
           </ui-button>
         </ng-container>
 
         <!-- Buyer Actions (Current User is Buyer: userRole is 'buyer') -->
         <ng-container *ngIf="userRole === 'buyer'">
-          <ui-button size="sm" variant="ghost" (onClick)="onCancel.emit()">
+          <ui-button size="sm" variant="ghost" [disabled]="busy" (onClick)="onCancel.emit()">
             {{ 'msg.meetupActionCancel' | t }}
           </ui-button>
         </ng-container>
@@ -199,6 +199,8 @@ export class UiMeetupCard {
   @Input() showDetails = false;
   /** Offers the seller an edit of the details shown. */
   @Input() canEdit = false;
+  /** An action from this card is on its way: its buttons wait for it. */
+  @Input() busy = false;
 
   @Output() onAccept = new EventEmitter<void>();
   @Output() onEdit = new EventEmitter<void>();
