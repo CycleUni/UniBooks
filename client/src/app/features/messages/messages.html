@@ -10,9 +10,6 @@
               [loading]="loadingChats"
               (select)="openChat($event)"
               (remove)="deleteConversation($event)"
-              [busy]="deletingMany"
-              (removeMany)="deleteConversations($event)"
-              (editingChange)="onInboxEditing($event)"
             ></messages-inbox-list>
           </ui-pull-to-refresh>
         </div>

@@ -92,7 +92,7 @@ describe('UiLayout', () => {
         },
         {
           provide: MobileLayoutService,
-          useValue: { hideBottomNav: signal(false), bottomTabsReplaced: signal(false), setHideBottomNav: vi.fn() },
+          useValue: { hideBottomNav: signal(false), setHideBottomNav: vi.fn() },
         },
       ],
     }).compileComponents();

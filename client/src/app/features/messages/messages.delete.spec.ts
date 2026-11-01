@@ -11,7 +11,6 @@ import { RegionService } from '../../core/region.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { ToastService } from '../../core/services/toast.service';
-import { MobileLayoutService } from '../../core/services/mobile-layout.service';
 
 describe('Messages - Delete Single Message', () => {
   let fixture: ComponentFixture<Messages>;
@@ -115,59 +114,5 @@ describe('Messages - Delete Single Message', () => {
 
     expect(component.chats.length).toBe(1);
     expect(toast.error).toHaveBeenCalledWith('msg.errDeleteConversation');
-  });
-
-  describe('several conversations at once', () => {
-    let toast: any;
-    beforeEach(() => {
-      toast = TestBed.inject(ToastService);
-      vi.spyOn(toast, 'error');
-      component.chats = [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }];
-    });
-
-    it('asks once, deletes each, and drops them from the inbox', async () => {
-      mockConfirmService.askDanger.mockResolvedValue(true);
-      mockMessageService.deleteConversation = vi.fn(() => of({ status: 'hidden' }));
-
-      await component.deleteConversations([{ id: 'c1' }, { id: 'c3' }]);
-
-      expect(mockConfirmService.askDanger).toHaveBeenCalledTimes(1);
-      expect(mockConfirmService.askDanger.mock.calls[0][0]).toBe('msg.confirmDeleteConversations');
-      expect(mockMessageService.deleteConversation.mock.calls.map((c: any[]) => c[0])).toEqual(['c1', 'c3']);
-      expect(component.chats.map((c) => c.id)).toEqual(['c2']);
-      expect(component.deletingMany).toBe(false);
-      expect(toast.error).not.toHaveBeenCalled();
-    });
-
-    it('keeps the ones that failed and says how many', async () => {
-      mockConfirmService.askDanger.mockResolvedValue(true);
-      mockMessageService.deleteConversation = vi.fn((id: string) =>
-        id === 'c2' ? throwError(() => new Error('offline')) : of({ status: 'deleted' }),
-      );
-
-      await component.deleteConversations([{ id: 'c1' }, { id: 'c2' }]);
-
-      expect(component.chats.map((c) => c.id)).toEqual(['c2', 'c3']);
-      expect(toast.error).toHaveBeenCalledWith('msg.errDeleteSomeConversations');
-    });
-
-    it('deletes nothing when the confirmation is cancelled', async () => {
-      mockConfirmService.askDanger.mockResolvedValue(false);
-      mockMessageService.deleteConversation = vi.fn();
-
-      await component.deleteConversations([{ id: 'c1' }]);
-
-      expect(mockMessageService.deleteConversation).not.toHaveBeenCalled();
-      expect(component.chats.length).toBe(3);
-    });
-
-    it('swaps the bottom tabs for the edit bar, keeping the top header', () => {
-      const layout = TestBed.inject(MobileLayoutService);
-      component.onInboxEditing(true);
-      expect(layout.bottomTabsReplaced()).toBe(true);
-      expect(layout.hideBottomNav()).toBe(false);
-      component.onInboxEditing(false);
-      expect(layout.bottomTabsReplaced()).toBe(false);
-    });
   });
 });

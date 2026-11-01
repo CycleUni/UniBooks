@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { ChangeDetectorRef, Component, inject } from '@angular/core';
-import { MessagesInboxList } from './inbox-list.component';
+import { LONG_PRESS_MS, MessagesInboxList } from './inbox-list.component';
 import { I18nService } from '../../core/i18n.service';
 
 @Component({
@@ -66,11 +66,10 @@ describe('MessagesInboxList', () => {
     expect(fixture.nativeElement.querySelector('.unread-dot')).not.toBeNull();
   });
 
-  describe('edit mode on a phone', () => {
+  describe('deleting on a phone', () => {
     const chats = () => [
       { id: 'c1', other_party: 'A', other_party_role: 'seller', listing_title: 'A' },
       { id: 'c2', other_party: 'B', other_party_role: 'buyer', listing_title: 'B' },
-      { id: 'c3', other_party: 'C', other_party_role: 'buyer', listing_title: 'C' },
     ];
     function create(phone = true) {
       const fixture = TestBed.createComponent(MessagesInboxList);
@@ -78,91 +77,105 @@ describe('MessagesInboxList', () => {
       list.isPhone.set(phone);
       list.chats = chats();
       fixture.detectChanges();
-      return { fixture, list, el: fixture.nativeElement as HTMLElement };
+      const events = { opened: [] as any[], removed: [] as any[] };
+      list.select.subscribe((c) => events.opened.push(c.id));
+      list.remove.subscribe((c) => events.removed.push(c.id));
+      return { fixture, list, events, el: fixture.nativeElement as HTMLElement };
     }
-    const rows = (el: HTMLElement) => Array.from(el.querySelectorAll('.chat-item')) as HTMLElement[];
+    const touch = (x: number, y = 0, pointerType = 'touch') =>
+      ({ clientX: x, clientY: y, pointerType, pointerId: 1, target: document.body }) as unknown as PointerEvent;
+    /** A finger dragged from x=200 by `dx`, then lifted, and the click that follows. */
+    function swipe(list: MessagesInboxList, chat: any, dx: number, pointerType = 'touch') {
+      list.onPointerDown(touch(200, 0, pointerType), chat);
+      list.onPointerMove(touch(200 + dx / 2, 0, pointerType));
+      list.onPointerMove(touch(200 + dx, 0, pointerType));
+      list.onPointerUp();
+      list.onRowClick(chat);
+    }
 
-    it('offers Edit only on a phone, where the rows have no hover delete', () => {
-      expect(create(false).el.querySelector('.edit-btn')).toBeNull();
-      expect(create(true).el.querySelector('.edit-btn')?.getAttribute('aria-label')).toBe('common.edit');
+    it('opens a row to its Delete with a swipe left, and deletes from there', () => {
+      const { fixture, list, events, el } = create();
+      swipe(list, list.chats[0], -120);
+      fixture.detectChanges();
+
+      expect(events.opened).toEqual([]);
+      expect(list.offsetFor(list.chats[0])).toBe(-80);
+      expect((el.querySelector('.chat-item') as HTMLElement).style.transform).toBe('translateX(-80px)');
+      (el.querySelector('.swipe-delete') as HTMLElement).click();
+      expect(events.removed).toEqual(['c1']);
+      expect(list.openId).toBeNull();
     });
 
-    it('ticks rows instead of opening them, and hands the ticked ones over to delete', () => {
-      const { fixture, list, el } = create();
-      const opened: any[] = [];
-      const removed: any[][] = [];
-      const editing: boolean[] = [];
-      list.select.subscribe((c) => opened.push(c));
-      list.removeMany.subscribe((c) => removed.push(c));
-      list.editingChange.subscribe((e) => editing.push(e));
+    it('springs back from a short swipe, and closes an open row instead of opening a chat', () => {
+      const { list, events } = create();
+      swipe(list, list.chats[0], -20);
+      expect(list.openId).toBeNull();
 
-      (el.querySelector('.edit-btn') as HTMLElement).click();
-      fixture.detectChanges();
-      expect(editing).toEqual([true]);
-      expect(el.querySelector('.chat-delete-btn')).toBeNull();
-      expect(el.querySelector('.edit-btn')?.getAttribute('aria-label')).toBe('common.cancel');
-      const button = () => el.querySelector('.delete-btn') as HTMLButtonElement;
-      expect(button().disabled).toBe(true);
+      swipe(list, list.chats[0], -120);
+      expect(list.openId).toBe('c1');
+      list.onPointerDown(touch(50), list.chats[1]);
+      list.onPointerUp();
+      list.onRowClick(list.chats[1]);
+      expect(list.openId).toBeNull();
+      expect(events.opened).toEqual([]);
 
-      rows(el)[0].click();
-      rows(el)[2].click();
-      fixture.detectChanges();
-      expect(opened).toEqual([]);
-      expect(rows(el)[0].getAttribute('aria-checked')).toBe('true');
-      expect(rows(el)[1].getAttribute('aria-checked')).toBe('false');
-
-      button().click();
-      expect(removed.map((r) => r.map((c) => c.id))).toEqual([['c1', 'c3']]);
+      list.onPointerDown(touch(50), list.chats[1]);
+      list.onPointerUp();
+      list.onRowClick(list.chats[1]);
+      expect(events.opened).toEqual(['c2']);
     });
 
-    it('selects all and none', () => {
-      const { fixture, list, el } = create();
-      list.setEditing(true);
-      fixture.detectChanges();
-      const selectAll = () => el.querySelector('.select-all-btn') as HTMLButtonElement;
+    it('opens a menu with Delete on a long press, without opening the chat', () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture, list, events } = create();
+        list.onPointerDown(touch(100), list.chats[1]);
+        vi.advanceTimersByTime(LONG_PRESS_MS);
+        list.onPointerUp();
+        list.onRowClick(list.chats[1]);
+        fixture.detectChanges();
 
-      selectAll().click();
-      fixture.detectChanges();
-      expect(list.selectedIds.size).toBe(3);
-      expect(selectAll().getAttribute('aria-label')).toBe('msg.deselectAll');
-
-      selectAll().click();
-      expect(list.selectedIds.size).toBe(0);
+        expect(events.opened).toEqual([]);
+        expect(list.menuChat?.id).toBe('c2');
+        const action = document.querySelector('ui-bottom-sheet .sheet-action') as HTMLElement;
+        expect(action.textContent).toContain('msg.deleteConversation');
+        action.click();
+        expect(events.removed).toEqual(['c2']);
+        expect(list.menuChat).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
-    it('ends editing once the selected conversations are gone, keeping one that failed ticked', () => {
-      const { fixture, list } = create();
-      const editing: boolean[] = [];
-      list.editingChange.subscribe((e) => editing.push(e));
-      list.setEditing(true);
-      list.toggle({ id: 'c1' });
-      list.toggle({ id: 'c2' });
-
-      // c1 deleted, c2 failed.
-      fixture.componentRef.setInput('chats', chats().filter((c) => c.id !== 'c1'));
-      fixture.detectChanges();
-      expect(list.editing).toBe(true);
-      expect([...list.selectedIds]).toEqual(['c2']);
-
-      fixture.componentRef.setInput('chats', chats().filter((c) => c.id === 'c3'));
-      fixture.detectChanges();
-      expect(list.editing).toBe(false);
-      expect(editing).toEqual([true, false]);
+    it('lets a scroll be a scroll: no long press once the finger moves', () => {
+      vi.useFakeTimers();
+      try {
+        const { list } = create();
+        list.onPointerDown(touch(100, 0), list.chats[0]);
+        list.onPointerMove(touch(100, 30));
+        vi.advanceTimersByTime(LONG_PRESS_MS);
+        expect(list.menuChat).toBeNull();
+        expect(list.offsetFor(list.chats[0])).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
-    it('leaves edit mode when the layout stops being a phone, or the list goes', () => {
-      const { fixture, list } = create();
-      const editing: boolean[] = [];
-      list.editingChange.subscribe((e) => editing.push(e));
-      list.setEditing(true);
-      list.isPhone.set(false);
-      fixture.detectChanges();
-      expect(list.editing).toBe(false);
+    it('leaves a mouse, and wide screens, to the hover × button', () => {
+      const phone = create();
+      swipe(phone.list, phone.list.chats[0], -120, 'mouse');
+      expect(phone.list.openId).toBeNull();
 
-      list.isPhone.set(true);
-      list.setEditing(true);
-      fixture.destroy();
-      expect(editing).toEqual([true, false, true, false]);
+      const wide = create(false);
+      swipe(wide.list, wide.list.chats[0], -120);
+      expect(wide.list.openId).toBeNull();
+    });
+
+    it('keeps the × for screen readers and keyboards on a phone, out of sight', () => {
+      const { el } = create();
+      const button = el.querySelector('.chat-delete-btn') as HTMLElement;
+      expect(button.classList).toContain('sr-only');
+      expect(button.getAttribute('aria-label')).toBe('msg.deleteConversation');
     });
   });
 });

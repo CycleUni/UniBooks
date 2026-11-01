@@ -24,8 +24,8 @@ import { TPipe, I18nService } from '../../core/i18n.service';
 import { intlLocale } from '../../core/i18n';
 import { BookCoverPipe } from '../../shared/pipes/book-cover.pipe';
 import { ThemeService } from '../../core/services/theme.service';
-import { Observable, Subscription, from, of } from 'rxjs';
-import { catchError, finalize, map, mergeMap, tap, toArray } from 'rxjs/operators';
+import { Observable, Subscription, of } from 'rxjs';
+import { finalize, tap } from 'rxjs/operators';
 import { MobileLayoutService } from '../../core/services/mobile-layout.service';
 import { formatMessageTime, isMeetupRequest, isMeetupDetailsMessage, cleanMeetupBody, IMAGE_PREVIEW_TOKEN, systemMessageKey } from './message-formatting.util';
 import { PricePipe } from '../../shared/pipes/price.pipe';
@@ -399,7 +399,6 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     // page, so it stays alive across navigation — only disconnectRoom
     // (the per-room connection for whichever chat was open) belongs here.
     this.mobileLayout.setHideBottomNav(false);
-    this.mobileLayout.bottomTabsReplaced.set(false);
     this.messageService.disconnectRoom();
     if (this.wsSubscription) {
       this.wsSubscription.unsubscribe();
@@ -1435,55 +1434,6 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
       // A failure used to go unnoticed: the row simply stayed.
       error: (err) => this.toast.error(parseApiError(err, this.i18n, 'msg.errDeleteConversation')),
     });
-  }
-
-  /** A delete of several conversations (the phone inbox's edit mode) is on its way. */
-  deletingMany = false;
-
-  /**
-   * Deletes the conversations ticked in the inbox's edit mode, a few requests
-   * at a time. Any that fail stay in the list, still ticked, and the toast
-   * says how many.
-   */
-  async deleteConversations(chats: any[]) {
-    if (this.deletingMany || chats.length === 0) return;
-    const confirmed = await this.confirms.askDanger(
-      chats.length === 1
-        ? this.i18n.t('msg.confirmDeleteConversation')
-        : this.i18n.t('msg.confirmDeleteConversations', { count: chats.length }),
-      { confirmLabel: this.i18n.t('common.delete') },
-    );
-    if (!confirmed) return;
-    this.deletingMany = true;
-    this.cdr.markForCheck();
-    from(chats).pipe(
-      mergeMap((chat) => {
-        if (isPendingChat(chat)) {
-          this.pendingChats.remove(chat.id);
-          return of(chat.id);
-        }
-        return this.messageService.deleteConversation(chat.id).pipe(
-          map(() => chat.id),
-          catchError(() => of(null)),
-        );
-      }, 4),
-      toArray(),
-      this.toast.working(this.i18n.t('common.deleting')),
-      finalize(() => {
-        this.deletingMany = false;
-        this.cdr.markForCheck();
-      }),
-    ).subscribe((ids) => {
-      const deleted = ids.filter((id) => id !== null);
-      this.forgetConversations(deleted);
-      const failed = chats.length - deleted.length;
-      if (failed > 0) this.toast.error(this.i18n.t('msg.errDeleteSomeConversations', { count: failed }));
-    });
-  }
-
-  /** The inbox's edit mode takes the bottom tabs' place for its action bar. */
-  onInboxEditing(editing: boolean) {
-    this.mobileLayout.bottomTabsReplaced.set(editing);
   }
 
   /** Drops deleted conversations from the inbox, closing one that was open. */

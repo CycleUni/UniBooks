@@ -101,7 +101,7 @@
            header); the offer waits for the next ordinary page instead. -->
       <ui-lang-suggestion *ngIf="!fullBleed"></ui-lang-suggestion>
 
-      <main class="main-content" [class.full-bleed]="fullBleed" [class.hide-bottom-nav]="mobileLayout.hideBottomNav() || mobileLayout.bottomTabsReplaced()" [class.has-action-bar]="hasActionBar" [class.action-bar-over-tabs]="hasActionBar && !actionBarReplacesTabs">
+      <main class="main-content" [class.full-bleed]="fullBleed" [class.hide-bottom-nav]="mobileLayout.hideBottomNav()" [class.has-action-bar]="hasActionBar" [class.action-bar-over-tabs]="hasActionBar && !actionBarReplacesTabs">
         <ng-content></ng-content>
         <div class="page-loading" *ngIf="loadingPage" role="status" aria-live="polite">
           <span class="page-loading-spinner" aria-hidden="true"></span>
@@ -109,7 +109,7 @@
         </div>
       </main>
 
-      <nav class="bottom-tab-bar" *ngIf="!mobileLayout.hideBottomNav() && !mobileLayout.bottomTabsReplaced() && !actionBarReplacesTabs">
+      <nav class="bottom-tab-bar" *ngIf="!mobileLayout.hideBottomNav() && !actionBarReplacesTabs">
         <!-- Home has no mobile entry point otherwise: the header logo is the
              only one on desktop, and it is not part of this bar. -->
         <a regionLink="/" [routerLinkActiveOptions]="{ exact: true }" routerLinkActive="active-tab">

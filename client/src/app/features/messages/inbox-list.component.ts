@@ -1,12 +1,20 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, effect, inject, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnDestroy, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { I18nService, TPipe } from '../../core/i18n.service';
 import { intlLocale } from '../../core/i18n';
 import { BookCoverPipe } from '../../shared/pipes/book-cover.pipe';
 import { UiRoleBadge } from '../../shared/ui/role-badge.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
+import { UiBottomSheet } from '../../shared/ui/bottom-sheet.component';
 import { injectIsPhone } from '../../core/viewport';
 import { formatInboxTime } from './message-formatting.util';
+
+/** How far a swipe opens a row: the Delete button's width. */
+const SWIPE_OPEN_PX = 80;
+/** Held this long without moving, a touch opens the row's menu. */
+export const LONG_PRESS_MS = 500;
+/** Movement within this is still a tap or a press, not a drag. */
+const TOUCH_SLOP_PX = 8;
 
 /**
  * Conversation list in the Messages sidebar. Presentational: it renders the
@@ -21,7 +29,7 @@ import { formatInboxTime } from './message-formatting.util';
 @Component({
   selector: 'messages-inbox-list',
   standalone: true,
-  imports: [CommonModule, TPipe, UiRoleBadge, UiSkeleton, BookCoverPipe],
+  imports: [CommonModule, TPipe, UiRoleBadge, UiSkeleton, UiBottomSheet, BookCoverPipe],
   // Checked with its parent, not only on a new `chats` array. The Messages
   // page updates rows in place — a live message's preview and time, the
   // unread dot — and under OnPush (Angular's default) those never showed
@@ -30,40 +38,34 @@ import { formatInboxTime } from './message-formatting.util';
   template: `
     <div class="sidebar-header">
       <h3>{{ 'msg.inbox' | t }}</h3>
-      <!-- Phones have no hover for the row's × button; Edit selects rows to
-           delete instead, several at once. -->
-      <button class="icon-btn edit-btn" type="button" *ngIf="isPhone() && (editing || chats.length > 0)"
-              [attr.aria-label]="(editing ? 'common.cancel' : 'common.edit') | t"
-              [title]="(editing ? 'common.cancel' : 'common.edit') | t"
-              (click)="setEditing(!editing)">
-        <svg *ngIf="!editing" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 20h9"/>
-          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
-        </svg>
-        <svg *ngIf="editing" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <line x1="18" y1="6" x2="6" y2="18"/>
-          <line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
     </div>
-    <div class="chat-list" [class.editing]="editing">
+    <div class="chat-list">
       <ui-skeleton *ngIf="loading" variant="chat-list" [count]="6"></ui-skeleton>
+      <!-- On phones, which have no hover for the × button: swipe a row left
+           to show Delete, or long-press it for a menu. -->
+      <div class="chat-row" *ngFor="let chat of chats">
+      <button class="swipe-delete" type="button" *ngIf="isPhone() && offsetFor(chat) < 0"
+              tabindex="-1" aria-hidden="true" (click)="swipeDelete(chat)">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+        </svg>
+        <span>{{ 'common.delete' | t }}</span>
+      </button>
       <div
         class="chat-item"
-        *ngFor="let chat of chats"
         [class.active]="activeChatId === chat.id"
         [class.role-buyer]="chat.other_party_role === 'buyer'"
         [class.role-seller]="chat.other_party_role === 'seller'"
         [class.unread]="chat._hubUnread"
-        [class.selected]="editing && selectedIds.has(chat.id)"
-        [attr.role]="editing ? 'checkbox' : null"
-        [attr.aria-checked]="editing ? selectedIds.has(chat.id) : null"
-        [attr.tabindex]="editing ? 0 : null"
-        (click)="editing ? toggle(chat) : select.emit(chat)"
-        (keydown.enter)="editing && toggle(chat, $event)"
-        (keydown.space)="editing && toggle(chat, $event)"
+        [class.dragging]="dragId === chat.id"
+        [style.transform]="offsetFor(chat) ? 'translateX(' + offsetFor(chat) + 'px)' : null"
+        (pointerdown)="onPointerDown($event, chat)"
+        (pointermove)="onPointerMove($event)"
+        (pointerup)="onPointerUp()"
+        (pointercancel)="onPointerCancel()"
+        (contextmenu)="isPhone() && $event.preventDefault()"
+        (click)="onRowClick(chat)"
       >
-        <span class="select-marker" *ngIf="editing" aria-hidden="true"></span>
         <img *ngIf="chat.listing_photo" [src]="chat.listing_photo | bookCover" [attr.alt]="chat.listing_title || ('common.bookCover' | t)" class="chat-thumb">
         <div class="chat-thumb placeholder-thumb" *ngIf="!chat.listing_photo"></div>
         <div class="chat-body">
@@ -75,7 +77,10 @@ import { formatInboxTime } from './message-formatting.util';
               <ui-role-badge [role]="chat.other_party_role"></ui-role-badge>
               <span class="unread-dot" *ngIf="chat._hubUnread" role="img" [attr.aria-label]="'msg.unread' | t"></span>
               <time class="chat-time" *ngIf="chat.updated_at" [attr.datetime]="chat.updated_at">{{ formatTime(chat.updated_at) }}</time>
-              <button class="chat-delete-btn" type="button" *ngIf="!editing" [title]="'msg.deleteConversation' | t"
+              <!-- On phones, kept for keyboards and screen readers, which
+                   cannot swipe or long-press: hidden from sight only. -->
+              <button class="chat-delete-btn" type="button" [class.sr-only]="isPhone()"
+                      [title]="'msg.deleteConversation' | t" [attr.aria-label]="'msg.deleteConversation' | t"
                       (click)="$event.stopPropagation(); remove.emit(chat)">×</button>
             </div>
           </div>
@@ -83,31 +88,16 @@ import { formatInboxTime } from './message-formatting.util';
           <div class="chat-preview" [class.pending]="chat.pending">{{ chat.pending ? ('msg.pendingPreview' | t) : formatPreview(chat.latest_message) }}</div>
         </div>
       </div>
+      </div>
     </div>
-    <div class="edit-bar" *ngIf="editing">
-      <button class="icon-btn select-all-btn" type="button" (click)="toggleAll()" [disabled]="busy"
-              [attr.aria-pressed]="allSelected"
-              [attr.aria-label]="(allSelected ? 'msg.deselectAll' : 'msg.selectAll') | t"
-              [title]="(allSelected ? 'msg.deselectAll' : 'msg.selectAll') | t">
-        <!-- Ticked boxes stacked: select all; filled once they all are. -->
-        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="7" y="7" width="14" height="14" rx="2" [attr.fill]="allSelected ? 'currentColor' : 'none'"/>
-          <path d="M3 17V5a2 2 0 0 1 2-2h12"/>
-          <polyline points="10.5 14 13 16.5 17.5 11.5" [attr.stroke]="allSelected ? 'var(--paper)' : 'currentColor'"/>
+    <ui-bottom-sheet *ngIf="menuChat" [title]="menuChat.other_party" (closed)="menuChat = null">
+      <button class="sheet-action danger" type="button" (click)="deleteFromMenu()">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
         </svg>
+        {{ 'msg.deleteConversation' | t }}
       </button>
-      <span class="selected-count" aria-live="polite">{{ 'msg.selectedCount' | t:{count: selectedIds.size} }}</span>
-      <button class="icon-btn delete-btn" type="button" [disabled]="busy || selectedIds.size === 0" (click)="removeSelected()"
-              [attr.aria-label]="'msg.deleteSelected' | t:{count: selectedIds.size}"
-              [title]="'msg.deleteSelected' | t:{count: selectedIds.size}">
-        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline points="3 6 5 6 21 6"/>
-          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-          <path d="M10 11v6M14 11v6"/>
-          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-        </svg>
-      </button>
-    </div>
+    </ui-bottom-sheet>
   `,
   styles: [`
     :host {
@@ -117,90 +107,8 @@ import { formatInboxTime } from './message-formatting.util';
       min-height: 0;
     }
     .sidebar-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
       padding: 16px;
       border-bottom: 1px solid var(--line);
-    }
-    .icon-btn {
-      display: inline-grid;
-      place-content: center;
-      width: var(--tap-min);
-      height: var(--tap-min);
-      padding: 0;
-      background: none;
-      border: none;
-      border-radius: var(--radius-sm);
-      color: var(--accent);
-      cursor: pointer;
-    }
-    .icon-btn:disabled {
-      color: var(--muted);
-      cursor: not-allowed;
-    }
-    .edit-btn {
-      margin: -12px -10px;
-    }
-    .delete-btn:not(:disabled) {
-      color: var(--danger);
-    }
-    .selected-count {
-      font-size: var(--text-sm);
-      color: var(--muted);
-      font-variant-numeric: tabular-nums;
-    }
-    /* In place of the bottom tabs, which the Messages page hides while
-       editing; styled as ui-action-bar on phones. The list leaves room. */
-    .edit-bar {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
-      background: var(--paper);
-      border-top: 1px solid var(--line);
-    }
-    .chat-list.editing {
-      padding-bottom: calc(57px + env(safe-area-inset-bottom, 0px));
-    }
-    /* Same recipe as ui-checkbox, drawn here so the whole row is the target. */
-    .select-marker {
-      flex-shrink: 0;
-      align-self: center;
-      width: 18px;
-      height: 18px;
-      border: 1px solid var(--line-strong);
-      border-radius: var(--radius-xs);
-      background-color: var(--paper);
-      box-sizing: border-box;
-      display: grid;
-      place-content: center;
-    }
-    .select-marker::before {
-      content: "";
-      width: 10px;
-      height: 10px;
-      background-color: var(--btn-primary-ink);
-      clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
-      transform: scale(0);
-      transition: transform var(--motion-fast) ease-in-out;
-    }
-    .chat-item.selected .select-marker {
-      background-color: var(--accent);
-      border-color: var(--accent);
-    }
-    .chat-item.selected .select-marker::before {
-      transform: scale(1);
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .select-marker::before { transition: none; }
     }
     .sidebar-header h3 {
       margin: 0;
@@ -210,7 +118,12 @@ import { formatInboxTime } from './message-formatting.util';
       flex: 1;
       overflow-y: auto;
     }
+    .chat-row {
+      position: relative;
+      overflow: hidden;
+    }
     .chat-item {
+      position: relative;
       display: flex;
       align-items: flex-start;
       gap: 10px;
@@ -218,6 +131,64 @@ import { formatInboxTime } from './message-formatting.util';
       border-bottom: 1px solid var(--line);
       border-left: 3px solid transparent;
       cursor: pointer;
+      /* Opaque, so the swipe's Delete underneath only shows as the row moves. */
+      background-color: var(--paper-warm);
+      /* Vertical scrolling stays the browser's; a horizontal drag is a swipe. */
+      touch-action: pan-y;
+      -webkit-touch-callout: none;
+      user-select: none;
+      transition: transform var(--motion-fast) ease-out;
+    }
+    .chat-item.dragging {
+      transition: none;
+    }
+    .swipe-delete {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 80px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      border: none;
+      background-color: var(--danger);
+      color: var(--paper);
+      font: inherit;
+      font-size: var(--text-sm);
+      cursor: pointer;
+    }
+    .sheet-action {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      min-height: var(--tap-min);
+      padding: 0 4px;
+      border: none;
+      background: none;
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+    }
+    .sheet-action.danger {
+      color: var(--danger);
+    }
+    .chat-delete-btn.sr-only {
+      display: inline-block;
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .chat-item { transition: none; }
     }
     .chat-item:hover {
       background-color: var(--paper);
@@ -330,78 +301,121 @@ import { formatInboxTime } from './message-formatting.util';
     }
   `]
 })
-export class MessagesInboxList implements OnChanges, OnDestroy {
+export class MessagesInboxList implements OnDestroy {
   @Input() chats: any[] = [];
   @Input() activeChatId: string | null = null;
   /** The conversations are still loading: placeholder rows show. */
   @Input() loading = false;
   @Output() select = new EventEmitter<any>();
   @Output() remove = new EventEmitter<any>();
-  /** A delete of the selected conversations is on its way. */
-  @Input() busy = false;
-  /** The conversations ticked in edit mode, to delete. */
-  @Output() removeMany = new EventEmitter<any[]>();
-  @Output() editingChange = new EventEmitter<boolean>();
 
   private i18n = inject(I18nService);
   readonly isPhone = injectIsPhone();
 
-  editing = false;
-  selectedIds = new Set<string>();
-
-  constructor() {
-    // Edit mode is the phone's: leaving that layout (a rotated tablet, a
-    // widened window) brings the hover × buttons back instead.
-    effect(() => {
-      if (!this.isPhone()) untracked(() => this.setEditing(false));
-    });
-  }
-
-  ngOnChanges(changes: SimpleChanges) {
-    if (!changes['chats'] || !this.editing) return;
-    // Deleted conversations leave the selection; once every selected one
-    // has gone, the delete is done and so is editing. One that failed to
-    // delete stays ticked for another try.
-    const ids = new Set(this.chats.map((c) => c.id));
-    const before = this.selectedIds.size;
-    this.selectedIds = new Set([...this.selectedIds].filter((id) => ids.has(id)));
-    if (before > 0 && this.selectedIds.size === 0) this.setEditing(false);
-    else if (this.chats.length === 0) this.setEditing(false);
-  }
+  /** The row a swipe left has opened to its Delete button; one at a time. */
+  openId: string | null = null;
+  /** The row under a finger mid-swipe, and where it is. */
+  dragId: string | null = null;
+  dragX = 0;
+  /** The conversation whose long-press menu is open. */
+  menuChat: any = null;
+  private gesture: { id: string; x: number; y: number; from: number; axis: 'x' | 'y' | null; timer: ReturnType<typeof setTimeout> } | null = null;
+  /** A swipe or a long press just ended: the click that follows is not a tap. */
+  private swallowClick = false;
 
   ngOnDestroy() {
-    // Gone with edit mode still on (deleting the last conversations removes
-    // the whole list): give the bottom tabs back.
-    if (this.editing) this.editingChange.emit(false);
+    if (this.gesture) clearTimeout(this.gesture.timer);
   }
 
-  get allSelected(): boolean {
-    return this.chats.length > 0 && this.selectedIds.size === this.chats.length;
+  offsetFor(chat: any): number {
+    if (this.dragId === chat.id) return this.dragX;
+    return this.openId === chat.id ? -SWIPE_OPEN_PX : 0;
   }
 
-  setEditing(editing: boolean) {
-    if (this.editing === editing) return;
-    this.editing = editing;
-    this.selectedIds = new Set();
-    this.editingChange.emit(editing);
+  onPointerDown(event: PointerEvent, chat: any) {
+    this.swallowClick = false;
+    if (!this.isPhone() || event.pointerType === 'mouse') return;
+    if (this.gesture) clearTimeout(this.gesture.timer);
+    this.gesture = {
+      id: chat.id,
+      x: event.clientX,
+      y: event.clientY,
+      from: this.offsetFor(chat),
+      axis: null,
+      timer: setTimeout(() => this.longPress(chat), LONG_PRESS_MS),
+    };
   }
 
-  toggle(chat: any, event?: Event) {
-    // Space would otherwise scroll the list.
-    event?.preventDefault();
-    const next = new Set(this.selectedIds);
-    if (next.has(chat.id)) next.delete(chat.id);
-    else next.add(chat.id);
-    this.selectedIds = next;
+  onPointerMove(event: PointerEvent) {
+    const g = this.gesture;
+    if (!g) return;
+    const dx = event.clientX - g.x;
+    const dy = event.clientY - g.y;
+    if (!g.axis) {
+      if (Math.abs(dx) < TOUCH_SLOP_PX && Math.abs(dy) < TOUCH_SLOP_PX) return;
+      clearTimeout(g.timer);
+      g.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      if (g.axis === 'x') {
+        // Another row's open Delete closes as this one moves.
+        if (this.openId !== g.id) this.openId = null;
+        (event.target as Element).setPointerCapture?.(event.pointerId);
+      }
+    }
+    if (g.axis !== 'x') return;
+    this.dragId = g.id;
+    this.dragX = Math.max(-SWIPE_OPEN_PX, Math.min(0, g.from + dx));
   }
 
-  toggleAll() {
-    this.selectedIds = this.allSelected ? new Set() : new Set(this.chats.map((c) => c.id));
+  onPointerUp() {
+    const g = this.gesture;
+    if (!g) return;
+    clearTimeout(g.timer);
+    if (g.axis === 'x') {
+      this.openId = this.dragX < -SWIPE_OPEN_PX / 2 ? g.id : null;
+      this.dragId = null;
+      this.swallowClick = true;
+    }
+    this.gesture = null;
   }
 
-  removeSelected() {
-    const chats = this.chats.filter((c) => this.selectedIds.has(c.id));
-    if (chats.length) this.removeMany.emit(chats);
+  onPointerCancel() {
+    // The browser took the touch over to scroll the list.
+    if (this.gesture) clearTimeout(this.gesture.timer);
+    this.gesture = null;
+    this.dragId = null;
+  }
+
+  onRowClick(chat: any) {
+    if (this.swallowClick) {
+      this.swallowClick = false;
+      return;
+    }
+    // A tap anywhere on the list first closes an open Delete.
+    if (this.openId) {
+      this.openId = null;
+      return;
+    }
+    this.select.emit(chat);
+  }
+
+  swipeDelete(chat: any) {
+    this.openId = null;
+    this.remove.emit(chat);
+  }
+
+  deleteFromMenu() {
+    const chat = this.menuChat;
+    this.menuChat = null;
+    if (chat) this.remove.emit(chat);
+  }
+
+  private longPress(chat: any) {
+    if (!this.gesture || this.gesture.axis) return;
+    this.gesture = null;
+    this.swallowClick = true;
+    this.openId = null;
+    this.menuChat = chat;
+    navigator.vibrate?.(10);
   }
 
   /**
