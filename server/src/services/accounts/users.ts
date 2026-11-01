@@ -25,6 +25,7 @@ import { newHexId } from '../../lib/uuid';
 import { nowIso } from '../../lib/time';
 import { cancelOpenOrdersForUser } from '../orders/cancel';
 import { disconnectUser } from '../messaging/disconnect';
+import { markAllDeletedFor } from '../messaging/conversations';
 import { deleteListingPhotos } from '../listings/photos';
 import { parsePhotos } from '../../lib/json';
 import { siteOrigin } from '../../lib/origin';
@@ -253,6 +254,10 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
   // Then, through each order's lock: the other party is told and any
   // reservation released, rather than an open order left on a gone listing.
   await cancelOpenOrdersForUser(env, userId);
+  // Their side of every conversation counts as deleted; one the other side
+  // had already deleted goes now, messages and images included. The rest
+  // stay with the other side until they delete it too.
+  await markAllDeletedFor(env, userId);
   const now = new Date().toISOString();
   const hex = newHexId();
   const own = await db.select({ photos: listings.photos }).from(listings).where(eq(listings.sellerId, userId));

@@ -128,6 +128,30 @@ export class ChatRoom extends DurableObject<Env> {
   }
 
   /**
+   * The conversation is gone for good (both sides deleted it, or deleted
+   * their accounts): drop every message and the room's own state, and close
+   * any socket still open. Returns the image messages' URLs and senders, for
+   * the caller to take the files off the media host. Called from
+   * services/messaging/conversations.ts; never reachable over HTTP.
+   */
+  async purge(): Promise<{ images: { userId: string; url: string }[] }> {
+    const images = [...this.ctx.storage.sql.exec(`SELECT user_id, content FROM messages WHERE message_type = 'image'`)].map((row) => ({
+      userId: String(row.user_id),
+      url: String(row.content),
+    }));
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.close(1000, 'Conversation deleted');
+      } catch {
+        /* already closing */
+      }
+    }
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    return { images };
+  }
+
+  /**
    * The room's listing is gone: the chat is read-only from now on (the
    * contract's rule, applied by roomAccess to new connections). Sockets
    * already open as 'user' become observers in place, so they cannot keep

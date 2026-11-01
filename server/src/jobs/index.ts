@@ -10,6 +10,7 @@ import { purgeTokenStore } from '../services/accounts/tokens';
 import { purgeOneTimeTokens } from '../services/accounts/oneTimeTokens';
 import { runCoverSweep, runCoverCleanup } from '../services/catalog/covers';
 import { deleteUnusedBooks } from '../services/catalog/unused';
+import { sweepDeletedConversations } from '../services/messaging/conversations';
 
 export { runCoverSweep, runCoverCleanup };
 
@@ -447,6 +448,7 @@ export async function runCleanup(env: Env) {
   const coverCleanup = await runCoverCleanup(env);
   const tokensPurged = await purgeTokenStore(env);
   const linksPurged = await purgeOneTimeTokens(env);
+  const conversationsRemoved = await sweepDeletedConversations(env);
   // Redelivery only happens within the queue's retry window, so a day is plenty.
   // A day covers a redelivery and the next run of every job that enqueues with a dedupe key (6 h at most).
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -462,6 +464,7 @@ export async function runCleanup(env: Env) {
     unlisted_covers_cleaned: coverCleanup.cleaned,
     refresh_tokens_purged: tokensPurged,
     one_time_tokens_purged: linksPurged,
+    conversations_removed: conversationsRemoved,
     email_sent_purged: sentPurged.meta.changes ?? 0,
     push_sent_purged: pushSentPurged.meta.changes ?? 0,
   };

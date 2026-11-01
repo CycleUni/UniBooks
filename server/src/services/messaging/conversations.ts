@@ -1,6 +1,10 @@
-import { and, eq, exists, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, notExists, or, sql, type SQL } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { chatReports, conversations, createDb, type Database } from '../../db';
+import { chatRoomStub } from '../../lib/chat';
+import { storageKeyFromUrl } from '../../lib/media';
+import { siteOrigin } from '../../lib/origin';
+import { chatImagePrefix } from './images';
 import { loadPeople, schoolNamesIn } from './people';
 import { parsePhotos } from '../../lib/json';
 import { coverUrlFor } from '../catalog/covers';
@@ -87,10 +91,9 @@ export async function recordLatestMessage(
 }
 
 /**
- * Hide the conversation for `userId`;
- * remove the row (and its chat reports, CASCADE) once both sides have.
- * Only the caller's own column is written — updated_at is left alone, so the
- * other side's inbox order does not move.
+ * Hide the conversation for `userId`, and remove it once nobody needs it (see
+ * removeConversations). Only the caller's own column is written — updated_at
+ * is left alone, so the other side's inbox order does not move.
  */
 export async function markDeletedBy(env: Env, conv: ConversationRow, userId: string): Promise<'hidden' | 'deleted' | false> {
   let column: 'buyerDeletedAt' | 'sellerDeletedAt';
@@ -98,29 +101,130 @@ export async function markDeletedBy(env: Env, conv: ConversationRow, userId: str
   else if (conv.seller_id === userId) column = 'sellerDeletedAt';
   else return false;
   const now = new Date().toISOString();
-  const db = createDb(env.DB);
-  await db
+  await createDb(env.DB)
     .update(conversations)
     .set({ [column]: sql`COALESCE(${conversations[column]}, ${now})` })
     .where(eq(conversations.id, conv.id))
     .run();
-  // Conditional delete: whichever request sets the second mark removes the row.
-  const bothDeleted = and(eq(conversations.id, conv.id), isNotNull(conversations.buyerDeletedAt), isNotNull(conversations.sellerDeletedAt));
-  const [, del] = await db.batch([
+  const removed = await removeConversations(env, eq(conversations.id, conv.id));
+  return removed > 0 ? 'deleted' : 'hidden';
+}
+
+/**
+ * Marks every conversation of an account being deleted as deleted on its
+ * side, then removes those the other side had already deleted. The other
+ * side keeps the rest, read-only, until they delete it too.
+ */
+export async function markAllDeletedFor(env: Env, userId: string): Promise<number> {
+  const db = createDb(env.DB);
+  const now = new Date().toISOString();
+  await db.batch([
+    db
+      .update(conversations)
+      .set({ buyerDeletedAt: now })
+      .where(and(eq(conversations.buyerId, userId), sql`${conversations.buyerDeletedAt} IS NULL`)),
+    db
+      .update(conversations)
+      .set({ sellerDeletedAt: now })
+      .where(and(eq(conversations.sellerId, userId), sql`${conversations.sellerDeletedAt} IS NULL`)),
+  ]);
+  return removeConversations(env, or(eq(conversations.buyerId, userId), eq(conversations.sellerId, userId))!);
+}
+
+/**
+ * The daily catch-up (jobs runCleanup): marks the side of an account deleted
+ * before markAllDeletedFor existed, and removes conversations that became
+ * removable since — a report resolved, say. Bounded per run.
+ */
+export async function sweepDeletedConversations(env: Env): Promise<number> {
+  const db = createDb(env.DB);
+  const now = new Date().toISOString();
+  await db.batch([
+    db
+      .update(conversations)
+      .set({ buyerDeletedAt: now })
+      .where(
+        sql`${conversations.buyerDeletedAt} IS NULL AND ${conversations.buyerId} IN (SELECT id FROM users WHERE deleted_at IS NOT NULL)`,
+      ),
+    db
+      .update(conversations)
+      .set({ sellerDeletedAt: now })
+      .where(
+        sql`${conversations.sellerDeletedAt} IS NULL AND ${conversations.sellerId} IN (SELECT id FROM users WHERE deleted_at IS NOT NULL)`,
+      ),
+  ]);
+  return removeConversations(env, sql`1 = 1`, 200);
+}
+
+/**
+ * A conversation nobody needs: both sides deleted it (an account deletion
+ * marks its side, see markAllDeletedFor), and no report on it is still open —
+ * a report names messages by id, so staff need the room until they decide.
+ */
+function removable(db: Database): SQL {
+  return and(
+    isNotNull(conversations.buyerDeletedAt),
+    isNotNull(conversations.sellerDeletedAt),
+    notExists(
+      db
+        .select({ one: sql`1` })
+        .from(chatReports)
+        .where(and(eq(chatReports.conversationId, conversations.id), eq(chatReports.status, 'open'))),
+    ),
+  )!;
+}
+
+/**
+ * Removes the conversations matching `where` that nobody needs: the D1 row
+ * with its chat reports, then each room's messages (ChatRoom storage) and the
+ * images sent in it. Returns how many rows went. `limit` bounds a sweep.
+ */
+export async function removeConversations(env: Env, where: SQL, limit = 500): Promise<number> {
+  const db = createDb(env.DB);
+  const due = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(and(where, removable(db)))
+    .limit(limit);
+  if (!due.length) return 0;
+  const ids = due.map((r) => r.id);
+  // Checked again in the delete itself: a report filed or a mark undone in
+  // between keeps the row. Whichever request removes a row purges its room.
+  const [, gone] = await db.batch([
     db.delete(chatReports).where(
       and(
-        eq(chatReports.conversationId, conv.id),
-        exists(
-          db
-            .select({ one: sql`1` })
-            .from(conversations)
-            .where(bothDeleted),
-        ),
+        inArray(chatReports.conversationId, ids),
+        sql`EXISTS (SELECT 1 FROM conversations c WHERE c.id = ${chatReports.conversationId}
+          AND c.buyer_deleted_at IS NOT NULL AND c.seller_deleted_at IS NOT NULL)`,
+        sql`NOT EXISTS (SELECT 1 FROM chat_reports o WHERE o.conversation_id = ${chatReports.conversationId} AND o.status = 'open')`,
       ),
     ),
-    db.delete(conversations).where(bothDeleted),
+    db
+      .delete(conversations)
+      .where(and(inArray(conversations.id, ids), removable(db)))
+      .returning({ roomId: conversations.roomId }),
   ]);
-  return (del.meta.changes ?? 0) > 0 ? 'deleted' : 'hidden';
+  for (const { roomId } of gone) await purgeRoom(env, roomId);
+  return gone.length;
+}
+
+/**
+ * Drops a removed conversation's messages and the images sent in it. Best
+ * effort: the row is already gone, and nobody can reach the room without it.
+ */
+async function purgeRoom(env: Env, roomId: string): Promise<void> {
+  try {
+    const { images } = await chatRoomStub(env, roomId).purge();
+    const origin = siteOrigin(env);
+    for (const { userId, url } of images) {
+      const res = storageKeyFromUrl(env, origin, url);
+      // Only a chat upload in its sender's folder; anything else is not ours to delete.
+      if ('error' in res || !res.key.startsWith(chatImagePrefix(userId))) continue;
+      await env.R2.delete(res.key);
+    }
+  } catch (e) {
+    console.error('[messaging] room purge failed', roomId, e);
+  }
 }
 
 interface OrderRow {
