@@ -15,6 +15,8 @@ const SWIPE_OPEN_PX = 80;
 export const LONG_PRESS_MS = 500;
 /** Movement within this is still a tap or a press, not a drag. */
 const TOUCH_SLOP_PX = 8;
+/** A click this soon after a swipe or long press ends is that gesture's, not a tap. */
+const GESTURE_CLICK_MS = 400;
 
 /**
  * Conversation list in the Messages sidebar. Presentational: it renders the
@@ -45,7 +47,8 @@ const TOUCH_SLOP_PX = 8;
            to show Delete, or long-press it for a menu. -->
       <div class="chat-row" *ngFor="let chat of chats">
       <button class="swipe-delete" type="button" *ngIf="isPhone() && offsetFor(chat) < 0"
-              tabindex="-1" aria-hidden="true" (click)="swipeDelete(chat)">
+              tabindex="-1" aria-hidden="true" (click)="swipeDelete(chat)"
+              (touchstart)="onDeleteTouchStart($event)" (touchend)="onDeleteTouchEnd($event, chat)">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
         </svg>
@@ -319,9 +322,24 @@ export class MessagesInboxList implements OnDestroy {
   dragX = 0;
   /** The conversation whose long-press menu is open. */
   menuChat: any = null;
-  private gesture: { id: string; x: number; y: number; from: number; axis: 'x' | 'y' | null; timer: ReturnType<typeof setTimeout> } | null = null;
-  /** A swipe or a long press just ended: the click that follows is not a tap. */
-  private swallowClick = false;
+  private gesture: {
+    id: string;
+    x: number;
+    y: number;
+    from: number;
+    axis: 'x' | 'y' | null;
+    timer: ReturnType<typeof setTimeout>;
+    /** The press already opened the menu; the finger is still down. */
+    pressed?: boolean;
+  } | null = null;
+  /**
+   * When a swipe or a long press ended: a click right after is the gesture's,
+   * not a tap. A time, not a flag: touch browsers often send no click after a
+   * drag, and a flag left standing ate the next real tap.
+   */
+  private gestureEndedAt = 0;
+  /** Where a finger landed on a row's Delete, to tell a tap from a drag. */
+  private deleteTouch: { x: number; y: number } | null = null;
 
   ngOnDestroy() {
     if (this.gesture) clearTimeout(this.gesture.timer);
@@ -333,7 +351,6 @@ export class MessagesInboxList implements OnDestroy {
   }
 
   onPointerDown(event: PointerEvent, chat: any) {
-    this.swallowClick = false;
     if (!this.isPhone() || event.pointerType === 'mouse') return;
     if (this.gesture) clearTimeout(this.gesture.timer);
     this.gesture = {
@@ -348,7 +365,7 @@ export class MessagesInboxList implements OnDestroy {
 
   onPointerMove(event: PointerEvent) {
     const g = this.gesture;
-    if (!g) return;
+    if (!g || g.pressed) return;
     const dx = event.clientX - g.x;
     const dy = event.clientY - g.y;
     if (!g.axis) {
@@ -373,8 +390,9 @@ export class MessagesInboxList implements OnDestroy {
     if (g.axis === 'x') {
       this.openId = this.dragX < -SWIPE_OPEN_PX / 2 ? g.id : null;
       this.dragId = null;
-      this.swallowClick = true;
     }
+    // Timed from the lift: the click, if any, follows it.
+    if (g.axis === 'x' || g.pressed) this.gestureEndedAt = Date.now();
     this.gesture = null;
   }
 
@@ -386,8 +404,8 @@ export class MessagesInboxList implements OnDestroy {
   }
 
   onRowClick(chat: any) {
-    if (this.swallowClick) {
-      this.swallowClick = false;
+    if (Date.now() - this.gestureEndedAt < GESTURE_CLICK_MS) {
+      this.gestureEndedAt = 0;
       return;
     }
     // A tap anywhere on the list first closes an open Delete.
@@ -399,8 +417,30 @@ export class MessagesInboxList implements OnDestroy {
   }
 
   swipeDelete(chat: any) {
+    // Already handled by the touch that opened the confirmation.
+    if (this.openId !== chat.id) return;
     this.openId = null;
     this.remove.emit(chat);
+  }
+
+  onDeleteTouchStart(event: TouchEvent) {
+    const t = event.touches[0];
+    this.deleteTouch = t ? { x: t.clientX, y: t.clientY } : null;
+  }
+
+  /**
+   * A finger lifted off Delete deletes there and then, without waiting for
+   * the click: a phone browser may not send one (iOS can take the first tap
+   * for a hover), which took a second tap. preventDefault keeps that click
+   * from coming late and landing on the confirmation's backdrop, closing it.
+   */
+  onDeleteTouchEnd(event: TouchEvent, chat: any) {
+    const start = this.deleteTouch;
+    this.deleteTouch = null;
+    const t = event.changedTouches[0];
+    if (!start || !t || Math.abs(t.clientX - start.x) > TOUCH_SLOP_PX || Math.abs(t.clientY - start.y) > TOUCH_SLOP_PX) return;
+    if (event.cancelable) event.preventDefault();
+    this.swipeDelete(chat);
   }
 
   deleteFromMenu() {
@@ -411,8 +451,7 @@ export class MessagesInboxList implements OnDestroy {
 
   private longPress(chat: any) {
     if (!this.gesture || this.gesture.axis) return;
-    this.gesture = null;
-    this.swallowClick = true;
+    this.gesture.pressed = true;
     this.openId = null;
     this.menuChat = chat;
     navigator.vibrate?.(10);

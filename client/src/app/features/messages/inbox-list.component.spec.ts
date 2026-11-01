@@ -171,6 +171,67 @@ describe('MessagesInboxList', () => {
       expect(wide.list.openId).toBeNull();
     });
 
+    it('does not let a swipe that sent no click eat a later tap', () => {
+      vi.useFakeTimers();
+      try {
+        const { list, events } = create();
+        // Phone browsers send no click after a drag.
+        list.onPointerDown(touch(200), list.chats[0]);
+        list.onPointerMove(touch(190));
+        list.onPointerUp();
+        vi.advanceTimersByTime(1000);
+
+        list.onPointerDown(touch(100), list.chats[1]);
+        list.onPointerUp();
+        list.onRowClick(list.chats[1]);
+        expect(events.opened).toEqual(['c2']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('asks to delete on the first touch of Delete, once, and stops the click that would follow', () => {
+      const { list, events } = create();
+      swipe(list, list.chats[0], -120);
+      const point = { clientX: 340, clientY: 20 };
+      const preventDefault = vi.fn();
+      list.onDeleteTouchStart({ touches: [point] } as unknown as TouchEvent);
+      list.onDeleteTouchEnd({ changedTouches: [point], cancelable: true, preventDefault } as unknown as TouchEvent, list.chats[0]);
+
+      expect(events.removed).toEqual(['c1']);
+      expect(preventDefault).toHaveBeenCalled();
+      // Should a click come anyway, it asks no second time.
+      list.swipeDelete(list.chats[0]);
+      expect(events.removed).toEqual(['c1']);
+    });
+
+    it('does not delete when a finger slides across Delete', () => {
+      const { list, events } = create();
+      swipe(list, list.chats[0], -120);
+      list.onDeleteTouchStart({ touches: [{ clientX: 340, clientY: 20 }] } as unknown as TouchEvent);
+      list.onDeleteTouchEnd(
+        { changedTouches: [{ clientX: 340, clientY: 60 }], cancelable: true, preventDefault: vi.fn() } as unknown as TouchEvent,
+        list.chats[0],
+      );
+      expect(events.removed).toEqual([]);
+      expect(list.openId).toBe('c1');
+    });
+
+    it('does not open the chat when a long press is held well past the menu opening', () => {
+      vi.useFakeTimers();
+      try {
+        const { list, events } = create();
+        list.onPointerDown(touch(100), list.chats[0]);
+        vi.advanceTimersByTime(LONG_PRESS_MS + 1500);
+        list.onPointerUp();
+        list.onRowClick(list.chats[0]);
+        expect(events.opened).toEqual([]);
+        expect(list.menuChat?.id).toBe('c1');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('keeps the × for screen readers and keyboards on a phone, out of sight', () => {
       const { el } = create();
       const button = el.querySelector('.chat-delete-btn') as HTMLElement;
