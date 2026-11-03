@@ -287,6 +287,8 @@ export const en: Record<string, string> = {
   'acct.tabSubs': 'My book requests',
   'acct.tabReports': 'My reports',
   'acct.tabSettings': 'Account settings',
+  'acct.navUnverified': 'Not verified',
+  'acct.navExpiring': 'Expiring soon',
   'acct.tabNotifications': 'Notifications',
   'acct.notificationsTitle': 'Notifications',
   'acct.notifyNewMessageEmail': 'Email me about new messages',

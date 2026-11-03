@@ -15,6 +15,11 @@ import { filter } from 'rxjs';
 import { stripRegionPrefix } from '../../core/region-path';
 import { aboutUrl as aboutSiteUrl } from '../../core/about-site';
 import { MemberCodeComponent } from './member-code.component';
+import { RegionService } from '../../core/region.service';
+import { isSameRegion } from '../../core/region-path';
+
+/** Matches the renew window on the settings page. */
+const RENEW_WINDOW_DAYS = 30;
 
 /** The signed-in dashboard. It used to double as the login wall on the same
  *  URL; that half now lives at /login and /register, and the route's authGuard
@@ -58,6 +63,19 @@ export class Account {
   private cdr = inject(ChangeDetectorRef);
   private i18n = inject(I18nService);
   private router = inject(Router);
+  private regionService = inject(RegionService);
+
+  /** Hint beside the settings link: the campus email is not verified in this
+   *  region, or the verification runs out within the renew window. */
+  get verifyHintKey(): string | null {
+    const user = this.auth.user();
+    const region = this.regionService.region();
+    if (!user || !region || !user.verifications) return null;
+    const v = user.verifications.find(x => isSameRegion(x.region, region) && !!x.verified_at);
+    if (!v) return 'acct.navUnverified';
+    const expires = v.expires_at ? new Date(v.expires_at).getTime() : NaN;
+    return expires - Date.now() < RENEW_WINDOW_DAYS * 86_400_000 ? 'acct.navExpiring' : null;
+  }
 
   /**
    * On /account itself rather than one of its pages. Phones show the menu

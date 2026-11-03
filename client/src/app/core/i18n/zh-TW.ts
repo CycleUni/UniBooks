@@ -282,6 +282,8 @@ export const zhTW: Record<string, string> = {
   'acct.tabSubs': '我的求書',
   'acct.tabReports': '檢舉紀錄',
   'acct.tabSettings': '帳號設定',
+  'acct.navUnverified': '尚未驗證',
+  'acct.navExpiring': '驗證即將到期',
   'acct.tabNotifications': '通知',
   'acct.notificationsTitle': '通知設定',
   'acct.notifyNewMessageEmail': '新訊息 Email 通知',

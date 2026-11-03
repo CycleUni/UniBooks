@@ -203,6 +203,18 @@
       margin-left: 6px;
       vertical-align: middle;
     }
+    /* Pushed to the row's right edge (before the chevron on phones). */
+    .dashboard-nav a:has(.verify-hint) {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .verify-hint {
+      margin-left: auto;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      color: var(--flag);
+    }
     .dashboard-nav a:hover {
       background-color: var(--paper-warm);
     }
@@ -408,6 +420,9 @@
         border-top: 2px solid var(--muted);
         border-right: 2px solid var(--muted);
         transform: rotate(45deg);
+      }
+      .dashboard-nav a:has(.verify-hint)::after {
+        margin-left: 0;
       }
       .dashboard-nav a.active,
       .dashboard-nav a:hover {

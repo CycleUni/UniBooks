@@ -68,7 +68,7 @@
                 <a regionLink="/account/subscriptions" routerLinkActive="active">{{ 'acct.tabSubs' | t }}</a>
                 <a regionLink="/account/reports" routerLinkActive="active">{{ 'acct.tabReports' | t }}</a>
                 <a regionLink="/account/notifications" routerLinkActive="active">{{ 'acct.tabNotifications' | t }}</a>
-                <a regionLink="/account/settings" routerLinkActive="active">{{ 'acct.tabSettings' | t }}</a>
+                <a regionLink="/account/settings" routerLinkActive="active">{{ 'acct.tabSettings' | t }}<span class="verify-hint" *ngIf="verifyHintKey as hint">{{ hint | t }}</span></a>
               </div>
             </div>
             <!-- Staff only, and a group of its own: running the site is not
