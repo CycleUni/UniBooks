@@ -4,7 +4,7 @@ import { FormsModule, ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/f
 import { I18nService, TPipe } from '../../core/i18n.service';
 import { UiBottomSheet } from './bottom-sheet.component';
 import { isPhoneViewport } from '../../core/viewport';
-import { keywordsMatch } from '../../core/school-search';
+import { foldText, keywordsMatch } from '../../core/school-search';
 
 export interface DropdownOption {
   value: string;
@@ -419,7 +419,7 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
     const base = (!this.searchable || !query)
       ? this.options
       : this.options.filter(o =>
-          o.label.toLowerCase().includes(query) || !!o.group?.toLowerCase().includes(query)
+          foldText(o.label).includes(foldText(query)) || !!o.group && foldText(o.group).includes(foldText(query))
           || keywordsMatch(o.keywords, query) || !!o.matchHint?.(query));
     if (!this.pinSelected || !this.value) return { options: base, pinned: false };
     const idx = base.findIndex(o => o.value === this.value);

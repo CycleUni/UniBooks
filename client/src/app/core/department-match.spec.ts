@@ -12,6 +12,12 @@ describe('matchedDepartments', () => {
     }
   });
 
+  it('reads 台 and 臺 as the same character', () => {
+    for (const [stored, q] of [['臺臺', '台台'], ['台台', '臺臺']]) {
+      expect(matchedDepartments([{ name: stored, aliases: [] }], q)).toEqual([stored]);
+    }
+  });
+
   it('names nothing for a one-character keyword, an unrelated one, or a college without departments', () => {
     expect(matchedDepartments(management, '系')).toEqual([]);
     expect(matchedDepartments(management, '資')).toEqual([]);

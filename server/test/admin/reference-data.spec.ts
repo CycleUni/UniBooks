@@ -23,6 +23,26 @@ async function audits(action: string, targetId?: string | number) {
     .map((r) => ({ ...r, meta: JSON.parse(r.details) }));
 }
 
+describe('admin school search', () => {
+  it('finds a school by 台 or 臺 whichever one it is stored with', async () => {
+    const make = async (name: string, zh: string, email_domain: string) => {
+      const res = await call('/api/v1/admin/schools', {
+        token: root.token,
+        body: { name, email_domain, region: 'TW', translations: { 'zh-TW': { name: zh } } },
+      });
+      expect(res.status).toBe(201);
+    };
+    await make('Fold A', '臺臺甲', 'folda.edu.tw');
+    await make('Fold B', '台台乙', 'foldb.edu.tw');
+    for (const q of ['台台', '臺臺']) {
+      const res = await call(`/api/v1/admin/schools?region=TW&q=${encodeURIComponent(q)}`, { token: root.token });
+      const body = (await res.json()) as { results?: { email_domain: string }[] } | { email_domain: string }[];
+      const rows = Array.isArray(body) ? body : (body.results ?? []);
+      expect(rows.map((r) => r.email_domain).sort()).toEqual(['folda.edu.tw', 'foldb.edu.tw']);
+    }
+  });
+});
+
 describe('reference-data writes leave an audit trail', () => {
   it('schools: create, patch (before/after), delete', async () => {
     const res = await call('/api/v1/admin/schools', {

@@ -131,12 +131,13 @@ function schoolSelect(db: Database) {
 
 /** Name, code, email domain, or a localized name in any language. */
 export function schoolSearch(q: string): SQL {
-  const like = likeContains(q);
+  // 台 and 臺 are one spelling: fold both the keyword and the stored names.
+  const like = likeContains(q.replace(/台/g, '臺'));
   return or(
-    sql`${schools.name} LIKE ${like} ESCAPE '\\'`,
+    sql`REPLACE(${schools.name}, '台', '臺') LIKE ${like} ESCAPE '\\'`,
     sql`${schools.code} LIKE ${like} ESCAPE '\\'`,
     sql`${schools.emailDomain} LIKE ${like} ESCAPE '\\'`,
-    sql`EXISTS (SELECT 1 FROM json_each(${schools.translations}) je WHERE json_type(je.value) = 'object' AND json_extract(je.value, '$.name') LIKE ${like} ESCAPE '\\')`,
+    sql`EXISTS (SELECT 1 FROM json_each(${schools.translations}) je WHERE json_type(je.value) = 'object' AND REPLACE(json_extract(je.value, '$.name'), '台', '臺') LIKE ${like} ESCAPE '\\')`,
   )!;
 }
 

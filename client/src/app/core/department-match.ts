@@ -1,7 +1,7 @@
 /**
  * Which of a college's departments a search keyword names. Mirrors the
  * server's category match (server/src/services/listings/places.ts): case- and
- * space-insensitive, 學系 read as 系, and a trailing 系 dropped from the
+ * space-insensitive, 台 read as 臺, 學系 read as 系, and a trailing 系 dropped from the
  * keyword, so 資管, 資管系 and 資訊管理系 all name 資訊管理學系. The metadata
  * sends each department in the page language with its other-language
  * spellings among the aliases, so a keyword in any language matches.
@@ -12,7 +12,7 @@ export interface Department {
 }
 
 function matchKey(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, '').replace(/學系/g, '系');
+  return s.toLowerCase().replace(/\s+/g, '').replace(/台/g, '臺').replace(/學系/g, '系');
 }
 
 /** Full names of the departments `query` names; a one-character keyword names none. */

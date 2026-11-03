@@ -15,6 +15,14 @@ export interface SearchableSchool {
   translations?: unknown;
 }
 
+/**
+ * Lowercases and reads 台 as 臺, so a keyword with either one finds a name
+ * stored with the other.
+ */
+export function foldText(s: string): string {
+  return s.toLowerCase().replace(/台/g, '臺');
+}
+
 export function schoolKeywords(s: SearchableSchool): string[] {
   const words = [s.display_name, s.name, ...(s.names ?? []), s.code, s.email_domain];
   if (s.translations && typeof s.translations === 'object') {
@@ -28,5 +36,6 @@ export function schoolKeywords(s: SearchableSchool): string[] {
 
 /** Whether `query` (already trimmed and lowercased) is in any of `keywords`. */
 export function keywordsMatch(keywords: readonly string[] | undefined, query: string): boolean {
-  return !!keywords?.some(k => k.toLowerCase().includes(query));
+  const needle = foldText(query);
+  return !!keywords?.some(k => foldText(k).includes(needle));
 }

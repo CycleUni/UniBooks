@@ -99,9 +99,9 @@ export async function categorySlugsById(env: Env, ids: number[]): Promise<Map<nu
   return new Map(rows.filter((r) => ids.includes(Number(r.id))).map((r) => [Number(r.id), categorySlug(r)]));
 }
 
-/** Case- and space-insensitive, with 學系 read as 系 (資訊管理系 = 資訊管理學系). */
+/** Case- and space-insensitive, with 台 read as 臺 and 學系 read as 系 (資訊管理系 = 資訊管理學系). */
 function matchKey(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, '').replace(/學系/g, '系');
+  return s.toLowerCase().replace(/\s+/g, '').replace(/台/g, '臺').replace(/學系/g, '系');
 }
 
 /**

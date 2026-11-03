@@ -26,4 +26,10 @@ describe('keywordsMatch', () => {
     expect(keywordsMatch(['NTU'], 'nccu')).toBe(false);
     expect(keywordsMatch(undefined, 'ntu')).toBe(false);
   });
+
+  it('reads 台 and 臺 as the same character', () => {
+    expect(keywordsMatch(['臺臺'], '台台')).toBe(true);
+    expect(keywordsMatch(['台台'], '臺臺')).toBe(true);
+    expect(keywordsMatch(['臺臺'], '台北')).toBe(false);
+  });
 });
