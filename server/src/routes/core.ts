@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { cached, versionedEdgeCache } from '../lib/cache';
 import type { Region } from '../db';
-import { checkRate, rateLimit } from '../middleware/rateLimit';
+import { checkPlatformRate, platformRateLimit } from '../middleware/rateLimit';
 import { and, asc, eq, getTableName, is } from 'drizzle-orm';
 import { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { AppEnv } from '../env';
@@ -22,7 +22,7 @@ export const coreRoutes = new Hono<AppEnv>();
 const SCHEMA_TABLES = (Object.values(schema) as unknown[]).filter((v): v is SQLiteTable => is(v, SQLiteTable)).map((t) => getTableName(t));
 
 // Unauthenticated and touches D1 + KV: throttle it like any other public probe.
-coreRoutes.get('/healthz', rateLimit('healthz', '30/min'), async (c) => {
+coreRoutes.get('/healthz', platformRateLimit('healthz', '30/min'), async (c) => {
   // Raw: probes of D1 itself, not of a schema table.
   let dbOk = false;
   try {
@@ -157,7 +157,7 @@ coreRoutes.get('/metadata', async (c) => {
 });
 
 async function buildMetadataResponse(c: Context<AppEnv>): Promise<Response> {
-  await checkRate(c, 'metadata', '120/min');
+  await checkPlatformRate(c, 'metadata', '120/min');
   const [lang, region] = await Promise.all([resolveLanguage(c), requireRegion(c)]);
   // Reference rows only (the most-wanted list rides on recent-books):
   // admin edits invalidate 'ref'.

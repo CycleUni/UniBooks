@@ -8,7 +8,7 @@ import { createDb, books, listings, regionVerifications, schools, type Listing }
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
-import { checkRate } from '../middleware/rateLimit';
+import { checkPlatformRate, checkRate } from '../middleware/rateLimit';
 import { cleanCoverUrl } from '../services/catalog/common';
 import { copyBookCover, coverUrlFor, dropCoverCopy } from '../services/catalog/covers';
 import { validateBookIsbn } from '../services/catalog/isbn';
@@ -58,7 +58,7 @@ listingRoutes.get('/', optionalAuthMiddleware(), (c) =>
 );
 
 async function listFeed(c: Context<AppEnv>): Promise<Response> {
-  await checkRate(c, 'search', RATES.search);
+  await checkPlatformRate(c, 'search', RATES.search);
   const region = await requireRegion(c);
   const lang = resolveLanguage(c, region);
   const schoolId = await schoolFilterId(c.env, region, c.req.query('school') ?? '');

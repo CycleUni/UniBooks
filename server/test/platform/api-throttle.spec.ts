@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../../src/env';
-import { apiThrottle } from '../../src/middleware/rateLimit';
+import { apiThrottle, platformRateLimit } from '../../src/middleware/rateLimit';
 import { errorHandler } from '../../src/middleware/error';
 
 /** A binding that lets `allowed` calls through, then refuses. */
@@ -42,5 +42,43 @@ describe('apiThrottle', () => {
     const app = appWith();
     expect((await app.request('/api/x', {}, { ENVIRONMENT: 'production' })).status).toBe(200);
     expect((await app.request('/api/x', {}, { ENVIRONMENT: 'test', API_READ_LIMIT: binding(0) })).status).toBe(200);
+  });
+});
+
+describe('platformRateLimit', () => {
+  /** A binding that refuses a key once it has been seen `allowed` times; records the keys. */
+  const keyed = (allowed: number) => {
+    const seen = new Map<string, number>();
+    const b = {
+      keys: [] as string[],
+      limit: async ({ key }: { key: string }) => {
+        b.keys.push(key);
+        const n = (seen.get(key) ?? 0) + 1;
+        seen.set(key, n);
+        return { success: n <= allowed };
+      },
+    };
+    return b;
+  };
+  const appWith = () => {
+    const app = new Hono<AppEnv>();
+    app.onError(errorHandler);
+    app.get('/a', platformRateLimit('a', '30/min'), (c) => c.json({ ok: true }));
+    app.get('/b', platformRateLimit('b', '30/min'), (c) => c.json({ ok: true }));
+    return app;
+  };
+
+  it('counts on the binding for its rate, per scope and client, and answers 429 with the window', async () => {
+    const app = appWith();
+    const LIMIT_30_PER_MIN = keyed(1);
+    const env = { ENVIRONMENT: 'production', LIMIT_30_PER_MIN };
+    const ip = { headers: { 'CF-Connecting-IP': '203.0.113.9' } };
+    expect((await app.request('/a', ip, env)).status).toBe(200);
+    const res = await app.request('/a', ip, env);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('60');
+    // Another scope on the same binding keeps its own count.
+    expect((await app.request('/b', ip, env)).status).toBe(200);
+    expect(LIMIT_30_PER_MIN.keys).toEqual(['a:203.0.113.9', 'a:203.0.113.9', 'b:203.0.113.9']);
   });
 });

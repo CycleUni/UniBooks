@@ -8,7 +8,7 @@ import { createDb, books, listings, subscriptions, type Book, type InsertBook } 
 import { apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
-import { checkRate } from '../middleware/rateLimit';
+import { checkPlatformRate, checkRate } from '../middleware/rateLimit';
 import { cleanAndValidateIsbn, validateBookIsbn } from '../services/catalog/isbn';
 import { cleanCoverUrl, cleanPublisher, describeSource, isTrustedCoverUrl } from '../services/catalog/common';
 import { publicBase } from '../lib/media';
@@ -62,7 +62,7 @@ bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
     if (validIsbn) {
       // Unknown ISBNs fan out to external catalogues; bound that per client.
       // A book already in the catalogue is one D1 read and is not counted.
-      await checkRate(c, 'book_lookup', '120/min');
+      await checkPlatformRate(c, 'book_lookup', '120/min');
       // A search-result link names its Google volume (&gid=): many volumes
       // Google's search returns answer no ISBN query, so without it a
       // shared link found nothing the search page had shown.

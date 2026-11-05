@@ -25,6 +25,11 @@ export interface Env {
   API_WRITE_LIMIT?: RateLimit;
   /** Per-client cap on fresh builds for a `?v=` the edge has not caught up with (lib/cache.ts). */
   CACHE_BYPASS_LIMIT?: RateLimit;
+  /** Per-client per-minute caps shared by scope (middleware/rateLimit.ts PLATFORM_LIMITS). */
+  LIMIT_30_PER_MIN?: RateLimit;
+  LIMIT_60_PER_MIN?: RateLimit;
+  LIMIT_120_PER_MIN?: RateLimit;
+  LIMIT_600_PER_MIN?: RateLimit;
   /** The ISBNnet resolver Worker (service binding, called over RPC); falls back to ISBNNET_RESOLVER_URL. */
   ISBNNET?: Fetcher & { lookup(isbn: string): Promise<IsbnnetLookup> };
   CHAT_ROOM: DurableObjectNamespace;

@@ -7,7 +7,7 @@ import { validateBookIsbn } from '../services/catalog/isbn';
 import type { AppEnv, Env } from '../env';
 import { requireRegion, setSharedCache } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
-import { checkRate } from '../middleware/rateLimit';
+import { checkPlatformRate, type PlatformRate } from '../middleware/rateLimit';
 import { cleanPublisher, describeSource, type Engine } from '../services/catalog/common';
 import { coverUrlFor } from '../services/catalog/covers';
 import {
@@ -28,7 +28,7 @@ import { pagination } from '../lib/http';
 
 export const searchRoutes = new Hono<AppEnv>();
 
-const SEARCH_RATE = '60/min';
+const SEARCH_RATE: PlatformRate = '60/min';
 /** Browsing by category/course reads at most this many books (results_truncated says when it bit). */
 export const LOCAL_BROWSE_LIMIT = 200;
 
@@ -136,7 +136,7 @@ searchRoutes.get('/books', optionalAuthMiddleware(), (c) =>
 );
 
 async function searchBooks(c: Context<AppEnv>): Promise<Response> {
-  await checkRate(c, 'search', SEARCH_RATE);
+  await checkPlatformRate(c, 'search', SEARCH_RATE);
   const env = c.env;
   const origin = new URL(c.req.url).origin;
   // Bounded: every distinct query is a DB scan plus an external lookup.
@@ -541,7 +541,7 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
 
 searchRoutes.get('/courses', (c) =>
   versionedEdgeCache(c, 'search', async () => {
-    await checkRate(c, 'search', SEARCH_RATE);
+    await checkPlatformRate(c, 'search', SEARCH_RATE);
     const region = await requireRegion(c);
     const category = (c.req.query('category') ?? '').slice(0, 64);
     const schoolId = await schoolFilterId(c.env, region, c.req.query('school') ?? '');

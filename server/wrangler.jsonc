@@ -46,7 +46,12 @@
     { "name": "API_READ_LIMIT", "namespace_id": "1003", "simple": { "limit": 1500, "period": 60 } },
     { "name": "API_WRITE_LIMIT", "namespace_id": "1004", "simple": { "limit": 300, "period": 60 } },
     // Fresh (uncached) answers for a ?v= this location has not caught up with (lib/cache.ts).
-    { "name": "CACHE_BYPASS_LIMIT", "namespace_id": "1005", "simple": { "limit": 20, "period": 60 } }
+    { "name": "CACHE_BYPASS_LIMIT", "namespace_id": "1005", "simple": { "limit": 20, "period": 60 } },
+    // Per-minute route limits, shared by scope (src/middleware/rateLimit.ts PLATFORM_LIMITS).
+    { "name": "LIMIT_30_PER_MIN", "namespace_id": "1006", "simple": { "limit": 30, "period": 60 } },
+    { "name": "LIMIT_60_PER_MIN", "namespace_id": "1007", "simple": { "limit": 60, "period": 60 } },
+    { "name": "LIMIT_120_PER_MIN", "namespace_id": "1008", "simple": { "limit": 120, "period": 60 } },
+    { "name": "LIMIT_600_PER_MIN", "namespace_id": "1009", "simple": { "limit": 600, "period": 60 } }
   ],
 
   // The ISBNnet resolver Worker, called in-process instead of over the internet.

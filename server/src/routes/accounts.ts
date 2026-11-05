@@ -6,7 +6,7 @@ import type { AppEnv } from '../env';
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { getRegion, isVerifiedIn } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware, requireRecentSignIn, requireStaff } from '../middleware/auth';
-import { outcomeLimit, rateLimit, takeRate } from '../middleware/rateLimit';
+import { outcomeLimit, platformRateLimit, rateLimit, takeRate } from '../middleware/rateLimit';
 import { turnstileEnabled, verifyTurnstile } from '../lib/turnstile';
 import { InvalidTokenError, verifyToken } from '../lib/jwt';
 import {
@@ -1279,7 +1279,7 @@ function pushToken(body: Record<string, unknown>): string | null {
   return token.trim();
 }
 
-accountRoutes.post('/me/push-devices', authMiddleware(), rateLimit('push_device', RATES.pushDevice), async (c) => {
+accountRoutes.post('/me/push-devices', authMiddleware(), platformRateLimit('push_device', RATES.pushDevice), async (c) => {
   const token = pushToken(await readJson(c.req));
   if (!token) apiError(400, 'common.errValidation');
   const now = nowIso();
@@ -1295,7 +1295,7 @@ accountRoutes.post('/me/push-devices', authMiddleware(), rateLimit('push_device'
   return c.body(null, 204);
 });
 
-accountRoutes.delete('/me/push-devices', authMiddleware(), rateLimit('push_device', RATES.pushDevice), async (c) => {
+accountRoutes.delete('/me/push-devices', authMiddleware(), platformRateLimit('push_device', RATES.pushDevice), async (c) => {
   const token = pushToken(await readJson(c.req));
   if (!token) apiError(400, 'common.errValidation');
   // Only ever the caller's own device.
@@ -1332,7 +1332,7 @@ accountRoutes.put('/me/site-region', authMiddleware(), async (c) => {
   return c.body(null, 204);
 });
 
-accountRoutes.get('/member-token', authMiddleware(), rateLimit('member_token', RATES.memberToken), async (c) =>
+accountRoutes.get('/member-token', authMiddleware(), platformRateLimit('member_token', RATES.memberToken), async (c) =>
   c.json(await issueMemberToken(c.env, c.get('user')!.id)),
 );
 
@@ -1362,7 +1362,7 @@ accountRoutes.post(
   '/member-token/verify',
   authMiddleware(),
   requireStaff(),
-  rateLimit('member_token_verify', RATES.memberTokenVerify, (c) => c.get('user')?.id),
+  platformRateLimit('member_token_verify', RATES.memberTokenVerify, (c) => c.get('user')?.id),
   async (c) => {
     const { token } = await readJson(c.req);
     if (typeof token !== 'string') apiError(400, 'common.errValidation', { fields: { token: ['auth.errMemberTokenInvalid'] } });
@@ -1377,7 +1377,7 @@ accountRoutes.get(
   '/members/:id',
   authMiddleware(),
   requireStaff(),
-  rateLimit('member_lookup', RATES.memberTokenVerify, (c) => c.get('user')?.id),
+  platformRateLimit('member_lookup', RATES.memberTokenVerify, (c) => c.get('user')?.id),
   async (c) => {
     const id = c.req.param('id');
     if (!UUID_RE.test(id)) apiError(404, 'auth.errMemberNotFound');
@@ -1385,7 +1385,7 @@ accountRoutes.get(
   },
 );
 
-accountRoutes.get('/users/:id', optionalAuthMiddleware(), rateLimit('public_profile', RATES.publicProfile), async (c) => {
+accountRoutes.get('/users/:id', optionalAuthMiddleware(), platformRateLimit('public_profile', RATES.publicProfile), async (c) => {
   const id = c.req.param('id');
   const user = UUID_RE.test(id) ? await getUser(c.env, id) : null;
   if (!user) apiError(404, 'auth.errUserNotFound');

@@ -80,6 +80,43 @@ export async function takePlatformRate(c: Context<AppEnv>, binding: RateLimit | 
   return (await binding.limit({ key: `${scope}:${key}` })).success;
 }
 
+/**
+ * Workers rate-limiting bindings by the rate each enforces (wrangler.jsonc
+ * `ratelimits`, 60 s period). Scopes share a binding: the key carries the
+ * scope, so their counts stay apart. The binding only knows 10 s and 60 s
+ * windows, counts per Cloudflare location and cannot peek, so it is for
+ * per-minute abuse limits; hourly limits, sign-in and password limits stay on
+ * the Durable Object (exact, one count worldwide).
+ */
+export const PLATFORM_LIMITS = {
+  '30/min': 'LIMIT_30_PER_MIN',
+  '60/min': 'LIMIT_60_PER_MIN',
+  '120/min': 'LIMIT_120_PER_MIN',
+  '600/min': 'LIMIT_600_PER_MIN',
+} as const satisfies Record<string, keyof AppEnv['Bindings']>;
+export type PlatformRate = keyof typeof PLATFORM_LIMITS;
+
+/**
+ * checkRate() on the platform binding for `rate`: no Durable Object call.
+ * Without the binding (local dev before it is configured) it falls back to
+ * the Durable Object limiter at the same rate.
+ */
+export async function checkPlatformRate(c: Context<AppEnv>, scope: string, rate: PlatformRate, key?: string): Promise<void> {
+  if (c.env.ENVIRONMENT === 'test') return;
+  const binding = c.env[PLATFORM_LIMITS[rate]];
+  if (!binding) return checkRate(c, scope, rate, key);
+  const who = key ?? c.get('userId') ?? c.req.header('CF-Connecting-IP') ?? 'local';
+  if (!(await binding.limit({ key: `${scope}:${who}` })).success) await throttled(parseRate(rate).window);
+}
+
+/** Middleware form of checkPlatformRate. */
+export const platformRateLimit =
+  (scope: string, rate: PlatformRate, keyFn?: (c: Context<AppEnv>) => string | undefined): MiddlewareHandler<AppEnv> =>
+  async (c, next) => {
+    await checkPlatformRate(c, scope, rate, keyFn?.(c));
+    await next();
+  };
+
 /** Middleware form: `rateLimit('login', '5/min')`. */
 export const rateLimit =
   (scope: string, rate: string, keyFn?: (c: Context<AppEnv>) => string | undefined): MiddlewareHandler<AppEnv> =>

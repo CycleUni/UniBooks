@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { checkRate } from '../middleware/rateLimit';
+import { checkPlatformRate } from '../middleware/rateLimit';
 import type { AppEnv } from '../env';
 import { activeRegions } from '../lib/region';
 import { handleBookPage, injectBookMeta, regionFrom, REGION_SHELL, type SiteRegions } from '../services/frontend/bookMeta';
@@ -25,7 +25,7 @@ frontendRoutes.get('/api/cover', (c) =>
     cache: caches.default,
     fetch: (url) => fetch(url, { signal: AbortSignal.timeout(COVER_UPSTREAM_TIMEOUT_MS) }),
     waitUntil: (promise) => c.executionCtx.waitUntil(promise),
-    onMiss: () => checkRate(c, 'cover', '600/min'),
+    onMiss: () => checkPlatformRate(c, 'cover', '600/min'),
   }),
 );
 
