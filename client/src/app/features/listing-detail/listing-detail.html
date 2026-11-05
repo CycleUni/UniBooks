@@ -58,7 +58,7 @@
 
           <!-- A real anchor: as a div with a click binding the seller's
                profile, and with it their reviews, was unreachable by keyboard. -->
-          <a class="seller-box clickable" [regionLink]="['/seller', listing.seller]">
+          <a class="seller-box clickable" data-clarity-mask="True" [regionLink]="['/seller', listing.seller]">
             <div class="seller-header">
               <div class="seller-avatar" *ngIf="!listing.seller_avatar_url">{{ listing.seller_name.charAt(0) }}</div>
               <div class="seller-avatar-image-container" *ngIf="listing.seller_avatar_url">

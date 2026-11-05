@@ -38,7 +38,7 @@ import { isUserVerifiedIn } from '../../core/verification';
     <div class="container container--narrow seller-page" *ngIf="seller">
       <ui-breadcrumb [items]="breadcrumbItems"></ui-breadcrumb>
 
-      <div class="seller-header">
+      <div class="seller-header" data-clarity-mask="True">
         <div class="seller-avatar" *ngIf="!avatarUrl">
           {{ getAvatarInitial() }}
         </div>
@@ -65,7 +65,7 @@ import { isUserVerifiedIn } from '../../core/verification';
       </div>
 
       <div class="seller-listings">
-        <h2>{{ 'seller.listingsTitle' | t:{name: seller.display_name} }}</h2>
+        <h2 data-clarity-mask="True">{{ 'seller.listingsTitle' | t:{name: seller.display_name} }}</h2>
         
         <div class="listings-grid" *ngIf="!loadingListings && !listingsFailed && listings.length > 0">
           <ui-listing-row

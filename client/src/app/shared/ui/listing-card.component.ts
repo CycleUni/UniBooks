@@ -63,7 +63,7 @@ import { UiSellerReputation } from './seller-reputation.component';
            the same reason as the buttons below: the seller's name links to
            their profile, and a link may not sit inside the body's own link or
            button. -->
-      <div class="seller-info">
+      <div class="seller-info" data-clarity-mask="True">
         <a *ngIf="item.seller != null; else plainName" class="seller-link" [regionLink]="['/seller', item.seller]">{{ item.seller_name }}</a>
         <ng-template #plainName><strong>{{ item.seller_name }}</strong></ng-template>
         <span class="seller-school"> ({{ item.school_name || ('acct.noSchool' | t) }})</span>

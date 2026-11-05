@@ -37,7 +37,7 @@ import QRCode from 'qrcode';
         </div>
 
         <div class="member-pass-body">
-          <div class="member-info-strip">
+          <div class="member-info-strip" data-clarity-mask="True">
             <div class="member-avatar-initial" *ngIf="!avatarUrl">{{ avatarInitial || 'U' }}</div>
             <img *ngIf="avatarUrl" [src]="avatarUrl" alt="" class="member-avatar-img" referrerpolicy="no-referrer">
             <div class="member-info-text">

@@ -14,8 +14,9 @@ import { RegionService } from '../region.service';
  *   - a page opened through an emailed link that carries a one-time token
  *     (Clarity records the address as it is);
  *   - a visit that starts in the admin console.
- * Admin pages reached later in the same visit, chat, checkout, orders and
- * account settings are masked in their templates with
+ * Admin pages reached later in the same visit, chat, checkout, orders,
+ * account pages, and every place a user's avatar, name or school shows (seller
+ * box, seller page, listing cards, nav label) are masked in their templates with
  * `data-clarity-mask="True"`. Inputs are masked by Clarity itself.
  * Only production builds carry the project id (scripts/set-env.js).
  *

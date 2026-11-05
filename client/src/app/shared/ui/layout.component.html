@@ -66,7 +66,7 @@
                 </svg>
                 <span *ngIf="profilePending; else accountLabel" class="nav-label nav-label-pending" aria-hidden="true"></span>
                 <ng-template #accountLabel>
-                  <span class="nav-label">{{ userName || ('nav.account' | t) }}</span>
+                  <span class="nav-label" data-clarity-mask="True">{{ userName || ('nav.account' | t) }}</span>
                 </ng-template>
               </a>
             </nav>
