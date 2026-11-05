@@ -116,6 +116,16 @@
     <ng-template #messageTpl>
       <div *ngIf="authMessage" [id]="MESSAGE_ID" class="inline-msg" [class.error]="authIsError || challengePrompting" [attr.role]="authIsError || challengePrompting ? 'alert' : 'status'">
         {{ authMessage }}
+        <div *ngIf="mode === 'login' && canResendActivation" class="msg-action">
+          <ui-button variant="outline" size="sm" (onClick)="onResendActivation()" [disabled]="resending || resendCooldownSeconds > 0">
+            {{ resending ? ('auth.resendingActivation' | t)
+              : resendCooldownSeconds > 0 ? ('acct.resendIn' | t: { minutes: resendCooldownMinutes, seconds: resendCooldownSecondsPart })
+              : ('auth.resendActivation' | t) }}
+          </ui-button>
+        </div>
+        <div *ngIf="mode === 'login' && mustRegisterAgain" class="msg-action">
+          <ui-button variant="outline" size="sm" (onClick)="onRegisterAgain()">{{ 'auth.registerAgain' | t }}</ui-button>
+        </div>
       </div>
     </ng-template>
   </div>

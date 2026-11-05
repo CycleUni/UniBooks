@@ -194,3 +194,7 @@
 .challenge-box[hidden] {
   display: none;
 }
+
+.msg-action {
+  margin-top: var(--space-2);
+}

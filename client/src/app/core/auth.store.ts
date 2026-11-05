@@ -849,6 +849,12 @@ export class AuthStore {
     return this.http.delete<void>(`/auth/passkeys/${id}`);
   }
 
+  /** Mails a fresh activation link to a registration that is not active yet;
+   *  the password must be the one chosen at registration. */
+  resendActivation(email: string, password: string): Observable<{ code: string }> {
+    return this.http.post<{ code: string }>('/auth/register/resend', { email, password });
+  }
+
   /** `challenge`: a Turnstile token, when the server asked for one. */
   register(email: string, password: string, firstName: string, lastName: string, challenge?: string): Observable<any> {
     return this.http.post<any>('/auth/register', {

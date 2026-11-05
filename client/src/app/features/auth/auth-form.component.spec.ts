@@ -16,6 +16,8 @@ import { TurnstileService } from '../../core/services/turnstile.service';
  *  standing in for a backend error code no locale declares. */
 const KNOWN_KEYS: Record<string, string> = {
   'auth.errInvalidCredentials': '信箱或密碼錯誤',
+  'auth.errAccountNotActivated': '這個帳號尚未啟用',
+  'auth.errRegistrationExpired': '啟用連結已失效，請重新註冊',
 };
 
 describe('AuthFormComponent', () => {
@@ -48,6 +50,7 @@ describe('AuthFormComponent', () => {
       isLoggedIn: () => isAuthenticated(),
       login: vi.fn().mockReturnValue(of({})),
       register: vi.fn().mockReturnValue(of({})),
+      resendActivation: vi.fn().mockReturnValue(of({ code: 'auth.activationResent' })),
       supportsPasskeys: vi.fn().mockReturnValue(false),
       passkeyLogin: vi.fn().mockReturnValue(of({})),
       cancelPasskey: vi.fn(),
@@ -385,6 +388,72 @@ describe('AuthFormComponent', () => {
 
     expect(component.email).toBe('');
     expect(component.authMessage).toBe('');
+  });
+
+  describe('activation not completed', () => {
+    const failLogin = (code: string) => {
+      mockAuth.login.mockReturnValue(throwError(() => ({ error: { error: { code } } })));
+      build('login');
+      component.email = 'pending@example.com';
+      component.password = 'Secret-pass-1';
+      component.onLogin();
+      fixture.detectChanges();
+    };
+    const buttons = () => fixture.debugElement.queryAll(By.css('.msg-action ui-button')).map(b => b.nativeElement.textContent.trim());
+
+    afterEach(() => vi.useRealTimers());
+
+    it('offers a resend on "not activated yet", not on other failures', () => {
+      failLogin('auth.errAccountNotActivated');
+      expect(buttons()).toEqual(['auth.resendActivation']);
+
+      failLogin('auth.errInvalidCredentials');
+      expect(buttons()).toEqual([]);
+    });
+
+    it('resends with the typed address and password, then counts down before the next one', () => {
+      vi.useFakeTimers();
+      failLogin('auth.errAccountNotActivated');
+      component.onResendActivation();
+      fixture.detectChanges();
+
+      expect(mockAuth.resendActivation).toHaveBeenCalledWith('pending@example.com', 'Secret-pass-1');
+      expect(component.authIsError).toBe(false);
+      expect(component.authMessage).toBe('auth.activationResent');
+      expect(component.resendCooldownSeconds).toBe(180);
+      expect(buttons()[0]).toContain('acct.resendIn');
+
+      component.onResendActivation();
+      expect(mockAuth.resendActivation).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(180_000);
+      expect(component.resendCooldownSeconds).toBe(0);
+    });
+
+    it('shows the server error when a resend is refused', () => {
+      mockAuth.resendActivation.mockReturnValue(throwError(() => ({ error: { error: { code: 'auth.errRegistrationExpired' } } })));
+      failLogin('auth.errAccountNotActivated');
+      component.onResendActivation();
+      fixture.detectChanges();
+
+      expect(component.authIsError).toBe(true);
+      expect(component.authMessage).toBe('啟用連結已失效，請重新註冊');
+      expect(buttons()).toEqual(['auth.registerAgain']);
+    });
+
+    it('sends a lapsed registration to /register with the address carried over', () => {
+      failLogin('auth.errRegistrationExpired');
+      expect(buttons()).toEqual(['auth.registerAgain']);
+      component.onRegisterAgain();
+
+      const [, extras] = mockRouter.navigate.mock.calls.at(-1);
+      expect(extras.state).toEqual({ registerAgainEmail: 'pending@example.com' });
+    });
+
+    it('prefills the register form from that handoff', () => {
+      mockRouter.getCurrentNavigation.mockReturnValue({ extras: { state: { registerAgainEmail: 'pending@example.com' } } });
+      build('register');
+      expect(component.registerEmail).toBe('pending@example.com');
+    });
   });
 
   it('asks for a Turnstile challenge when sign-in requires one, then signs in with its token', async () => {

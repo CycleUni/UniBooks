@@ -6,7 +6,7 @@ import type { AppEnv } from '../env';
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { getRegion, isVerifiedIn } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware, requireRecentSignIn, requireStaff } from '../middleware/auth';
-import { outcomeLimit, platformRateLimit, rateLimit, takeRate } from '../middleware/rateLimit';
+import { checkRate, outcomeLimit, platformRateLimit, rateLimit, takeRate } from '../middleware/rateLimit';
 import { turnstileEnabled, verifyTurnstile } from '../lib/turnstile';
 import { InvalidTokenError, verifyToken } from '../lib/jwt';
 import {
@@ -88,6 +88,8 @@ const RATES = {
 
   register: '30/hour',
   verifyRequest: '3/hour',
+  /** Activation emails one pending address can be re-sent. */
+  registerResend: '3/hour',
   refresh: '10/min',
   passwordChange: '5/min',
   pushDevice: '30/min',
@@ -250,6 +252,48 @@ accountRoutes.post('/register', rateLimit('register', RATES.register), async (c)
   const token = await ott.issue(c.env, ott.REGISTER, id, ott.REGISTER_TTL, { password_hash: passwordHash });
   await sendLinkEmail(c, 'activation', id, email, mailName({ firstName, lastName }), `/verify?token=${token}&type=register`);
   return c.json({ code: 'auth.registerSuccess' }, 201);
+});
+
+/**
+ * Mail a fresh activation link to a registration that is still pending. Only
+ * the person who registered can ask: the password must match the one a live
+ * link carries, and the new link carries that same password. A registration
+ * whose links have all lapsed has nothing to check against; it is registered
+ * again instead (errRegistrationExpired), which /register already allows.
+ */
+accountRoutes.post('/register/resend', rateLimit('register-resend', RATES.login), async (c) => {
+  const { email: raw, password } = await readJson(c.req);
+  if (!raw || typeof raw !== 'string' || !password || typeof password !== 'string') apiError(400, 'auth.errValidation');
+  const email = raw.trim().toLowerCase();
+  const user = await getUserByEmail(c.env, email);
+  if (!user || user.passwordHash || !(await ott.isPendingRegistration(c.env, user))) {
+    await dummyPasswordCheck(password);
+    apiError(401, 'auth.errInvalidCredentials');
+  }
+  const hashes = await ott.pendingRegistrationHashes(c.env, user.id);
+  if (!hashes.length) apiError(403, 'auth.errRegistrationExpired');
+  let hash: string | undefined;
+  for (const h of hashes) if (await checkPassword(password, h)) hash = h;
+  if (!hash) apiError(401, 'auth.errInvalidCredentials');
+  await checkRate(c, 'register-resend-email', RATES.registerResend, `email:${email}`);
+
+  await ott.voidRegistrationLinks(c.env, user.id);
+  // A new link restarts the pending-registration grace period too.
+  await createDb(c.env.DB)
+    .update(users)
+    .set({ updatedAt: nowIso() })
+    .where(and(eq(users.id, user.id), eq(users.isActive, 0)))
+    .run();
+  const token = await ott.issue(c.env, ott.REGISTER, user.id, ott.REGISTER_TTL, { password_hash: hash });
+  await sendLinkEmail(
+    c,
+    'activation',
+    user.id,
+    email,
+    mailName({ firstName: user.firstName, lastName: user.lastName }),
+    `/verify?token=${token}&type=register`,
+  );
+  return c.json({ code: 'auth.activationResent' });
 });
 
 /**
@@ -541,7 +585,11 @@ accountRoutes.post('/login', rateLimit('login', RATES.login), async (c) => {
     // Registered, not yet activated: the password lives on the mailed link.
     // Whoever knows it gets the "not active yet" answer; anyone else a
     // plain credentials error.
-    for (const hash of await ott.pendingRegistrationHashes(c.env, user.id)) {
+    const hashes = await ott.pendingRegistrationHashes(c.env, user.id);
+    // Every link has lapsed: no password is left to check, and the address
+    // can only be registered again (which /register already says to anyone).
+    if (!hashes.length) apiError(403, 'auth.errRegistrationExpired');
+    for (const hash of hashes) {
       if (await checkPassword(password, hash)) apiError(403, 'auth.errAccountNotActivated');
     }
     return invalid();

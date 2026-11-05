@@ -35,6 +35,15 @@ export interface RegisterHandoff {
   registeredNotice: string;
 }
 
+/** Handed from /login to /register when a registration's links have all
+ *  lapsed, so the address does not have to be typed again. */
+export interface RegisterAgainHandoff {
+  registerAgainEmail: string;
+}
+
+/** Seconds before another activation email can be asked for. */
+export const RESEND_COOLDOWN_SECONDS = 180;
+
 /** Both halves of the old /account login wall, now addressable as /login and
  *  /register. One component rather than two near-identical ones: the error
  *  formatting, the field validation and the "you are logged in, leave this
@@ -74,6 +83,11 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   clientAuthError = '';
   lastAuthError: any = null;
   lastAuthAction: 'login' | 'register' = 'login';
+  /** A fresh activation link was mailed after a "not activated yet" sign-in. */
+  activationResent = false;
+  resending = false;
+  resendCooldownSeconds = 0;
+  private resendTimer: ReturnType<typeof setInterval> | null = null;
 
   private conditionalAbortController: AbortController | null = null;
   private conditionalSub: Subscription | null = null;
@@ -177,6 +191,28 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     return !!this.auth.passkeyVerifying?.();
   }
 
+  private get loginErrorCode(): string | null {
+    return this.lastAuthAction === 'login' ? (this.lastAuthError?.error?.error?.code ?? null) : null;
+  }
+
+  /** Signed in with the registration password before following the link. */
+  get canResendActivation(): boolean {
+    return this.activationResent || this.loginErrorCode === 'auth.errAccountNotActivated';
+  }
+
+  /** Every activation link has lapsed: the address can only be registered again. */
+  get mustRegisterAgain(): boolean {
+    return this.loginErrorCode === 'auth.errRegistrationExpired';
+  }
+
+  get resendCooldownMinutes(): number {
+    return Math.floor(this.resendCooldownSeconds / 60);
+  }
+
+  get resendCooldownSecondsPart(): string {
+    return (this.resendCooldownSeconds % 60).toString().padStart(2, '0');
+  }
+
   get authMessage(): string {
     if (this.challengePrompting) return this.i18n.t('auth.challengePrompt');
     if (this.clientAuthError) return this.i18n.t(this.clientAuthError);
@@ -251,6 +287,7 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
   onLogin() {
     // One attempt at a time: Enter in a field skips the button's [disabled].
     if (this.isLoading || this.awaitingChallenge) return;
+    this.activationResent = false;
     this.clientAuthError = '';
     this.lastAuthError = null;
     this.lastAuthAction = 'login';
@@ -426,7 +463,57 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  onResendActivation() {
+    if (this.resending || this.resendCooldownSeconds > 0 || !this.email || !this.password) return;
+    this.resending = true;
+    this.auth.resendActivation(this.email, this.password).subscribe({
+      next: () => {
+        this.resending = false;
+        this.lastAuthError = null;
+        this.lastAuthAction = 'login';
+        this.clientAuthError = 'auth.activationResent';
+        this.authIsError = false;
+        this.activationResent = true;
+        this.startResendCooldown(RESEND_COOLDOWN_SECONDS);
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.resending = false;
+        this.activationResent = false;
+        this.clientAuthError = '';
+        this.lastAuthError = err;
+        this.lastAuthAction = 'login';
+        this.authIsError = true;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  onRegisterAgain() {
+    const handoff: RegisterAgainHandoff = { registerAgainEmail: this.email };
+    this.router.navigate(this.regionLink.path(['/register']), {
+      queryParams: this.returnUrl ? { returnUrl: this.returnUrl } : {},
+      state: handoff
+    });
+  }
+
+  private startResendCooldown(seconds: number) {
+    this.stopResendCooldown();
+    this.resendCooldownSeconds = seconds;
+    this.resendTimer = setInterval(() => {
+      this.resendCooldownSeconds = Math.max(0, this.resendCooldownSeconds - 1);
+      if (!this.resendCooldownSeconds) this.stopResendCooldown();
+      this.cdr.markForCheck();
+    }, 1000);
+  }
+
+  private stopResendCooldown() {
+    if (this.resendTimer) clearInterval(this.resendTimer);
+    this.resendTimer = null;
+  }
+
   ngOnDestroy() {
+    this.stopResendCooldown();
     this.abortConditionalPasskey();
     if (this.challengeWidget) this.turnstile.remove(this.challengeWidget);
   }
@@ -518,9 +605,12 @@ export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
    *  onRegister() handed over. Read from history.state because the router
    *  writes navigation state there before it activates this component. */
   private applyRegisterHandoff() {
-    if (this.mode === 'register') return;
     const state = (this.router.getCurrentNavigation()?.extras?.state
-      ?? (typeof history !== 'undefined' ? history.state : null)) as Partial<RegisterHandoff> | null;
+      ?? (typeof history !== 'undefined' ? history.state : null)) as Partial<RegisterHandoff & RegisterAgainHandoff> | null;
+    if (this.mode === 'register') {
+      if (state?.registerAgainEmail) this.registerEmail = state.registerAgainEmail;
+      return;
+    }
     if (!state?.registeredEmail) return;
     this.email = state.registeredEmail;
     this.clientAuthError = state.registeredNotice || '';
