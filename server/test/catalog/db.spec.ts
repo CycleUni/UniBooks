@@ -181,6 +181,12 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
     expect(list).toHaveLength(1);
     const detail = (await (await call(`/api/v1/books?id=${BOOK}`, { auth: buyerAuth })).json()) as Record<string, any>;
     expect(detail).toMatchObject({ is_subscribed: true, subscription_id: sub.id, waiting_count: 1 });
+    // Search annotates the same book with the viewer's subscription and its listings' conditions.
+    const found = (await (await call('/api/v1/search/books?condition=noted', { auth: buyerAuth })).json()) as Record<string, any>;
+    expect(found.results[0]).toMatchObject({ id: BOOK, is_subscribed: true, subscription_id: sub.id, waitlistCount: 1 });
+    expect([...found.results[0].conditions].sort()).toEqual(['new', 'noted']);
+    const seller = (await (await call('/api/v1/search/books?condition=noted', { auth: sellerAuth })).json()) as Record<string, any>;
+    expect(seller.results[0]).toMatchObject({ id: BOOK, is_subscribed: false, subscription_id: null });
     expect((await call(`/api/v1/subscriptions/${sub.id}`, { method: 'DELETE', auth: sellerAuth })).status).toBe(404);
     expect((await call(`/api/v1/subscriptions/${sub.id}`, { method: 'DELETE', auth: buyerAuth })).status).toBe(204);
     expect((await call('/api/v1/subscriptions', { method: 'POST', body: '{}', auth: buyerAuth })).status).toBe(400);

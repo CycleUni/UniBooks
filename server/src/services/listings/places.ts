@@ -109,7 +109,12 @@ function matchKey(s: string): string {
  * short name in any language contains `q`. A trailing 系 is dropped from `q` first, so 資管系
  * and 中文系 find the departments stored as 資管 and 中國文學系 / 中文.
  */
-export async function categoryIdsMatchingText(env: Env, regionCode: string, q: string): Promise<number[]> {
+export async function categoryIdsMatchingText(
+  env: Env,
+  regionCode: string,
+  q: string,
+  regionCats?: Awaited<ReturnType<typeof regionCategories>>,
+): Promise<number[]> {
   let needle = matchKey(q);
   if (needle.length > 1 && needle.endsWith('系')) needle = needle.slice(0, -1);
   if (!needle) return [];
@@ -117,7 +122,7 @@ export async function categoryIdsMatchingText(env: Env, regionCode: string, q: s
   // names it is everywhere (engin-ee-ring, an-im-al).
   const shortLatin = /^[a-z0-9]{1,2}$/.test(needle);
   const out: number[] = [];
-  for (const c of await regionCategories(env, regionCode)) {
+  for (const c of regionCats ?? (await regionCategories(env, regionCode))) {
     const titles = [c.row.title, c.row.name];
     const t = parseJson<unknown>(c.row.translations, null);
     if (t && typeof t === 'object') {
