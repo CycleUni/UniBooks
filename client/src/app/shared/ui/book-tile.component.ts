@@ -181,9 +181,14 @@ import { UiBookCover } from './book-cover.component';
     }
     /* Deliberately stays below --text-xl (.section-heading's size, 20px):
        a feature-tile title that size would tie visually with the section
-       heading above it instead of reading as one level down. */
-    .book-tile.feature .tile-title {
-      font-size: var(--text-lg);
+       heading above it instead of reading as one level down.
+       Gated on the same 800px .discover-grid query that spans the tile
+       (styles.css): below it the feature tile is a regular-size cell, and a
+       bigger title there just looked like short titles were being blown up. */
+    @container (min-width: 800px) {
+      .book-tile.feature .tile-title {
+        font-size: var(--text-lg);
+      }
     }
     .tile-meta {
       display: block;

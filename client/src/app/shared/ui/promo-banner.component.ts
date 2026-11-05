@@ -115,8 +115,11 @@ import { TPipe } from '../../core/i18n.service';
       word-break: break-word;
     }
 
-    .promo-banner-card.feature .promo-title {
-      font-size: var(--text-lg);
+    /* Only while the grid actually spans the feature cell (styles.css). */
+    @container (min-width: 800px) {
+      .promo-banner-card.feature .promo-title {
+        font-size: var(--text-lg);
+      }
     }
   `]
 })
