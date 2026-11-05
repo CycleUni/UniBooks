@@ -1,6 +1,6 @@
-import { and, desc, eq, gt, isNotNull, isNull, lte, or } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Env } from '../../env';
-import { createDb, oneTimeTokens, type Database } from '../../db';
+import { createDb, oneTimeTokens, users, type Database } from '../../db';
 import { generateSecureToken, generateSHA256 } from '../../lib/crypto';
 
 /**
@@ -141,6 +141,38 @@ export async function purgeOneTimeTokens(env: Env): Promise<number> {
     .where(or(lte(oneTimeTokens.expiresAt, new Date().toISOString()), isNotNull(oneTimeTokens.usedAt)))
     .run();
   return res.meta.changes ?? 0;
+}
+
+/**
+ * How long a registration that was never activated keeps its row. The link
+ * lapses after REGISTER_TTL; the extra days leave staff time to see who
+ * signed up for an address they could not open (a mistyped or made-up one).
+ */
+export const PENDING_REGISTRATION_TTL_MS = 7 * 86_400_000;
+
+/**
+ * Delete rows that are still pending registrations (see isPendingRegistration)
+ * and were last registered over PENDING_REGISTRATION_TTL_MS ago. updated_at,
+ * not created_at: registering the address again refreshes it and issues a new link.
+ */
+export async function purgePendingRegistrations(env: Env): Promise<number> {
+  const db = createDb(env.DB);
+  const cutoff = new Date(Date.now() - PENDING_REGISTRATION_TTL_MS).toISOString();
+  const pending = and(
+    eq(users.isActive, 0),
+    eq(users.isBanned, 0),
+    isNull(users.deletedAt),
+    isNull(users.lastLoginAt),
+    isNull(users.googleId),
+    isNull(users.passwordHash),
+    lt(users.updatedAt, cutoff),
+  );
+  const stale = db.select({ id: users.id }).from(users).where(pending);
+  const [, removed] = await db.batch([
+    db.delete(oneTimeTokens).where(inArray(oneTimeTokens.userId, stale)),
+    db.delete(users).where(pending),
+  ]);
+  return removed.meta.changes ?? 0;
 }
 
 /**
