@@ -1,6 +1,7 @@
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, Router, ViewTransitionInfo } from '@angular/router';
 import { prefersReducedMotion } from './reduced-motion';
+import { NavigationHistoryService } from './services/navigation-history.service';
 
 /**
  * Page transitions for withViewTransitions(). The animations themselves are
@@ -9,7 +10,9 @@ import { prefersReducedMotion } from './reduced-motion';
  *
  *   forward  opening something from a page (a book, a listing, a seller):
  *            the new page slides in from the right, like a pushed screen
- *   back     browser/OS back: the reverse
+ *   back     the reverse, for anything that reads as going back: a history
+ *            step, going up to a page's own parent (the Account tab from
+ *            Settings), or a link to the page just left
  *   fade     switching between bottom-tab sections or regions, which are
  *            siblings rather than a stack, so nothing should slide
  *
@@ -43,6 +46,13 @@ function section(path: string[]): string {
   return path[1] ?? '';
 }
 
+// Whether `up` is a screen above `path` in the same section: /hk/account
+// above /hk/account/settings. Reached by a link (the bottom tab, a "done"
+// button), it is still a step up the stack, so it slides back.
+function isAncestor(up: string[], path: string[]): boolean {
+  return up.length >= 2 && up.length < path.length && up.every((seg, i) => seg === path[i]);
+}
+
 // iOS Safari animates its own edge-swipe back gesture; running ours after it
 // would play the page change twice. The home-screen app has no such gesture.
 function browserAnimatesBack(): boolean {
@@ -70,7 +80,10 @@ export function onViewTransitionCreated({ transition, from, to }: ViewTransition
   }
 
   const navigation = router.currentNavigation();
-  const isBack = navigation?.trigger === 'popstate' || navigation?.extras?.state?.[NAV_UP_STATE] === true;
+  const isBack = navigation?.trigger === 'popstate'
+    || navigation?.extras?.state?.[NAV_UP_STATE] === true
+    || isAncestor(after, before)
+    || inject(NavigationHistoryService).isPreviousPage('/' + after.join('/'));
   // Only a real history step can be Safari's edge swipe; going up is a tap.
   if (navigation?.trigger === 'popstate' && browserAnimatesBack()) {
     transition.skipTransition();

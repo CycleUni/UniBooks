@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
+import { NavigationHistoryService } from './services/navigation-history.service';
 import { NAV_UP_STATE, TRANSITION_START_BUDGET_MS, onViewTransitionCreated } from './view-transitions';
 
 /** A route snapshot for `/hk/book` etc., reduced to what the hook reads. */
@@ -11,6 +12,7 @@ const snap = (path: string) => {
 describe('onViewTransitionCreated', () => {
   let trigger: 'imperative' | 'popstate';
   let state: Record<string, unknown> | undefined;
+  let previousPage: string | null;
   let transition: { skipTransition: ReturnType<typeof vi.fn>; finished: Promise<void>; updateCallbackDone: Promise<void> };
 
   const run = (from: string, to: string) => {
@@ -24,10 +26,14 @@ describe('onViewTransitionCreated', () => {
   beforeEach(() => {
     trigger = 'imperative';
     state = undefined;
+    previousPage = null;
     // Never settles, so the attribute stays readable after the call.
     transition = { skipTransition: vi.fn(), finished: new Promise(() => {}), updateCallbackDone: new Promise(() => {}) };
     TestBed.configureTestingModule({
-      providers: [{ provide: Router, useValue: { currentNavigation: () => ({ trigger, extras: { state } }) } }],
+      providers: [
+        { provide: Router, useValue: { currentNavigation: () => ({ trigger, extras: { state } }) } },
+        { provide: NavigationHistoryService, useValue: { isPreviousPage: (url: string) => url === previousPage } },
+      ],
     });
   });
 
@@ -46,6 +52,19 @@ describe('onViewTransitionCreated', () => {
   it('slides back when going up to a parent screen, though it is a new navigation', () => {
     state = { [NAV_UP_STATE]: true };
     expect(run('/hk/account/listings', '/hk/account')).toBe('back');
+  });
+
+  it('slides back on a link up to a screen above, like the Account tab from Settings', () => {
+    expect(run('/hk/account/settings', '/hk/account')).toBe('back');
+    expect(run('/hk/admin/users/5', '/hk/admin/users')).toBe('back');
+    // The region home is not above a pushed page: that is a tab switch.
+    expect(run('/hk/book', '/hk')).toBe('fade');
+  });
+
+  it('slides back on a link to the page just left', () => {
+    previousPage = '/hk/listing/7';
+    expect(run('/hk/seller/3', '/hk/listing/7')).toBe('back');
+    expect(run('/hk/seller/3', '/hk/listing/8')).toBe('forward');
   });
 
   it('crossfades between tab sections, including redirected ones and back between tabs', () => {

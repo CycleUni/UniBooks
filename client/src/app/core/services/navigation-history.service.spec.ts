@@ -49,6 +49,14 @@ describe('NavigationHistoryService', () => {
     expect(history.canGoBack).toBe(false);
   });
 
+  it('knows the page back would return to, whatever its query', async () => {
+    await go('/hk/search?q=a');
+    await go('/hk/book?isbn=1');
+    expect(history.isPreviousPage('/hk/search')).toBe(true);
+    expect(history.isPreviousPage('/hk')).toBe(false);
+    expect(history.isPreviousPage('/hk/book')).toBe(false);
+  });
+
   it('counts a page left and returned to as a new page', async () => {
     await go('/hk/search?q=a');
     await go('/hk/book?isbn=1');
