@@ -1,3 +1,4 @@
+import { UiVerificationPrompt } from '../../shared/ui/verification-prompt.component';
 import { Component, OnInit, ViewChild, inject, effect, DestroyRef, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
@@ -72,8 +73,9 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
 @Component({
   selector: 'app-search',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, UiInput, UiButton, UiSkeleton, UiRecentListings, UiPagination, UiBookTile, UiFacetList, UiRadioGroup, UiBottomSheet, UiBarcodeScanner, UiPullToRefresh, UiInfiniteScroll, UiSearchField, UiFocusTrapDirective, TPipe],
+  imports: [CommonModule, RouterModule, FormsModule, UiInput, UiButton, UiSkeleton, UiRecentListings, UiPagination, UiBookTile, UiFacetList, UiRadioGroup, UiBottomSheet, UiBarcodeScanner, UiPullToRefresh, UiInfiniteScroll, UiSearchField, UiFocusTrapDirective, TPipe, UiVerificationPrompt],
   template: `
+    <ui-verification-prompt whenUnverified storageKey="unibooks.verification_prompt.search"></ui-verification-prompt>
     <ui-pull-to-refresh [refreshing]="refreshing" (refresh)="onRefresh()">
       <div class="search-header container">
         <div class="header-inner">

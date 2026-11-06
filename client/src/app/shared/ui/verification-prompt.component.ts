@@ -1,110 +1,69 @@
-import { RegionLinkDirective } from '../../core/region-link.directive';
-import { Component, Input, Output, EventEmitter, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Component, Input, Output, EventEmitter, booleanAttribute, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import { TPipe } from '../../core/i18n.service';
-import { UiButton } from './button.component';
 import { RegionService } from '../../core/region.service';
+import { AuthStore } from '../../core/auth.store';
+import { UiFloatingPrompt } from './floating-prompt.component';
 
+/**
+ * Tells a member whose school email is not verified yet that listing and
+ * messaging need it, as a floating card (ui-floating-prompt) in the same style
+ * as the language and push offers; the three share one slot, so they queue.
+ */
 @Component({
   selector: 'ui-verification-prompt',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, TPipe, UiButton],
+  imports: [TPipe, UiFloatingPrompt],
   template: `
-    <div class="verification-prompt-banner" *ngIf="requested || !isDismissed">
-      <div class="prompt-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
-      </div>
-      <div class="prompt-content">
-        <h4 class="prompt-title">{{ title || ('acct.unverifiedTitle' | t) }}</h4>
-        <p class="prompt-desc">{{ message || ('acct.unverifiedDesc' | t:{suffix: (regionService.currentRegionObj()?.edu_email_suffix?.join(', ') || '.edu')}) }}</p>
-        <div class="prompt-actions">
-          <a regionLink="/account/settings" class="verify-link">
-            <ui-button variant="primary">{{ 'sell.goVerify' | t }}</ui-button>
-          </a>
-          <button type="button" class="dismiss-btn" (click)="dismiss()">
-            {{ 'common.dismiss' | t }}
-          </button>
-        </div>
-      </div>
-    </div>
+    @if (shouldShow && (requested || !isDismissed)) {
+      <ui-floating-prompt
+        icon="mail"
+        testId="verification-prompt"
+        [priority]="2"
+        [title]="title || ('acct.unverifiedTitle' | t)"
+        [description]="
+          message ||
+          ('acct.unverifiedDesc'
+            | t
+              : {
+                  suffix: regionService.currentRegionObj()?.edu_email_suffix?.join(', ') || '.edu',
+                })
+        "
+        [acceptLabel]="'verifyPrompt.go' | t"
+        [dismissLabel]="'verifyPrompt.later' | t"
+        (accept)="goVerify()"
+        (dismiss)="dismiss()"
+      ></ui-floating-prompt>
+    }
   `,
-  styles: [`
-    .verification-prompt-banner {
-      display: flex;
-      gap: 16px;
-      padding: 16px 20px;
-      background-color: var(--flag-light);
-      border: 1px solid var(--flag-border);
-      border-radius: 8px;
-      margin-bottom: 20px;
-      align-items: flex-start;
-      color: var(--ink);
-    }
-    .prompt-icon {
-      flex-shrink: 0;
-      margin-top: 2px;
-      color: var(--flag);
-    }
-    .prompt-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .prompt-title {
-      margin: 0;
-      font-size: var(--text-base);
-      font-weight: 600;
-      color: var(--flag);
-    }
-    .prompt-desc {
-      margin: 0;
-      font-size: var(--text-base);
-      line-height: 1.4;
-      color: var(--ink-soft);
-    }
-    .prompt-actions {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-top: 4px;
-    }
-    .verify-link {
-      text-decoration: none;
-    }
-    .dismiss-btn {
-      background: none;
-      border: none;
-      color: var(--flag);
-      font-size: var(--text-sm);
-      cursor: pointer;
-      text-decoration: underline;
-      padding: 4px 8px;
-    }
-    .dismiss-btn:hover {
-      opacity: 0.8;
-    }
-  `]
 })
 export class UiVerificationPrompt {
   protected regionService = inject(RegionService);
+  private router = inject(Router);
+  private authStore = inject(AuthStore);
 
   @Input() storageKey = 'unibooks.verification_prompt.dismissed';
   /**
    * Shown because the visitor just tried something that needs verification
    * (contact a seller, list a book): then an earlier dismissal does not hide
    * it, or the tap would seem to do nothing at all. The dismissal only quiets
-   * the banner a page shows on arrival.
+   * the card a page shows on arrival.
    */
   @Input() requested = false;
+  /**
+   * The card decides for itself: only for a signed-in member (profile loaded)
+   * without a verified school email in this region. Without it the owner
+   * decides by rendering it or not.
+   */
+  @Input({ transform: booleanAttribute }) whenUnverified = false;
   @Input() title = '';
   @Input() message = '';
   @Output() onDismiss = new EventEmitter<void>();
+
+  get shouldShow(): boolean {
+    if (!this.whenUnverified || this.requested) return true;
+    return !!this.authStore.user() && !this.authStore.isVerifiedIn(this.regionService.region());
+  }
 
   get isDismissed(): boolean {
     if (typeof window === 'undefined' || !window.sessionStorage) return false;
@@ -115,11 +74,15 @@ export class UiVerificationPrompt {
     }
   }
 
+  goVerify(): void {
+    void this.router.navigate(['/', this.regionService.region(), 'account', 'settings']);
+  }
+
   dismiss(): void {
     if (typeof window !== 'undefined' && window.sessionStorage) {
       try {
         window.sessionStorage.setItem(this.storageKey, 'true');
-      } catch { }
+      } catch {}
     }
     this.onDismiss.emit();
   }

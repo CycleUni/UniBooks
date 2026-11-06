@@ -9,6 +9,7 @@ import { AccountService } from '../../core/services/account.service';
 import { OrderService } from '../../core/services/order.service';
 import { I18nService, TPipe } from '../../core/i18n.service';
 
+import { UiVerificationPrompt } from '../../shared/ui/verification-prompt.component';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
@@ -27,7 +28,7 @@ const RENEW_WINDOW_DAYS = 30;
 @Component({
   selector: 'app-account',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, UiButton, UiPrefsSelector, TPipe, MemberCodeComponent],
+  imports: [RegionLinkDirective, CommonModule, RouterModule, UiButton, UiPrefsSelector, TPipe, MemberCodeComponent, UiVerificationPrompt],
   templateUrl: './account.html',
   styleUrls: ['./account.css']
 })
@@ -83,6 +84,8 @@ export class Account {
    * screens always show both side by side.
    */
   atMenu = false;
+  /** On the settings page the verification form is already on screen. */
+  atSettings = false;
 
   /** Staff reach the admin console from here on phones, where it is no
    *  longer a bottom tab (the desktop header still links it directly). */
@@ -114,7 +117,9 @@ export class Account {
     });
 
     const syncAtMenu = () => {
-      this.atMenu = stripRegionPrefix(this.router.url).split(/[?#]/)[0].replace(/\/$/, '') === '/account';
+      const path = stripRegionPrefix(this.router.url).split(/[?#]/)[0].replace(/\/$/, '');
+      this.atMenu = path === '/account';
+      this.atSettings = path === '/account/settings';
     };
     syncAtMenu();
     this.router.events

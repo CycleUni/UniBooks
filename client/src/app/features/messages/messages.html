@@ -1,6 +1,15 @@
       <!-- Floats over the page; not while a conversation is open, where on a
            phone it would cover the message box. -->
       <ui-push-prompt context="messages" *ngIf="!activeChat"></ui-push-prompt>
+      <!-- Unverified members are told on arrival; a refused first message
+           (403) asks again even after a dismissal. -->
+      <ui-verification-prompt
+        *ngIf="!activeChat"
+        whenUnverified
+        [requested]="showUnverifiedPrompt"
+        storageKey="unibooks.verification_prompt.messages"
+        (onDismiss)="showUnverifiedPrompt = false"
+      ></ui-verification-prompt>
       <div class="messages-container" data-clarity-mask="True" [class.mobile-chat-open]="!!activeChat" *ngIf="loadingChats || chats.length > 0">
         <div class="sidebar">
           <ui-pull-to-refresh [refreshing]="refreshingInbox" (refresh)="onRefreshInbox()">
@@ -214,11 +223,6 @@
         </div>
 
         <ui-empty class="chat-area select-prompt" [fullPage]="true" *ngIf="!activeChat && !loadingChats">
-          <ui-verification-prompt
-            *ngIf="showUnverifiedPrompt"
-            (onDismiss)="showUnverifiedPrompt = false"
-             class="mb-4 w-full" style="text-align: left; max-width: 500px;">
-          </ui-verification-prompt>
           <p>{{ 'msg.selectPrompt' | t }}</p>
         </ui-empty>
       </div>
@@ -231,11 +235,6 @@
 
       <ui-pull-to-refresh [refreshing]="refreshingInbox" (refresh)="onRefreshInbox()" *ngIf="!loadingChats && !inboxLoadFailed && chats.length === 0">
         <ui-empty class="empty-inbox" [fullPage]="true">
-          <ui-verification-prompt
-            *ngIf="showUnverifiedPrompt"
-            (onDismiss)="showUnverifiedPrompt = false"
-             class="mb-4" style="text-align: left; max-width: 500px;">
-          </ui-verification-prompt>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48" aria-hidden="true">
             <path d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-9l-4 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
           </svg>

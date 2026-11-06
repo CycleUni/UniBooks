@@ -26,6 +26,7 @@ import { MetadataService, PublicAd } from '../../core/services/metadata.service'
 import { SchoolStateService } from '../../core/services/school-state.service';
 import { bookQueryParams } from '../../core/book-preview';
 import { BookCoverPipe } from '../../shared/pipes/book-cover.pipe';
+import { UiVerificationPrompt } from '../../shared/ui/verification-prompt.component';
 import { hasCoverFailed, markCoverFailed } from '../../shared/ui/book-cover.component';
 
 @Component({
@@ -47,8 +48,15 @@ import { hasCoverFailed, markCoverFailed } from '../../shared/ui/book-cover.comp
     CountCapPipe,
     BookCoverPipe,
     UiPullToRefresh,
+    UiVerificationPrompt,
   ],
   template: `
+    <!-- Floats over the page: a signed-in visitor who lands here unverified
+         would otherwise not know listing and messaging need it. -->
+    <ui-verification-prompt
+      whenUnverified
+      storageKey="unibooks.verification_prompt.home"
+    ></ui-verification-prompt>
     <ui-pull-to-refresh [refreshing]="refreshing" (refresh)="onRefresh()">
       <!-- Redesigned header on phone returning visits: compact search bar + category chips -->
       <div *ngIf="isPhone && seenHero" class="phone-home-header container">
@@ -612,6 +620,7 @@ export class Home implements OnInit, OnDestroy {
   private i18n = inject(I18nService);
   private router = inject(Router);
   private regionService = inject(RegionService);
+
 
   searchQuery = '';
 

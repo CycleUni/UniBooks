@@ -16,8 +16,7 @@
           *ngIf="showUnverifiedPrompt"
           [requested]="unverifiedPromptRequested"
           (onDismiss)="showUnverifiedPrompt = false; unverifiedPromptRequested = false"
-          storageKey="unibooks.verification_prompt.sell"
-          [message]="'sell.unverifiedDesc' | t:{suffix: (regionService.currentRegionObj()?.edu_email_suffix?.join(', ') || '.edu')}">
+          storageKey="unibooks.verification_prompt.sell">
         </ui-verification-prompt>
 
         <ui-push-prompt context="sell"></ui-push-prompt>

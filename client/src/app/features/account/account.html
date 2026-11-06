@@ -1,3 +1,8 @@
+      <ui-verification-prompt
+        *ngIf="!atSettings"
+        whenUnverified
+        storageKey="unibooks.verification_prompt.account"
+      ></ui-verification-prompt>
       <div class="container dashboard" [class.at-menu]="atMenu">
         <aside class="dashboard-sidebar">
           <div class="profile-card" data-clarity-mask="True">

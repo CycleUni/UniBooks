@@ -45,8 +45,8 @@ export class FloatingPromptSlot {
 
 /**
  * A question floating over the page with two answers: the shared look of the
- * device-language offer (ui-lang-suggestion) and the push offer
- * (ui-push-prompt). Bottom-left, because toasts stack bottom-right
+ * device-language offer (ui-lang-suggestion), the push offer
+ * (ui-push-prompt) and the unverified-email notice (ui-verification-prompt). Bottom-left, because toasts stack bottom-right
  * (toast-host); on phones full width, clear of the bottom tab bar.
  *
  * The owner decides whether to ask (render this or not) and what the answers
@@ -80,6 +80,21 @@ export class FloatingPromptSlot {
               >
                 <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+            }
+            @case ('mail') {
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                width="18"
+                height="18"
+              >
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <path d="m3 7 9 6 9-6" />
               </svg>
             }
             @default {
@@ -194,7 +209,7 @@ export class UiFloatingPrompt implements OnInit, OnDestroy {
 
   @Input({ required: true }) title = '';
   @Input() description = '';
-  @Input() icon: 'globe' | 'bell' = 'globe';
+  @Input() icon: 'globe' | 'bell' | 'mail' = 'globe';
   /** The language the card is written in, when not the page's. */
   @Input() lang = '';
   @Input() acceptLabel = '';

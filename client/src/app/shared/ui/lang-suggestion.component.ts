@@ -32,7 +32,7 @@ const CRAWLER_UA = /bot|crawl|spider|slurp|lighthouse|headless/i;
       <ui-floating-prompt
         icon="globe"
         [lang]="lang"
-        [priority]="1"
+        [priority]="3"
         [title]="i18n.tIn(lang, 'app.langSuggestTitle')"
         [acceptLabel]="i18n.tIn(lang, 'app.langSuggestSwitch')"
         [dismissLabel]="i18n.tIn(lang, 'app.langSuggestKeep', { lang: currentLabel() })"

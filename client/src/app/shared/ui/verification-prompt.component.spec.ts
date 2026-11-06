@@ -27,17 +27,20 @@ describe('UiVerificationPrompt', () => {
     fixture.detectChanges();
   });
 
+  const dismissButton = () =>
+    fixture.nativeElement.querySelectorAll('[data-testid="verification-prompt"] button')[1] as HTMLButtonElement;
+
   afterEach(() => {
     sessionStorage.clear();
   });
 
   it('should render the prompt when not dismissed', () => {
-    const banner = fixture.nativeElement.querySelector('.verification-prompt-banner');
+    const banner = fixture.nativeElement.querySelector('[data-testid="verification-prompt"]');
     expect(banner).toBeTruthy();
   });
 
   it('should dismiss and persist to sessionStorage when dismiss button is clicked', () => {
-    const dismissBtn = fixture.nativeElement.querySelector('.dismiss-btn');
+    const dismissBtn = dismissButton();
     expect(dismissBtn).toBeTruthy();
 
     let emitted = false;
@@ -52,17 +55,17 @@ describe('UiVerificationPrompt', () => {
     expect(emitted).toBe(true);
     expect(component.isDismissed).toBe(true);
 
-    const banner = fixture.nativeElement.querySelector('.verification-prompt-banner');
+    const banner = fixture.nativeElement.querySelector('[data-testid="verification-prompt"]');
     expect(banner).toBeNull();
   });
 
   it('shows again when an action asks for it, even after a dismissal', () => {
-    fixture.nativeElement.querySelector('.dismiss-btn').click();
+    dismissButton().click();
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('.verification-prompt-banner')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="verification-prompt"]')).toBeNull();
 
     fixture.componentRef.setInput('requested', true);
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('.verification-prompt-banner')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="verification-prompt"]')).toBeTruthy();
   });
 });
