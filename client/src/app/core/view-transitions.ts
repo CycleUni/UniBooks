@@ -1,7 +1,6 @@
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, Router, ViewTransitionInfo } from '@angular/router';
 import { prefersReducedMotion } from './reduced-motion';
-import { NavigationHistoryService } from './services/navigation-history.service';
 
 /**
  * Page transitions for withViewTransitions(). The animations themselves are
@@ -11,8 +10,8 @@ import { NavigationHistoryService } from './services/navigation-history.service'
  *   forward  opening something from a page (a book, a listing, a seller):
  *            the new page slides in from the right, like a pushed screen
  *   back     the reverse, for anything that reads as going back: a history
- *            step, going up to a page's own parent (the Account tab from
- *            Settings), or a link to the page just left
+ *            step, or going up to a page's own parent (the Account tab
+ *            from Settings)
  *   fade     switching between bottom-tab sections or regions, which are
  *            siblings rather than a stack, so nothing should slide
  *
@@ -82,8 +81,7 @@ export function onViewTransitionCreated({ transition, from, to }: ViewTransition
   const navigation = router.currentNavigation();
   const isBack = navigation?.trigger === 'popstate'
     || navigation?.extras?.state?.[NAV_UP_STATE] === true
-    || isAncestor(after, before)
-    || inject(NavigationHistoryService).isPreviousPage('/' + after.join('/'));
+    || isAncestor(after, before);
   // Only a real history step can be Safari's edge swipe; going up is a tap.
   if (navigation?.trigger === 'popstate' && browserAnimatesBack()) {
     transition.skipTransition();

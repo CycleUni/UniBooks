@@ -91,14 +91,6 @@ export class NavigationHistoryService {
     return here ? parentPageOf(here) : null;
   });
 
-  /**
-   * Whether `url` is the page back would return to through history: a link
-   * there (a breadcrumb, a tab) is a step back, and animates as one.
-   */
-  isPreviousPage(url: string): boolean {
-    return this.stepsToPreviousPage() > 0 && this.previousPage() === pageOf(url);
-  }
-
   /** Whether back has anywhere in the app to go. */
   get canGoBack(): boolean {
     return this.parentPage() !== null || this.stepsToPreviousPage() > 0;
