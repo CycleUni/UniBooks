@@ -1275,7 +1275,7 @@ export const en: Record<string, string> = {
   'admin.health.name.migrations': 'Database migrations',
   'admin.health.name.google_books': 'Google Books API',
   'admin.health.name.open_library': 'Open Library API',
-  'admin.health.name.isbnnet': 'ISBNnet resolver (Worker crawler)',
+  'admin.health.name.isbnnet': 'ISBNnet resolver (Worker binding)',
   'admin.health.detail.rate_limited': 'Rate-limited or daily quota used up',
   'admin.health.detail.timeout': 'No answer within 5 seconds',
   'admin.health.detail.unreachable': 'Could not be reached',

@@ -1271,7 +1271,7 @@ export const zhTW: Record<string, string> = {
   'admin.health.name.migrations': '資料庫 migration',
   'admin.health.name.google_books': 'Google Books API',
   'admin.health.name.open_library': 'Open Library API',
-  'admin.health.name.isbnnet': 'ISBNnet 解析器（Worker 爬蟲）',
+  'admin.health.name.isbnnet': 'ISBNnet 解析器（Worker 綁定）',
   'admin.health.detail.rate_limited': '被限流或已用完每日額度',
   'admin.health.detail.timeout': '5 秒內沒有回應',
   'admin.health.detail.unreachable': '無法連線',
