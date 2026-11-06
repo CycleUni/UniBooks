@@ -675,3 +675,89 @@ export const KEYWORD_LOOKUPS: Partial<Record<Engine, LookupFn<BookRecord[]>>> = 
   googlebooks: searchGoogleBooks,
   openlibrary: searchOpenLibraryBooks,
 };
+
+// ---------------------------------------------------------------- probes ----
+
+/**
+ * One live call to an upstream, for the admin status page: it skips the
+ * caches and the back-off flags above (so it shows what the source does now),
+ * and changes neither. ok: answered; degraded: answered but cannot serve
+ * lookups (throttled, or the resolver is up and its upstream is not);
+ * error: no usable answer.
+ */
+export interface ProbeResult {
+  status: 'ok' | 'degraded' | 'error';
+  latency_ms: number;
+  /** Why it is not ok, as an i18n key suffix: rate_limited, timeout, http_<status>, upstream_error, unreachable, not_configured. */
+  detail?: string;
+  /** While a back-off flag is set, lookups skip this source until then (ISO time). */
+  skipping_until?: string;
+}
+
+/** A fixed, real ISBN (K&R, 2nd ed.): any 200 counts, found or not. */
+const PROBE_ISBN = '9780131103627';
+
+/**
+ * A different valid 978-626 ISBN each time, so the resolver cannot answer
+ * from its own cache and the probe reaches the National Central Library.
+ */
+export function randomProbeIsbn(): string {
+  const body = '978626' + String(Math.floor(Math.random() * 1e6)).padStart(6, '0');
+  const sum = [...body].reduce((s, d, i) => s + Number(d) * (i % 2 ? 3 : 1), 0);
+  return body + ((10 - (sum % 10)) % 10);
+}
+
+async function timed(run: () => Promise<Omit<ProbeResult, 'latency_ms'>>): Promise<ProbeResult> {
+  const started = Date.now();
+  let result: Omit<ProbeResult, 'latency_ms'>;
+  try {
+    result = await run();
+  } catch (e) {
+    result = { status: 'error', detail: isTimeout(e) ? 'timeout' : 'unreachable' };
+  }
+  return { ...result, latency_ms: Date.now() - started };
+}
+
+async function flagUntil(env: Env, key: string): Promise<string | undefined> {
+  const until = Number(await cacheGet(env, key));
+  return Number.isFinite(until) && until > Date.now() ? new Date(until).toISOString() : undefined;
+}
+
+export async function probeGoogleBooks(env: Env): Promise<ProbeResult> {
+  return timed(async () => {
+    // googleFetch: the probe spends the same shared budget as a visitor's lookup.
+    const res = await googleFetch(env, `isbn:${PROBE_ISBN}`);
+    if (googleThrottled(res)) return { status: 'degraded', detail: 'rate_limited' };
+    return res.status === 200 ? { status: 'ok' } : { status: 'error', detail: `http_${res.status}` };
+  });
+}
+
+export async function probeOpenLibrary(_env: Env): Promise<ProbeResult> {
+  return timed(async () => {
+    const u = new URL(OPEN_LIBRARY_ISBN_URL);
+    u.searchParams.set('bibkeys', `ISBN:${PROBE_ISBN}`);
+    u.searchParams.set('format', 'json');
+    const res = await fetch(u.toString(), { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(EXTERNAL_API_TIMEOUT_MS) });
+    return res.status === 200 ? { status: 'ok' } : { status: 'error', detail: `http_${res.status}` };
+  });
+}
+
+export async function probeIsbnnet(env: Env): Promise<ProbeResult> {
+  return timed(async () => {
+    if (!env.ISBNNET && !env.ISBNNET_RESOLVER_URL) return { status: 'error', detail: 'not_configured' };
+    const res = await callIsbnnet(env, randomProbeIsbn());
+    if (!res) return { status: 'error', detail: 'not_configured' };
+    // The resolver Worker answered; upstream_error means the library site behind it did not.
+    if (res.status === 'upstream_error') return { status: 'degraded', detail: 'upstream_error' };
+    return { status: 'ok' };
+  });
+}
+
+/**
+ * The back-off flags lookups honour right now: read apart from the probes,
+ * whose results may be cached, so the page never shows a stale skip.
+ */
+export async function sourceBackoff(env: Env): Promise<{ google_books?: string; isbnnet?: string }> {
+  const [google_books, isbnnet] = await Promise.all([flagUntil(env, GOOGLE_RATE_LIMIT_KEY), flagUntil(env, ISBNNET_DOWN_KEY)]);
+  return { google_books, isbnnet };
+}

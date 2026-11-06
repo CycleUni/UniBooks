@@ -258,6 +258,28 @@ export interface AdminBookUpdate {
   book: AdminBookRecord & { id: string; source: string };
 }
 
+/** GET /admin/system/health (superusers): one live call to each source. */
+export type HealthStatus = 'ok' | 'degraded' | 'error';
+export interface HealthCheck {
+  name: 'database' | 'cache' | 'migrations' | 'google_books' | 'open_library' | 'isbnnet';
+  group: 'core' | 'external';
+  status: HealthStatus;
+  latency_ms?: number;
+  /** rate_limited, timeout, http_<status>, upstream_error, unreachable, not_configured, unapplied_<n>. */
+  detail?: string;
+  /** Lookups skip this source until then. */
+  skipping_until?: string;
+}
+export interface SystemHealth {
+  status: HealthStatus;
+  /** When the core checks ran (every request). */
+  checked_at: string;
+  /** When the external probes ran: cached 5 minutes while all answer, 30 seconds otherwise. */
+  external_checked_at: string;
+  external_cached: boolean;
+  checks: HealthCheck[];
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -279,6 +301,10 @@ export class AdminService {
   
   updateRegion(code: string, data: Partial<AdminRegion>): Observable<AdminRegion> {
     return this.http.patch<AdminRegion>(`/admin/regions/${code}`, data);
+  }
+
+  getSystemHealth(): Observable<SystemHealth> {
+    return this.http.get<SystemHealth>('/admin/system/health');
   }
 
   // Currencies

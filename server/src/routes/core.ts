@@ -2,10 +2,10 @@ import { Hono, type Context } from 'hono';
 import { cached, versionedEdgeCache } from '../lib/cache';
 import type { Region } from '../db';
 import { checkPlatformRate, platformRateLimit } from '../middleware/rateLimit';
-import { and, asc, eq, getTableName, is } from 'drizzle-orm';
-import { SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { and, asc, eq } from 'drizzle-orm';
 import type { AppEnv } from '../env';
-import { categories, cities, createDb, currencies as currenciesTable, schema, schools } from '../db';
+import { categories, cities, createDb, currencies as currenciesTable, schools } from '../db';
+import { coreHealth } from '../services/health';
 import { activeRegions, requireRegion, setSharedCache } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { resolveLanguage } from '../services/accounts/i18n';
@@ -18,50 +18,17 @@ import { localizeDepartment, parseDepartments, parseJson } from '../lib/json';
  */
 export const coreRoutes = new Hono<AppEnv>();
 
-/** Every table the schema declares; a deploy whose migrations are behind lacks some. */
-const SCHEMA_TABLES = (Object.values(schema) as unknown[]).filter((v): v is SQLiteTable => is(v, SQLiteTable)).map((t) => getTableName(t));
-
 // Unauthenticated and touches D1 + KV: throttle it like any other public probe.
 coreRoutes.get('/healthz', platformRateLimit('healthz', '30/min'), async (c) => {
-  // Raw: probes of D1 itself, not of a schema table.
-  let dbOk = false;
-  try {
-    const row = await c.env.DB.prepare('SELECT 1 AS ok').first<{ ok: number }>();
-    dbOk = row?.ok === 1;
-  } catch (e) {
-    console.error('[healthz] database failure', e);
-  }
-
-  // KV is the cache. Read-only: this probe is unauthenticated
-  // and unthrottled, and a write per hit would spend KV's write budget.
-  let cacheOk = false;
-  try {
-    await c.env.KV.get('healthz_probe');
-    cacheOk = true;
-  } catch (e) {
-    console.error('[healthz] cache failure', e);
-  }
-
-  let migrationsOk = false;
-  let unapplied: number | null = null;
-  try {
-    const { results } = await c.env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{ name: string }>();
-    const present = new Set(results.map((r) => r.name));
-    unapplied = SCHEMA_TABLES.filter((name) => !present.has(name)).length;
-    migrationsOk = unapplied === 0;
-  } catch (e) {
-    console.error('[healthz] migrations check failure', e);
-    unapplied = null;
-  }
-
-  const healthy = dbOk && cacheOk && migrationsOk;
+  const { database, cache, migrations, unapplied } = await coreHealth(c.env);
+  const healthy = database && cache && migrations;
   return c.json(
     {
       status: healthy ? 'healthy' : 'unhealthy',
       checks: {
-        database: dbOk ? 'ok' : 'error',
-        cache: cacheOk ? 'ok' : 'error',
-        migrations: migrationsOk ? 'ok' : 'error',
+        database: database ? 'ok' : 'error',
+        cache: cache ? 'ok' : 'error',
+        migrations: migrations ? 'ok' : 'error',
       },
       unapplied_migrations: unapplied,
     },

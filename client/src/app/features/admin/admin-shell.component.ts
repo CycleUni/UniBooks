@@ -56,6 +56,7 @@ function onSuperuserRoute(router: Router): boolean {
               <ul>
                 <li><a regionLink="regions" routerLinkActive="active">{{ 'admin.navRegions' | t }}</a></li>
                 <li><a regionLink="currencies" routerLinkActive="active">{{ 'admin.navCurrencies' | t }}</a></li>
+                <li><a regionLink="system" routerLinkActive="active">{{ 'admin.navSystemHealth' | t }}</a></li>
               </ul>
             </li>
             <li class="nav-group">

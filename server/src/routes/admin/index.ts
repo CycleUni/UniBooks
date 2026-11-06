@@ -11,6 +11,7 @@ import { orderRoutes } from './orders';
 import { chatReportRoutes } from './chatReports';
 import { bookRoutes } from './books';
 import { statsRoutes } from './stats';
+import { systemRoutes } from './system';
 
 /**
  * /api/v1/admin/*. Every endpoint needs a staff
@@ -32,3 +33,4 @@ adminRoutes.route('/', schoolRoutes);
 adminRoutes.route('/', categoryRoutes);
 adminRoutes.route('/', chatReportRoutes);
 adminRoutes.route('/', adRoutes);
+adminRoutes.route('/', systemRoutes);

@@ -104,6 +104,7 @@ const featureRoutes: Routes = [
       { path: 'regions/:id', canActivate: [superuserGuard], loadComponent: () => import('./features/admin/region-detail.component').then(m => m.AdminRegionDetailComponent) },
       { path: 'currencies', canActivate: [superuserGuard], loadComponent: () => import('./features/admin/currencies-list.component').then(m => m.AdminCurrenciesListComponent) },
       { path: 'currencies/:id', canActivate: [superuserGuard], loadComponent: () => import('./features/admin/currency-detail.component').then(m => m.AdminCurrencyDetailComponent) },
+      { path: 'system', canActivate: [superuserGuard], loadComponent: () => import('./features/admin/system-health.component').then(m => m.AdminSystemHealthComponent) },
       { path: 'users', loadComponent: () => import('./features/admin/users-list.component').then(m => m.AdminUsersListComponent) },
       { path: 'users/:id', loadComponent: () => import('./features/admin/user-detail.component').then(m => m.AdminUserDetailComponent) },
       { path: 'schools', loadComponent: () => import('./features/admin/schools-list.component').then(m => m.AdminSchoolsListComponent) },
