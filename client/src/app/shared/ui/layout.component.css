@@ -432,9 +432,13 @@
       .app-header.hide-on-mobile-chat {
         display: none;
       }
+      /* Reserve space so page content doesn't end up under the fixed tab
+         bar: its full 57px (56px tabs + 1px top border) plus a gap. Exactly
+         the bar's height (as this was) left the page's last element — the
+         search page's scan button, a list's last row — flush against or 1px
+         under the bar, since pages carry no bottom margin of their own. */
       .main-content {
-        /* Reserve space so page content doesn't end up under the fixed tab bar */
-        padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+        padding-bottom: calc(57px + var(--space-5) + env(safe-area-inset-bottom, 0px));
       }
       .main-content.hide-bottom-nav {
         padding-bottom: 0;
@@ -443,11 +447,11 @@
          padding above and below a button that is 44px on one line and up to
          about 52px when a long English label wraps to two. */
       .main-content.has-action-bar {
-        padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+        padding-bottom: calc(76px + var(--space-5) + env(safe-area-inset-bottom, 0px));
       }
       /* Both bars: the action bar stacked on the tab bar (ui-action-bar). */
       .main-content.action-bar-over-tabs {
-        padding-bottom: calc(76px + 57px + env(safe-area-inset-bottom, 0px));
+        padding-bottom: calc(76px + 57px + var(--space-5) + env(safe-area-inset-bottom, 0px));
       }
       .bottom-tab-bar {
         display: flex;
