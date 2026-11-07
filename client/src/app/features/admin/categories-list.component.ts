@@ -81,7 +81,7 @@ export function textToDepartments(text: string): AdminDepartment[] {
       <div class="admin-filters">
       </div>
 
-      <ui-skeleton *ngIf="!categoriesData && loading" variant="table" [count]="5"></ui-skeleton>
+      <ui-skeleton *ngIf="!categoriesData && loading" variant="spinner"></ui-skeleton>
       <!-- In place of a toast: the toast vanished after a few seconds and
            left the page looking like an empty list with no way to retry. -->
       <ui-error-state

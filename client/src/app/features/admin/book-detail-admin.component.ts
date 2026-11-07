@@ -33,7 +33,7 @@ import { STATS_PAGE_STYLES } from './stats-widgets';
   template: `
     <a [regionLink]="['/admin', 'books']" class="back-link">&larr; {{ 'admin.backToList' | t }}</a>
 
-    <ui-skeleton *ngIf="!book && loading" variant="form" [count]="4"></ui-skeleton>
+    <ui-skeleton *ngIf="!book && loading" variant="spinner"></ui-skeleton>
     <ui-error-state *ngIf="!book && !loading" [message]="loadError || ('admin.errLoadFailed' | t)" (retry)="load()"></ui-error-state>
 
     <div *ngIf="book as b" [class.stale]="loading">

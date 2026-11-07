@@ -69,7 +69,7 @@ const SORT_LABELS: Record<BookRankingSort, string> = {
         ></admin-ranking-chart>
       </div>
 
-      <ui-skeleton *ngIf="!rows && loading" variant="table" [count]="5"></ui-skeleton>
+      <ui-skeleton *ngIf="!rows && loading" variant="spinner"></ui-skeleton>
 
       <ui-error-state *ngIf="!rows && !loading && loadError" [message]="loadError" (retry)="load()"></ui-error-state>
       <div class="table-container" *ngIf="rows" [class.stale]="loading">

@@ -25,7 +25,7 @@ import { Lang } from '../../core/i18n';
       <ui-button (onClick)="openCreateModal()">{{ 'admin.addRegion' | t }}</ui-button>
     </div>
 
-    <ui-skeleton *ngIf="!data && loading" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="!data && loading" variant="spinner"></ui-skeleton>
     <!-- A failed load used to leave the page with its heading and nothing
          under it, which read as an empty list rather than an error. -->
     <ui-error-state

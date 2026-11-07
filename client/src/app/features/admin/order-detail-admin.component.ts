@@ -19,7 +19,7 @@ import { PricePipe } from '../../shared/pipes/price.pipe';
   template: `
     <a [regionLink]="['/admin', 'orders']" class="back-link">&larr; {{ 'admin.backToList' | t }}</a>
 
-    <ui-skeleton *ngIf="loading" variant="form" [count]="4"></ui-skeleton>
+    <ui-skeleton *ngIf="loading" variant="spinner"></ui-skeleton>
     <!-- A failed load used to leave only the back link, with a toast. -->
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="load()"></ui-error-state>
 

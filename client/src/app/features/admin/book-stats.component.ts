@@ -29,7 +29,7 @@ import { AdminStatsPeriodComponent, AdminStatusBarComponent, STATS_PAGE_STYLES, 
   template: `
     <a [regionLink]="['/admin', 'stats', 'books']" [queryParams]="{ days: days }" class="back-link">&larr; {{ 'admin.stats.backToBooks' | t }}</a>
 
-    <ui-skeleton *ngIf="!data && loading" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="!data && loading" variant="spinner"></ui-skeleton>
 
     <ui-error-state *ngIf="!data && !loading && loadError" [message]="loadError" (retry)="load()"></ui-error-state>
 

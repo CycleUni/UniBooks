@@ -37,7 +37,7 @@ import { BulkController } from './bulk';
       <ui-search-bar [placeholder]="'admin.searchSchools' | t" [value]="q" (search)="onSearch($event)"></ui-search-bar>
     </div>
 
-    <ui-skeleton *ngIf="!schoolsData && loading" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="!schoolsData && loading" variant="spinner"></ui-skeleton>
     <!-- A failed load used to leave the page with its heading and nothing
          under it, which read as an empty list rather than an error. -->
     <ui-error-state

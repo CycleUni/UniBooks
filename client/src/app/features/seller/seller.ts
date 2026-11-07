@@ -31,7 +31,7 @@ import { isUserVerifiedIn } from '../../core/verification';
     <!-- The profile request gates the whole page; hold its place instead of
          rendering nothing and then snapping the header in. -->
     <div class="container container--narrow seller-page" *ngIf="!seller && !error && !loadFailed">
-      <ui-skeleton variant="row" [count]="1"></ui-skeleton>
+      <ui-skeleton variant="profile-header"></ui-skeleton>
       <ui-skeleton variant="list" [count]="5"></ui-skeleton>
     </div>
 

@@ -32,7 +32,7 @@ const ROLES: RetentionRole[] = ['all', 'buyer', 'seller'];
     </div>
     <p class="scope-note">{{ 'admin.stats.scopeNoteShort' | t: { region: regionName() } }} {{ 'admin.stats.gaNote' | t }}</p>
 
-    <ui-skeleton *ngIf="!growth && loading" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="!growth && loading" variant="spinner"></ui-skeleton>
 
     <ui-error-state *ngIf="!growth && !loading && loadError" [message]="loadError" (retry)="load()"></ui-error-state>
 
@@ -133,7 +133,7 @@ const ROLES: RetentionRole[] = ['all', 'buyer', 'seller'];
       </div>
       <p class="card-note">{{ 'admin.stats.retentionNote' | t }}</p>
 
-      <ui-skeleton *ngIf="!retention && loadingRetention" variant="table" [count]="5"></ui-skeleton>
+      <ui-skeleton *ngIf="!retention && loadingRetention" variant="spinner"></ui-skeleton>
 
       <ui-error-state *ngIf="!retention && !loadingRetention && retentionError" [message]="retentionError" (retry)="loadRetention()"></ui-error-state>
       <div class="table-container" *ngIf="retention as r" [class.stale]="loadingRetention">

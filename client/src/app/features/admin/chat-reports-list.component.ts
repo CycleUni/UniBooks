@@ -34,7 +34,7 @@ import { BulkController } from './bulk';
       <ui-button size="sm" variant="outline" [disabled]="bulk.busy || !bulk.selection.size" (onClick)="bulkAction('dismissed')">{{ 'admin.reportActionDismiss' | t }}</ui-button>
     </admin-bulk-bar>
 
-    <ui-skeleton *ngIf="loading && !loaded" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="loading && !loaded" variant="spinner"></ui-skeleton>
 
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="reload()"></ui-error-state>
 
@@ -84,7 +84,7 @@ import { BulkController } from './bulk';
                 <ui-button variant="ghost" (onClick)="loadMessages(report.id)" [disabled]="loadingMessages">
                   {{ (loadingMessages ? 'common.loading' : 'admin.viewMessages') | t }}
                 </ui-button>
-                <ui-skeleton *ngIf="loadingMessages" variant="row" [count]="3"></ui-skeleton>
+                <ui-skeleton *ngIf="loadingMessages" variant="spinner"></ui-skeleton>
                 <ui-error-state *ngIf="!loadingMessages && messagesError" [message]="messagesError" (retry)="loadMessages(report.id)"></ui-error-state>
                 <div *ngIf="messages?.length" class="messages-preview">
                   <div *ngFor="let msg of messages" class="msg-line">

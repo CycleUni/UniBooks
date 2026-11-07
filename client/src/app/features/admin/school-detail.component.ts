@@ -28,7 +28,7 @@ import { CityOption } from '../../core/services/school-state.service';
       </div>
     </div>
 
-    <ui-skeleton *ngIf="!school && !loadError" variant="form" [count]="4"></ui-skeleton>
+    <ui-skeleton *ngIf="!school && !loadError" variant="spinner"></ui-skeleton>
     <ui-error-state *ngIf="!school && loadError" [message]="loadError" (retry)="loadSchool()"></ui-error-state>
 
     <div class="detail-grid" *ngIf="school">

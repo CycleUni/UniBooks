@@ -47,8 +47,8 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
       <!-- Opened directly (no cached preview to paint first), the page used
            to stay blank until the book request answered. -->
       <div class="container container--narrow book-page" *ngIf="!book && isLoadingListings">
-        <ui-skeleton variant="row" [count]="1"></ui-skeleton>
-        <ui-skeleton variant="list" [count]="4"></ui-skeleton>
+        <ui-skeleton variant="book-header"></ui-skeleton>
+        <ui-skeleton variant="listing-cards" [count]="4"></ui-skeleton>
       </div>
 
       <!-- "Not found" only for a 404; any other failure may work on retry. -->
@@ -115,7 +115,7 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
           <h3 class="section-heading" *ngIf="!isLoadingListings && !listingsFailed">{{ 'book.currentListings' | t:{n: totalListings} }}</h3>
           <h3 class="section-heading" *ngIf="isLoadingListings || listingsFailed">{{ 'book.listingsHeading' | t }}</h3>
           
-          <ui-skeleton *ngIf="isLoadingListings" variant="list" [count]="3"></ui-skeleton>
+          <ui-skeleton *ngIf="isLoadingListings" variant="listing-cards" [count]="4"></ui-skeleton>
 
           <!-- The book is on screen (a cached preview, or a reload of a page
                already shown) but its listings did not come: "nobody is

@@ -20,7 +20,7 @@ import { UiButton } from '../../shared/ui/button.component';
   standalone: true,
   imports: [CommonModule, RouterModule, FormsModule, TPipe, UiErrorState, UiSkeleton, RegionLinkDirective, UiDropdown, UiInput, UiButton, UiCheckbox],
   template: `
-    <ui-skeleton *ngIf="!item && !loadError" variant="form" [count]="4"></ui-skeleton>
+    <ui-skeleton *ngIf="!item && !loadError" variant="spinner"></ui-skeleton>
     <!-- A failed load used to bounce back to the list without a word. -->
     <ui-error-state *ngIf="!item && loadError" [message]="loadError" (retry)="load()"></ui-error-state>
     <div class="admin-detail-header" *ngIf="item">

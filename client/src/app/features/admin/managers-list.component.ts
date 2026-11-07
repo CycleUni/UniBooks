@@ -126,7 +126,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
       >
     </admin-bulk-bar>
 
-    <ui-skeleton *ngIf="loading && !loaded" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="loading && !loaded" variant="spinner"></ui-skeleton>
 
     <ui-error-state
       *ngIf="!loading && loadError"

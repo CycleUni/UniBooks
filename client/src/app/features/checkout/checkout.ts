@@ -29,8 +29,7 @@ import { translateApiError } from '../../core/api-error.util';
         <!-- Shaped like the two cards below: a cover beside the title, then
              the form. -->
         <ng-container *ngIf="isLoading">
-          <ui-skeleton variant="list" [count]="1"></ui-skeleton>
-          <ui-skeleton variant="report" [count]="1"></ui-skeleton>
+          <ui-skeleton variant="checkout"></ui-skeleton>
         </ng-container>
 
         <!-- The order form lives inside the grid below, so a failed load

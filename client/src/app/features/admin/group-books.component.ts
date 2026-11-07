@@ -30,7 +30,7 @@ const PAGE_SIZE = 10;
   template: `
     <div class="group-books" [class.stale]="loading && rows">
       <h4 class="chart-title">{{ 'admin.stats.groupBooksTitle' | t: { name: name } }}</h4>
-      <ui-skeleton *ngIf="!rows && loading" variant="table" [count]="5"></ui-skeleton>
+      <ui-skeleton *ngIf="!rows && loading" variant="spinner"></ui-skeleton>
       <ui-error-state *ngIf="!rows && !loading && loadError" [message]="loadError" (retry)="load()"></ui-error-state>
       <div *ngIf="rows && rows.length === 0" class="empty-note">{{ 'admin.stats.groupBooksEmpty' | t }}</div>
 

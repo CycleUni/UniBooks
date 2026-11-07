@@ -106,7 +106,7 @@ const SORTS: { value: BreakdownSort; label: string }[] = [
         ></admin-ranking-chart>
       </div>
 
-      <ui-skeleton *ngIf="!data && loading" variant="table" [count]="5"></ui-skeleton>
+      <ui-skeleton *ngIf="!data && loading" variant="spinner"></ui-skeleton>
 
       <ui-error-state *ngIf="!data && !loading && loadError" [message]="loadError" (retry)="load()"></ui-error-state>
       <div class="table-container" *ngIf="data as d" [class.stale]="loading">

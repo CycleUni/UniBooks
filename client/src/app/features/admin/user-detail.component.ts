@@ -28,7 +28,7 @@ import { schoolKeywords } from '../../core/school-search';
   template: `
     <a [regionLink]="['/admin', 'users']" class="back-link">&larr; {{ 'admin.backToList' | t }}</a>
 
-    <ui-skeleton *ngIf="loading" variant="form" [count]="4"></ui-skeleton>
+    <ui-skeleton *ngIf="loading" variant="spinner"></ui-skeleton>
     <!-- The form's own error line is inside the card, which needs a user. -->
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="load()"></ui-error-state>
 

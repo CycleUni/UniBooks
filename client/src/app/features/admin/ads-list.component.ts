@@ -103,7 +103,7 @@ import { BulkController } from './bulk';
       <ui-pagination [total]="total" [pageSize]="pageSize" [currentPage]="currentPage" (pageChange)="loadPage($event)"></ui-pagination>
     </div>
 
-    <ui-skeleton *ngIf="loading && !adsData" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="loading && !adsData" variant="spinner"></ui-skeleton>
 
     <div class="app-modal-overlay" *ngIf="showModal">
       <div class="app-modal">

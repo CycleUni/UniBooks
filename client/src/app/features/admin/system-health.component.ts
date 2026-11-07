@@ -32,7 +32,7 @@ const TIME_FORMAT = 'yyyy/MM/dd HH:mm:ss';
       </ui-button>
     </div>
 
-    <ui-skeleton *ngIf="!data() && loading()" variant="table" [count]="6"></ui-skeleton>
+    <ui-skeleton *ngIf="!data() && loading()" variant="spinner"></ui-skeleton>
     <ui-error-state
       *ngIf="loadFailed()"
       [message]="'admin.errLoadFailed' | t"

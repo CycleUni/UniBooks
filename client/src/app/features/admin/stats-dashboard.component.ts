@@ -37,7 +37,7 @@ const REPORT_REASON_KEYS: Record<string, string> = {
       <admin-stats-period [days]="days" (daysChange)="onDaysChange($event)"></admin-stats-period>
     </div>
 
-    <ui-skeleton *ngIf="!overview && loadingOverview" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="!overview && loadingOverview" variant="spinner"></ui-skeleton>
 
     <ui-error-state *ngIf="!overview && !loadingOverview && loadError" [message]="loadError" (retry)="load()"></ui-error-state>
 

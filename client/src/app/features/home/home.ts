@@ -116,6 +116,7 @@ import { hasCoverFailed, markCoverFailed } from '../../shared/ui/book-cover.comp
           <ui-skeleton
             *ngIf="waitlistLoading && !waitlistError"
             variant="row"
+            [thumb]="true"
             [count]="4"
           ></ui-skeleton>
           <!-- This branch used to contain only a spinner guarded by

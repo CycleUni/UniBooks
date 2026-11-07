@@ -48,7 +48,7 @@ interface Draft {
       }}</ui-button>
     </admin-bulk-bar>
 
-    <ui-skeleton *ngIf="loading && !loaded" variant="table" [count]="5"></ui-skeleton>
+    <ui-skeleton *ngIf="loading && !loaded" variant="spinner"></ui-skeleton>
 
     <ui-error-state *ngIf="!loading && loadError" [message]="loadError" (retry)="reload()"></ui-error-state>
 
