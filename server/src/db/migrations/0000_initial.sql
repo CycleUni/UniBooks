@@ -22,6 +22,8 @@ CREATE TABLE `books` (
 	`publisher` text DEFAULT '' NOT NULL,
 	`published_date` text DEFAULT '' NOT NULL,
 	`cover_url` text DEFAULT '' NOT NULL,
+	`cover_r2_key` text,
+	`cover_checked_at` text,
 	`source` text NOT NULL,
 	`created_at` text NOT NULL,
 	`reviewed_at` text,
@@ -39,6 +41,7 @@ CREATE TABLE `categories` (
 	`title` text NOT NULL,
 	`description` text DEFAULT '' NOT NULL,
 	`translations` text DEFAULT '{}' NOT NULL,
+	`departments` text DEFAULT '[]' NOT NULL,
 	`sort_order` integer DEFAULT 0 NOT NULL,
 	`is_active` integer DEFAULT 1 NOT NULL,
 	FOREIGN KEY (`region_code`) REFERENCES `regions`(`code`) ON UPDATE no action ON DELETE cascade
@@ -111,6 +114,11 @@ CREATE TABLE `currencies` (
 	`is_active` integer DEFAULT 1 NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `email_sent` (
+	`message_id` text PRIMARY KEY NOT NULL,
+	`sent_at` text NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `languages` (
 	`code` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
@@ -155,7 +163,7 @@ CREATE INDEX `listings_region_status_category_idx` ON `listings` (`region_code`,
 CREATE INDEX `listings_region_status_course_idx` ON `listings` (`region_code`,`status`,`course_name`);--> statement-breakpoint
 CREATE INDEX `listings_region_status_id_idx` ON `listings` (`region_code`,`status`,`id`);--> statement-breakpoint
 CREATE INDEX `listings_seller_id_idx` ON `listings` (`seller_id`);--> statement-breakpoint
-CREATE INDEX `listings_book_id_idx` ON `listings` (`book_id`);--> statement-breakpoint
+CREATE INDEX `listings_book_status_created_idx` ON `listings` (`book_id`,`status`,`created_at`);--> statement-breakpoint
 CREATE TABLE `one_time_tokens` (
 	`id` text PRIMARY KEY NOT NULL,
 	`token_hash` text NOT NULL,
@@ -191,6 +199,7 @@ CREATE TABLE `orders` (
 	`created_at` text NOT NULL,
 	`updated_at` text NOT NULL,
 	`completed_at` text,
+	`handed_over_at` text,
 	`no_show_reportable` integer DEFAULT 0 NOT NULL,
 	`meetup_set_at` text,
 	FOREIGN KEY (`region_code`) REFERENCES `regions`(`code`) ON UPDATE no action ON DELETE no action,
@@ -207,6 +216,22 @@ CREATE UNIQUE INDEX `orders_open_buyer_listing_uniq` ON `orders` (`listing_id`,`
 CREATE INDEX `orders_listing_ref_idx` ON `orders` (`listing_ref`);--> statement-breakpoint
 CREATE INDEX `order_region_created_idx` ON `orders` (`region_code`,`created_at`);--> statement-breakpoint
 CREATE INDEX `order_status_meetup_time_idx` ON `orders` (`status`,`meetup_time`);--> statement-breakpoint
+CREATE TABLE `passkeys` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`public_key` text NOT NULL,
+	`counter` integer DEFAULT 0 NOT NULL,
+	`transports` text,
+	`device_type` text NOT NULL,
+	`backed_up` integer DEFAULT 0 NOT NULL,
+	`name` text NOT NULL,
+	`aaguid` text,
+	`created_at` text NOT NULL,
+	`last_used_at` text,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `passkeys_user_idx` ON `passkeys` (`user_id`);--> statement-breakpoint
 CREATE TABLE `push_devices` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`user_id` text NOT NULL,
@@ -219,6 +244,11 @@ CREATE TABLE `push_devices` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `push_devices_token_unique` ON `push_devices` (`token`);--> statement-breakpoint
+CREATE TABLE `push_sent` (
+	`key` text PRIMARY KEY NOT NULL,
+	`sent_at` text NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `refresh_tokens` (
 	`id` text PRIMARY KEY NOT NULL,
 	`jti` text NOT NULL,
@@ -247,6 +277,7 @@ CREATE TABLE `region_verifications` (
 	`verified_at` text NOT NULL,
 	`last_reverified_at` text,
 	`expires_at` text,
+	`expiry_reminded_for` text,
 	`is_active` integer DEFAULT 1 NOT NULL,
 	`created_at` text,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
@@ -379,6 +410,7 @@ CREATE TABLE `users` (
 	`show_avatar` integer DEFAULT 1 NOT NULL,
 	`role` text DEFAULT 'user' NOT NULL,
 	`google_id` text,
+	`passkey_2fa` integer DEFAULT 0 NOT NULL,
 	`is_active` integer DEFAULT 1 NOT NULL,
 	`is_banned` integer DEFAULT 0 NOT NULL,
 	`ban_reason` text,
@@ -396,4 +428,59 @@ CREATE TABLE `users` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `users_email_unique` ON `users` (`email`);--> statement-breakpoint
-CREATE UNIQUE INDEX `users_google_id_unique` ON `users` (`google_id`);
+CREATE UNIQUE INDEX `users_google_id_unique` ON `users` (`google_id`);--> statement-breakpoint
+-- ---------------------------------------------------------------------------
+-- Reference rows every deploy needs: without a region nearly every API answers
+-- sys.errUnknownRegion, and without the cities the school bulk import rejects
+-- every row (admin.errSchoolCityUnknown). Taiwan only for now; other regions
+-- come from seed.sql or the admin pages. INSERT OR IGNORE keeps rows an admin
+-- has since edited.
+INSERT OR IGNORE INTO currencies (code, symbol, decimal_places, symbol_position, is_active) VALUES ('TWD', 'NT$', 0, 'prefix', 1);
+--> statement-breakpoint
+INSERT OR IGNORE INTO languages (code, name, native_name, is_active, sort_order) VALUES ('en', 'English', 'English', 1, 10), ('zh-TW', 'Traditional Chinese (Taiwan)', '繁體中文（台灣）', 1, 20);
+--> statement-breakpoint
+INSERT OR IGNORE INTO regions (code, name, default_currency, default_language, timezone, translations, languages, search_engines, edu_email_suffix, sort_order, is_active, created_at) VALUES ('TW', 'Taiwan', 'TWD', 'zh-TW', 'Asia/Taipei', '{"zh-TW":{"name":"台灣"},"zh-HK":{"name":"台灣"},"en":{"name":"Taiwan"}}', '["zh-TW","en"]', '["googlebooks","openlibrary","isbnnet"]', '[".edu.tw"]', 10, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'TPE', 'Taipei City', '{"zh-TW":{"name":"臺北市"},"zh-HK":{"name":"台北市"}}', 1);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'NWT', 'New Taipei City', '{"zh-TW":{"name":"新北市"},"zh-HK":{"name":"新北市"}}', 2);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'KEE', 'Keelung City', '{"zh-TW":{"name":"基隆市"},"zh-HK":{"name":"基隆市"}}', 3);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'TAO', 'Taoyuan City', '{"zh-TW":{"name":"桃園市"},"zh-HK":{"name":"桃園市"}}', 4);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'HSZ', 'Hsinchu City', '{"zh-TW":{"name":"新竹市"},"zh-HK":{"name":"新竹市"}}', 5);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'HSQ', 'Hsinchu County', '{"zh-TW":{"name":"新竹縣"},"zh-HK":{"name":"新竹縣"}}', 6);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'MIA', 'Miaoli County', '{"zh-TW":{"name":"苗栗縣"},"zh-HK":{"name":"苗栗縣"}}', 7);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'TXG', 'Taichung City', '{"zh-TW":{"name":"臺中市"},"zh-HK":{"name":"台中市"}}', 8);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'CHA', 'Changhua County', '{"zh-TW":{"name":"彰化縣"},"zh-HK":{"name":"彰化縣"}}', 9);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'NAN', 'Nantou County', '{"zh-TW":{"name":"南投縣"},"zh-HK":{"name":"南投縣"}}', 10);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'YUN', 'Yunlin County', '{"zh-TW":{"name":"雲林縣"},"zh-HK":{"name":"雲林縣"}}', 11);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'CYI', 'Chiayi City', '{"zh-TW":{"name":"嘉義市"},"zh-HK":{"name":"嘉義市"}}', 12);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'CYQ', 'Chiayi County', '{"zh-TW":{"name":"嘉義縣"},"zh-HK":{"name":"嘉義縣"}}', 13);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'TNN', 'Tainan City', '{"zh-TW":{"name":"臺南市"},"zh-HK":{"name":"台南市"}}', 14);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'KHH', 'Kaohsiung City', '{"zh-TW":{"name":"高雄市"},"zh-HK":{"name":"高雄市"}}', 15);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'PIF', 'Pingtung County', '{"zh-TW":{"name":"屏東縣"},"zh-HK":{"name":"屏東縣"}}', 16);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'ILA', 'Yilan County', '{"zh-TW":{"name":"宜蘭縣"},"zh-HK":{"name":"宜蘭縣"}}', 17);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'HUA', 'Hualien County', '{"zh-TW":{"name":"花蓮縣"},"zh-HK":{"name":"花蓮縣"}}', 18);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'TTT', 'Taitung County', '{"zh-TW":{"name":"臺東縣"},"zh-HK":{"name":"台東縣"}}', 19);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'PEN', 'Penghu County', '{"zh-TW":{"name":"澎湖縣"},"zh-HK":{"name":"澎湖縣"}}', 20);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'KIN', 'Kinmen County', '{"zh-TW":{"name":"金門縣"},"zh-HK":{"name":"金門縣"}}', 21);
+--> statement-breakpoint
+INSERT OR IGNORE INTO cities (region_code, code, name, translations, sort_order) VALUES ('TW', 'LIE', 'Lienchiang County', '{"zh-TW":{"name":"連江縣"},"zh-HK":{"name":"連江縣"}}', 22);

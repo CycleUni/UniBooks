@@ -1,1 +1,0 @@
-ALTER TABLE `users` ADD `passkey_2fa` integer DEFAULT 0 NOT NULL;

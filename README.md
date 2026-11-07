@@ -56,7 +56,7 @@ npm --prefix server run start    # 建置前端（套用 server/.dev.vars）+ �
 
 改前端時想要熱重載：另開終端機在 `client/` 執行 `npm start`（`ng serve` :4200，`/api` 由 `proxy.conf.json` 轉到 :8787，聊天 WebSocket 一併轉送）。
 
-台灣地區（含幣別 TWD、語言 zh-TW / en）與台灣的縣市由 migration `0002_reference_data`、`0003_tw_cities` 建立，部署時自動套用
+台灣地區（含幣別 TWD、語言 zh-TW / en）與台灣的縣市寫在 migration `0000_initial` 的最後，部署時自動套用
 （後台沒有新增縣市的頁面，學校匯入時的 `city` 必須是已存在的縣市代碼）。其餘初始資料（香港地區與縣市、學校、分類）：
 
 ```bash
@@ -115,6 +115,12 @@ npm run deploy         # 之後每次：建置前端 → 先套用遠端 D1 migr
 之後的部署先套 migration 再上線新程式：新程式從第一個請求起就看得到它需要的欄位與資料表。
 代價是舊程式會在新 schema 上跑幾十秒，所以 migration 必須向後相容：只新增欄位（可為 NULL 或有預設值）
 與資料表；要改名或刪除欄位，分兩次部署（先讓程式不再用它，下一次再刪）。
+
+D1 依**檔名**記錄套用過的 migration（`d1_migrations` 表）。2026-11 已把原本的 0000–0013 整併成
+`0000_initial`（完整 schema 加上參考資料，只為補舊資料而寫的 `UPDATE` 已移除）：正式環境早已記錄
+`0000_initial.sql`，所以會跳過它，只有新的資料庫會執行。正式環境也記錄著已刪除的
+`0001_listings_book_status_created.sql`～`0013_category_departments.sql` 這些檔名，新的 migration
+**不可重用這些名稱**，否則正式環境會當成已套用而直接略過（`drizzle-kit generate --name` 產生的名稱只要不同即可）。
 
 主金鑰之外的密鑰請貼上各服務核發的值。輪替主金鑰時再執行一次上面的 `openssl rand … | wrangler secret put SECRET_KEY`
 即可（所有人會被登出）。本機開發的 `server/.dev.vars` 也可用
