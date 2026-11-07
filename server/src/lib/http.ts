@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { z } from 'zod';
+import { readCapped } from './body';
 
 /**
  * The API's error contract, which the Angular app reads
@@ -54,9 +55,23 @@ export function describeIssues(error: z.ZodError, fallbackCode = 'common.errVali
   return { code, fields };
 }
 
-/** Read a JSON body; an absent or malformed body is an empty object. */
-export async function readJson(req: { json: () => Promise<unknown> }): Promise<Record<string, unknown>> {
-  const body = await req.json().catch(() => ({}));
+/**
+ * Largest JSON body a route reads. Every form the app sends is a few KB (files
+ * go to R2 through upload URLs, not JSON), so this only stops a client from
+ * making the Worker buffer and parse megabytes it will throw away.
+ */
+export const MAX_JSON_BODY_BYTES = 64 * 1024;
+
+/** Read a JSON body; an absent or malformed body is an empty object, an oversized one a 413. */
+export async function readJson(req: { raw: Pick<Request, 'headers' | 'body'> }): Promise<Record<string, unknown>> {
+  const bytes = await readCapped(req.raw, MAX_JSON_BODY_BYTES);
+  if (bytes === null) apiError(413, 'common.errValidation');
+  let body: unknown;
+  try {
+    body = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return {};
+  }
   return body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
 }
 
