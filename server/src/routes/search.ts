@@ -25,6 +25,8 @@ import {
 import { categoryIdsMatchingText, regionCategories, schoolFilterId, schoolFilterScope } from '../services/listings/places';
 import { CONDITIONS } from '../services/listings/validate';
 import { pagination } from '../lib/http';
+import { andAll, EMPTY, frag, join, type Frag } from '../lib/sql-frag';
+import { textMatch } from '../services/search/text-match';
 
 export const searchRoutes = new Hono<AppEnv>();
 
@@ -32,24 +34,8 @@ const SEARCH_RATE: PlatformRate = '60/min';
 /** Browsing by category/course reads at most this many books (results_truncated says when it bit). */
 export const LOCAL_BROWSE_LIMIT = 200;
 
-/** A SQL fragment and its bind values, in order. */
-interface Frag {
-  sql: string;
-  args: unknown[];
-}
-const frag = (sql: string, ...args: unknown[]): Frag => ({ sql, args });
-const EMPTY: Frag = frag('');
-function join(parts: Frag[], sep = ' AND '): Frag {
-  const live = parts.filter((p) => p.sql);
-  return { sql: live.map((p) => p.sql).join(sep), args: live.flatMap((p) => p.args) };
-}
-/** " AND <a> AND <b>" for appending to an existing WHERE. */
-function andAll(parts: Frag[]): Frag {
-  const j = join(parts);
-  return j.sql ? { sql: ` AND ${j.sql}`, args: j.args } : EMPTY;
-}
-const contains = (col: string, q: string) => frag(`instr(upper(${col}), upper(?)) > 0`, q);
 const jsonList = (values: unknown[]) => JSON.stringify(values);
+const categoryIn = (alias: string, ids: unknown[]) => frag(`${alias}.category_id IN (SELECT value FROM json_each(?))`, jsonList(ids));
 
 interface LocalBook {
   id: string;
@@ -216,7 +202,12 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
     let localRows: LocalBook[];
 
     if (isIsbn) {
-      const found = await lookupInOrder(env, queryStripped, engineOrder(engine, allowed, ISBN_FALLBACK_ORDER), ISBN_LOOKUPS, allowed);
+      // The catalogue and the local table do not depend on each other: ask both at once.
+      const [found, local] = await Promise.all([
+        lookupInOrder(env, queryStripped, engineOrder(engine, allowed, ISBN_FALLBACK_ORDER), ISBN_LOOKUPS, allowed),
+        all<LocalBook>(env, frag(`SELECT ${BOOK_COLS} FROM books b WHERE b.isbn13 = ? AND b.region_code = ?`, queryStripped, region.code)),
+      ]);
+      localRows = local;
       googleUnavailable ||= found.googleUnavailable;
       attempts.push(...found.meta.attempts);
       if (found.result && found.engine) {
@@ -228,10 +219,6 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
           },
         ];
       }
-      localRows = await all<LocalBook>(
-        env,
-        frag(`SELECT ${BOOK_COLS} FROM books b WHERE b.isbn13 = ? AND b.region_code = ?`, queryStripped, region.code),
-      );
       // The strict lookup sometimes misses a book the catalogue's keyword
       // search has under this exact ISBN; keep only exact-ISBN matches.
       if (!external.length && !localRows.length) {
@@ -249,48 +236,63 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
           .map((item) => ({ ...item, source: SOURCE_BY_ENGINE[fb.engine as Engine] }));
       }
     } else {
-      const found = await lookupInOrder(
-        env,
-        query,
-        engineOrder(keywordEngine(engine), allowed, KEYWORD_FALLBACK_ORDER),
-        KEYWORD_LOOKUPS,
-        allowed,
-      );
+      // The catalogue and the local search do not depend on each other: run
+      // them at once, so a slow catalogue does not also wait on D1.
+      const localSearch = async (): Promise<LocalBook[]> => {
+        // Course, professor and category name are the listing's: only an
+        // active listing makes them a match.
+        const catMatch = await categoryIdsMatchingText(env, region.code, query, await cats());
+        const tm = textMatch(query);
+        let head = frag(`SELECT ${BOOK_COLS} FROM books b WHERE b.region_code = ?`, region.code);
+        let matched: Frag = EMPTY;
+        if (tm.indexed) {
+          // The index names the candidate books; the outer query only orders
+          // and caps them. CROSS JOIN keeps SQLite reading the candidates
+          // first, with or without table statistics (docs/search.md).
+          const fromListings = (...where: Frag[]) => {
+            const w = andAll([...where, schoolFrag()]);
+            return frag(`SELECT l.book_id FROM listings l WHERE l.status = 'active'${w.sql}`, ...w.args);
+          };
+          const bm = tm.book('bm');
+          const branches = [frag(`SELECT bm.id FROM books bm WHERE ${bm.sql}`, ...bm.args), fromListings(tm.listing('l'))];
+          if (catMatch.length) branches.push(fromListings(frag('l.region_code = ?', region.code), categoryIn('l', catMatch)));
+          const u = join(branches, ' UNION ');
+          head = frag(
+            `SELECT ${BOOK_COLS} FROM (${u.sql}) m CROSS JOIN books b WHERE b.id = m.id AND b.region_code = ?`,
+            ...u.args,
+            region.code,
+          );
+        } else {
+          // No index lookup for so short a text: scan newest first, so the LIMIT stops it early.
+          const ownText = join([tm.listing('l'), categoryIn('l', catMatch)], ' OR ');
+          const listingMatch = andAll([frag(`(${ownText.sql})`, ...ownText.args), schoolFrag()]);
+          const bookText = tm.book('b');
+          matched = frag(
+            `(${bookText.sql} OR EXISTS (SELECT 1 FROM listings l WHERE l.book_id = b.id AND l.status = 'active'${listingMatch.sql}))`,
+            ...bookText.args,
+            ...listingMatch.args,
+          );
+        }
+        const parts: Frag[] = [head, matched];
+        if (course) {
+          const cf = andAll([courseFrag(), schoolFrag()]);
+          parts.push(frag(`EXISTS (SELECT 1 FROM listings l WHERE l.book_id = b.id AND l.status = 'active'${cf.sql})`, ...cf.args));
+        }
+        const f = join(parts);
+        // Capped so the merge with the catalogue results stays bounded.
+        return all<LocalBook>(env, frag(`${f.sql} ORDER BY b.created_at DESC LIMIT 100`, ...f.args));
+      };
+      const [found, local] = await Promise.all([
+        lookupInOrder(env, query, engineOrder(keywordEngine(engine), allowed, KEYWORD_FALLBACK_ORDER), KEYWORD_LOOKUPS, allowed),
+        localSearch(),
+      ]);
+      localRows = local;
       googleUnavailable ||= found.googleUnavailable;
       attempts.push(...found.meta.attempts);
       if (found.engine) {
         const debugSource = describeSource(found.engine, found.meta.cache_hit ?? false);
         external = (found.result ?? []).map((item) => ({ ...item, source: SOURCE_BY_ENGINE[found.engine!], debug_source: debugSource }));
       }
-
-      // Course, professor and category name are the listing's: only an
-      // active listing makes them a match.
-      const catMatch = await categoryIdsMatchingText(env, region.code, query, await cats());
-      const ownText = join(
-        [
-          contains('l.course_name', query),
-          contains('l.professor_name', query),
-          frag('l.category_id IN (SELECT value FROM json_each(?))', jsonList(catMatch)),
-        ],
-        ' OR ',
-      );
-      const listingMatch = andAll([frag(`(${ownText.sql})`, ...ownText.args), schoolFrag()]);
-      const bookText = join([contains('b.title', query), contains('b.authors', query), contains("coalesce(b.isbn13, '')", query)], ' OR ');
-      const parts: Frag[] = [
-        frag(`SELECT ${BOOK_COLS} FROM books b WHERE b.region_code = ?`, region.code),
-        frag(
-          `(${bookText.sql} OR EXISTS (SELECT 1 FROM listings l WHERE l.book_id = b.id AND l.status = 'active'${listingMatch.sql}))`,
-          ...bookText.args,
-          ...listingMatch.args,
-        ),
-      ];
-      if (course) {
-        const cf = andAll([courseFrag(), schoolFrag()]);
-        parts.push(frag(`EXISTS (SELECT 1 FROM listings l WHERE l.book_id = b.id AND l.status = 'active'${cf.sql})`, ...cf.args));
-      }
-      const f = join(parts);
-      // Capped so the merge with the catalogue results stays bounded.
-      localRows = await all<LocalBook>(env, frag(`${f.sql} ORDER BY b.created_at DESC LIMIT 100`, ...f.args));
     }
 
     // Every external catalogue timed out or failed and nothing is local: the
@@ -330,22 +332,38 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
 
   // ---- facets: each facet ignores its own filter ----
   let textFrag: Frag = EMPTY;
+  // Where the facet counts read from; an indexed text narrows it to the matching listings first.
+  let facetFrom: Frag = frag('listings l JOIN books b ON b.id = l.book_id');
   if (!browseBranch && queryStripped) {
     if (isIsbn) textFrag = frag('b.isbn13 = ?', queryStripped);
     else {
       const catMatch = await categoryIdsMatchingText(env, region.code, queryStripped, await cats());
-      const t = join(
-        [
-          contains('b.title', queryStripped),
-          contains('b.authors', queryStripped),
-          contains("coalesce(b.isbn13, '')", queryStripped),
-          contains('l.course_name', queryStripped),
-          contains('l.professor_name', queryStripped),
-          frag('l.category_id IN (SELECT value FROM json_each(?))', jsonList(catMatch)),
-        ],
-        ' OR ',
-      );
-      textFrag = frag(`(${t.sql})`, ...t.args);
+      const tm = textMatch(queryStripped);
+      if (tm.indexed) {
+        // The matching listings, from the index: a listing of a matching book, or one matching itself.
+        const bm = tm.book('bm');
+        const lm = tm.listing('lm');
+        const branches = [
+          frag(`SELECT lb.id FROM listings lb WHERE lb.book_id IN (SELECT bm.id FROM books bm WHERE ${bm.sql})`, ...bm.args),
+          frag(`SELECT lm.id FROM listings lm WHERE ${lm.sql}`, ...lm.args),
+        ];
+        if (catMatch.length) {
+          const cat = categoryIn('lc', catMatch);
+          branches.push(
+            frag(
+              `SELECT lc.id FROM listings lc WHERE lc.region_code = ? AND lc.status = 'active' AND ${cat.sql}`,
+              region.code,
+              ...cat.args,
+            ),
+          );
+        }
+        const u = join(branches, ' UNION ');
+        facetFrom = frag(`(${u.sql}) fm CROSS JOIN listings l CROSS JOIN books b`, ...u.args);
+        textFrag = frag('l.id = fm.id AND b.id = l.book_id');
+      } else {
+        const t = join([tm.book('b'), tm.listing('l'), categoryIn('l', catMatch)], ' OR ');
+        textFrag = frag(`(${t.sql})`, ...t.args);
+      }
     }
   }
   const facetBase = (...extra: Frag[]) =>
@@ -417,8 +435,9 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
   const catAt = read(
     frag(
       `SELECT c.slug AS slug, count(DISTINCT l.book_id) AS n
-         FROM listings l JOIN books b ON b.id = l.book_id JOIN categories c ON c.id = l.category_id
+         FROM ${facetFrom.sql} JOIN categories c ON c.id = l.category_id
         WHERE 1 = 1${catWhere.sql} GROUP BY c.slug`,
+      ...facetFrom.args,
       ...catWhere.args,
     ),
   );
@@ -426,8 +445,9 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
   const courseAt = read(
     frag(
       `SELECT l.course_name, count(DISTINCT l.book_id) AS n
-         FROM listings l JOIN books b ON b.id = l.book_id
+         FROM ${facetFrom.sql}
         WHERE l.course_name <> ''${courseWhere.sql} GROUP BY l.course_name`,
+      ...facetFrom.args,
       ...courseWhere.args,
     ),
   );
@@ -445,8 +465,9 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
   const condAt = read(
     frag(
       `SELECT l.condition, count(DISTINCT l.book_id) AS n
-         FROM listings l JOIN books b ON b.id = l.book_id
+         FROM ${facetFrom.sql}
         WHERE 1 = 1${condWhere.sql} GROUP BY l.condition`,
+      ...facetFrom.args,
       ...condWhere.args,
     ),
   );
