@@ -219,9 +219,10 @@ function onSuperuserRoute(router: Router): boolean {
     @media (max-width: 768px) {
       .admin-layout {
         display: block;
+        /* No tab-bar clearance here: .main-content (layout.component.css)
+           already reserves the bar's height plus a gap on every page.
+           Adding 57px again left a second, empty bar's worth of space. */
         padding-block: var(--space-4);
-        /* Fix padding-bottom so content isn't covered by bottom tab bar (57px) */
-        padding-bottom: calc(var(--space-4) + 57px);
       }
       
       .mobile-header {

@@ -66,6 +66,13 @@ export { chunkUrlFromError, isChunkLoadError } from './core/chunk-recovery';
       z-index: 9999;
       font-size: var(--text-base);
     }
+    /* 900px is where .bottom-tab-bar appears; pinned 24px off the viewport
+       bottom the prompt sat on top of the tabs. Same clearance as the toasts. */
+    @media (max-width: 900px) {
+      .update-prompt {
+        bottom: calc(var(--space-3) + 57px + env(safe-area-inset-bottom, 0px));
+      }
+    }
     .update-prompt button {
       background: var(--btn-primary-bg);
       color: var(--btn-primary-ink);
