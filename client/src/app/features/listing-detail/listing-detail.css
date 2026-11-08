@@ -8,7 +8,11 @@
     
     .product-layout {
       display: grid;
-      grid-template-columns: 1fr;
+      /* minmax(0, …), not bare 1fr: a bare fr track's floor is the gallery's
+         min-content, and the thumbnail strip's is every thumbnail side by side
+         (5 × 80px + gaps = 448px), which pushed the column past a phone's width.
+         The strip scrolls on its own; the track must not grow to fit it. */
+      grid-template-columns: minmax(0, 1fr);
       gap: 40px;
       background: var(--surface-card);
       padding: 32px;
