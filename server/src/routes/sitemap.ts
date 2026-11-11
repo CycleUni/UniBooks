@@ -146,9 +146,7 @@ async function sitemapSection(c: Context<AppEnv>): Promise<Response> {
     .all<Row>();
   const origin = frontendOrigin(c);
   const loc = (row: Row) =>
-    kind === 'books'
-      ? `${origin}/${region}/book?${new URLSearchParams(row.isbn13 ? { isbn: row.isbn13 } : { id: row.id }).toString()}`
-      : `${origin}/${region}/listing/${row.id}`;
+    kind === 'books' ? `${origin}/${region}/book?id=${encodeURIComponent(row.id)}` : `${origin}/${region}/listing/${row.id}`;
   const entries = results.map((row) => `<url><loc>${escapeXml(loc(row))}</loc><lastmod>${day(row.lastmod)}</lastmod></url>\n`);
   return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="${XMLNS}">\n${entries.join('')}</urlset>\n`);
 }

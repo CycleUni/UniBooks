@@ -30,9 +30,18 @@ describe('book preview state', () => {
     expect(hasBookPreviewState(undefined)).toBe(false);
   });
 
-  it('addresses a book by isbn, falling back to id, and never adds a cache flag', () => {
-    expect(bookQueryParams({ isbn: '9781449319793', id: 2 })).toEqual({ isbn: '9781449319793' });
+  it('addresses a book by id, falling back to isbn (plus hints), and never adds a cache flag', () => {
+    expect(bookQueryParams({ isbn: '9781449319793', id: 2 })).toEqual({ id: 2 });
     expect(bookQueryParams({ id: 2 })).toEqual({ id: 2 });
+    expect(bookQueryParams({ isbn: '9781449319793' })).toEqual({ isbn: '9781449319793' });
+    expect(bookQueryParams({ isbn: '9781449319793', engine: 'googlebooks', gid: 'vol123' })).toEqual({
+      isbn: '9781449319793',
+      engine: 'googlebooks',
+      gid: 'vol123',
+    });
+    expect(bookQueryParams({ id: 2, isbn: '9781449319793', engine: 'googlebooks', gid: 'vol123' })).toEqual({
+      id: 2,
+    });
     expect(bookQueryParams({ isbn: '', id: '' })).toEqual({});
   });
 

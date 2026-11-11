@@ -14,7 +14,8 @@ class DataPage {
   constructor() {
     inject(SeoService).setPage({
       title: 'Python for Data Analysis',
-      canonicalPath: '/tw/book?isbn=9781449319793',
+      canonicalPath: '/tw/book?id=b1',
+      alternateQuery: 'isbn=9781449319793',
       image: '/api/cover?src=x',
     });
   }
@@ -68,7 +69,7 @@ describe('SeoService', () => {
     await visit('/tw/book?isbn=9781449319793&engine=googlebooks');
     expect(document.title).toBe('Python for Data Analysis · UniBooks');
     expect(meta('property="og:title"')).toBe('Python for Data Analysis · UniBooks');
-    expect(canonical()).toBe(`${location.origin}/tw/book?isbn=9781449319793`);
+    expect(canonical()).toBe(`${location.origin}/tw/book?id=b1`);
     expect(meta('property="og:image"')).toBe(`${location.origin}/api/cover?src=x`);
     expect(meta('name="twitter:card"')).toBe('summary_large_image');
     expect(meta('property="og:image:width"')).toBeNull();
@@ -87,15 +88,15 @@ describe('SeoService', () => {
     expect(head().querySelectorAll('link[rel="canonical"]').length).toBe(1);
   });
 
-  it('names each region copy of the page as an hreflang alternate, the default region as x-default', async () => {
+  it('names each region copy of the page as an hreflang alternate, using isbn for other regions', async () => {
     const alternates = () => [...head().querySelectorAll<HTMLLinkElement>('link[rel="alternate"][hreflang]')]
       .map(el => [el.getAttribute('hreflang'), el.getAttribute('href')]);
 
     await visit('/tw/book?isbn=9781449319793');
     expect(alternates()).toEqual([
-      ['zh-TW', `${location.origin}/tw/book?isbn=9781449319793`],
+      ['zh-TW', `${location.origin}/tw/book?id=b1`],
       ['zh-HK', `${location.origin}/hk/book?isbn=9781449319793`],
-      ['x-default', `${location.origin}/tw/book?isbn=9781449319793`],
+      ['x-default', `${location.origin}/tw/book?id=b1`],
     ]);
 
     await visit('/tw');
@@ -104,6 +105,25 @@ describe('SeoService', () => {
       ['zh-TW', `${location.origin}/tw/`],
       ['zh-HK', `${location.origin}/hk/`],
       ['x-default', `${location.origin}/tw/`],
+    ]);
+  });
+
+  it('emits no cross-region alternates for an ISBN-less book', async () => {
+    const alternates = () => [...head().querySelectorAll<HTMLLinkElement>('link[rel="alternate"][hreflang]')]
+      .map(el => [el.getAttribute('hreflang'), el.getAttribute('href')]);
+
+    const seo = TestBed.inject(SeoService);
+    await visit('/tw/book');
+    seo.setPage({
+      title: 'Rare Notes',
+      canonicalPath: '/tw/book?id=b2',
+      alternateQuery: null,
+    });
+    TestBed.tick();
+
+    expect(alternates()).toEqual([
+      ['zh-TW', `${location.origin}/tw/book?id=b2`],
+      ['x-default', `${location.origin}/tw/book?id=b2`],
     ]);
   });
 

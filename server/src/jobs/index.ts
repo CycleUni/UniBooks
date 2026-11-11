@@ -99,6 +99,7 @@ export async function runWaitlistNotify(env: Env) {
           email: users.email,
           title: books.title,
           isbn13: books.isbn13,
+          bookId: books.id,
         })
         .from(subscriptions)
         .innerJoin(books, eq(books.id, subscriptions.bookId))
@@ -133,9 +134,10 @@ export async function runWaitlistNotify(env: Env) {
       user_id: first.userId,
       email: first.email,
       book_title: first.title,
+      book_id: first.bookId,
       listing_count: subs.length,
       region: first.regionCode,
-      books: subs.map((s) => ({ title: s.title, isbn13: s.isbn13, region: s.regionCode })),
+      books: subs.map((s) => ({ id: s.bookId, title: s.title, isbn13: s.isbn13, region: s.regionCode })),
     };
     try {
       await env.EMAIL_QUEUE.send(email);

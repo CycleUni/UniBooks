@@ -340,7 +340,7 @@ export class UiRecentListings {
       coverUrl: item.cover_url,
       activeListings: 1
     };
-    sessionStorage.setItem(`cachedBook_${item.isbn || item.id}`, JSON.stringify(cached));
+    sessionStorage.setItem(`cachedBook_${item.id || item.isbn}`, JSON.stringify(cached));
   }
 
   /** Lets the book page show what cacheBook() stashed; carried outside the URL. */

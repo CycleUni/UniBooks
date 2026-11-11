@@ -138,12 +138,14 @@ describe('emails', () => {
         region: 'TW',
         books: [
           { title: 'A & B', isbn13: '9780000000001', region: 'TW' },
+          { id: 'b-uuid-1', title: 'D', isbn13: '9780000000002', region: 'TW' },
           { title: 'C', isbn13: null, region: 'HK' },
         ],
       },
       env,
     );
     expect(mail?.text).toContain(BASE + '/tw/book?isbn=9780000000001');
+    expect(mail?.text).toContain(BASE + '/tw/book?id=b-uuid-1');
     expect(mail?.text).toContain(`- C: ${BASE}/hk`);
     expect(mail?.text).toContain(BASE + '/account/subscriptions');
     expect(mail?.html).toContain('A &amp; B');

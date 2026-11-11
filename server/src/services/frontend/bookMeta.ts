@@ -98,13 +98,13 @@ export function regionFrom(param: unknown): string | null {
   return typeof param === 'string' && /^[a-z]{2}$/.test(param) ? param : null;
 }
 
-/** isbn wins over id, matching the book page itself. Anything malformed is
+/** id wins over isbn, matching the book page itself. Anything malformed is
  *  left to the SPA rather than forwarded to the API. Book ids are UUIDs. */
 export function bookIdentity(url: URL): BookIdentity | null {
-  const isbn = url.searchParams.get('isbn');
-  if (isbn) return /^\d{10}(\d{3})?$|^\d{9}[\dX]$/i.test(isbn) ? { kind: 'isbn', value: isbn.toUpperCase() } : null;
   const id = url.searchParams.get('id');
   if (id) return UUID_RE.test(id) ? { kind: 'id', value: id.toLowerCase() } : null;
+  const isbn = url.searchParams.get('isbn');
+  if (isbn) return /^\d{10}(\d{3})?$|^\d{9}[\dX]$/i.test(isbn) ? { kind: 'isbn', value: isbn.toUpperCase() } : null;
   return null;
 }
 
@@ -187,21 +187,36 @@ export function metaFor(book: BookFacts, origin: string, region: string, site: S
   const strings = DESCRIPTIONS[descriptionLang(lang)];
   const template = book.authors ? strings.withAuthor : strings.noAuthor;
   const description = template.replaceAll('{title}', book.title).replaceAll('{authors}', book.authors);
-  // The ISBN form whenever there is one, like the app's own canonical: the
-  // same book is also reachable by id and with an &engine= hint.
-  const query = book.isbn13 ? `isbn=${encodeURIComponent(book.isbn13)}` : `id=${encodeURIComponent(book.id)}`;
 
-  // Every region's copy of this page, and the default region's as
-  // x-default (DEFAULT_REGION), so every link points both ways.
-  const alternates = [
-    ...site.regions.map((r) => ({ href: `${origin}/${r.code}/book?${query}`, hreflang: r.lang })),
-    { href: `${origin}/${site.defaultRegion}/book?${query}`, hreflang: 'x-default' },
-  ];
+  // The id form whenever there is one: a catalogued book has exactly one URL in this region.
+  // Uncatalogued external books fall back to ISBN.
+  const currentQuery = book.id ? `id=${encodeURIComponent(book.id)}` : `isbn=${encodeURIComponent(book.isbn13)}`;
+  const otherQuery = book.isbn13 ? `isbn=${encodeURIComponent(book.isbn13)}` : null;
+
+  const alternates: Array<{ href: string; hreflang: string }> = [];
+
+  if (otherQuery) {
+    for (const r of site.regions) {
+      const q = r.code === region ? currentQuery : otherQuery;
+      alternates.push({ href: `${origin}/${r.code}/book?${q}`, hreflang: r.lang });
+    }
+    const defaultQuery = site.defaultRegion === region ? currentQuery : otherQuery;
+    alternates.push({ href: `${origin}/${site.defaultRegion}/book?${defaultQuery}`, hreflang: 'x-default' });
+  } else {
+    // No ISBN: emit NO alternates for other regions (only the self-referencing one
+    // and no x-default unless this region is the default).
+    if (lang) {
+      alternates.push({ href: `${origin}/${region}/book?${currentQuery}`, hreflang: lang });
+    }
+    if (site.defaultRegion === region) {
+      alternates.push({ href: `${origin}/${region}/book?${currentQuery}`, hreflang: 'x-default' });
+    }
+  }
 
   return {
     title: `${book.title} · ${SITE_NAME}`,
     description,
-    canonical: `${origin}/${region}/book?${query}`,
+    canonical: `${origin}/${region}/book?${currentQuery}`,
     image: coverImageUrl(origin, book.cover_url),
     alternates,
   };
@@ -291,6 +306,7 @@ export interface BookPageContext {
   /** The region's app shell from the static assets. */
   shell: () => Promise<Response>;
   waitUntil: (promise: Promise<unknown>) => void;
+  preloadedBook?: BookFacts | null;
 }
 
 export interface BookPageDeps {
@@ -370,25 +386,38 @@ export async function handleBookPage(ctx: BookPageContext, deps: BookPageDeps): 
 
   try {
     const key = cacheKey(url.origin, region, identity);
-    let result = await readCache(deps.cache, key);
-    if (!result) {
-      const apiUrl = bookApiUrl(url.origin, region, identity, url.searchParams.get('gid'));
-      const fetchAndStore = lookup(apiUrl, deps).then(async (fresh) => {
-        await writeCache(deps.cache, key, fresh);
-        return fresh;
-      });
-      if (!isLinkPreviewAgent(ctx.request.headers.get('user-agent'))) {
-        ctx.waitUntil(fetchAndStore);
-        return page;
+    let result: LookupResult | null = null;
+
+    if (ctx.preloadedBook !== undefined) {
+      if (ctx.preloadedBook) {
+        result = { status: 'found', book: ctx.preloadedBook };
+        ctx.waitUntil(writeCache(deps.cache, key, result));
+      } else {
+        result = { status: 'missing' };
       }
-      result = await fetchAndStore;
+    } else {
+      result = await readCache(deps.cache, key);
+      if (!result) {
+        const apiUrl = bookApiUrl(url.origin, region, identity, url.searchParams.get('gid'));
+        const fetchAndStore = lookup(apiUrl, deps).then(async (fresh) => {
+          await writeCache(deps.cache, key, fresh);
+          return fresh;
+        });
+        if (!isLinkPreviewAgent(ctx.request.headers.get('user-agent'))) {
+          ctx.waitUntil(fetchAndStore);
+          return page;
+        }
+        result = await fetchAndStore;
+      }
     }
 
     if (result.status === 'error') {
       return page;
     }
     if (result.status === 'missing') {
-      // The SPA would show its not-found state; say so in the status too.
+      if (!isLinkPreviewAgent(ctx.request.headers.get('user-agent'))) {
+        return page;
+      }
       return new Response(page.body, { status: 404, headers: page.headers });
     }
     return deps.inject(page, metaFor(result.book, url.origin, region, ctx.site), page.status);

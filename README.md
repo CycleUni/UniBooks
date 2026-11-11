@@ -6,7 +6,7 @@
 ```
 瀏覽器 ──► unibooks.app
             ├─ /、/tw/...、/hk/...、*.js、*.css ……  Workers Static Assets（不經過 Worker，不計請求數）
-            ├─ /<region>/book?isbn=…               Worker：在 app shell 注入 OG meta（連結預覽）
+            ├─ /<region>/book?id=…                 Worker：在 app shell 注入 OG meta（連結預覽）
             ├─ /api/v1/*                           Worker：Hono REST API
             └─ /api/chat/*                         Worker：聊天 WebSocket / REST → Durable Objects
 ```

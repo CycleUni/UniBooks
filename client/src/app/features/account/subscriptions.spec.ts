@@ -21,13 +21,13 @@ describe('SubscriptionsComponent', () => {
     component = TestBed.createComponent(SubscriptionsComponent).componentInstance;
   });
 
-  it('View now opens the book page by ISBN', () => {
+  it('View now opens the book page by id', () => {
     component.viewBook({ isbn: '9780131103627', book: 'b1' });
-    expect(navigate).toHaveBeenCalledWith(['/tw', 'book'], { queryParams: { isbn: '9780131103627' } });
+    expect(navigate).toHaveBeenCalledWith(['/tw', 'book'], { queryParams: { id: 'b1' } });
   });
 
-  it('View now opens a book without an ISBN by its id', () => {
-    component.viewBook({ isbn: '', book: 'b1' });
-    expect(navigate).toHaveBeenCalledWith(['/tw', 'book'], { queryParams: { id: 'b1' } });
+  it('View now opens an uncatalogued book by its ISBN', () => {
+    component.viewBook({ isbn: '9780131103627', book: '' });
+    expect(navigate).toHaveBeenCalledWith(['/tw', 'book'], { queryParams: { isbn: '9780131103627' } });
   });
 });

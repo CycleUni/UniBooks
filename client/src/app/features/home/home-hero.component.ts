@@ -552,7 +552,7 @@ export class HomeHero {
       coverUrl: cover.coverUrl,
       activeListings: 1
     };
-    sessionStorage.setItem(`cachedBook_${cover.isbn || cover.id}`, JSON.stringify(cached));
+    sessionStorage.setItem(`cachedBook_${cover.id || cover.isbn}`, JSON.stringify(cached));
   }
 
   onHeroAdClick(cover: HeroCover) {

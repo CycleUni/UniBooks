@@ -46,7 +46,7 @@
           <h1 class="book-title-serif">{{ listing.book_title }}</h1>
           <p class="book-authors" *ngIf="listing.book_authors">{{ listing.book_authors }}</p>
           
-          <a [regionLink]="['/book']" [queryParams]="{ isbn: listing.isbn }" class="book-link" [innerHTML]="'sell.viewOtherListings' | t">
+          <a [regionLink]="['/book']" [queryParams]="bookParams()" class="book-link" [innerHTML]="'sell.viewOtherListings' | t">
           </a>
 
           <div class="price-condition-row">

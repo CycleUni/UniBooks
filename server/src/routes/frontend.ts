@@ -1,8 +1,13 @@
 import { Hono, type Context } from 'hono';
+import { and, eq, inArray } from 'drizzle-orm';
 import { checkPlatformRate } from '../middleware/rateLimit';
 import type { AppEnv } from '../env';
 import { activeRegions } from '../lib/region';
-import { handleBookPage, injectBookMeta, regionFrom, REGION_SHELL, type SiteRegions } from '../services/frontend/bookMeta';
+import { books, createDb } from '../db';
+import { cleanAndValidateIsbn, isbnForms } from '../services/catalog/isbn';
+import { coverUrlFor } from '../services/catalog/covers';
+import { UUID_RE } from '../lib/uuid';
+import { handleBookPage, injectBookMeta, regionFrom, REGION_SHELL, type BookFacts, type SiteRegions } from '../services/frontend/bookMeta';
 import { handleCover } from '../services/frontend/cover';
 
 /**
@@ -43,7 +48,7 @@ async function siteRegions(env: AppEnv['Bindings']): Promise<SiteRegions> {
 }
 
 /**
- * /<region>/book?isbn=… (or ?id=…): the region's app shell with og:,
+ * /<region>/book?id=… (or ?isbn=…): the region's app shell with og:,
  * twitter: and canonical tags a link preview can read. Only a lowercase
  * two-letter code naming an active region is handled; any other first
  * segment (/messages/book, /xx/book, /TW/book) is the static app's.
@@ -60,7 +65,74 @@ frontendRoutes.get('/:region/book', async (c) => {
   }
   if (!site.regions.some((r) => r.code === region)) return fromAssets(c);
 
-  const origin = new URL(c.req.url).origin;
+  const url = new URL(c.req.url);
+  const idParam = url.searchParams.get('id');
+  let preloadedBook: BookFacts | null | undefined = undefined;
+
+  if (idParam && UUID_RE.test(idParam)) {
+    try {
+      const db = createDb(c.env.DB);
+      const [row] = await db
+        .select({
+          id: books.id,
+          regionCode: books.regionCode,
+          isbn13: books.isbn13,
+          title: books.title,
+          authors: books.authors,
+          coverUrl: books.coverUrl,
+          coverR2Key: books.coverR2Key,
+        })
+        .from(books)
+        .where(eq(books.id, idParam.toLowerCase()))
+        .limit(1);
+
+      if (row) {
+        if (row.regionCode !== region.toUpperCase()) {
+          if (row.isbn13) {
+            return c.redirect(`${url.origin}/${region}/book?isbn=${encodeURIComponent(row.isbn13)}`, 302);
+          }
+          // Wrong-region id without ISBN: serve the app shell as today (not-found state)
+          preloadedBook = null;
+        } else {
+          // Right-region id: reuse the row so no second read occurs in handleBookPage
+          preloadedBook = {
+            id: row.id,
+            isbn13: row.isbn13 ?? '',
+            title: row.title,
+            authors: row.authors ?? '',
+            cover_url: coverUrlFor(c.env, url.origin, row),
+          };
+        }
+      } else {
+        preloadedBook = null;
+      }
+    } catch {
+      // D1 read error: fall through
+    }
+  }
+
+  const isbnParam = url.searchParams.get('isbn');
+  if (!idParam && isbnParam) {
+    const validIsbn = cleanAndValidateIsbn(isbnParam);
+    if (validIsbn) {
+      try {
+        const db = createDb(c.env.DB);
+        const forms = [...isbnForms(validIsbn)];
+        const [row] = await db
+          .select({ id: books.id })
+          .from(books)
+          .where(and(eq(books.regionCode, region.toUpperCase()), inArray(books.isbn13, forms)))
+          .limit(1);
+        if (row?.id) {
+          return c.redirect(`${url.origin}/${region}/book?id=${encodeURIComponent(row.id)}`, 301);
+        }
+      } catch {
+        // D1 read error: fall through
+      }
+    }
+  }
+
+  const origin = url.origin;
   const clientIp = c.req.header('CF-Connecting-IP');
   try {
     return await handleBookPage(
@@ -70,6 +142,7 @@ frontendRoutes.get('/:region/book', async (c) => {
         site,
         shell: () => c.env.ASSETS.fetch(new Request(`${origin}/${region}/${REGION_SHELL}`, { headers: { Accept: 'text/html' } })),
         waitUntil: (promise) => c.executionCtx.waitUntil(promise),
+        preloadedBook,
       },
       {
         cache: caches.default,

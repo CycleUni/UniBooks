@@ -57,10 +57,11 @@ export type EmailMessage =
       user_id: string;
       email: string;
       book_title: string;
+      book_id?: string;
       listing_count: number;
       region: string;
       /** Every due book for this user, for one email per user (the cron); book_title alone otherwise. */
-      books?: { title: string; isbn13?: string | null; region?: string }[];
+      books?: { id?: string; title: string; isbn13?: string | null; region?: string }[];
     }
   | {
       type: 'meetup_reminder';

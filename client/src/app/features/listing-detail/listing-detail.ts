@@ -1,4 +1,5 @@
 import { Subscription } from 'rxjs';
+import { bookQueryParams } from '../../core/book-preview';
 import { onLanguageChange } from '../../core/on-language-change';
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, effect, ViewChild, ElementRef, PLATFORM_ID, NgZone, untracked } from '@angular/core';
@@ -63,6 +64,10 @@ export class ListingDetail implements OnInit, OnDestroy {
       { labelKey: 'nav.home', link: '/' },
       { label: this.listing.book_title }
     ];
+  }
+
+  bookParams(): Record<string, string | number> {
+    return bookQueryParams({ id: this.listing?.book, isbn: this.listing?.isbn });
   }
 
   /** A listing id is global, so `/hk/listing/<id>` loads a TW listing just as
@@ -232,7 +237,7 @@ export class ListingDetail implements OnInit, OnDestroy {
         // scoped to the page's region, so it would list that region's sellers
         // under a listing that belongs to neither them nor their currency.
         this.otherListings = [];
-        const bookIdentifier = data.isbn || data.book;
+        const bookIdentifier = data.book || data.isbn;
         if (bookIdentifier && isPlatformBrowser(this.platformId) && !this.regionMismatch) {
           this.otherSub = this.bookService.getBook(bookIdentifier).subscribe({
             next: (bookData) => {

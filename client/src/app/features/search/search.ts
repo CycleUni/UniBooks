@@ -1175,26 +1175,14 @@ export class Search implements OnInit {
   readonly previewState = bookPreviewState();
 
   bookLinkParams(item: any): Record<string, any> {
-    const params: Record<string, any> = bookQueryParams(item);
-    // Belt-and-suspenders alongside goToBook()'s sessionStorage priming:
-    // if the cache entry is missing (cleared tab, private browsing) the
-    // book page falls back to a live lookup, which must use the same
-    // engine this tile's data came from — otherwise the two pages can show
-    // different covers/titles for the same ISBN. Read off the result, not
-    // this.engine: without an engine the backend picks the source per
-    // search, so one found in the ISBN registry would otherwise be looked
-    // up again in Google.
     const engine = engineForSource(item.source);
-    if (engine) params['engine'] = engine;
-    // The volume itself: many Google results answer no ISBN query, so a
-    // copied link would otherwise open on nothing (book.ts's googleId).
-    if (engine === 'googlebooks' && item.google_id) params['gid'] = item.google_id;
-    return params;
+    const gid = engine === 'googlebooks' ? item.google_id : undefined;
+    return bookQueryParams({ ...item, engine, gid });
   }
 
   /** Cache priming only — must not navigate, or the anchor fires twice. */
   goToBook(item: any) {
-    const key = item.isbn || item.id; if (!key) return;
+    const key = item.id || item.isbn; if (!key) return;
     if (typeof sessionStorage !== 'undefined') {
       try { sessionStorage.setItem(`cachedBook_${key}`, JSON.stringify(item)); }
       catch (e) { /* ok — cache is optional */ }

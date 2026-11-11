@@ -362,7 +362,7 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
     expect(index).toContain('http://x/api/v1/sitemap/listings-tw-1.xml');
     res = await call('/api/v1/sitemap/books-tw-1.xml');
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('/tw/book?isbn=9780131103627');
+    expect(await res.text()).toContain(`/tw/book?id=${BOOK}`);
     expect((await call('/api/v1/sitemap/books-tw-2.xml')).status).toBe(404);
     expect((await call('/api/v1/sitemap/books-hk-1.xml')).status).toBe(404);
   });

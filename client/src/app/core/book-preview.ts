@@ -38,9 +38,19 @@ export function navigationWantsBookPreview(router: Router): boolean {
   return hasBookPreviewState(navigation?.extras.state);
 }
 
-/** The route query that addresses a book: its ISBN when it has one, so every
- *  entry point links to the same URL, otherwise its catalogue id. */
-export function bookQueryParams(book: { isbn?: string | null; id?: string | number | null }): Record<string, string | number> {
-  if (book.isbn) return { isbn: book.isbn };
-  return book.id != null && book.id !== '' ? { id: book.id } : {};
+/** The route query that addresses a book: its catalogue id when it has one,
+ *  so a catalogued book has exactly one public URL, otherwise its ISBN
+ *  (for uncatalogued external results) plus existing engine / gid hints. */
+export function bookQueryParams(book: {
+  isbn?: string | null;
+  id?: string | number | null;
+  engine?: string | null;
+  gid?: string | null;
+}): Record<string, string | number> {
+  if (book.id != null && book.id !== '') return { id: book.id };
+  const params: Record<string, string | number> = {};
+  if (book.isbn) params['isbn'] = book.isbn;
+  if (book.engine) params['engine'] = book.engine;
+  if (book.gid) params['gid'] = book.gid;
+  return params;
 }

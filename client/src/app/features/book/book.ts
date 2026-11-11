@@ -387,6 +387,8 @@ export class Book implements OnInit {
   private schoolStateService = inject(SchoolStateService);
 
   private isFirstSchoolEmission = true;
+  private openedWithIsbn = false;
+  private replacingIsbnUrl = false;
 
   private regionLink = inject(RegionLinkService);
   private seo = inject(SeoService);
@@ -473,7 +475,15 @@ export class Book implements OnInit {
     });
 
     this.route.queryParamMap.subscribe(params => {
-      const nextId = params.get('isbn') || params.get('id');
+      if (this.replacingIsbnUrl) {
+        this.replacingIsbnUrl = false;
+        this.bookId = params.get('id') || params.get('isbn');
+        this.engine = parseSearchEngine(params.get('engine'));
+        this.googleId = params.get('gid');
+        return;
+      }
+      this.openedWithIsbn = params.has('isbn');
+      const nextId = params.get('id') || params.get('isbn');
       const pageParam = Math.max(1, Number(params.get('page')) || 1);
       // Lists always start at page 1 on phone, ignoring ?page without rewriting the URL
       this.currentPage = this.isPhone ? 1 : pageParam;
@@ -598,6 +608,20 @@ export class Book implements OnInit {
           this.ga.trackViewBook({ id: data.id ?? this.bookId, isbn: data.isbn13, title: data.title, listingCount: this.totalListings });
         }
         this.describePage();
+        if (this.openedWithIsbn && data.id) {
+          this.bookId = data.id;
+          this.replacingIsbnUrl = true;
+          this.openedWithIsbn = false;
+          const currentParams = this.route.snapshot?.queryParams ?? {};
+          const qp: Record<string, any> = { ...currentParams, id: data.id };
+          delete qp['isbn'];
+          delete qp['engine'];
+          delete qp['gid'];
+          this.router.navigate([], {
+            queryParams: qp,
+            replaceUrl: true,
+          });
+        }
         this.isLoadingListings = false;
         this.isLocalCache = false;
         this.sortListings();
@@ -632,22 +656,23 @@ export class Book implements OnInit {
   /**
    * Title, description, cover and canonical URL for this book.
    *
-   * The canonical is always the ISBN form when the book has one: the same
-   * book is reachable as ?id=, ?isbn= and with an &engine= hint, and only
-   * one of those should be the address search engines keep.
+   * A catalogued book's canonical is its ?id= URL; uncatalogued search
+   * results fall back to ?isbn=.
    */
   private describePage() {
     const book = this.book;
     if (!book?.title) return;
-    const identity = bookQueryParams({ isbn: book.isbn13, id: book.id || this.bookId });
+    const identity = bookQueryParams({ isbn: book.isbn13, id: book.id });
     const canonicalPath = this.router.serializeUrl(
       this.router.createUrlTree(this.regionLink.path(['/book']), { queryParams: identity })
     );
+    const alternateQuery = book.isbn13 ? `isbn=${encodeURIComponent(book.isbn13)}` : null;
     this.seo.setPage({
       title: book.title,
       descriptionKey: book.authors ? 'seo.bookDescription' : 'seo.bookDescriptionNoAuthor',
       descriptionParams: { title: book.title, authors: book.authors || '' },
       canonicalPath,
+      alternateQuery,
       image: book.cover_url ? new BookCoverPipe().transform(book.cover_url, 2) : undefined,
     });
   }

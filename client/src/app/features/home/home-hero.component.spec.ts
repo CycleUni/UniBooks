@@ -71,10 +71,12 @@ describe('HomeHero', () => {
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
-  it('routes a hero cover by isbn, falling back to id', () => {
+  it('routes a hero cover by id, falling back to isbn', () => {
     // No local_cache: the preview request travels as router state, so the
     // href stays the one URL a shared link should have.
     expect(component.heroBookParams({ id: 7, isbn: '978', title: 'x' }))
+      .toEqual({ id: 7 });
+    expect(component.heroBookParams({ id: null, isbn: '978', title: 'x' }))
       .toEqual({ isbn: '978' });
     expect(component.heroBookParams({ id: 7, title: 'x' }))
       .toEqual({ id: 7 });

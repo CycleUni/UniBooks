@@ -16,7 +16,7 @@ import { displayName } from '../services/accounts/users';
  *
  * Links point at the app's own routes on the site origin (lib/origin.ts): account pages
  * unprefixed (/account/...; the app adds the reader's region), region pages
- * prefixed (/<region>/messages?chat=..., /<region>/book?isbn=...).
+ * prefixed (/<region>/messages?chat=..., /<region>/book?id=...).
  */
 
 export interface RenderedEmail {
@@ -237,13 +237,17 @@ async function chatNotification(
 async function waitlist(env: Env, msg: Extract<EmailMessage, { type: 'waitlist_notification' }>): Promise<RenderedEmail | null> {
   const user = await loadUser(env, msg.user_id);
   if (!reachable(user)) return null;
-  const books = msg.books?.length ? msg.books : [{ title: msg.book_title, isbn13: null, region: msg.region }];
+  const books = msg.books?.length ? msg.books : [{ id: msg.book_id, title: msg.book_title, isbn13: null, region: msg.region }];
   const lang = await languageFor(env, user, books[0]?.region || msg.region);
   const base = frontend(env);
   const lines: Line[] = [t(lang, 'email.waitlist.intro'), ''];
   for (const book of books) {
     const region = encodeURIComponent(String(book.region || msg.region || env.DEFAULT_REGION || 'tw').toLowerCase());
-    const url = book.isbn13 ? `${base}/${region}/book?isbn=${encodeURIComponent(book.isbn13)}` : `${base}/${region}`;
+    const url = book.id
+      ? `${base}/${region}/book?id=${encodeURIComponent(book.id)}`
+      : book.isbn13
+        ? `${base}/${region}/book?isbn=${encodeURIComponent(book.isbn13)}`
+        : `${base}/${region}`;
     lines.push({ text: `- ${book.title}: ${url}`, link: url });
   }
   const requestPage = `${base}/account/subscriptions`;

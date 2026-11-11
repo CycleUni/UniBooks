@@ -54,13 +54,13 @@ describe('UiRecentListings', () => {
     expect(listingService.getRecentBooks).toHaveBeenCalled();
   });
 
-  it('links each book by isbn or id, with no internal flag in the href', async () => {
+  it('links each book by id or isbn, with no internal flag in the href', async () => {
     const fixture = await render();
     const hrefs = Array.from(
       (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLAnchorElement>('a.tile-body'),
       a => a.getAttribute('href'),
     );
-    expect(hrefs).toEqual(['/tw/book?isbn=9781449319793', '/tw/book?id=5']);
+    expect(hrefs).toEqual(['/tw/book?id=2', '/tw/book?id=5']);
   });
 
   it('still lets the book page use the preview it primes, through router state', async () => {
@@ -71,10 +71,10 @@ describe('UiRecentListings', () => {
     anchor.click();
     await fixture.whenStable();
 
-    expect(sessionStorage.getItem('cachedBook_9781449319793')).toContain('Python for Data Analysis');
-    expect(router.url).toBe('/tw/book?isbn=9781449319793');
+    expect(sessionStorage.getItem('cachedBook_2')).toContain('Python for Data Analysis');
+    expect(router.url).toBe('/tw/book?id=2');
     expect(hasBookPreviewState(router.lastSuccessfulNavigation()?.extras.state)).toBe(true);
-    sessionStorage.removeItem('cachedBook_9781449319793');
+    sessionStorage.removeItem('cachedBook_2');
   });
   it('keeps the same tiles across change detection, so a failed cover is not re-requested', async () => {
     // gridItems used to build new wrapper objects on every read; *ngFor then

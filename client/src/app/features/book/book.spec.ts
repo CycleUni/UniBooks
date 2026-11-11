@@ -131,6 +131,87 @@ describe('Book page data source footer', () => {
     expect(ga.trackViewBook).not.toHaveBeenCalled();
   });
 
+  describe('URL replacement and canonical for catalogued books', () => {
+    it('replaces ?isbn= URL with ?id= when book is catalogued, dropping engine and gid, without a second request', () => {
+      const router = TestBed.inject(Router);
+      const navigateSpy = vi.spyOn(router, 'navigate');
+      const seoService = TestBed.inject(SeoService);
+      const setPageSpy = vi.spyOn(seoService, 'setPage');
+
+      queryParamMap$.next(convertToParamMap({ isbn: '9786264140720', engine: 'googlebooks', gid: 'vol123' }));
+      getBook.mockReturnValue(of({
+        id: 'uuid-cal-1',
+        isbn13: '9786264140720',
+        title: '微積分',
+        authors: 'Stewart',
+        source: 'google_api',
+        listings: { count: 0, results: [] },
+      }));
+
+      fixture = TestBed.createComponent(Book);
+      fixture.detectChanges();
+
+      expect(getBook).toHaveBeenCalledTimes(1);
+      expect(navigateSpy).toHaveBeenCalledWith([], {
+        queryParams: { id: 'uuid-cal-1' },
+        replaceUrl: true,
+      });
+      expect(setPageSpy).toHaveBeenCalledWith(expect.objectContaining({
+        canonicalPath: '/tw/book?id=uuid-cal-1',
+        alternateQuery: 'isbn=9786264140720',
+      }));
+    });
+
+    it('sets alternateQuery to null when book has no isbn', () => {
+      const seoService = TestBed.inject(SeoService);
+      const setPageSpy = vi.spyOn(seoService, 'setPage');
+
+      queryParamMap$.next(convertToParamMap({ id: 'uuid-no-isbn' }));
+      getBook.mockReturnValue(of({
+        id: 'uuid-no-isbn',
+        isbn13: '',
+        title: 'Rare Book',
+        authors: 'Author',
+        source: 'manual',
+        listings: { count: 0, results: [] },
+      }));
+
+      fixture = TestBed.createComponent(Book);
+      fixture.detectChanges();
+
+      expect(setPageSpy).toHaveBeenCalledWith(expect.objectContaining({
+        canonicalPath: '/tw/book?id=uuid-no-isbn',
+        alternateQuery: null,
+      }));
+    });
+
+    it('does not replace URL when book is uncatalogued (no id)', () => {
+      const router = TestBed.inject(Router);
+      const navigateSpy = vi.spyOn(router, 'navigate');
+      const seoService = TestBed.inject(SeoService);
+      const setPageSpy = vi.spyOn(seoService, 'setPage');
+
+      queryParamMap$.next(convertToParamMap({ isbn: '9786264140720' }));
+      getBook.mockReturnValue(of({
+        id: '',
+        isbn13: '9786264140720',
+        title: '微積分',
+        authors: 'Stewart',
+        source: 'google_api',
+        listings: { count: 0, results: [] },
+      }));
+
+      fixture = TestBed.createComponent(Book);
+      fixture.detectChanges();
+
+      expect(getBook).toHaveBeenCalledTimes(1);
+      expect(navigateSpy).not.toHaveBeenCalled();
+      expect(setPageSpy).toHaveBeenCalledWith(expect.objectContaining({
+        canonicalPath: '/tw/book?isbn=9786264140720',
+      }));
+    });
+  });
+
   describe('opened from a search result', () => {
     const openFromSearch = (stashed: Record<string, unknown>) => {
       sessionStorage.setItem('cachedBook_9786264140720', JSON.stringify({
@@ -190,7 +271,7 @@ describe('Book page data source footer', () => {
 
       component.onLoadMore();
 
-      expect(getBook).toHaveBeenCalledWith('9786264140720', 2, '', undefined, null);
+      expect(getBook).toHaveBeenCalledWith('b1', 2, '', undefined, null);
       expect(component.listings.length).toBe(2);
       expect(component.hasMoreListings).toBe(false);
     });

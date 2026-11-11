@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  BookFacts,
   BookMeta,
   BookPageDeps,
   CacheLike,
@@ -61,10 +62,10 @@ describe('book link-preview page', () => {
       expect(regionFrom(['tw'])).toBeNull();
     });
 
-    it('identifies a book by a well-formed isbn, else a UUID id', () => {
+    it('identifies a book by a well-formed UUID id, else a well-formed isbn', () => {
       expect(bookIdentity(new URL(`${ORIGIN}/tw/book?id=${BOOK_ID}&isbn=9781449319793`))).toEqual({
-        kind: 'isbn',
-        value: '9781449319793',
+        kind: 'id',
+        value: BOOK_ID,
       });
       expect(bookIdentity(new URL(`${ORIGIN}/tw/book?isbn=059652068x`))).toEqual({
         kind: 'isbn',
@@ -125,20 +126,38 @@ describe('book link-preview page', () => {
       );
     });
 
-    it('points the canonical at the isbn form, falling back to id', () => {
+    it('points the canonical at the id form, falling back to isbn', () => {
       const book = { id: BOOK_ID, isbn13: '9781449319793', title: 'T', authors: '', cover_url: '' };
-      expect(metaFor(book, ORIGIN, 'tw', SITE).canonical).toBe(`${ORIGIN}/tw/book?isbn=9781449319793`);
-      expect(metaFor({ ...book, isbn13: '' }, ORIGIN, 'tw', SITE).canonical).toBe(`${ORIGIN}/tw/book?id=${BOOK_ID}`);
+      expect(metaFor(book, ORIGIN, 'tw', SITE).canonical).toBe(`${ORIGIN}/tw/book?id=${BOOK_ID}`);
+      expect(metaFor({ ...book, id: '' }, ORIGIN, 'tw', SITE).canonical).toBe(`${ORIGIN}/tw/book?isbn=9781449319793`);
       expect(metaFor(book, ORIGIN, 'tw', SITE).title).toBe('T · UniBooks');
     });
 
-    it('names every active region copy as an hreflang alternate, with the default region as x-default', () => {
+    it('names every active region copy as an hreflang alternate, with other regions using isbn', () => {
       const book = { id: BOOK_ID, isbn13: '9781449319793', title: 'T', authors: '', cover_url: '' };
-      const tags = headTags(metaFor(book, ORIGIN, 'hk', SITE));
-      expect(tags).toContain(`<link rel="alternate" hreflang="zh-TW" href="${ORIGIN}/tw/book?isbn=9781449319793">`);
-      expect(tags).toContain(`<link rel="alternate" hreflang="zh-HK" href="${ORIGIN}/hk/book?isbn=9781449319793">`);
-      expect(tags).toContain(`<link rel="alternate" hreflang="x-default" href="${ORIGIN}/tw/book?isbn=9781449319793">`);
-      expect(tags).not.toContain('hreflang="en"');
+      const tagsHk = headTags(metaFor(book, ORIGIN, 'hk', SITE));
+      expect(tagsHk).toContain(`<link rel="alternate" hreflang="zh-HK" href="${ORIGIN}/hk/book?id=${BOOK_ID}">`);
+      expect(tagsHk).toContain(`<link rel="alternate" hreflang="zh-TW" href="${ORIGIN}/tw/book?isbn=9781449319793">`);
+      expect(tagsHk).toContain(`<link rel="alternate" hreflang="x-default" href="${ORIGIN}/tw/book?isbn=9781449319793">`);
+      expect(tagsHk).not.toContain('hreflang="en"');
+
+      const tagsTw = headTags(metaFor(book, ORIGIN, 'tw', SITE));
+      expect(tagsTw).toContain(`<link rel="alternate" hreflang="zh-TW" href="${ORIGIN}/tw/book?id=${BOOK_ID}">`);
+      expect(tagsTw).toContain(`<link rel="alternate" hreflang="zh-HK" href="${ORIGIN}/hk/book?isbn=9781449319793">`);
+      expect(tagsTw).toContain(`<link rel="alternate" hreflang="x-default" href="${ORIGIN}/tw/book?id=${BOOK_ID}">`);
+    });
+
+    it('emits no cross-region alternates for an ISBN-less book', () => {
+      const book = { id: BOOK_ID, isbn13: '', title: 'T', authors: '', cover_url: '' };
+      const tagsTw = headTags(metaFor(book, ORIGIN, 'tw', SITE));
+      expect(tagsTw).toContain(`<link rel="alternate" hreflang="zh-TW" href="${ORIGIN}/tw/book?id=${BOOK_ID}">`);
+      expect(tagsTw).toContain(`<link rel="alternate" hreflang="x-default" href="${ORIGIN}/tw/book?id=${BOOK_ID}">`);
+      expect(tagsTw).not.toContain('hreflang="zh-HK"');
+
+      const tagsHk = headTags(metaFor(book, ORIGIN, 'hk', SITE));
+      expect(tagsHk).toContain(`<link rel="alternate" hreflang="zh-HK" href="${ORIGIN}/hk/book?id=${BOOK_ID}">`);
+      expect(tagsHk).not.toContain('hreflang="zh-TW"');
+      expect(tagsHk).not.toContain('hreflang="x-default"');
     });
 
     it('uses the cover proxy at a size preview cards can use', () => {
@@ -205,6 +224,7 @@ describe('book link-preview page', () => {
         url?: string;
         api?: (url: string, init: RequestInit) => Promise<Response>;
         page?: () => Response;
+        preloadedBook?: BookFacts | null;
       } = {},
     ) {
       const cache = new MemoryCache();
@@ -235,6 +255,7 @@ describe('book link-preview page', () => {
             waitUntil: (p) => {
               pending.push(p);
             },
+            preloadedBook: options.preloadedBook,
           },
           deps,
         );
@@ -322,6 +343,34 @@ describe('book link-preview page', () => {
       t.cache.store.set(key, 'not json');
       expect(await (await t.run()).text()).toBe('injected');
       expect(t.api).toHaveBeenCalledTimes(1);
+    });
+
+    it('reuses preloadedBook without calling the API', async () => {
+      const bookFacts: BookFacts = {
+        id: BOOK_ID,
+        isbn13: '9781449319793',
+        title: 'Python for Data Analysis',
+        authors: 'Wes McKinney',
+        cover_url: '',
+      };
+      const t = setup({ url: `${ORIGIN}/tw/book?id=${BOOK_ID}`, preloadedBook: bookFacts });
+      const response = await t.run();
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe('injected');
+      expect(t.api).not.toHaveBeenCalled();
+      expect(t.injected[0].meta.canonical).toBe(`${ORIGIN}/tw/book?id=${BOOK_ID}`);
+
+      // When preloadedBook is null (missing), preview agents get 404 and browsers get shell
+      const missingCrawler = setup({ url: `${ORIGIN}/tw/book?id=${BOOK_ID}`, preloadedBook: null });
+      const crawlerRes = await missingCrawler.run();
+      expect(crawlerRes.status).toBe(404);
+      expect(missingCrawler.api).not.toHaveBeenCalled();
+
+      const missingBrowser = setup({ url: `${ORIGIN}/tw/book?id=${BOOK_ID}`, preloadedBook: null, ua: CHROME });
+      const browserRes = await missingBrowser.run();
+      expect(browserRes.status).toBe(200);
+      expect(await browserRes.text()).toBe(SHELL);
+      expect(missingBrowser.api).not.toHaveBeenCalled();
     });
   });
 

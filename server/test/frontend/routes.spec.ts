@@ -13,8 +13,8 @@ const CRAWLER = 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_u
 const BROWSER = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0 Safari/537.36';
 
 const worker = (exports as unknown as { default: { fetch(r: Request): Promise<Response> } }).default;
-const get = (path: string, ua = BROWSER) =>
-  worker.fetch(new Request(`${ORIGIN}${path}`, { headers: { 'User-Agent': ua, Accept: 'text/html' } }));
+const get = (path: string, ua = BROWSER, redirect: 'follow' | 'error' | 'manual' = 'manual') =>
+  worker.fetch(new Request(`${ORIGIN}${path}`, { headers: { 'User-Agent': ua, Accept: 'text/html' }, redirect }));
 
 describe('frontend routes in the Worker', () => {
   beforeAll(async () => {
@@ -22,9 +22,14 @@ describe('frontend routes in the Worker', () => {
     // columns other modules add to schema.ts before migrations are regenerated.
     await env.DB.batch([
       env.DB.prepare("INSERT OR IGNORE INTO currencies (code, symbol, decimal_places) VALUES ('TWD', 'NT$', 0)"),
+      env.DB.prepare("INSERT OR IGNORE INTO currencies (code, symbol, decimal_places) VALUES ('HKD', 'HK$', 2)"),
       env.DB.prepare("INSERT OR IGNORE INTO languages (code, name) VALUES ('zh-TW', 'Chinese (Taiwan)')"),
+      env.DB.prepare("INSERT OR IGNORE INTO languages (code, name) VALUES ('zh-HK', 'Chinese (Hong Kong)')"),
       env.DB.prepare(
         "INSERT OR IGNORE INTO regions (code, name, default_currency, default_language, timezone, created_at) VALUES ('TW', 'Taiwan', 'TWD', 'zh-TW', 'Asia/Taipei', ?)",
+      ).bind(new Date().toISOString()),
+      env.DB.prepare(
+        "INSERT OR IGNORE INTO regions (code, name, default_currency, default_language, timezone, created_at) VALUES ('HK', 'Hong Kong', 'HKD', 'zh-HK', 'Asia/Hong_Kong', ?)",
       ).bind(new Date().toISOString()),
     ]);
     invalidateRegionCache();
@@ -42,6 +47,69 @@ describe('frontend routes in the Worker', () => {
     expect(res.headers.get('content-type')).toContain('text/html');
     const html = await res.text();
     expect(html).toContain('lang="zh-TW"');
+  });
+
+  it('redirects 301 to ?id= for a book that is in the catalogue, keeping only id', async () => {
+    const bookId = '12345678-1234-4234-8234-123456789abc';
+    const isbn = '9780131103627';
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO books (id, region_code, isbn13, title, source, created_at) VALUES (?, 'TW', ?, 'Calculus', 'manual', ?)",
+    )
+      .bind(bookId, isbn, new Date().toISOString())
+      .run();
+
+    const res = await get(`/tw/book?isbn=${isbn}`);
+    expect(res.status).toBe(301);
+    expect(res.headers.get('location')).toBe(`${ORIGIN}/tw/book?id=${bookId}`);
+
+    const resWithHints = await get(`/tw/book?isbn=${isbn}&engine=googlebooks&gid=xyz`);
+    expect(resWithHints.status).toBe(301);
+    expect(resWithHints.headers.get('location')).toBe(`${ORIGIN}/tw/book?id=${bookId}`);
+
+    const directId = await get(`/tw/book?id=${bookId}`);
+    expect(directId.status).toBe(200);
+  });
+
+  it('redirects 302 to ?isbn= when requesting a wrong-region id that has an ISBN', async () => {
+    const hkBookId = '87654321-4321-4234-8234-123456789abc';
+    const isbn = '9780131103627';
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO books (id, region_code, isbn13, title, source, created_at) VALUES (?, 'HK', ?, 'Calculus HK', 'manual', ?)",
+    )
+      .bind(hkBookId, isbn, new Date().toISOString())
+      .run();
+
+    const res = await get(`/tw/book?id=${hkBookId}`);
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`${ORIGIN}/tw/book?isbn=${isbn}`);
+  });
+
+  it('serves the app shell without redirect when requesting a wrong-region id that has no ISBN', async () => {
+    const hkNoIsbnId = '87654321-0000-4000-8000-123456789def';
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO books (id, region_code, isbn13, title, source, created_at) VALUES (?, 'HK', NULL, 'Rare Manuscript', 'manual', ?)",
+    )
+      .bind(hkNoIsbnId, new Date().toISOString())
+      .run();
+
+    const res = await get(`/tw/book?id=${hkNoIsbnId}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('location')).toBeNull();
+    const html = await res.text();
+    expect(html).toContain('lang="zh-TW"');
+  });
+
+  it('serves right-region id without redirect and injects preview meta for crawlers', async () => {
+    const twBookId = '12345678-1234-4234-8234-123456789abc';
+    const res = await get(`/tw/book?id=${twBookId}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('location')).toBeNull();
+
+    const crawlerRes = await get(`/tw/book?id=${twBookId}`, CRAWLER);
+    expect(crawlerRes.status).toBe(200);
+    const html = await crawlerRes.text();
+    expect(html).toContain('og:type" content="book"');
+    expect(html).toContain('og:title" content="Calculus · UniBooks"');
   });
 
   it('leaves /<x>/book to the static app when <x> is not an active region', async () => {

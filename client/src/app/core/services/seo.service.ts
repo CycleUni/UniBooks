@@ -18,8 +18,16 @@ export interface PageSeo {
   descriptionKey?: string;
   descriptionParams?: Record<string, string | number>;
   /** Region-prefixed path plus the query that identifies the page, e.g.
-   *  `/tw/book?isbn=9781449319793`. Defaults to the current path with no query. */
+   *  `/tw/book?id=b1`. Defaults to the current path with no query. */
   canonicalPath?: string;
+  /**
+   * Query string for other regions' hreflang alternates (e.g. `isbn=978...`).
+   * When `null`, indicates this page has no cross-region alternates (e.g. an
+   * ISBN-less book), so other regions are omitted and x-default is emitted only
+   * if this region is the default. When `undefined`, defaults to copying the
+   * canonical URL's query across all regions as before.
+   */
+  alternateQuery?: string | null;
   /** Absolute or root-relative image URL for og:image. Defaults to the
    *  site's 1200x630 card. */
   image?: string;
@@ -106,7 +114,7 @@ export class SeoService {
     this.title.setTitle(fullTitle);
     this.meta.updateTag({ name: 'description', content: description });
 
-    this.setCanonical(canonical);
+    this.setCanonical(canonical, seo.alternateQuery);
 
     this.meta.updateTag({ property: 'og:site_name', content: SITE_NAME });
     this.meta.updateTag({ property: 'og:type', content: 'website' });
@@ -137,7 +145,7 @@ export class SeoService {
     }
   }
 
-  private setCanonical(href: string): void {
+  private setCanonical(href: string, alternateQuery?: string | null): void {
     const head = this.document.head;
     if (!head) return;
     let link = head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
@@ -147,7 +155,7 @@ export class SeoService {
       head.appendChild(link);
     }
     link.setAttribute('href', href);
-    this.setAlternates(new URL(href, this.document.location?.href || 'http://localhost/'));
+    this.setAlternates(new URL(href, this.document.location?.href || 'http://localhost/'), alternateQuery);
   }
 
   /**
@@ -155,7 +163,7 @@ export class SeoService {
    * engine can send each visitor to the one in their language. x-default is
    * the default region's copy, so every link in the set points both ways.
    */
-  private setAlternates(url: URL): void {
+  private setAlternates(url: URL, alternateQuery?: string | null): void {
     const head = this.document.head;
     head.querySelectorAll('link[rel="alternate"][hreflang]').forEach((el) => el.remove());
 
@@ -164,15 +172,41 @@ export class SeoService {
     const page = rest.length && rest.join('/') ? `/${rest.join('/')}` : '';
     // The region home keeps its slash: Pages redirects /tw to /tw/.
     const hrefFor = (region: string) => `${url.origin}/${region}${page || '/'}`;
-    const alternates = [
-      ...Object.entries(REGION_TO_LANG).map(([region, lang]) => ({ hreflang: lang, href: hrefFor(region) })),
-      { hreflang: 'x-default', href: hrefFor(DEFAULT_REGION) },
-    ];
+
+    const alternates: Array<{ hreflang: string; href: string }> = [];
+
+    if (alternateQuery !== undefined) {
+      if (alternateQuery) {
+        const q = alternateQuery.startsWith('?') ? alternateQuery : `?${alternateQuery}`;
+        for (const [region, lang] of Object.entries(REGION_TO_LANG)) {
+          const search = region === first ? url.search : q;
+          alternates.push({ hreflang: lang, href: hrefFor(region) + search });
+        }
+        const defaultSearch = DEFAULT_REGION === first ? url.search : q;
+        alternates.push({ hreflang: 'x-default', href: hrefFor(DEFAULT_REGION) + defaultSearch });
+      } else {
+        // null or '': emit NO alternates for other regions (only the self-referencing one
+        // and no x-default unless this region is the default)
+        const currentLang = REGION_TO_LANG[first];
+        if (currentLang) {
+          alternates.push({ hreflang: currentLang, href: hrefFor(first) + url.search });
+        }
+        if (DEFAULT_REGION === first) {
+          alternates.push({ hreflang: 'x-default', href: hrefFor(DEFAULT_REGION) + url.search });
+        }
+      }
+    } else {
+      for (const [region, lang] of Object.entries(REGION_TO_LANG)) {
+        alternates.push({ hreflang: lang, href: hrefFor(region) + url.search });
+      }
+      alternates.push({ hreflang: 'x-default', href: hrefFor(DEFAULT_REGION) + url.search });
+    }
+
     for (const alt of alternates) {
       const el = this.document.createElement('link');
       el.setAttribute('rel', 'alternate');
       el.setAttribute('hreflang', alt.hreflang);
-      el.setAttribute('href', alt.href + url.search);
+      el.setAttribute('href', alt.href);
       head.appendChild(el);
     }
   }
