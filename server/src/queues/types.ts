@@ -20,7 +20,7 @@ export type EmailMessage =
       name: string;
       /** Language the request was made in. */
       lang: string;
-      /** Frontend path + query, e.g. "/verify?token=...&type=register"; the site origin is prepended. */
+      /** Frontend path + query, e.g. "/verify?id=...&token=...&type=register"; the site origin is prepended. */
       path: string;
     }
   | {

@@ -47,7 +47,7 @@ describe('VerifyEmail (account activation)', () => {
 
     c.password = 'Correct-Pass-123!';
     c.submitVerify();
-    expect(auth.verifyRegistration).toHaveBeenCalledWith('mail-token', 'Correct-Pass-123!');
+    expect(auth.verifyRegistration).toHaveBeenCalledWith('mail-token', 'Correct-Pass-123!', undefined);
     expect(c.status).toBe('success');
   });
 
@@ -72,7 +72,58 @@ describe('VerifyEmail (account activation)', () => {
   it('still sends a campus-email link right away', () => {
     params.next({ token: 'edu-token' });
     create();
-    expect(auth.verifyEmail).toHaveBeenCalledWith('edu-token');
+    expect(auth.verifyEmail).toHaveBeenCalledWith('edu-token', undefined);
+  });
+
+  it('sends id when present in query params for edu verification', () => {
+    params.next({ token: 'edu-token', id: 'uuid-123' });
+    create();
+    expect(auth.verifyEmail).toHaveBeenCalledWith('edu-token', 'uuid-123');
+  });
+
+  it('sends id when present in query params for registration verification', () => {
+    params.next({ token: 'reg-token', id: 'uuid-456', type: 'register' });
+    const c = create();
+    c.password = 'pass';
+    c.submitVerify();
+    expect(auth.verifyRegistration).toHaveBeenCalledWith('reg-token', 'pass', 'uuid-456');
+  });
+
+  it('renders already_verified state on acct.verifyAlready and navigates to login', () => {
+    auth.verifyEmail.mockReturnValueOnce(of({ code: 'acct.verifyAlready' }));
+    params.next({ token: 'edu-token', id: 'uuid-123' });
+    const c = create();
+    expect(c.status).toBe('already_verified');
+    const navigate = TestBed.inject(Router).navigate as ReturnType<typeof vi.fn>;
+    navigate.mockClear();
+    c.goNext();
+    expect(navigate).toHaveBeenCalledWith(['/login']);
+  });
+
+  it('renders already_verified state on auth.alreadyActivated and navigates to login', () => {
+    auth.verifyRegistration.mockReturnValueOnce(of({ code: 'auth.alreadyActivated' }));
+    params.next({ token: 'reg-token', id: 'uuid-456', type: 'register' });
+    const c = create();
+    c.password = 'pass';
+    c.submitVerify();
+    expect(c.status).toBe('already_verified');
+    const navigate = TestBed.inject(Router).navigate as ReturnType<typeof vi.fn>;
+    navigate.mockClear();
+    c.goNext();
+    expect(navigate).toHaveBeenCalledWith(['/login']);
+  });
+
+  it('navigates to / on normal register success', () => {
+    auth.verifyRegistration.mockReturnValueOnce(of({ code: 'auth.loginSuccess' }));
+    params.next({ token: 'reg-token', id: 'uuid-456', type: 'register' });
+    const c = create();
+    c.password = 'pass';
+    c.submitVerify();
+    expect(c.status).toBe('success');
+    const navigate = TestBed.inject(Router).navigate as ReturnType<typeof vi.fn>;
+    navigate.mockClear();
+    c.goNext();
+    expect(navigate).toHaveBeenCalledWith(['/']);
   });
 
   it('moves on once: tapping the button cancels the automatic move', () => {

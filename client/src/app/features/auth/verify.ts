@@ -48,6 +48,14 @@ import { clearSensitiveParams } from '../../core/sensitive-url';
             <ui-button  class="mt-5" (onClick)="goNext()">{{ (type === 'register' ? 'verify.goHome' : 'verify.goToLogin') | t }}</ui-button>
           </ng-container>
 
+          <ng-container *ngIf="status === 'already_verified'">
+            <div class="success-icon"><ui-success-check></ui-success-check></div>
+            <h2>{{ (type === 'register' ? 'verify.alreadyTitleRegister' : 'verify.alreadyTitleEdu') | t }}</h2>
+            <p>{{ (type === 'register' ? 'verify.alreadyBodyRegister' : 'verify.alreadyBodyEdu') | t }}</p>
+            <p  class="mt-4" style="font-size: var(--text-base);">{{ 'verify.redirecting' | t }}</p>
+            <ui-button  class="mt-5" (onClick)="goNext()">{{ 'verify.goToLogin' | t }}</ui-button>
+          </ng-container>
+
           <ng-container *ngIf="status === 'error'">
             <h2>{{ 'verify.errorTitle' | t }}</h2>
             <p class="error-msg">{{ errorMessage }}</p>
@@ -108,9 +116,10 @@ import { clearSensitiveParams } from '../../core/sensitive-url';
   `]
 })
 export class VerifyEmail implements OnInit {
-  status: 'idle' | 'loading' | 'success' | 'error' = 'idle';
+  status: 'idle' | 'loading' | 'success' | 'already_verified' | 'error' = 'idle';
   errorMessage = '';
   inputToken = '';
+  id?: string;
   /** The token arrived in the link, so the visitor is not asked to paste it. */
   tokenFromLink = false;
   password = '';
@@ -136,6 +145,10 @@ export class VerifyEmail implements OnInit {
     this.route.queryParams.subscribe(params => {
       this.type = params['type'] === 'register' ? 'register' : 'edu';
       const token = params['token'];
+      const id = params['id'];
+      if (id) {
+        this.id = id;
+      }
       if (token) {
         this.inputToken = token;
         this.tokenFromLink = true;
@@ -159,12 +172,16 @@ export class VerifyEmail implements OnInit {
     this.cdr.detectChanges();
 
     const request$ = this.type === 'register'
-      ? this.auth.verifyRegistration(this.inputToken, this.password)
-      : this.auth.verifyEmail(this.inputToken);
+      ? this.auth.verifyRegistration(this.inputToken, this.password, this.id)
+      : this.auth.verifyEmail(this.inputToken, this.id);
 
     request$.subscribe({
-      next: () => {
-        this.status = 'success';
+      next: (res) => {
+        if (res?.code === 'auth.alreadyActivated' || res?.code === 'acct.verifyAlready') {
+          this.status = 'already_verified';
+        } else {
+          this.status = 'success';
+        }
         this.cdr.detectChanges();
         this.nextTimer = setTimeout(() => this.goNext(), 3000);
       },
@@ -189,6 +206,7 @@ export class VerifyEmail implements OnInit {
     this.status = 'idle';
     this.errorMessage = '';
     this.inputToken = '';
+    this.id = undefined;
     this.tokenFromLink = false;
     this.password = '';
     this.passwordError = '';
@@ -200,6 +218,8 @@ export class VerifyEmail implements OnInit {
     // Registration verification already logs the user in (see
     // AuthStore.verifyRegistration) — send them into the app rather than
     // back to a login form they no longer need.
-    this.router.navigate(this.regionLink.path([this.type === 'register' ? '/' : '/login']));
+    // For already_verified, no session was started, so send them to /login.
+    const path = this.type === 'register' && this.status !== 'already_verified' ? '/' : '/login';
+    this.router.navigate(this.regionLink.path([path]));
   }
 }

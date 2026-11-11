@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { createDb, oneTimeTokens, users, type Database } from '../../db';
 import { generateSecureToken, generateSHA256 } from '../../lib/crypto';
@@ -27,6 +27,7 @@ export interface OneTimeRecord {
   id: string;
   userId: string;
   payload: Record<string, string>;
+  used: boolean;
 }
 
 /** Unused, unexpired links of `userId` for `purpose`. */
@@ -45,13 +46,14 @@ export async function issue(
   userId: string,
   ttlSeconds: number,
   payload: Record<string, string> = {},
-): Promise<string> {
+): Promise<{ token: string; id: string }> {
   const token = generateSecureToken(32);
+  const id = crypto.randomUUID();
   const now = new Date();
   await createDb(env.DB)
     .insert(oneTimeTokens)
     .values({
-      id: crypto.randomUUID(),
+      id,
       tokenHash: await generateSHA256(token),
       userId,
       purpose,
@@ -60,54 +62,103 @@ export async function issue(
       createdAt: now.toISOString(),
     })
     .run();
-  return token;
+  return { token, id };
 }
 
-/** The live, unused record for this token, or null. Does not consume it. */
-export async function read(env: Env, purpose: string, token: unknown): Promise<OneTimeRecord | null> {
+/** The record for this token (and optional id), or null. Does not consume it. */
+export async function read(env: Env, purpose: string, token: unknown, id?: unknown): Promise<OneTimeRecord | null> {
   if (typeof token !== 'string' || !token || token.length > 256) return null;
   const tokenHash = await generateSHA256(token);
-  const [row] = await createDb(env.DB)
-    .select({ id: oneTimeTokens.id, userId: oneTimeTokens.userId, payload: oneTimeTokens.payload })
-    .from(oneTimeTokens)
-    .where(
-      and(
-        eq(oneTimeTokens.tokenHash, tokenHash),
-        eq(oneTimeTokens.purpose, purpose),
-        isNull(oneTimeTokens.usedAt),
-        gt(oneTimeTokens.expiresAt, new Date().toISOString()),
-      ),
-    )
-    .limit(1);
+  const db = createDb(env.DB);
+
+  const validId = typeof id === 'string' && id.trim().length > 0 ? id.trim() : null;
+
+  const [row] = await (validId
+    ? db
+        .select({
+          id: oneTimeTokens.id,
+          tokenHash: oneTimeTokens.tokenHash,
+          userId: oneTimeTokens.userId,
+          purpose: oneTimeTokens.purpose,
+          payload: oneTimeTokens.payload,
+          expiresAt: oneTimeTokens.expiresAt,
+          usedAt: oneTimeTokens.usedAt,
+        })
+        .from(oneTimeTokens)
+        .where(eq(oneTimeTokens.id, validId))
+        .limit(1)
+    : db
+        .select({
+          id: oneTimeTokens.id,
+          tokenHash: oneTimeTokens.tokenHash,
+          userId: oneTimeTokens.userId,
+          purpose: oneTimeTokens.purpose,
+          payload: oneTimeTokens.payload,
+          expiresAt: oneTimeTokens.expiresAt,
+          usedAt: oneTimeTokens.usedAt,
+        })
+        .from(oneTimeTokens)
+        .where(eq(oneTimeTokens.tokenHash, tokenHash))
+        .limit(1));
+
   if (!row) return null;
+  if (row.purpose !== purpose) return null;
+  if (row.tokenHash !== tokenHash) return null;
+
+  const isUsed = row.usedAt !== null;
+  if (isUsed) {
+    if (purpose !== REGISTER && purpose !== EDU_VERIFY) {
+      return null;
+    }
+  } else {
+    if (row.expiresAt <= new Date().toISOString()) {
+      return null;
+    }
+  }
+
   let payload: Record<string, string> = {};
   try {
     payload = row.payload ? JSON.parse(row.payload) : {};
   } catch {
     payload = {};
   }
-  return { id: row.id, userId: row.userId, payload };
+  return { id: row.id, userId: row.userId, payload, used: isUsed };
 }
+
+/**
+ * A used link keeps its row (so opening it again can say "already verified")
+ * but not the password hash a registration link carries.
+ */
+const withoutPasswordHash = sql`CASE WHEN json_valid(${oneTimeTokens.payload}) THEN json_remove(${oneTimeTokens.payload}, '$.password_hash') ELSE ${oneTimeTokens.payload} END`;
 
 /** Mark the record used. False when someone else already did (a concurrent use). */
 export async function consume(env: Env, id: string): Promise<boolean> {
   const res = await createDb(env.DB)
     .update(oneTimeTokens)
-    .set({ usedAt: new Date().toISOString() })
+    .set({ usedAt: new Date().toISOString(), payload: withoutPasswordHash })
     .where(and(eq(oneTimeTokens.id, id), isNull(oneTimeTokens.usedAt)))
     .run();
   return (res.meta.changes ?? 0) === 1;
 }
 
-/** Undo a consume whose follow-up failed, so the visitor can open the same link again. */
-export async function unconsume(env: Env, id: string): Promise<void> {
-  await createDb(env.DB).update(oneTimeTokens).set({ usedAt: null }).where(eq(oneTimeTokens.id, id)).run();
+/**
+ * Undo a consume whose follow-up failed, so the visitor can open the same
+ * link again. `payload` puts back what consume blanked: without it a
+ * restored registration link would no longer ask for its password.
+ */
+export async function unconsume(env: Env, id: string, payload?: Record<string, string>): Promise<void> {
+  await createDb(env.DB)
+    .update(oneTimeTokens)
+    .set(payload ? { usedAt: null, payload: JSON.stringify(payload) } : { usedAt: null })
+    .where(eq(oneTimeTokens.id, id))
+    .run();
 }
 
 /** One outstanding email change per user: a new request supersedes the previous link. */
 export async function issueEmailChange(env: Env, userId: string, email: string): Promise<string> {
   await cancelEmailChange(env, userId);
-  return issue(env, EMAIL_CHANGE, userId, EMAIL_CHANGE_TTL, { email });
+  const { token } = await issue(env, EMAIL_CHANGE, userId, EMAIL_CHANGE_TTL, { email });
+  return token;
 }
 
 /** The address this user asked to move to but has not confirmed, or null. */
@@ -136,9 +187,23 @@ export async function cancelEmailChange(env: Env, userId: string): Promise<void>
 
 /** Housekeeping for the cleanup cron: expired links and links already used. */
 export async function purgeOneTimeTokens(env: Env): Promise<number> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const retainCutoff = new Date(now.getTime() - 30 * 86_400_000).toISOString();
+
   const res = await createDb(env.DB)
     .delete(oneTimeTokens)
-    .where(or(lte(oneTimeTokens.expiresAt, new Date().toISOString()), isNotNull(oneTimeTokens.usedAt)))
+    .where(
+      or(
+        and(isNull(oneTimeTokens.usedAt), lte(oneTimeTokens.expiresAt, nowIso)),
+        and(isNotNull(oneTimeTokens.usedAt), notInArray(oneTimeTokens.purpose, [REGISTER, EDU_VERIFY])),
+        and(
+          isNotNull(oneTimeTokens.usedAt),
+          inArray(oneTimeTokens.purpose, [REGISTER, EDU_VERIFY]),
+          lte(oneTimeTokens.expiresAt, retainCutoff),
+        ),
+      ),
+    )
     .run();
   return res.meta.changes ?? 0;
 }
@@ -202,7 +267,7 @@ export async function isPendingRegistration(
 export async function voidRegistrationLinks(env: Env, userId: string): Promise<void> {
   await createDb(env.DB)
     .update(oneTimeTokens)
-    .set({ usedAt: new Date().toISOString() })
+    .set({ usedAt: new Date().toISOString(), payload: withoutPasswordHash })
     .where(and(eq(oneTimeTokens.userId, userId), eq(oneTimeTokens.purpose, REGISTER), isNull(oneTimeTokens.usedAt)))
     .run();
 }

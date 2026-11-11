@@ -54,16 +54,17 @@ describe('register and activate', () => {
     expect(await blocked.json()).toEqual({ error: { code: 'auth.errAccountNotActivated' } });
 
     const row = await userRow('pending@example.com');
-    const token = await ott.issue(env, ott.REGISTER, String(row!.id), ott.REGISTER_TTL);
-    const ok = await call('/api/v1/auth/verify-registration', { body: { token } });
+    const { token, id: tokenId } = await ott.issue(env, ott.REGISTER, String(row!.id), ott.REGISTER_TTL);
+    const ok = await call('/api/v1/auth/verify-registration', { body: { token, id: tokenId } });
     expect(ok.status).toBe(200);
     const pair = sessionOf(ok);
     expect(pair.access).toBeTruthy();
     expect(pair.refresh).toBeTruthy();
 
-    const again = await call('/api/v1/auth/verify-registration', { body: { token } });
-    expect(again.status).toBe(400);
-    expect(await again.json()).toEqual({ error: { code: 'auth.errInvalidToken' } });
+    const again = await call('/api/v1/auth/verify-registration', { body: { token, id: tokenId } });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ code: 'auth.alreadyActivated' });
+    expect(again.headers.get('set-cookie')).toBeNull();
     expect((await call('/api/v1/auth/verify-registration', { body: {} })).status).toBe(400);
   });
 });
@@ -81,7 +82,9 @@ describe('pre-registration squatting (security)', () => {
 
     // Following a registration link activates with *that* link's password only.
     const row = await userRow(email);
-    const token = await ott.issue(env, ott.REGISTER, String(row!.id), ott.REGISTER_TTL, { password_hash: await hashPassword(PASSWORD) });
+    const { token } = await ott.issue(env, ott.REGISTER, String(row!.id), ott.REGISTER_TTL, {
+      password_hash: await hashPassword(PASSWORD),
+    });
     expect((await call('/api/v1/auth/verify-registration', { body: { token, password: PASSWORD } })).status).toBe(200);
     expect((await call('/api/v1/auth/login', { body: { email, password: 'Attacker-Pass-123!' } })).status).toBe(401);
     expect((await call('/api/v1/auth/login', { body: { email, password: PASSWORD } })).status).toBe(200);
@@ -98,7 +101,7 @@ describe('activation needs the registration password (security)', () => {
     await call('/api/v1/auth/register', { body: { email, password: PASSWORD } });
     const row = await userRow(email);
     // The link a squatter's registration mails: it carries the squatter's password.
-    const token = await ott.issue(env, ott.REGISTER, String(row!.id), ott.REGISTER_TTL, {
+    const { token } = await ott.issue(env, ott.REGISTER, String(row!.id), ott.REGISTER_TTL, {
       password_hash: await hashPassword('Attacker-Pass-123!'),
     });
 
@@ -288,7 +291,7 @@ describe('passwords', () => {
     expect(send).toHaveBeenCalledTimes(1);
     send.mockRestore();
 
-    const token = await ott.issue(env, ott.PASSWORD_RESET, id, ott.PASSWORD_RESET_TTL);
+    const { token } = await ott.issue(env, ott.PASSWORD_RESET, id, ott.PASSWORD_RESET_TTL);
     const ok = await call('/api/v1/auth/password/reset/confirm', { body: { token, new_password: 'Brand-New-Pass-42' } });
     expect(ok.status).toBe(200);
     await login('google-reset@example.com', 'Brand-New-Pass-42');
@@ -323,7 +326,7 @@ describe('passwords', () => {
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ code: 'acct.passwordResetSent' });
     }
-    const token = await ott.issue(env, ott.PASSWORD_RESET, id, ott.PASSWORD_RESET_TTL);
+    const { token } = await ott.issue(env, ott.PASSWORD_RESET, id, ott.PASSWORD_RESET_TTL);
     const weak = await call('/api/v1/auth/password/reset/confirm', { body: { token, new_password: 'short' } });
     expect(weak.status).toBe(400);
     expect(((await weak.json()) as any).error.fields.new_password).toContain('acct.errPasswordTooShort');
@@ -392,10 +395,12 @@ describe('campus email verification', () => {
   it('verifies through the link once, and an address stays with one account', async () => {
     const id = await createUser('verify-flow@example.com');
     const { access } = await login('verify-flow@example.com');
-    const token = await ott.issue(env, ott.EDU_VERIFY, id, ott.EDU_VERIFY_TTL, { edu_email: 'r1@ntu.edu.tw' });
-    const ok = await call('/api/v1/auth/verify', { body: { token } });
+    const { token, id: tokenId } = await ott.issue(env, ott.EDU_VERIFY, id, ott.EDU_VERIFY_TTL, { edu_email: 'r1@ntu.edu.tw' });
+    const ok = await call('/api/v1/auth/verify', { body: { token, id: tokenId } });
     expect(await ok.json()).toEqual({ code: 'acct.verifySuccess' });
-    expect((await call('/api/v1/auth/verify', { body: { token } })).status).toBe(400);
+    const already = await call('/api/v1/auth/verify', { body: { token, id: tokenId } });
+    expect(already.status).toBe(200);
+    expect(await already.json()).toEqual({ code: 'acct.verifyAlready' });
 
     const me = (await (await call('/api/v1/auth/me?region=TW', { token: access })).json()) as any;
     expect(me.is_verified).toBe(true);
@@ -426,7 +431,7 @@ describe('campus email verification', () => {
   it('renews only the stored address, whatever the request names', async () => {
     const id = await createUser('renew-link@example.com');
     const { access } = await login('renew-link@example.com');
-    const token = await ott.issue(env, ott.EDU_VERIFY, id, ott.EDU_VERIFY_TTL, { edu_email: 'stored@ntu.edu.tw' });
+    const { token } = await ott.issue(env, ott.EDU_VERIFY, id, ott.EDU_VERIFY_TTL, { edu_email: 'stored@ntu.edu.tw' });
     await call('/api/v1/auth/verify', { body: { token } });
     await env.DB.prepare("UPDATE region_verifications SET expires_at = '2022-01-01T00:00:00.000Z' WHERE user_id = ?").bind(id).run();
 
@@ -663,7 +668,7 @@ describe('profile', () => {
       const id = await createUser(`mailmove-${via}@example.com`);
       const changeToken = await ott.issueEmailChange(env, id, `attacker-${via}@example.com`);
       if (via === 'reset') {
-        const token = await ott.issue(env, ott.PASSWORD_RESET, id, ott.PASSWORD_RESET_TTL);
+        const { token } = await ott.issue(env, ott.PASSWORD_RESET, id, ott.PASSWORD_RESET_TTL);
         expect((await call('/api/v1/auth/password/reset/confirm', { body: { token, new_password: 'Brand-New-Pass-42' } })).status).toBe(
           200,
         );
@@ -830,5 +835,132 @@ describe('GET /auth/me payload optimization and include parameter', () => {
     expect(Array.isArray(body.myListings.results)).toBe(true);
     expect(body.mySubscriptions).toBeDefined();
     expect(Array.isArray(body.mySubscriptions)).toBe(true);
+  });
+});
+
+describe('verification links with id and "already verified" handling', () => {
+  it('registration: first click activates and logs in, second click says already activated without password or session', async () => {
+    const email = 'verify-twice-reg@example.com';
+    await call('/api/v1/auth/register', { body: { email, password: PASSWORD, first_name: 'V', last_name: 'T' } });
+    const row = await userRow(email);
+    const { token, id: tokenId } = await ott.issue(env, ott.REGISTER, String(row!.id), ott.REGISTER_TTL, {
+      password_hash: await hashPassword(PASSWORD),
+    });
+
+    // 1st click with correct password activates and starts session
+    const first = await call('/api/v1/auth/verify-registration', { body: { token, id: tokenId, password: PASSWORD } });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ code: 'auth.loginSuccess', user_id: row!.id });
+    expect(first.headers.get('set-cookie')).toBeTruthy();
+
+    // 2nd click without password returns auth.alreadyActivated, no session/cookie
+    const second = await call('/api/v1/auth/verify-registration', { body: { token, id: tokenId } });
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ code: 'auth.alreadyActivated' });
+    expect(second.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('edu verification: first click verifies, second click returns acct.verifyAlready, unbind makes it invalid', async () => {
+    const id = await createUser('verify-twice-edu@example.com');
+    const { access } = await login('verify-twice-edu@example.com');
+    const { token, id: tokenId } = await ott.issue(env, ott.EDU_VERIFY, id, ott.EDU_VERIFY_TTL, { edu_email: 'twice@ntu.edu.tw' });
+
+    // 1st click verifies
+    const first = await call('/api/v1/auth/verify', { body: { token, id: tokenId } });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ code: 'acct.verifySuccess' });
+
+    // 2nd click returns acct.verifyAlready
+    const second = await call('/api/v1/auth/verify', { body: { token, id: tokenId } });
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ code: 'acct.verifyAlready' });
+
+    // Unbind the campus email
+    const unbind = await call('/api/v1/auth/verify/unbind?region=TW', { body: {}, token: access });
+    expect(unbind.status).toBe(200);
+
+    // After unbinding, used link is invalid
+    const third = await call('/api/v1/auth/verify', { body: { token, id: tokenId } });
+    expect(third.status).toBe(400);
+    expect(await third.json()).toEqual({ error: { code: 'auth.errInvalidToken' } });
+  });
+
+  it('rejects wrong token with valid id without revealing whether id exists', async () => {
+    const id = await createUser('probe-check@example.com');
+    const { token, id: tokenId } = await ott.issue(env, ott.EDU_VERIFY, id, ott.EDU_VERIFY_TTL, { edu_email: 'probe@ntu.edu.tw' });
+
+    const wrongToken = await call('/api/v1/auth/verify', { body: { token: 'wrong-token-value', id: tokenId } });
+    expect(wrongToken.status).toBe(400);
+    expect(await wrongToken.json()).toEqual({ error: { code: 'auth.errInvalidToken' } });
+
+    const unknownId = await call('/api/v1/auth/verify', { body: { token, id: crypto.randomUUID() } });
+    expect(unknownId.status).toBe(400);
+    expect(await unknownId.json()).toEqual({ error: { code: 'auth.errInvalidToken' } });
+  });
+
+  it('old-format link without id works normally and supports already-verified', async () => {
+    // Edu verification without id
+    const eduUserId = await createUser('old-format-edu@example.com');
+    const { token: eduToken } = await ott.issue(env, ott.EDU_VERIFY, eduUserId, ott.EDU_VERIFY_TTL, { edu_email: 'oldformat@ntu.edu.tw' });
+
+    const eduFirst = await call('/api/v1/auth/verify', { body: { token: eduToken } });
+    expect(eduFirst.status).toBe(200);
+    expect(await eduFirst.json()).toEqual({ code: 'acct.verifySuccess' });
+
+    const eduSecond = await call('/api/v1/auth/verify', { body: { token: eduToken } });
+    expect(eduSecond.status).toBe(200);
+    expect(await eduSecond.json()).toEqual({ code: 'acct.verifyAlready' });
+
+    // Registration without id
+    const email = 'old-format-reg@example.com';
+    await call('/api/v1/auth/register', { body: { email, password: PASSWORD, first_name: 'O', last_name: 'F' } });
+    const regRow = await userRow(email);
+    const { token: regToken } = await ott.issue(env, ott.REGISTER, String(regRow!.id), ott.REGISTER_TTL, {
+      password_hash: await hashPassword(PASSWORD),
+    });
+
+    const regFirst = await call('/api/v1/auth/verify-registration', { body: { token: regToken, password: PASSWORD } });
+    expect(regFirst.status).toBe(200);
+
+    const regSecond = await call('/api/v1/auth/verify-registration', { body: { token: regToken } });
+    expect(regSecond.status).toBe(200);
+    expect(await regSecond.json()).toEqual({ code: 'auth.alreadyActivated' });
+  });
+
+  it('consume blanks password hash from payload and purge retains used verify rows for 30 days past expires_at', async () => {
+    const email = 'purge-test@example.com';
+    await call('/api/v1/auth/register', { body: { email, password: PASSWORD, first_name: 'P', last_name: 'T' } });
+    const regRow = await userRow(email);
+    const { token, id: tokenId } = await ott.issue(env, ott.REGISTER, String(regRow!.id), ott.REGISTER_TTL, {
+      password_hash: await hashPassword(PASSWORD),
+    });
+
+    // Check payload before consumption contains password_hash
+    const beforeRow = await env.DB.prepare('SELECT payload FROM one_time_tokens WHERE id = ?').bind(tokenId).first<{ payload: string }>();
+    expect(JSON.parse(beforeRow!.payload).password_hash).toBeTruthy();
+
+    // Consume via verification
+    await call('/api/v1/auth/verify-registration', { body: { token, id: tokenId, password: PASSWORD } });
+
+    // Check payload after consumption has blanked password_hash
+    const afterRow = await env.DB.prepare('SELECT payload, used_at FROM one_time_tokens WHERE id = ?')
+      .bind(tokenId)
+      .first<{ payload: string; used_at: string }>();
+    expect(afterRow!.used_at).toBeTruthy();
+    expect(JSON.parse(afterRow!.payload).password_hash).toBeUndefined();
+
+    // Check purge: used verify token with expires_at 5 days ago is retained
+    const fiveDaysAgo = new Date(Date.now() - 5 * 86_400_000).toISOString();
+    await env.DB.prepare('UPDATE one_time_tokens SET expires_at = ? WHERE id = ?').bind(fiveDaysAgo, tokenId).run();
+    await ott.purgeOneTimeTokens(env);
+    const retained = await env.DB.prepare('SELECT id FROM one_time_tokens WHERE id = ?').bind(tokenId).first();
+    expect(retained).toBeTruthy();
+
+    // Used verify token with expires_at 35 days ago is purged
+    const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 86_400_000).toISOString();
+    await env.DB.prepare('UPDATE one_time_tokens SET expires_at = ? WHERE id = ?').bind(thirtyFiveDaysAgo, tokenId).run();
+    await ott.purgeOneTimeTokens(env);
+    const purged = await env.DB.prepare('SELECT id FROM one_time_tokens WHERE id = ?').bind(tokenId).first();
+    expect(purged).toBeNull();
   });
 });

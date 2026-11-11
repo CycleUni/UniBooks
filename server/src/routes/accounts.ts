@@ -5,7 +5,7 @@ import { and, asc, desc, eq, isNull, like, ne, or, sql, type SQL } from 'drizzle
 import type { AppEnv } from '../env';
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { LIMITS } from '../lib/limits';
-import { getRegion, isVerifiedIn } from '../lib/region';
+import { getRegion, isVerifiedIn, liveVerification } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware, requireRecentSignIn, requireStaff } from '../middleware/auth';
 import { checkRate, outcomeLimit, platformRateLimit, rateLimit, takeRate } from '../middleware/rateLimit';
 import { turnstileEnabled, verifyTurnstile } from '../lib/turnstile';
@@ -212,14 +212,14 @@ accountRoutes.post('/register', rateLimit('register', RATES.register), async (c)
       .set({ name: nm, firstName: fn, lastName: ln, passwordHash: null, updatedAt: nowIso() })
       .where(and(eq(users.id, existing.id), eq(users.isActive, 0)))
       .run();
-    const token = await ott.issue(c.env, ott.REGISTER, existing.id, ott.REGISTER_TTL, { password_hash: passwordHash });
+    const { token, id: tokenId } = await ott.issue(c.env, ott.REGISTER, existing.id, ott.REGISTER_TTL, { password_hash: passwordHash });
     await sendLinkEmail(
       c,
       'activation',
       existing.id,
       email,
       mailName({ firstName: fn, lastName: ln }),
-      `/verify?token=${token}&type=register`,
+      `/verify?id=${tokenId}&token=${token}&type=register`,
     );
     return c.json({ code: 'auth.registerSuccess' }, 201);
   }
@@ -250,8 +250,8 @@ accountRoutes.post('/register', rateLimit('register', RATES.register), async (c)
     throw e;
   }
 
-  const token = await ott.issue(c.env, ott.REGISTER, id, ott.REGISTER_TTL, { password_hash: passwordHash });
-  await sendLinkEmail(c, 'activation', id, email, mailName({ firstName, lastName }), `/verify?token=${token}&type=register`);
+  const { token, id: tokenId } = await ott.issue(c.env, ott.REGISTER, id, ott.REGISTER_TTL, { password_hash: passwordHash });
+  await sendLinkEmail(c, 'activation', id, email, mailName({ firstName, lastName }), `/verify?id=${tokenId}&token=${token}&type=register`);
   return c.json({ code: 'auth.registerSuccess' }, 201);
 });
 
@@ -285,14 +285,14 @@ accountRoutes.post('/register/resend', rateLimit('register-resend', RATES.login)
     .set({ updatedAt: nowIso() })
     .where(and(eq(users.id, user.id), eq(users.isActive, 0)))
     .run();
-  const token = await ott.issue(c.env, ott.REGISTER, user.id, ott.REGISTER_TTL, { password_hash: hash });
+  const { token, id: tokenId } = await ott.issue(c.env, ott.REGISTER, user.id, ott.REGISTER_TTL, { password_hash: hash });
   await sendLinkEmail(
     c,
     'activation',
     user.id,
     email,
     mailName({ firstName: user.firstName, lastName: user.lastName }),
-    `/verify?token=${token}&type=register`,
+    `/verify?id=${tokenId}&token=${token}&type=register`,
   );
   return c.json({ code: 'auth.activationResent' });
 });
@@ -307,14 +307,19 @@ accountRoutes.post('/register/resend', rateLimit('register-resend', RATES.login)
  * password. A wrong password leaves the link usable for another try.
  */
 accountRoutes.post('/verify-registration', rateLimit('activate', RATES.login), async (c) => {
-  const { token, password } = await readJson(c.req);
+  const { token, password, id } = await readJson(c.req);
   if (!token) apiError(400, 'auth.errMissingToken');
-  const record = await ott.read(c.env, ott.REGISTER, token);
+  const record = await ott.read(c.env, ott.REGISTER, token, id);
   if (!record) apiError(400, 'auth.errInvalidToken');
   const user = await getUser(c.env, record.userId);
-  if (!user) apiError(404, 'auth.errUserNotFound');
-  if (user.deletedAt) apiError(400, 'auth.errInvalidToken');
+  if (!user || user.deletedAt) apiError(400, 'auth.errInvalidToken');
   if (user.isBanned) apiError(403, 'auth.errAccountDisabled');
+
+  if (record.used) {
+    if (!user.isActive) apiError(400, 'auth.errInvalidToken');
+    return c.json({ code: 'auth.alreadyActivated' });
+  }
+
   const linkHash = record.payload.password_hash;
   if (linkHash) {
     if (typeof password !== 'string' || !password) apiError(400, 'auth.errActivationPasswordRequired');
@@ -339,7 +344,7 @@ accountRoutes.post('/verify-registration', rateLimit('activate', RATES.login), a
     setSession(c, await issueTokens(c.env, user.id));
     return c.json({ code: 'auth.loginSuccess', user_id: user.id });
   } catch (e) {
-    await ott.unconsume(c.env, record.id).catch(() => undefined);
+    await ott.unconsume(c.env, record.id, record.payload).catch(() => undefined);
     throw e;
   }
 });
@@ -356,20 +361,31 @@ accountRoutes.post('/verify/request', authMiddleware(), rateLimit('verify-reques
   const user = await currentUser(c);
   if (await emailAlreadyUsed(c.env, eduEmail, user.id)) apiError(400, 'acct.errEmailTaken');
 
-  const token = await ott.issue(c.env, ott.EDU_VERIFY, user.id, ott.EDU_VERIFY_TTL, { edu_email: eduEmail });
-  await sendLinkEmail(c, 'eduVerification', user.id, eduEmail, mailName(user), `/verify?token=${token}&type=edu`);
+  const { token, id: tokenId } = await ott.issue(c.env, ott.EDU_VERIFY, user.id, ott.EDU_VERIFY_TTL, { edu_email: eduEmail });
+  await sendLinkEmail(c, 'eduVerification', user.id, eduEmail, mailName(user), `/verify?id=${tokenId}&token=${token}&type=edu`);
   return c.json({ code: 'acct.sentVerification' });
 });
 
 accountRoutes.post('/verify', async (c) => {
-  const { token } = await readJson(c.req);
+  const { token, id } = await readJson(c.req);
   if (!token) apiError(400, 'auth.errMissingToken');
-  const record = await ott.read(c.env, ott.EDU_VERIFY, token);
+  const record = await ott.read(c.env, ott.EDU_VERIFY, token, id);
   if (!record) apiError(400, 'auth.errInvalidToken');
   const user = await getUser(c.env, record.userId);
   if (!user || user.deletedAt) apiError(404, 'auth.errUserNotFound');
 
   const eduEmail = (record.payload.edu_email ?? '').toLowerCase();
+
+  if (record.used) {
+    const [activeVer] = await createDb(c.env.DB)
+      .select({ id: regionVerifications.id })
+      .from(regionVerifications)
+      .where(and(eq(regionVerifications.userId, user.id), sql`lower(${regionVerifications.eduEmail}) = ${eduEmail}`, liveVerification()))
+      .limit(1);
+    if (!activeVer) apiError(400, 'auth.errInvalidToken');
+    return c.json({ code: 'acct.verifyAlready' });
+  }
+
   const resolved = await resolveSchoolFromEmail(c.env, eduEmail);
   // Re-checked now, not only when the link was sent: a day is long enough
   // for another account to have taken the address.
@@ -435,8 +451,8 @@ accountRoutes.post('/verify/renew', authMiddleware(), rateLimit('verify-request'
     }
     return c.json({ code: 'acct.verifySuccess' });
   }
-  const token = await ott.issue(c.env, ott.EDU_VERIFY, user.id, ott.EDU_VERIFY_TTL, { edu_email: eduEmail });
-  await sendLinkEmail(c, 'eduVerification', user.id, eduEmail, mailName(user), `/verify?token=${token}&type=edu`);
+  const { token, id: tokenId } = await ott.issue(c.env, ott.EDU_VERIFY, user.id, ott.EDU_VERIFY_TTL, { edu_email: eduEmail });
+  await sendLinkEmail(c, 'eduVerification', user.id, eduEmail, mailName(user), `/verify?id=${tokenId}&token=${token}&type=edu`);
   return c.json({ code: 'acct.sentVerification', edu_email: eduEmail });
 });
 
@@ -936,7 +952,7 @@ accountRoutes.post('/password/reset/request', rateLimit('password-reset-request'
   // Google-linked accounts included: a mailbox link is how a passwordless account gets a password back.
   if (!user || accountDisabled(user)) return c.json(sent);
 
-  const token = await ott.issue(c.env, ott.PASSWORD_RESET, user.id, ott.PASSWORD_RESET_TTL);
+  const { token } = await ott.issue(c.env, ott.PASSWORD_RESET, user.id, ott.PASSWORD_RESET_TTL);
   await sendLinkEmail(c, 'passwordReset', user.id, user.email, '', `/forgot-password?token=${token}`);
   return c.json(sent);
 });
