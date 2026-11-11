@@ -17,6 +17,7 @@ import { UiSearchBarComponent } from '../../shared/ui/search-bar.component';
 import { AdminBulkBarComponent } from './bulk-bar.component';
 import { AdminPickCellComponent } from './pick-cell.component';
 import { BulkController } from './bulk';
+import { LIMITS } from '../../core/limits';
 
 const STATUSES: SchoolRequestStatus[] = ['pending', 'added', 'rejected'];
 
@@ -103,7 +104,7 @@ interface Draft {
               <textarea
                 class="admin-form-control"
                 rows="2"
-                maxlength="2000"
+                [maxlength]="LIMITS.adminNote"
                 [(ngModel)]="drafts[req.id].admin_note"
                 [placeholder]="'admin.schoolRequestNotePlaceholder' | t"
                 [attr.aria-label]="'admin.colAdminNote' | t"
@@ -133,6 +134,8 @@ interface Draft {
   `]
 })
 export class AdminSchoolRequestsListComponent implements OnInit {
+  readonly LIMITS = LIMITS;
+
   private adminService = inject(AdminService);
   private i18n = inject(I18nService);
   private toast = inject(ToastService);

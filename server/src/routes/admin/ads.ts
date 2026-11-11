@@ -20,6 +20,7 @@ import {
   type Database,
 } from '../../db';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../../lib/http';
+import { LIMITS } from '../../lib/limits';
 import { likeContains, notFound, regionParam, scopeOf, intId } from '../../services/admin/scope';
 import { invalidate } from '../../lib/cache';
 import { adCounts, ZERO_COUNTS, type AdCounts } from '../../services/admin/adAnalytics';
@@ -151,9 +152,9 @@ async function serializeAdvertisers(db: AdsDatabase, rows: Advertiser[]) {
 }
 
 const advertiserFields = {
-  company_name: z.string({ message: INVALID }).trim().min(1, INVALID).max(255, INVALID),
+  company_name: z.string({ message: INVALID }).trim().min(1, INVALID).max(LIMITS.adCompanyName, INVALID),
   contact_email: z.email({ message: INVALID }).max(254, INVALID),
-  contact_phone: z.string({ message: INVALID }).max(50, INVALID),
+  contact_phone: z.string({ message: INVALID }).max(LIMITS.adContactPhone, INVALID),
   all_regions: z.boolean({ message: INVALID }),
   regions: z.array(z.string({ message: INVALID }), { message: INVALID }),
   all_schools: z.boolean({ message: INVALID }),
@@ -447,7 +448,7 @@ export function isSafeTargetUrl(value: string): boolean {
 }
 
 /** Ad labels: at most 3, each at most 15 characters. */
-const labelsSchema = z.array(z.string({ message: INVALID }).max(15, INVALID), { message: INVALID }).max(3, INVALID);
+const labelsSchema = z.array(z.string({ message: INVALID }).max(LIMITS.adLabel, INVALID), { message: INVALID }).max(3, INVALID);
 
 const isoDate = z
   .string({ message: INVALID })
@@ -456,13 +457,13 @@ const isoDate = z
 
 const adFields = {
   advertiser: z.number({ message: INVALID }).int(INVALID),
-  title: z.string({ message: INVALID }).min(1, INVALID).max(255, INVALID),
-  image_url: z.string({ message: INVALID }).min(1, INVALID).max(500, INVALID),
-  target_url: z.string({ message: INVALID }).max(500, INVALID).refine(isSafeTargetUrl, INVALID),
+  title: z.string({ message: INVALID }).min(1, INVALID).max(LIMITS.adTitle, INVALID),
+  image_url: z.string({ message: INVALID }).min(1, INVALID).max(LIMITS.adImageUrl, INVALID),
+  target_url: z.string({ message: INVALID }).max(LIMITS.adTargetUrl, INVALID).refine(isSafeTargetUrl, INVALID),
   position: z.enum(['home_banner'], { message: INVALID }),
-  headline: z.string({ message: INVALID }).max(255, INVALID),
-  subheadline: z.string({ message: INVALID }).max(255, INVALID),
-  slot_index: z.number({ message: INVALID }).int(INVALID).min(1, INVALID).max(200, INVALID),
+  headline: z.string({ message: INVALID }).max(LIMITS.adHeadline, INVALID),
+  subheadline: z.string({ message: INVALID }).max(LIMITS.adSubheadline, INVALID),
+  slot_index: z.number({ message: INVALID }).int(INVALID).min(1, INVALID).max(LIMITS.adSlotIndex, INVALID),
   labels: labelsSchema,
   start_date: isoDate,
   end_date: isoDate,

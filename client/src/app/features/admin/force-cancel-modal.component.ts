@@ -8,6 +8,7 @@ import { UiTextarea } from '../../shared/ui/textarea.component';
 import { UiFocusTrapDirective } from '../../shared/ui/focus-trap.directive';
 import { AdminService } from '../../core/services/admin.service';
 import { I18nService, TPipe } from '../../core/i18n.service';
+import { LIMITS } from '../../core/limits';
 
 // Structural clone of report-modal.component.ts.
 @Component({
@@ -23,7 +24,7 @@ import { I18nService, TPipe } from '../../core/i18n.service';
           <p *ngIf="listingId" class="hint">{{ 'admin.deleteWithOrdersHint' | t:{count: openOrders} }}</p>
           <div class="textarea-wrapper">
             <label>{{ 'admin.forceCancelReasonLabel' | t }}</label>
-            <ui-textarea [(ngModel)]="reason" [placeholder]="'admin.forceCancelReasonPlaceholder' | t"></ui-textarea>
+            <ui-textarea [(ngModel)]="reason" [placeholder]="'admin.forceCancelReasonPlaceholder' | t" [maxlength]="LIMITS.cancelReason" [showCounter]="true"></ui-textarea>
           </div>
 
           <div *ngIf="errorMsg" class="inline-msg error">
@@ -57,6 +58,8 @@ import { I18nService, TPipe } from '../../core/i18n.service';
   `]
 })
 export class ForceCancelModalComponent {
+  readonly LIMITS = LIMITS;
+
   @Input() orderId?: string;
   /**
    * Deleting a listing that still has open orders: the platform cancels them

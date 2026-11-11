@@ -18,6 +18,7 @@ import { signToken } from '../../src/lib/jwt';
 import { forceCancelOrder, cancelOpenOrdersForListing } from '../../src/services/orders/cancel';
 import { runAutoComplete, runMeetupReminder, runWaitlistNotify } from '../../src/jobs/index';
 import { applyAutoComplete } from '../../src/services/orders/transitions';
+import { LIMITS } from '../../src/lib/limits';
 
 /**
  * Integration tests: they need the orders schema this module defines
@@ -650,6 +651,106 @@ describe.skipIf(!schemaReady)('cancel reasons', () => {
     expect((await patch(`${id}`, seller.token, { cancel_reason: 'seller_cancelled' })).status).toBe(400);
     const [o] = await db.select({ r: orders.cancelReason }).from(orders).where(eq(orders.id, id));
     expect(o.r).toBe('buyer_cancelled');
+  });
+});
+
+describe.skipIf(!schemaReady)('order and admin limits', () => {
+  const raw = (path: string, token: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    headers.set('X-Region', 'TW');
+    if (init.body) headers.set('Content-Type', 'application/json');
+    const worker = (exports as unknown as { default: { fetch(r: Request): Promise<Response> } }).default;
+    return worker.fetch(new Request(`http://x${path}`, { ...init, headers }));
+  };
+
+  async function admin() {
+    const a = await makeUser('admin-limiter');
+    await db.update(users).set({ role: 'admin' }).where(eq(users.id, a.id));
+    return a;
+  }
+
+  it('enforces meetup location (200) and review comment (1000)', async () => {
+    const seller = await makeUser('seller-lim');
+    const buyer = await makeUser('buyer-lim');
+    const l = await makeListing(seller.id);
+    await chat(l.id, buyer.id, seller.id);
+    const order = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
+
+    // Meetup location limits on PATCH /orders/:id
+    const badLocation = await patch(`${order.id}`, seller.token, {
+      status: 'accepted',
+      meetup_location: 'a'.repeat(LIMITS.meetupLocation + 1),
+    });
+    expect(badLocation.status).toBe(400);
+
+    const okLocation = await patch(`${order.id}`, seller.token, {
+      status: 'accepted',
+      meetup_location: 'a'.repeat(LIMITS.meetupLocation),
+    });
+    expect(okLocation.status).toBe(200);
+
+    // Complete order so it can be reviewed
+    expect((await patch(`${order.id}`, seller.token, { status: 'handed_over' })).status).toBe(200);
+    expect((await patch(`${order.id}`, buyer.token, { status: 'completed' })).status).toBe(200);
+
+    // Review comment limits on POST /orders/reviews
+    const badComment = await post('reviews', buyer.token, {
+      order: order.id,
+      rating: 5,
+      comment: 'c'.repeat(LIMITS.reviewComment + 1),
+    });
+    expect(badComment.status).toBe(400);
+
+    const okComment = await post('reviews', buyer.token, {
+      order: order.id,
+      rating: 5,
+      comment: 'c'.repeat(LIMITS.reviewComment),
+    });
+    expect(okComment.status).toBe(201);
+  });
+
+  it('enforces admin lock reason (255) and admin cancel reason (500)', async () => {
+    const seller = await makeUser('seller-admin-lim');
+    const buyer = await makeUser('buyer-admin-lim');
+    const staff = await admin();
+    const l = await makeListing(seller.id);
+    await chat(l.id, buyer.id, seller.id);
+    const order = (await (await post('', buyer.token, { listing: l.id })).json()) as { id: string };
+    expect((await patch(`${order.id}`, seller.token, { status: 'accepted' })).status).toBe(200);
+
+    // Admin lock reason on PATCH /api/v1/admin/listings/:id
+    const badLock = await raw(`/api/v1/admin/listings/${l.id}`, staff.token, {
+      method: 'PATCH',
+      body: JSON.stringify({ admin_locked: true, admin_lock_reason: 'r'.repeat(LIMITS.lockReason + 1) }),
+    });
+    expect(badLock.status).toBe(400);
+
+    const okLock = await raw(`/api/v1/admin/listings/${l.id}`, staff.token, {
+      method: 'PATCH',
+      body: JSON.stringify({ admin_locked: true, admin_lock_reason: 'r'.repeat(LIMITS.lockReason) }),
+    });
+    expect(okLock.status).toBe(200);
+
+    // Admin cancel reason on PATCH /api/v1/admin/listings/:id (removing listing with open order)
+    const badRemove = await raw(`/api/v1/admin/listings/${l.id}`, staff.token, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'removed', reason: 'r'.repeat(LIMITS.cancelReason + 1) }),
+    });
+    expect(badRemove.status).toBe(400);
+
+    // Admin cancel reason on force-cancel POST /api/v1/admin/orders/:id/force-cancel
+    const badForceCancel = await raw(`/api/v1/admin/orders/${order.id}/force-cancel`, staff.token, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'r'.repeat(LIMITS.cancelReason + 1) }),
+    });
+    expect(badForceCancel.status).toBe(400);
+
+    const okForceCancel = await raw(`/api/v1/admin/orders/${order.id}/force-cancel`, staff.token, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'r'.repeat(LIMITS.cancelReason) }),
+    });
+    expect(okForceCancel.status).toBe(200);
   });
 });
 

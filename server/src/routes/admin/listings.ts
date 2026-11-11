@@ -5,6 +5,7 @@ import { and, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../../env';
 import { books, createDb, listings, orders, schools, users, type Database } from '../../db';
 import { apiError, pagination, readJson } from '../../lib/http';
+import { LIMITS } from '../../lib/limits';
 import { getRegion } from '../../lib/region';
 import { auditInsert, writeAudit } from '../../services/admin/audit';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
@@ -149,6 +150,9 @@ listingRoutes.patch('/listings/:id', async (c) => {
   for (const k of ['reason', 'admin_lock_reason'] as const) {
     if (data[k] !== undefined && data[k] !== null && typeof data[k] !== 'string') apiError(400, 'admin.errInvalidField');
   }
+  if (typeof data.reason === 'string' && data.reason.trim().length > LIMITS.cancelReason) apiError(400, 'admin.errInvalidReason');
+  if (typeof data.admin_lock_reason === 'string' && data.admin_lock_reason.trim().length > LIMITS.lockReason)
+    apiError(400, 'admin.errInvalidField');
 
   const db = createDb(c.env.DB);
   const row = await loadListing(c, db);
@@ -176,7 +180,7 @@ listingRoutes.patch('/listings/:id', async (c) => {
         // Same as the admin delete: a written reason, and the open orders
         // cancelled (each with a notice) before the listing goes.
         const reason = String(data.reason ?? data.admin_lock_reason ?? '').trim();
-        if (reason.length < PLATFORM_CANCEL_REASON_MIN_LENGTH) {
+        if (reason.length < PLATFORM_CANCEL_REASON_MIN_LENGTH || reason.length > LIMITS.cancelReason) {
           throw new HTTPException(400, {
             res: Response.json({ error: { code: 'admin.errInvalidReason' }, open_orders: openOrders }, { status: 400 }),
           });
@@ -215,7 +219,9 @@ listingRoutes.patch('/listings/:id', async (c) => {
   if (newLocked !== !!l.adminLocked) {
     set.adminLocked = newLocked ? 1 : 0;
     if (newLocked) {
-      set.adminLockReason = String(data.admin_lock_reason ?? data.reason ?? '').slice(0, 255);
+      const lockReason = String(data.admin_lock_reason ?? data.reason ?? '').trim();
+      if (lockReason.length > LIMITS.lockReason) apiError(400, 'admin.errInvalidField');
+      set.adminLockReason = lockReason;
       set.lockedById = me.id;
       set.lockedAt = new Date().toISOString();
     } else {
@@ -259,6 +265,11 @@ listingRoutes.delete('/listings/:id', async (c) => {
     .select({ n: count() })
     .from(orders)
     .where(and(eq(orders.listingId, l.id), inArray(orders.status, [...ACTIVE_ORDER_STATUSES])));
+  if (reason.length > LIMITS.cancelReason) {
+    throw new HTTPException(400, {
+      res: Response.json({ error: { code: 'admin.errInvalidReason' }, open_orders: openOrders }, { status: 400 }),
+    });
+  }
   if (openOrders && reason.length < PLATFORM_CANCEL_REASON_MIN_LENGTH) {
     throw new HTTPException(400, {
       res: Response.json({ error: { code: 'admin.errInvalidReason' }, open_orders: openOrders }, { status: 400 }),

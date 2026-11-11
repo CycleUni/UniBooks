@@ -6,6 +6,7 @@ import type { AppEnv } from '../../env';
 import { invalidates } from '../../lib/cache';
 import { categories, createDb, type Category, type Database } from '../../db';
 import { apiError, fieldErrors, describeIssues, pagination, readJson, validate } from '../../lib/http';
+import { LIMITS } from '../../lib/limits';
 import { parseDepartments, parseJsonObject } from '../../lib/json';
 import { auditInsert, changedFields, writeAudit } from '../../services/admin/audit';
 import { assertInScope, intId, notFound, regionExists, regionParam, scopeOf, scopeWhere } from '../../services/admin/scope';
@@ -31,17 +32,17 @@ export function categoryJson(cat: Category) {
 }
 
 const departmentNames = z.object({
-  name: z.string({ message: INVALID }).trim().min(1, INVALID).max(100, INVALID),
+  name: z.string({ message: INVALID }).trim().min(1, INVALID).max(LIMITS.departmentName, INVALID),
   aliases: z
-    .array(z.string({ message: INVALID }).trim().min(1, INVALID).max(50, INVALID))
+    .array(z.string({ message: INVALID }).trim().min(1, INVALID).max(LIMITS.departmentAlias, INVALID))
     .max(20, INVALID)
     .default([]),
 });
 
 const categoryFields = {
-  slug: z.string({ message: INVALID }).min(1, INVALID).max(50, INVALID).regex(SLUG_RE, INVALID),
-  title: z.string({ message: INVALID }).min(1, INVALID).max(100, INVALID),
-  description: z.string({ message: INVALID }).max(255, INVALID),
+  slug: z.string({ message: INVALID }).min(1, INVALID).max(LIMITS.categorySlug, INVALID).regex(SLUG_RE, INVALID),
+  title: z.string({ message: INVALID }).min(1, INVALID).max(LIMITS.categoryTitle, INVALID),
+  description: z.string({ message: INVALID }).max(LIMITS.categoryDescription, INVALID),
   sort_order: z.number({ message: INVALID }).int(INVALID).min(0, INVALID).max(2147483647, INVALID),
   is_active: z.boolean({ message: INVALID }),
   translations: z.record(z.string(), z.unknown(), { message: INVALID }),

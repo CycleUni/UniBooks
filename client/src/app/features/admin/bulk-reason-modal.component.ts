@@ -5,6 +5,7 @@ import { UiButton } from '../../shared/ui/button.component';
 import { UiTextarea } from '../../shared/ui/textarea.component';
 import { UiFocusTrapDirective } from '../../shared/ui/focus-trap.directive';
 import { TPipe } from '../../core/i18n.service';
+import { LIMITS } from '../../core/limits';
 
 /**
  * Asks once for the written reason a bulk action gives every row it acts
@@ -34,6 +35,8 @@ import { TPipe } from '../../core/i18n.service';
               name="reason"
               [(ngModel)]="reason"
               [placeholder]="placeholder"
+              [maxlength]="maxLength"
+              [showCounter]="true"
             ></ui-textarea>
           </label>
           <small *ngIf="minLength && reason.trim().length < minLength" class="hint">{{
@@ -75,6 +78,8 @@ import { TPipe } from '../../core/i18n.service';
   ],
 })
 export class AdminBulkReasonModalComponent {
+  readonly LIMITS = LIMITS;
+
   @Input() title = '';
   @Input() message = '';
   @Input() label = '';
@@ -82,6 +87,7 @@ export class AdminBulkReasonModalComponent {
   @Input() submitLabel = '';
   /** Shortest reason accepted; 0 lets it be left empty. */
   @Input() minLength = 0;
+  @Input() maxLength: number = LIMITS.cancelReason;
   @Input() danger = false;
   @Output() submitted = new EventEmitter<string>();
   @Output() closed = new EventEmitter<void>();

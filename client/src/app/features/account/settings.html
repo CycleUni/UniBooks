@@ -161,11 +161,11 @@
       <div  style="display: flex; gap: 16px;">
         <div  class="flex-1">
           <label>{{ 'auth.lastNameLabel' | t }}</label>
-          <ui-input [(ngModel)]="lastName" ></ui-input>
+          <ui-input [(ngModel)]="lastName" [maxlength]="LIMITS.personName"></ui-input>
         </div>
         <div  class="flex-1">
           <label>{{ 'auth.firstNameLabel' | t }}</label>
-          <ui-input [(ngModel)]="firstName" ></ui-input>
+          <ui-input [(ngModel)]="firstName" [maxlength]="LIMITS.personName"></ui-input>
         </div>
       </div>
       
@@ -321,6 +321,7 @@
         <div *ngIf="editingPasskeyId === p.id" class="passkey-rename-form">
           <ui-input
             [(ngModel)]="editingPasskeyName"
+            [maxlength]="LIMITS.passkeyName"
             (keyup.enter)="saveRenamePasskey(p.id)"
             (keyup.escape)="cancelRenamePasskey()"
           ></ui-input>

@@ -4,15 +4,16 @@ import { I18nService, TPipe } from '../../core/i18n.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { UiButton } from '../../shared/ui/button.component';
-import { UiInput } from '../../shared/ui/input.component';
+import { UiTextarea } from '../../shared/ui/textarea.component';
 import { UiFocusTrapDirective } from '../../shared/ui/focus-trap.directive';
 import { OrderService } from '../../core/services/order.service';
 import { parseApiError } from '../../core/api-error.util';
+import { LIMITS } from '../../core/limits';
 
 @Component({
   selector: 'app-review-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, UiButton, UiInput, TPipe, UiCheckbox, UiFocusTrapDirective],
+  imports: [CommonModule, FormsModule, UiButton, UiTextarea, TPipe, UiCheckbox, UiFocusTrapDirective],
   template: `
     <div class="app-modal-overlay" (click)="close()">
       <div class="app-modal w-full"  style="max-width: 400px;" (click)="$event.stopPropagation()" uiFocusTrap="review-modal-title" (escape)="close()">
@@ -37,7 +38,7 @@ import { parseApiError } from '../../core/api-error.util';
             </div>
           </div>
 
-          <ui-input [label]="'order.comment' | t" [(ngModel)]="comment" [placeholder]="'order.optional' | t"></ui-input>
+          <ui-textarea [label]="'order.comment' | t" [(ngModel)]="comment" [placeholder]="'order.optional' | t" [rows]="3" [maxlength]="LIMITS.reviewComment" [showCounter]="true"></ui-textarea>
 
           <div *ngIf="errorMsg" class="inline-msg error">
             {{ errorMsg }}
@@ -71,6 +72,7 @@ import { parseApiError } from '../../core/api-error.util';
   `]
 })
 export class ReviewModalComponent {
+  readonly LIMITS = LIMITS;
   @Input() orderId!: string;
   @Output() onClosed = new EventEmitter<boolean>();
 

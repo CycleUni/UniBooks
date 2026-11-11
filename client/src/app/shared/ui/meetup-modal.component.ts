@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { I18nService, TPipe } from '../../core/i18n.service';
 import { intlLocale } from '../../core/i18n';
+import { LIMITS } from '../../core/limits';
 import { UiButton } from './button.component';
 import { UiInput } from './input.component';
 import { UiFocusTrapDirective } from './focus-trap.directive';
@@ -70,7 +71,8 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
           <div class="form-group">
             <ui-input [label]="'order.meetupLocationLabel' | t"
                        [(ngModel)]="location"
-                       [placeholder]="'order.meetupLocationPlaceholder' | t">
+                       [placeholder]="'order.meetupLocationPlaceholder' | t"
+                       [maxlength]="LIMITS.meetupLocation">
             </ui-input>
           </div>
 
@@ -234,6 +236,8 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
   `]
 })
 export class MeetupModalComponent implements OnInit {
+  readonly LIMITS = LIMITS;
+
   @Input() bookTitle: string = '';
   /** Details already agreed, when the seller is editing them. */
   @Input() initial: { time: string; location: string } | null = null;

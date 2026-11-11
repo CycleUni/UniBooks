@@ -7,6 +7,7 @@ import { UiTextarea } from '../../shared/ui/textarea.component';
 import { UiFocusTrapDirective } from '../../shared/ui/focus-trap.directive';
 import { ListingService } from '../../core/services/listing.service';
 import { I18nService, TPipe } from '../../core/i18n.service';
+import { LIMITS } from '../../core/limits';
 
 /**
  * Modal for reporting a listing, structured like review-modal.component.ts
@@ -29,7 +30,7 @@ import { I18nService, TPipe } from '../../core/i18n.service';
 
       <div class="textarea-wrapper">
         <label>{{ 'moderation.detailLabel' | t }}</label>
-        <ui-textarea [(ngModel)]="detail" [placeholder]="'moderation.detailPlaceholder' | t"></ui-textarea>
+        <ui-textarea [(ngModel)]="detail" [placeholder]="'moderation.detailPlaceholder' | t" [maxlength]="LIMITS.reportDetail" [showCounter]="true"></ui-textarea>
       </div>
 
       <div *ngIf="errorMsg" class="inline-msg error">
@@ -83,6 +84,7 @@ import { I18nService, TPipe } from '../../core/i18n.service';
   `]
 })
 export class ReportModalComponent {
+  readonly LIMITS = LIMITS;
   @Input() listingId!: string;
   @Output() closed = new EventEmitter<void>();
   @Output() submitted = new EventEmitter<void>();

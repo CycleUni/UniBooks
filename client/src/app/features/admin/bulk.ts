@@ -114,6 +114,7 @@ export interface BulkReasonPrompt {
   placeholder: string;
   submitLabel: string;
   minLength: number;
+  maxLength?: number;
   danger: boolean;
   run: (reason: string) => void;
 }

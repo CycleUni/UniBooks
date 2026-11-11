@@ -23,6 +23,9 @@ let nextInputId = 0;
         [attr.enterkeyhint]="enterkeyhint || null"
         [attr.aria-label]="ariaLabel || null"
         [attr.aria-describedby]="ariaDescribedby || null"
+        [attr.maxlength]="maxlength || null"
+        [attr.min]="min !== null && min !== undefined ? min : null"
+        [attr.max]="max !== null && max !== undefined ? max : null"
         [placeholder]="placeholder"
         [value]="value"
         [disabled]="disabled"
@@ -131,6 +134,9 @@ export class UiInput implements ControlValueAccessor {
   // name — and a placeholder is not an accessible name once text is typed.
   @Input() ariaLabel: string = '';
   @Input() ariaDescribedby: string | null = null;
+  @Input() maxlength: number | null = null;
+  @Input() min: number | string | null = null;
+  @Input() max: number | string | null = null;
 
   private readonly generatedId = `ui-input-${++nextInputId}`;
 

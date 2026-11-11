@@ -44,11 +44,11 @@
       <div class="form-group"  style="display: flex; gap: 16px;">
         <div  class="flex-1">
           <label for="register-last-name">{{ 'auth.lastNameLabel' | t }}</label>
-          <ui-input inputId="register-last-name" name="family-name" autocomplete="family-name" [ariaDescribedby]="describedBy('register-name-hint')" [placeholder]="'auth.lastNamePlaceholder' | t" [(ngModel)]="registerLastName" (keyup.enter)="onRegister()" ></ui-input>
+          <ui-input inputId="register-last-name" name="family-name" autocomplete="family-name" [ariaDescribedby]="describedBy('register-name-hint')" [placeholder]="'auth.lastNamePlaceholder' | t" [(ngModel)]="registerLastName" [maxlength]="LIMITS.personName" (keyup.enter)="onRegister()" ></ui-input>
         </div>
         <div  class="flex-1">
           <label for="register-first-name">{{ 'auth.firstNameLabel' | t }}</label>
-          <ui-input inputId="register-first-name" name="given-name" autocomplete="given-name" [ariaDescribedby]="describedBy('register-name-hint')" [placeholder]="'auth.firstNamePlaceholder' | t" [(ngModel)]="registerFirstName" (keyup.enter)="onRegister()" ></ui-input>
+          <ui-input inputId="register-first-name" name="given-name" autocomplete="given-name" [ariaDescribedby]="describedBy('register-name-hint')" [placeholder]="'auth.firstNamePlaceholder' | t" [(ngModel)]="registerFirstName" [maxlength]="LIMITS.personName" (keyup.enter)="onRegister()" ></ui-input>
         </div>
       </div>
       <p class="field-hint mb-4" id="register-name-hint">{{ 'auth.nameHint' | t }}</p>

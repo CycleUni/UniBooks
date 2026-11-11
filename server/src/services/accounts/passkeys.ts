@@ -12,6 +12,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import type { AppEnv } from '../../env';
 import { createDb, passkeys, users, type User } from '../../db';
 import { apiError, fieldErrors, readJson } from '../../lib/http';
+import { LIMITS } from '../../lib/limits';
 import { setSession } from '../../lib/session';
 import { nowIso } from '../../lib/time';
 import { issueTokens } from './tokens';
@@ -25,7 +26,7 @@ export type { ChallengeRecord } from '../../durable-objects/ChallengeStore';
 type C = Context<AppEnv>;
 
 const CHALLENGE_TTL_SECONDS = 120;
-const PASSKEY_NAME_MAX_LENGTH = 150;
+const PASSKEY_NAME_MAX_LENGTH = LIMITS.passkeyName;
 
 export const webauthnVerifier = {
   verifyRegistrationResponse,

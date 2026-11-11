@@ -3,6 +3,7 @@ import type { Env } from '../../env';
 import { createDb, orders, listings, regions, auditEvents } from '../../db';
 import { parseMeetupTime } from './time';
 import type { NoticeOrder, OrderNotice } from './notify';
+import { LIMITS } from '../../lib/limits';
 
 /**
  * Order state changes. Each runs inside the listing's OrderLock (see
@@ -169,7 +170,7 @@ export async function applyOrderUpdate(
   }
   if ('meetup_location' in data) {
     const l = data.meetup_location;
-    if (typeof l === 'string' && l.length <= 255) set.meetupLocation = l;
+    if (typeof l === 'string' && l.length <= LIMITS.meetupLocation) set.meetupLocation = l;
     else errors.meetup_location = ['common.errValidation'];
   }
   if (Object.keys(errors).length) return fieldError(errors);

@@ -6,6 +6,7 @@ import type { AppEnv } from '../../env';
 import { invalidates } from '../../lib/cache';
 import { cities, createDb, regionVerifications, schoolRequests, schools, users, type Database, type School } from '../../db';
 import { apiError, fieldErrors, describeIssues, pagination, readJson, validate } from '../../lib/http';
+import { LIMITS } from '../../lib/limits';
 import { parseJsonObject } from '../../lib/json';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { assertInScope, intId, likeContains, notFound, regionExists, regionParam, scopeOf } from '../../services/admin/scope';
@@ -180,7 +181,7 @@ const translationsSchema = z.record(z.string(), z.unknown(), { message: INVALID 
 
 const schoolCreate = z.object({
   code: z.string({ message: INVALID }).optional(),
-  name: z.string({ message: INVALID }).min(1, INVALID).max(255, INVALID),
+  name: z.string({ message: INVALID }).min(1, INVALID).max(LIMITS.schoolName, INVALID),
   email_domain: z
     .string({ message: INVALID })
     .transform((v, ctx) => normalizeEmailDomain(v) ?? (ctx.addIssue({ code: 'custom', message: INVALID }), z.NEVER)),
@@ -574,7 +575,7 @@ schoolRoutes.delete('/schools/:id', invalidates('ref'), async (c) => {
 // School requests
 // ---------------------------------------------------------------------------
 
-const ADMIN_NOTE_MAX_LENGTH = 2000;
+const ADMIN_NOTE_MAX_LENGTH = LIMITS.adminNote;
 const REQUEST_STATUSES = ['pending', 'added', 'rejected'];
 
 function requestSelect(db: Database) {

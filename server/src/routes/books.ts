@@ -6,6 +6,7 @@ import { and, desc, eq, max, min, sql } from 'drizzle-orm';
 import type { AppEnv, Env } from '../env';
 import { createDb, books, listings, subscriptions, type Book, type InsertBook } from '../db';
 import { apiError, fieldErrors, pagination, readJson } from '../lib/http';
+import { LIMITS } from '../lib/limits';
 import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkPlatformRate, checkRate } from '../middleware/rateLimit';
@@ -216,9 +217,11 @@ bookRoutes.post('/manual', authMiddleware(), async (c) => {
       const patch: Partial<InsertBook> = {};
       const publisher = str(body.publisher);
       const published = str(body.published_date);
+      if (publisher && publisher.length > LIMITS.bookPublisher) fieldErrors({ publisher: ['common.errValidation'] });
+      if (published && published.length > LIMITS.bookPublishedDate) fieldErrors({ published_date: ['common.errValidation'] });
       if (!existing.coverUrl && coverUrl) patch.coverUrl = coverUrl;
-      if (!existing.publisher && publisher) patch.publisher = String(cleanPublisher(publisher)).slice(0, 255);
-      if (!existing.publishedDate && published) patch.publishedDate = published.slice(0, 50);
+      if (!existing.publisher && publisher) patch.publisher = String(cleanPublisher(publisher)).slice(0, LIMITS.bookPublisher);
+      if (!existing.publishedDate && published) patch.publishedDate = published.slice(0, LIMITS.bookPublishedDate);
       if (Object.keys(patch).length) {
         await db.update(books).set(patch).where(eq(books.id, existing.id));
         Object.assign(existing, patch);
@@ -243,10 +246,10 @@ bookRoutes.post('/manual', authMiddleware(), async (c) => {
   const publisher = str(body.publisher) ?? '';
   const publishedDate = str(body.published_date) ?? '';
   if (!title || !title.trim()) errors.title = ['common.errValidation'];
-  else if (title.length > 255) errors.title = ['common.errValidation'];
-  if ((authors ?? '').length > 512) errors.authors = ['common.errValidation'];
-  if (publisher.length > 255) errors.publisher = ['common.errValidation'];
-  if (publishedDate.length > 50) errors.published_date = ['common.errValidation'];
+  else if (title.length > LIMITS.bookTitle) errors.title = ['common.errValidation'];
+  if ((authors ?? '').length > LIMITS.bookAuthors) errors.authors = ['common.errValidation'];
+  if (publisher.length > LIMITS.bookPublisher) errors.publisher = ['common.errValidation'];
+  if (publishedDate.length > LIMITS.bookPublishedDate) errors.published_date = ['common.errValidation'];
   if (Object.keys(errors).length) fieldErrors(errors);
 
   const row: InsertBook = {

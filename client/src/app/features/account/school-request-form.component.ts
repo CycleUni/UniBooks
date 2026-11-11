@@ -6,6 +6,7 @@ import { UiInput } from '../../shared/ui/input.component';
 import { TPipe, I18nService } from '../../core/i18n.service';
 import { AccountService } from '../../core/services/account.service';
 import { parseApiError } from '../../core/api-error.util';
+import { LIMITS } from '../../core/limits';
 
 /**
  * "Report my school", shown under acct.errSchoolNotSupported on the account
@@ -40,6 +41,7 @@ import { parseApiError } from '../../core/api-error.util';
             [(ngModel)]="schoolName"
             [ngModelOptions]="{ standalone: true }"
             [error]="nameError"
+            [maxlength]="LIMITS.schoolRequestName"
             autocomplete="organization"
           ></ui-input>
           <ui-input
@@ -51,6 +53,7 @@ import { parseApiError } from '../../core/api-error.util';
             [(ngModel)]="schoolWebsite"
             [ngModelOptions]="{ standalone: true }"
             [error]="websiteError"
+            [maxlength]="LIMITS.schoolRequestWebsite"
             autocomplete="url"
           ></ui-input>
           <div class="actions">
@@ -99,6 +102,8 @@ import { parseApiError } from '../../core/api-error.util';
   `]
 })
 export class SchoolRequestFormComponent {
+  readonly LIMITS = LIMITS;
+
   /** The campus address the user just tried, sent along so staff can read
    *  the school's mail domain off it. */
   @Input() eduEmail = '';
@@ -131,8 +136,8 @@ export class SchoolRequestFormComponent {
     // Same rules the backend applies, checked here first so the common
     // mistakes (empty field, a bare "school.edu") answer instantly and do
     // not spend one of the few requests the throttle allows.
-    this.nameError = name.length >= 2 && name.length <= 255 ? '' : this.i18n.t('acct.errSchoolRequestName');
-    this.websiteError = isHttpUrl(website) ? '' : this.i18n.t('acct.errSchoolRequestWebsite');
+    this.nameError = name.length >= 2 && name.length <= LIMITS.schoolRequestName ? '' : this.i18n.t('acct.errSchoolRequestName');
+    this.websiteError = isHttpUrl(website) && website.length <= LIMITS.schoolRequestWebsite ? '' : this.i18n.t('acct.errSchoolRequestWebsite');
     this.errorMessage = '';
     if (this.nameError || this.websiteError) return;
 

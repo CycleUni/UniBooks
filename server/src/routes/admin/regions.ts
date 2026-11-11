@@ -8,6 +8,7 @@ import { invalidates } from '../../lib/cache';
 import { createDb, currencies, languages, regions, type Currency, type Region } from '../../db';
 import { requireAdmin } from '../../middleware/auth';
 import { fieldErrors, pagination, readJson, validate } from '../../lib/http';
+import { LIMITS } from '../../lib/limits';
 import { invalidateRegionCache } from '../../lib/region';
 import { parseJsonArray, parseJsonObject } from '../../lib/json';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
@@ -167,7 +168,7 @@ const strList = z.array(z.string({ message: INVALID }), { message: INVALID });
 const translationsSchema = z.record(z.string(), z.unknown(), { message: INVALID });
 
 const regionFields = {
-  name: z.string().min(1, INVALID).max(100, INVALID),
+  name: z.string().min(1, INVALID).max(LIMITS.regionName, INVALID),
   translations: translationsSchema,
   currency: z.string({ message: INVALID }),
   default_language: z.string({ message: INVALID }),
@@ -176,11 +177,11 @@ const regionFields = {
   search_engines: strList,
   edu_email_suffix: strList,
   is_active: z.boolean({ message: INVALID }),
-  sort_order: z.number({ message: INVALID }).int(INVALID).min(0, INVALID),
+  sort_order: z.number({ message: INVALID }).int(INVALID).min(0, INVALID).max(2147483647, INVALID),
 };
 
 const regionCreate = z.object({
-  code: z.string().min(1, INVALID).max(2, INVALID),
+  code: z.string().min(1, INVALID).max(LIMITS.regionCode, INVALID),
   ...regionFields,
   timezone: regionFields.timezone.optional(),
   search_engines: regionFields.search_engines.optional(),

@@ -7,6 +7,7 @@ import { books, chatReports, conversations, createDb, listings, reports, users, 
 import { cancelOpenOrdersForListing } from '../services/orders/cancel';
 import { authMiddleware, requireStaff } from '../middleware/auth';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../lib/http';
+import { LIMITS } from '../lib/limits';
 import { requireRegion, isVerifiedIn } from '../lib/region';
 import { managedRegionCodes } from '../services/messaging/staffScope';
 import { getConversation, isParticipant } from '../services/messaging/conversations';
@@ -23,7 +24,7 @@ import { checkRate } from '../middleware/rateLimit';
 export const moderationRoutes = new Hono<AppEnv>();
 moderationRoutes.use('*', authMiddleware());
 
-const MAX_DETAIL = 5000;
+const MAX_DETAIL = LIMITS.reportDetail;
 const MAX_FLAGGED = 200;
 
 const optionalStatus = (c: Context<AppEnv>) => c.req.query('status') || '';

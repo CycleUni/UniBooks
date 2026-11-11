@@ -23,6 +23,7 @@ import { departmentHint } from '../../core/department-match';
 import { onLanguageChange } from '../../core/on-language-change';
 import { ListingService } from '../../core/services/listing.service';
 import { MetadataService } from '../../core/services/metadata.service';
+import { LIMITS } from '../../core/limits';
 
 import { AccountService } from '../../core/services/account.service';
 import { RegionLinkService } from '../../core/region-link.service';
@@ -174,6 +175,8 @@ const PAGE_SIZE = 20;
             type="number"
             [label]="'acct.priceLabel' | t:{currency: regionService.currency().symbol}"
             [(ngModel)]="editForm.price"
+            [min]="0"
+            [max]="editingListing.price > LIMITS.price ? editingListing.price : LIMITS.price"
             [disabled]="!!editLock"
             class="mb-4"
           ></ui-input>
@@ -209,16 +212,16 @@ const PAGE_SIZE = 20;
             <div class="more-body">
               <div *ngIf="editingListing.book_source === 'manual' && !editLock" class="manual-book-edit mb-4">
                 <p class="manual-note">{{ 'acct.manualBookDesc' | t }}</p>
-                <ui-input [label]="'acct.bookTitleLabel' | t" [(ngModel)]="editForm.book_title" class="mb-3"></ui-input>
-                <ui-input [label]="'acct.bookAuthorsLabel' | t" [(ngModel)]="editForm.book_authors" class="mb-3"></ui-input>
+                <ui-input [label]="'acct.bookTitleLabel' | t" [(ngModel)]="editForm.book_title" [maxlength]="LIMITS.bookTitle" class="mb-3"></ui-input>
+                <ui-input [label]="'acct.bookAuthorsLabel' | t" [(ngModel)]="editForm.book_authors" [maxlength]="LIMITS.bookAuthors" class="mb-3"></ui-input>
                 <ui-input [label]="'acct.isbnLabel' | t" [(ngModel)]="editForm.isbn"></ui-input>
               </div>
 
               <ui-dropdown [label]="'sell.categoryLabel' | t" [(ngModel)]="editForm.category" [options]="categoryOptions" [disabled]="editLock === 'sold'" class="mb-4"></ui-dropdown>
-              <ui-input [label]="'sell.courseLabel' | t" [(ngModel)]="editForm.course_name" [disabled]="editLock === 'sold'" class="mb-4"></ui-input>
-              <ui-input [label]="'sell.professorLabel' | t" [(ngModel)]="editForm.professor_name" [disabled]="editLock === 'sold'" class="mb-4"></ui-input>
-              <ui-textarea [label]="'sell.descriptionLabel' | t" [(ngModel)]="editForm.description" [rows]="3" [disabled]="editLock === 'sold'" class="mb-4"></ui-textarea>
-              <ui-textarea [label]="'sell.privateNoteLabel' | t" [(ngModel)]="editForm.private_note" [rows]="2"></ui-textarea>
+              <ui-input [label]="'sell.courseLabel' | t" [(ngModel)]="editForm.course_name" [maxlength]="LIMITS.courseName" [disabled]="editLock === 'sold'" class="mb-4"></ui-input>
+              <ui-input [label]="'sell.professorLabel' | t" [(ngModel)]="editForm.professor_name" [maxlength]="LIMITS.professorName" [disabled]="editLock === 'sold'" class="mb-4"></ui-input>
+              <ui-textarea [label]="'sell.descriptionLabel' | t" [(ngModel)]="editForm.description" [maxlength]="LIMITS.listingDescription" [showCounter]="true" [rows]="3" [disabled]="editLock === 'sold'" class="mb-4"></ui-textarea>
+              <ui-textarea [label]="'sell.privateNoteLabel' | t" [(ngModel)]="editForm.private_note" [maxlength]="LIMITS.listingPrivateNote" [showCounter]="true" [rows]="2"></ui-textarea>
             </div>
           </details>
         </div>
@@ -333,6 +336,7 @@ const PAGE_SIZE = 20;
   `]
 })
 export class ListingsComponent implements OnInit {
+  readonly LIMITS = LIMITS;
   regionService = inject(RegionService);
   readonly statuses = STATUSES;
   readonly pageSize = PAGE_SIZE;
@@ -746,6 +750,18 @@ export class ListingsComponent implements OnInit {
     this.editError = '';
 
     const lock = this.editLock;
+    if (!lock && this.editForm.price !== undefined && this.editForm.price !== null && (this.editForm.price as any) !== '') {
+      const priceNum = Number(this.editForm.price);
+      const maxAllowed = this.editingListing.price > LIMITS.price ? this.editingListing.price : LIMITS.price;
+      if (!Number.isFinite(priceNum) || priceNum < 0 || !Number.isInteger(priceNum)) {
+        this.editError = this.i18n.t('sell.errPriceInvalid');
+        return;
+      }
+      if (priceNum > maxAllowed) {
+        this.editError = this.i18n.t('sell.errPriceTooHigh');
+        return;
+      }
+    }
     const payload: any =
       lock === 'sold'
         ? { private_note: this.editForm.private_note }

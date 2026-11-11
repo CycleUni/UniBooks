@@ -4,6 +4,7 @@ import { HTTPException } from 'hono/http-exception';
 import { and, asc, desc, eq, isNull, like, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../env';
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
+import { LIMITS } from '../lib/limits';
 import { getRegion, isVerifiedIn } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware, requireRecentSignIn, requireStaff } from '../middleware/auth';
 import { checkRate, outcomeLimit, platformRateLimit, rateLimit, takeRate } from '../middleware/rateLimit';
@@ -105,8 +106,8 @@ const RATES = {
   memberTokenVerify: '120/min',
 } as const;
 
-const PUSH_TOKEN_MAX_LENGTH = 512;
-const NAME_MAX_LENGTH = 150;
+const PUSH_TOKEN_MAX_LENGTH = LIMITS.pushToken;
+const NAME_MAX_LENGTH = LIMITS.personName;
 const LISTING_STATUSES = ['active', 'reserved', 'sold', 'removed'] as const;
 
 /** The signed-in user's full row (authMiddleware has already checked it is active). */
@@ -458,7 +459,7 @@ accountRoutes.post('/verify/unbind', authMiddleware(), async (c) => {
 });
 
 function validWebsite(value: string): boolean {
-  if (value.length > 500 || !/^https?:\/\//i.test(value)) return false;
+  if (value.length > LIMITS.schoolRequestWebsite || !/^https?:\/\//i.test(value)) return false;
   try {
     const u = new URL(value);
     return (u.protocol === 'http:' || u.protocol === 'https:') && (u.hostname.includes('.') || u.hostname === 'localhost');
@@ -509,7 +510,7 @@ accountRoutes.post('/school-requests', authMiddleware(), rateLimit('school-reque
   const fields: Record<string, string[]> = {};
 
   const name = typeof body.school_name === 'string' ? body.school_name.trim() : '';
-  if (name.length < 2 || name.length > 255) fields.school_name = ['acct.errSchoolRequestName'];
+  if (name.length < 2 || name.length > LIMITS.schoolRequestName) fields.school_name = ['acct.errSchoolRequestName'];
   const website = typeof body.school_website === 'string' ? body.school_website.trim() : '';
   if (!validWebsite(website)) fields.school_website = ['acct.errSchoolRequestWebsite'];
   let eduEmail = '';

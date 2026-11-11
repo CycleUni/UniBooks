@@ -6,6 +6,7 @@ import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../env';
 import { createDb, books, listings, regionVerifications, schools, type Listing } from '../db';
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
+import { LIMITS } from '../lib/limits';
 import { assertVerifiedIn, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkPlatformRate, checkRate } from '../middleware/rateLimit';
@@ -360,12 +361,16 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c)
     if (other) apiError(403, 'listing.errBookShared');
     const before = [book.title, book.authors, book.isbn13, book.coverUrl];
     if (body.book_title !== undefined && body.book_title !== null) {
-      if (typeof body.book_title !== 'string' || !body.book_title.trim()) apiError(400, 'sell.errValidation');
-      bookUpdate.title = body.book_title.trim().slice(0, 255);
+      if (typeof body.book_title !== 'string' || !body.book_title.trim() || body.book_title.trim().length > LIMITS.bookTitle) {
+        apiError(400, 'sell.errValidation');
+      }
+      bookUpdate.title = body.book_title.trim();
     }
     if (body.book_authors !== undefined && body.book_authors !== null) {
-      if (typeof body.book_authors !== 'string') apiError(400, 'sell.errValidation');
-      bookUpdate.authors = body.book_authors.trim().slice(0, 512);
+      if (typeof body.book_authors !== 'string' || body.book_authors.trim().length > LIMITS.bookAuthors) {
+        apiError(400, 'sell.errValidation');
+      }
+      bookUpdate.authors = body.book_authors.trim();
     }
     if (body.cover_url !== undefined && body.cover_url !== null) {
       const cover = cleanCoverUrl(body.cover_url);

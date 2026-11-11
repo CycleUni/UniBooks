@@ -114,9 +114,9 @@
               </div>
             </div>
             <div class="info flex-1" *ngIf="bookPreview.isManual" >
-              <ui-input [placeholder]="'sell.titlePlaceholder' | t" [(ngModel)]="bookPreview.title" (ngModelChange)="onFormChange()" (focusout)="markTouched('title')"  class="mb-2"></ui-input>
+              <ui-input [placeholder]="'sell.titlePlaceholder' | t" [(ngModel)]="bookPreview.title" (ngModelChange)="onFormChange()" (focusout)="markTouched('title')" [maxlength]="LIMITS.bookTitle" class="mb-2"></ui-input>
               <div *ngIf="titleErrorKey" class="inline-msg error field-msg">{{ titleErrorKey | t }}</div>
-              <ui-input [placeholder]="'sell.authorPlaceholder' | t" [(ngModel)]="bookPreview.authors" (ngModelChange)="onFormChange()" (focusout)="markTouched('authors')"></ui-input>
+              <ui-input [placeholder]="'sell.authorPlaceholder' | t" [(ngModel)]="bookPreview.authors" (ngModelChange)="onFormChange()" (focusout)="markTouched('authors')" [maxlength]="LIMITS.bookAuthors"></ui-input>
               <div *ngIf="authorErrorKey" class="inline-msg error field-msg">{{ authorErrorKey | t }}</div>
               <div  class="mt-2">
                 <ui-button variant="ghost" (onClick)="clearSelection()"  style="padding: 4px 8px; font-size: var(--text-xs); height: auto;">{{ 'sell.reselect' | t }}</ui-button>
@@ -145,12 +145,10 @@
         <div *ngIf="step === 2" class="step-content">
           <ui-condition-picker [label]="'common.condition' | t" [(value)]="condition" (valueChange)="onFormChange()" [options]="conditionOptions"></ui-condition-picker>
           <ui-dropdown [label]="'sell.categoryLabel' | t" [(ngModel)]="category" (ngModelChange)="onFormChange()" [options]="categoryOptions"></ui-dropdown>
-          <ui-input [label]="'sell.courseLabel' | t" [placeholder]="'sell.coursePlaceholder' | t" [(ngModel)]="course" (ngModelChange)="onFormChange()"></ui-input>
-          <ui-input [label]="'sell.professorLabel' | t" [placeholder]="'sell.professorPlaceholder' | t" [(ngModel)]="professor" (ngModelChange)="onFormChange()"></ui-input>
-          <ui-input [label]="'sell.privateNoteLabel' | t" [placeholder]="'sell.privateNotePlaceholder' | t" [(ngModel)]="privateNote" (ngModelChange)="onFormChange()"></ui-input>
-          <!-- Multi-line: condition notes run to several sentences. The backend
-               stores this as an unbounded TextField, so there is no limit to show. -->
-          <ui-textarea [label]="'sell.descriptionLabel' | t" [placeholder]="'sell.descriptionPlaceholder' | t" [rows]="4" [(ngModel)]="description" (ngModelChange)="onFormChange()"></ui-textarea>
+          <ui-input [label]="'sell.courseLabel' | t" [placeholder]="'sell.coursePlaceholder' | t" [(ngModel)]="course" (ngModelChange)="onFormChange()" [maxlength]="LIMITS.courseName"></ui-input>
+          <ui-input [label]="'sell.professorLabel' | t" [placeholder]="'sell.professorPlaceholder' | t" [(ngModel)]="professor" (ngModelChange)="onFormChange()" [maxlength]="LIMITS.professorName"></ui-input>
+          <ui-input [label]="'sell.privateNoteLabel' | t" [placeholder]="'sell.privateNotePlaceholder' | t" [(ngModel)]="privateNote" (ngModelChange)="onFormChange()" [maxlength]="LIMITS.listingPrivateNote"></ui-input>
+          <ui-textarea [label]="'sell.descriptionLabel' | t" [placeholder]="'sell.descriptionPlaceholder' | t" [rows]="4" [(ngModel)]="description" (ngModelChange)="onFormChange()" [maxlength]="LIMITS.listingDescription" [showCounter]="true"></ui-textarea>
 
           <div class="photo-upload">
             <label>{{ 'sell.photoLabel' | t }}</label>
@@ -200,7 +198,7 @@
           <label class="price-field-label">{{ 'acct.priceLabel' | t:{currency: regionService.currency().symbol} }}</label>
           <div class="price-field">
             <span class="price-currency">{{ regionService.currency().symbol }}</span>
-            <input class="price-input focus-no-ring" type="number" inputmode="decimal" enterkeyhint="done" min="0" [(ngModel)]="price" (ngModelChange)="onFormChange()" (blur)="markTouched('price')" name="price" />
+            <input class="price-input focus-no-ring" type="number" inputmode="decimal" enterkeyhint="done" min="0" [max]="LIMITS.price" [(ngModel)]="price" (ngModelChange)="onFormChange()" (blur)="markTouched('price')" name="price" />
           </div>
           <div *ngIf="priceErrorKey" class="inline-msg error field-msg">{{ priceErrorKey | t }}</div>
 

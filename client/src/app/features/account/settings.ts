@@ -18,6 +18,7 @@ import { SchoolRequestFormComponent } from './school-request-form.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { clearSensitiveParams } from '../../core/sensitive-url';
+import { LIMITS } from '../../core/limits';
 
 /** The verification answer that means "valid campus address, unknown campus". */
 const SCHOOL_NOT_SUPPORTED = 'acct.errSchoolNotSupported';
@@ -42,6 +43,7 @@ const RENEW_WINDOW_DAYS = 30;
   styleUrls: ['./settings.css'],
 })
 export class SettingsComponent implements OnInit, OnDestroy {
+  readonly LIMITS = LIMITS;
   get currentRegion(): Region | null {
     return this.regionService.currentRegionObj();
   }

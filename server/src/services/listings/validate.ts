@@ -8,12 +8,12 @@ import { eq } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { createDb, books, type Book, type Listing } from '../../db';
 import { resolveCategorySlug } from './places';
+import { LIMITS } from '../../lib/limits';
 
 export const CONDITIONS = ['new', 'like_new', 'noted', 'damaged'] as const;
 export type Condition = (typeof CONDITIONS)[number];
 /** What a seller may set by hand; 'reserved' belongs to the order flow. */
 export const SELLER_SETTABLE_STATUSES = ['active', 'sold', 'removed'] as const;
-const MAX_PRICE = 2147483647;
 const GENERIC = 'sell.errValidation';
 
 export interface ListingValues {
@@ -86,7 +86,8 @@ export async function validateListingFields(
   // price
   if (has(body, 'price')) {
     const p = parseInteger(body.price);
-    if (p === null || p < 0 || p > MAX_PRICE) fail('price');
+    const maxAllowed = ctx.current && ctx.current.price > LIMITS.price ? ctx.current.price : LIMITS.price;
+    if (p === null || p < 0 || p > maxAllowed) fail('price');
     else values.price = p;
   } else if (creating) fail('price');
 
@@ -98,10 +99,10 @@ export async function validateListingFields(
   } else if (creating) fail('condition');
 
   for (const [field, key, max] of [
-    ['private_note', 'privateNote', 2000],
-    ['description', 'description', 5000],
-    ['course_name', 'courseName', 255],
-    ['professor_name', 'professorName', 255],
+    ['private_note', 'privateNote', LIMITS.listingPrivateNote],
+    ['description', 'description', LIMITS.listingDescription],
+    ['course_name', 'courseName', LIMITS.courseName],
+    ['professor_name', 'professorName', LIMITS.professorName],
   ] as const) {
     if (!has(body, field)) continue;
     const v = parseText(body[field], max);

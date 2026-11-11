@@ -10,6 +10,7 @@ import { I18nService, TPipe } from '../../core/i18n.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { ToastService } from '../../core/services/toast.service';
 import { UiButton } from '../../shared/ui/button.component';
+import { LIMITS } from '../../core/limits';
 import { STATS_PAGE_STYLES } from './stats-widgets';
 
 /**
@@ -79,7 +80,7 @@ const CATALOGUE_SOURCES = new Set(['google_api', 'openlibrary_api', 'isbnnet_api
             id="book-title"
             name="title"
             class="admin-form-control"
-            maxlength="255"
+            [maxlength]="LIMITS.bookTitle"
             required
             [(ngModel)]="form.title"
           />
@@ -93,7 +94,7 @@ const CATALOGUE_SOURCES = new Set(['google_api', 'openlibrary_api', 'isbnnet_api
             id="book-authors"
             name="authors"
             class="admin-form-control"
-            maxlength="512"
+            [maxlength]="LIMITS.bookAuthors"
             [(ngModel)]="form.authors"
           />
         </div>
@@ -104,7 +105,7 @@ const CATALOGUE_SOURCES = new Set(['google_api', 'openlibrary_api', 'isbnnet_api
               id="book-publisher"
               name="publisher"
               class="admin-form-control"
-              maxlength="255"
+              [maxlength]="LIMITS.bookPublisher"
               [(ngModel)]="form.publisher"
             />
           </div>
@@ -114,7 +115,7 @@ const CATALOGUE_SOURCES = new Set(['google_api', 'openlibrary_api', 'isbnnet_api
               id="book-date"
               name="published_date"
               class="admin-form-control"
-              maxlength="50"
+              [maxlength]="LIMITS.bookPublishedDate"
               [(ngModel)]="form.published_date"
             />
           </div>
@@ -183,6 +184,8 @@ const CATALOGUE_SOURCES = new Set(['google_api', 'openlibrary_api', 'isbnnet_api
   ],
 })
 export class AdminBookEditComponent implements OnInit, OnDestroy {
+  readonly LIMITS = LIMITS;
+
   private admin = inject(AdminService);
   private i18n = inject(I18nService);
   private toast = inject(ToastService);

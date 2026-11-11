@@ -17,6 +17,7 @@ import { PricePipe } from '../../shared/pipes/price.pipe';
 import { ForceCancelModalComponent } from './force-cancel-modal.component';
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { RegionLinkService } from '../../core/region-link.service';
+import { LIMITS } from '../../core/limits';
 
 @Component({
   selector: 'app-admin-listing-detail',
@@ -44,7 +45,7 @@ import { RegionLinkService } from '../../core/region-link.service';
       <div class="lock-section">
         <ui-checkbox [label]="'admin.lockListing' | t" [(ngModel)]="adminLocked"></ui-checkbox>
         <div *ngIf="adminLocked" class="lock-reason">
-          <ui-input [label]="'admin.lockReason' | t" [(ngModel)]="adminLockReason"></ui-input>
+          <ui-input [label]="'admin.lockReason' | t" [(ngModel)]="adminLockReason" [maxlength]="LIMITS.lockReason"></ui-input>
         </div>
       </div>
 
@@ -79,6 +80,8 @@ import { RegionLinkService } from '../../core/region-link.service';
   `]
 })
 export class AdminListingDetailComponent implements OnInit {
+  readonly LIMITS = LIMITS;
+
   private route = inject(ActivatedRoute);
   private adminService = inject(AdminService);
   private i18n = inject(I18nService);

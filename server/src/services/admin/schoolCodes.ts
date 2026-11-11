@@ -1,12 +1,13 @@
 import { and, eq } from 'drizzle-orm';
 import { schools, type Database } from '../../db';
+import { LIMITS } from '../../lib/limits';
 
 /**
  * School short codes ("NTU", "HKU").
  * A code is unique within a region only.
  */
 
-export const CODE_MAX_LENGTH = 20;
+export const CODE_MAX_LENGTH = LIMITS.schoolCode;
 const CODE_RE = /^[A-Z0-9-]+$/;
 const NOT_CODE_CHARS = /[^A-Z0-9-]/g;
 export const FALLBACK_CODE = 'SCHOOL';

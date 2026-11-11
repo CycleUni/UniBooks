@@ -21,6 +21,7 @@ import { AdminPickCellComponent } from './pick-cell.component';
 import { BulkController } from './bulk';
 import { AdminBulkReasonModalComponent } from './bulk-reason-modal.component';
 import { UiButton } from '../../shared/ui/button.component';
+import { LIMITS } from '../../core/limits';
 
 @Component({
   selector: 'app-admin-listings-list',
@@ -40,7 +41,7 @@ import { UiButton } from '../../shared/ui/button.component';
     <admin-bulk-reason-modal
       *ngIf="bulk.reasonPrompt as p"
       [title]="p.title" [message]="p.message" [label]="p.label" [placeholder]="p.placeholder"
-      [submitLabel]="p.submitLabel" [minLength]="p.minLength" [danger]="p.danger"
+      [submitLabel]="p.submitLabel" [minLength]="p.minLength" [maxLength]="p.maxLength || LIMITS.cancelReason" [danger]="p.danger"
       (submitted)="p.run($event)" (closed)="bulk.reasonPrompt = null"
     ></admin-bulk-reason-modal>
 
@@ -100,6 +101,8 @@ import { UiButton } from '../../shared/ui/button.component';
   `]
 })
 export class AdminListingsListComponent implements OnInit {
+  readonly LIMITS = LIMITS;
+
   private adminService = inject(AdminService);
   private i18n = inject(I18nService);
   private toast = inject(ToastService);
@@ -173,6 +176,7 @@ export class AdminListingsListComponent implements OnInit {
         placeholder: '',
         submitLabel: this.i18n.t('admin.bulk.lock'),
         minLength: 0,
+        maxLength: LIMITS.lockReason,
         danger: false,
       },
       (id, reason) => this.adminService.updateListingStatus(id, { admin_locked: true, admin_lock_reason: reason }),
@@ -198,6 +202,7 @@ export class AdminListingsListComponent implements OnInit {
         placeholder: this.i18n.t('admin.forceCancelReasonPlaceholder'),
         submitLabel: this.i18n.t('common.delete'),
         minLength: 3,
+        maxLength: LIMITS.cancelReason,
         danger: true,
       },
       (id, reason) => this.adminService.deleteListing(id, reason),

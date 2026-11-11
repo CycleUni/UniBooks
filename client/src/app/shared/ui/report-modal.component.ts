@@ -8,6 +8,7 @@ import { UiButton } from './button.component';
 import { UiRadioGroup } from './radio-group.component';
 import { UiTextarea } from './textarea.component';
 import { UiFocusTrapDirective } from './focus-trap.directive';
+import { LIMITS } from '../../core/limits';
 
 /**
  * "Report this conversation" dialog.
@@ -32,7 +33,7 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
         <div class="report-reasons">
           <ui-radio-group [options]="reasons" [(ngModel)]="reason"></ui-radio-group>
         </div>
-        <ui-textarea [(ngModel)]="detail" [placeholder]="'msg.reportDetail' | t"></ui-textarea>
+        <ui-textarea [(ngModel)]="detail" [placeholder]="'msg.reportDetail' | t" [maxlength]="LIMITS.reportDetail" [showCounter]="true"></ui-textarea>
         <div class="report-actions">
           <ui-button variant="ghost" (onClick)="close.emit()">{{ 'msg.reportCancel' | t }}</ui-button>
           <ui-button [disabled]="!reason || submitting || !!success" (onClick)="submit()">
@@ -56,6 +57,7 @@ import { UiFocusTrapDirective } from './focus-trap.directive';
   `]
 })
 export class UiReportModal implements OnInit, OnDestroy {
+  readonly LIMITS = LIMITS;
   @Input() conversationId!: string;
   /** The other party in the conversation — the user being reported. */
   @Input() reportedPartyId!: string | number;

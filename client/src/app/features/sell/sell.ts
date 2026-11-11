@@ -31,6 +31,7 @@ import { UiPhotoReorderDirective, PhotoReorderEvent, movePhoto } from '../../sha
 import { RegionLinkService } from '../../core/region-link.service';
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
+import { LIMITS } from '../../core/limits';
 import { Subscription, catchError, concatMap, defaultIfEmpty, from, map, of, take } from 'rxjs';
 
 
@@ -141,6 +142,7 @@ export interface SellDraft {
   styleUrls: ['./sell.css']
 })
 export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
+  readonly LIMITS = LIMITS;
   step = 1;
   searchQuery = '';
   searchResults: any[] = [];
@@ -778,8 +780,11 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
       return 'sell.errPriceRequired';
     }
     const numeric = Number(price);
-    if (!Number.isFinite(numeric) || numeric < 0) {
+    if (!Number.isFinite(numeric) || numeric < 0 || !Number.isInteger(numeric)) {
       return 'sell.errPriceInvalid';
+    }
+    if (numeric > LIMITS.price) {
+      return 'sell.errPriceTooHigh';
     }
     return '';
   }

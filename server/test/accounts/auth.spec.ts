@@ -8,6 +8,7 @@ import { hashPassword } from '../../src/services/accounts/passwords';
 import { tokenFor } from '../ads/helpers';
 import { signToken } from '../../src/lib/jwt';
 import { seedListing, seedRegion } from '../messaging/helpers';
+import { LIMITS } from '../../src/lib/limits';
 
 beforeAll(async () => {
   await seedReference();
@@ -525,6 +526,25 @@ describe('school requests', () => {
       token: access,
     });
     expect(((await badName.json()) as any).error.fields.school_name).toEqual(['acct.errSchoolRequestName']);
+  });
+
+  it('enforces school request name max length (accepts 100, rejects 101)', async () => {
+    await createUser('req-limit@example.com');
+    const { access } = await login('req-limit@example.com');
+    const base = { school_website: 'https://example.edu.tw', edu_email: 'me@example.edu.tw' };
+
+    const over = await call('/api/v1/auth/school-requests?region=TW', {
+      body: { ...base, school_name: 'A'.repeat(LIMITS.schoolRequestName + 1) },
+      token: access,
+    });
+    expect(over.status).toBe(400);
+    expect(((await over.json()) as any).error.fields.school_name).toEqual(['acct.errSchoolRequestName']);
+
+    const max = await call('/api/v1/auth/school-requests?region=TW', {
+      body: { ...base, school_name: 'A'.repeat(LIMITS.schoolRequestName) },
+      token: access,
+    });
+    expect(max.status).toBe(201);
   });
 });
 

@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm';
 import { CONVERSATION_CREATE_RATE } from '../../src/routes/messaging';
 import { parseRate } from '../../src/middleware/rateLimit';
 import type { RateLimiter } from '../../src/durable-objects/RateLimiter';
+import { LIMITS } from '../../src/lib/limits';
 
 const ready = await hasMessagingSchema();
 
@@ -329,5 +330,44 @@ describe.skipIf(!ready)('moderation API', () => {
     expect((await api(`/api/v1/moderation/chat-reports/${id}`, { token: scopedStaff.token })).status).toBe(404);
     const list = await api('/api/v1/moderation/chat-reports/all', { token: scopedStaff.token });
     expect(((await list.json()) as { count: number }).count).toBe(0);
+  });
+
+  it('enforces report detail limit (2000) for listing reports and chat reports', async () => {
+    const seller = await seedUser({ verifiedIn: 'TW' });
+    const reporter = await seedUser({ verifiedIn: 'TW' });
+    const listing = await seedListing(seller.id);
+
+    // Listing report
+    const badListingReport = await api('/api/v1/moderation', {
+      method: 'POST',
+      token: reporter.token,
+      body: JSON.stringify({ listing, reason: 'scam', detail: 'd'.repeat(LIMITS.reportDetail + 1) }),
+    });
+    expect(badListingReport.status).toBe(400);
+
+    const okListingReport = await api('/api/v1/moderation', {
+      method: 'POST',
+      token: reporter.token,
+      body: JSON.stringify({ listing, reason: 'scam', detail: 'd'.repeat(LIMITS.reportDetail) }),
+    });
+    expect(okListingReport.status).toBe(201);
+
+    // Chat report
+    const buyer = await seedUser({ verifiedIn: 'TW' });
+    const conv = await seedConversation(buyer.id, seller.id, listing);
+
+    const badChatReport = await api('/api/v1/moderation/chat-reports', {
+      method: 'POST',
+      token: buyer.token,
+      body: JSON.stringify({ conversation: conv, reported_party: seller.id, reason: 'spam', detail: 'd'.repeat(LIMITS.reportDetail + 1) }),
+    });
+    expect(badChatReport.status).toBe(400);
+
+    const okChatReport = await api('/api/v1/moderation/chat-reports', {
+      method: 'POST',
+      token: buyer.token,
+      body: JSON.stringify({ conversation: conv, reported_party: seller.id, reason: 'spam', detail: 'd'.repeat(LIMITS.reportDetail) }),
+    });
+    expect(okChatReport.status).toBe(201);
   });
 });

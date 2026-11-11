@@ -8,6 +8,7 @@ import { isSystemMessage } from './policies/systemMessagePolicy';
 import { isKnownMessageType, metadataError } from './policies/messagePolicy';
 import { IMAGE_PREVIEW_TOKEN, recordLatestMessage } from '../services/messaging/conversations';
 import { isChatImageUrl } from '../services/messaging/images';
+import { LIMITS } from '../lib/limits';
 
 export { IMAGE_PREVIEW_TOKEN };
 
@@ -33,7 +34,7 @@ interface ConnectionState {
   expiresAt?: number;
 }
 
-const MAX_MESSAGE_LENGTH = 4000;
+const MAX_MESSAGE_LENGTH = LIMITS.chatMessage;
 const SEND_RATE_LIMIT = 20;
 const SEND_RATE_WINDOW_MS = 10_000;
 const MIN_RECONNECT_INTERVAL_MS = 1_000;

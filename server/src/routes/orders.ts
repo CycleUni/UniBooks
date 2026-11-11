@@ -6,6 +6,7 @@ import { createDb, orders, listings, books, conversations, reviews, users } from
 import { authMiddleware } from '../middleware/auth';
 import { getRegion, assertVerifiedIn } from '../lib/region';
 import { apiError, fieldErrors, notFound, pagination, readJson } from '../lib/http';
+import { LIMITS } from '../lib/limits';
 import { listOrders, getOrderFor } from '../services/orders/serialize';
 import { resolveLanguage } from '../services/accounts/i18n';
 import type { LockedResult } from '../services/orders/transitions';
@@ -127,7 +128,7 @@ orderRoutes.post('/reviews', async (c) => {
   if (isNoShow === undefined) errors.is_no_show = ['common.errValidation'];
   let comment = '';
   if ('comment' in data) {
-    if (typeof data.comment === 'string' && data.comment.length <= 2000) comment = data.comment;
+    if (typeof data.comment === 'string' && data.comment.length <= LIMITS.reviewComment) comment = data.comment;
     else errors.comment = ['common.errValidation'];
   }
   let rating = parseRating(data.rating);

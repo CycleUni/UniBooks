@@ -8,6 +8,7 @@ import { apiError, pagination, readJson } from '../../lib/http';
 import { likeContains, notFound, regionParam, scopeOf, scopeWhere, uuidId } from '../../services/admin/scope';
 import { forceCancelOrder } from '../../services/orders/cancel';
 import { bookSearch, PLATFORM_CANCEL_REASON_MIN_LENGTH } from './listings';
+import { LIMITS } from '../../lib/limits';
 
 /**
  * Read-only list/detail plus force-cancel.
@@ -98,7 +99,7 @@ orderRoutes.post('/orders/:id/force-cancel', async (c) => {
   const order = await loadOrder(c, db, id);
   const data = await readJson(c.req);
   const reason = (typeof data.reason === 'string' ? data.reason : '').trim();
-  if (reason.length < PLATFORM_CANCEL_REASON_MIN_LENGTH) apiError(400, 'admin.errInvalidReason');
+  if (reason.length < PLATFORM_CANCEL_REASON_MIN_LENGTH || reason.length > LIMITS.cancelReason) apiError(400, 'admin.errInvalidReason');
   if (order.o.status === 'cancelled' || order.o.status === 'completed') apiError(400, 'admin.errOrderAlreadyFinal');
   // Under the order lock: 400 admin.errOrderAlreadyFinal if a party finished
   // it meanwhile; writes the audit event and posts the chat notice.

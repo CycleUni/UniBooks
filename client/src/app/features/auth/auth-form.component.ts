@@ -17,6 +17,7 @@ import { aboutUrl as aboutSiteUrl } from '../../core/about-site';
 import { RegionService } from '../../core/region.service';
 import { TurnstileService } from '../../core/services/turnstile.service';
 import { isEventPath } from '../../core/event-path';
+import { LIMITS } from '../../core/limits';
 
 /** The container Google's SDK renders its button into. A DOM id rather than a
  *  ViewChild because the SDK takes an element and writes an iframe into it —
@@ -57,6 +58,7 @@ export const RESEND_COOLDOWN_SECONDS = 180;
   styleUrls: ['./auth-form.component.css']
 })
 export class AuthFormComponent implements OnInit, AfterViewInit, OnDestroy {
+  readonly LIMITS = LIMITS;
   private _mode: 'login' | 'register' = 'login';
   @Input()
   get mode(): 'login' | 'register' {

@@ -14,11 +14,15 @@ import { CommonModule } from '@angular/common';
         [rows]="rows"
         [value]="value"
         [disabled]="disabled"
+        [attr.maxlength]="maxlength || null"
         [class.monospace]="monospace"
         (input)="onInputChange($event)"
         (blur)="onTouched()"
       ></textarea>
-      <span class="error" *ngIf="error">{{ error }}</span>
+      <div class="textarea-footer" *ngIf="error || (showCounter && maxlength)">
+        <span class="error" *ngIf="error">{{ error }}</span>
+        <span class="counter" *ngIf="showCounter && maxlength">{{ (value || '').length }} / {{ maxlength }}</span>
+      </div>
     </div>
   `,
   providers: [
@@ -78,6 +82,17 @@ import { CommonModule } from '@angular/common';
       color: var(--danger);
       font-size: var(--text-xs);
     }
+    .textarea-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .counter {
+      margin-left: auto;
+      font-size: var(--text-xs);
+      color: var(--muted, #666);
+    }
   `]
 })
 export class UiTextarea implements ControlValueAccessor {
@@ -88,6 +103,8 @@ export class UiTextarea implements ControlValueAccessor {
   @Input() noMargin: boolean = false;
   @Input() monospace: boolean = false;
   @Input() disabled: boolean = false;
+  @Input() maxlength: number | null = null;
+  @Input() showCounter: boolean = false;
 
   value: string = '';
 
