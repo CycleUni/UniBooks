@@ -92,5 +92,17 @@ export function resetRegionDetailsCache() {
 export function schoolDomains(row: Row): string[] {
   const list = stringList(row.email_domains);
   if (typeof row.email_domain === 'string' && row.email_domain) list.unshift(row.email_domain);
-  return list.map((d) => d.toLowerCase().replace(/^@/, ''));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const d of list) {
+    const norm = String(d || '')
+      .toLowerCase()
+      .replace(/^@+/, '')
+      .trim();
+    if (norm && !seen.has(norm)) {
+      seen.add(norm);
+      out.push(norm);
+    }
+  }
+  return out;
 }

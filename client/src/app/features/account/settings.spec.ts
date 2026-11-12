@@ -503,4 +503,109 @@ describe('SettingsComponent', () => {
       expect(items[0].querySelector('.passkey-icon-fallback')).not.toBeNull();
     });
   });
+
+  describe('campus email verification assisted form', () => {
+    const mockSchools = [
+      {
+        id: 1,
+        code: 'NTU',
+        name: 'National Taiwan University',
+        email_domain: 'ntu.edu.tw',
+        student_email_domain: 'ntu.edu.tw',
+        accepted_domains: ['ntu.edu.tw'],
+      },
+      {
+        id: 2,
+        code: 'CHIHLEE',
+        name: 'Chihlee University of Technology',
+        email_domain: 'chihlee.edu.tw',
+        email_domains: ['gm.chihlee.edu.tw', 'mail.chihlee.edu.tw'],
+        student_email_domain: 'gm.chihlee.edu.tw',
+        google_domains: ['gm.chihlee.edu.tw'],
+        accepted_domains: ['chihlee.edu.tw', 'gm.chihlee.edu.tw', 'mail.chihlee.edu.tw'],
+      },
+    ];
+
+    beforeEach(() => {
+      component.availableSchools = mockSchools;
+      (component as any).metadataService = {
+        getMetadata: () => of({ schools: mockSchools, cities: [] }),
+      };
+    });
+
+    it('preselects site school and autofills student_email_domain', () => {
+      (component as any).schoolStateService = {
+        currentSchool: 'CHIHLEE',
+        getManualSchool: () => 'CHIHLEE',
+      };
+      component.loadSchoolsMetadata();
+
+      expect(component.selectedVerifySchoolCode).toBe('CHIHLEE');
+      expect(component.selectedVerifyDomain).toBe('gm.chihlee.edu.tw');
+      expect(component.schoolDomainChoices).toEqual([
+        'gm.chihlee.edu.tw',
+        'mail.chihlee.edu.tw',
+      ]);
+    });
+
+    it('identifies Google Workspace accounts per domain', () => {
+      component.selectVerifySchool('CHIHLEE');
+      expect(component.selectedVerifyDomain).toBe('gm.chihlee.edu.tw');
+      expect(component.isCurrentDomainGoogle).toBe(true);
+
+      component.onDomainSelectChange('mail.chihlee.edu.tw');
+      expect(component.selectedVerifyDomain).toBe('mail.chihlee.edu.tw');
+      expect(component.isCurrentDomainGoogle).toBe(false);
+    });
+
+    it('splits pasted email address and selects matching school and domain', () => {
+      component.loadSchoolsMetadata();
+      component.selectVerifySchool('NTU');
+
+      // Pasting full address of Chihlee splits and switches school/domain
+      component.handlePastedEmail('b10701001@mail.chihlee.edu.tw');
+      expect(component.selectedVerifySchoolCode).toBe('CHIHLEE');
+      expect(component.eduLocalPart).toBe('b10701001');
+      expect(component.selectedVerifyDomain).toBe('mail.chihlee.edu.tw');
+      expect(component.useManualEmail).toBe(false);
+    });
+
+    it('submits composed address in assisted mode', () => {
+      component.selectVerifySchool('CHIHLEE');
+      component.eduLocalPart = 'user123';
+      const email = component.buildSubmitEmail();
+      expect(email).toBe('user123@gm.chihlee.edu.tw');
+    });
+
+    it('supports other-address fallback escape hatch', () => {
+      component.selectVerifySchool('NTU');
+      component.eduLocalPart = 'b08901001';
+      expect(component.buildSubmitEmail()).toBe('b08901001@ntu.edu.tw');
+
+      // Toggle to manual free-text mode
+      component.toggleManualEmail();
+      expect(component.useManualEmail).toBe(true);
+      expect(component.eduEmail).toBe('b08901001@ntu.edu.tw');
+
+      // Enter an unlisted subdomain
+      component.eduEmail = 'b08901001@csie.ntu.edu.tw';
+      expect(component.buildSubmitEmail()).toBe('b08901001@csie.ntu.edu.tw');
+    });
+
+    it('validates required fields when school or local part is missing', () => {
+      component.selectedVerifySchoolCode = '';
+      component.eduLocalPart = '';
+      component.useManualEmail = false;
+
+      const emailNoSchool = component.buildSubmitEmail();
+      expect(emailNoSchool).toBeNull();
+      expect(component.clientVerifyMsg).toBe('acct.errSchoolRequired');
+
+      component.selectVerifySchool('NTU');
+      component.eduLocalPart = '';
+      const emailNoLocal = component.buildSubmitEmail();
+      expect(emailNoLocal).toBeNull();
+      expect(component.clientVerifyMsg).toBe('acct.emailRequired');
+    });
+  });
 });

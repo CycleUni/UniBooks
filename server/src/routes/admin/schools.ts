@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { and, asc, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, ne, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppEnv } from '../../env';
 import { invalidates } from '../../lib/cache';
 import { cities, createDb, regionVerifications, schoolRequests, schools, users, type Database, type School } from '../../db';
 import { apiError, fieldErrors, describeIssues, pagination, readJson, validate } from '../../lib/http';
 import { LIMITS } from '../../lib/limits';
-import { parseJsonObject } from '../../lib/json';
+import { parseJsonObject, parseJsonArray } from '../../lib/json';
+import { schoolDomains } from '../../services/accounts/regionData';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { assertInScope, intId, likeContains, notFound, regionExists, regionParam, scopeOf } from '../../services/admin/scope';
 import { dedupeCode, deriveCode, isValidCode, normalizeCode, regionCodes } from '../../services/admin/schoolCodes';
@@ -57,6 +58,11 @@ export function domainsOverlap(a: string, b: string): boolean {
 
 const DOMAIN_OVERLAP = 'admin.errSchoolDomainOverlaps';
 
+/** Whether a domain is an accepted student domain for a school (the school's website domain, any subdomain of it, or an additional accepted domain). */
+export function isAcceptedDomain(domain: string, emailDomain: string, extraDomains: string[]): boolean {
+  return domain === emailDomain || domain.endsWith(`.${emailDomain}`) || extraDomains.includes(domain);
+}
+
 /**
  * Campus addresses resolve to the most specific matching school domain in
  * any region (services/accounts/edu.ts), so a domain under or over another
@@ -67,21 +73,66 @@ const DOMAIN_OVERLAP = 'admin.errSchoolDomainOverlaps';
 function overlapsUnmanaged(
   scope: string[] | null,
   domain: string,
-  all: Pick<School, 'id' | 'regionCode' | 'emailDomain'>[],
+  all: Pick<School, 'id' | 'regionCode' | 'emailDomain' | 'emailDomains'>[],
   selfId?: number,
 ) {
   if (scope === null) return false;
-  return all.some((s) => s.id !== selfId && !scope.includes(s.regionCode) && domainsOverlap(domain, s.emailDomain));
+  return all.some(
+    (s) =>
+      s.id !== selfId &&
+      !scope.includes(s.regionCode) &&
+      schoolDomains({ email_domain: s.emailDomain, email_domains: s.emailDomains }).some((d) => domainsOverlap(domain, d)),
+  );
 }
 
 async function assertDomainInScope(c: Context<AppEnv>, db: Database, domain: string, selfId?: number): Promise<void> {
   const scope = await scopeOf(c);
   if (scope === null) return;
   const others = await db
-    .select({ id: schools.id, regionCode: schools.regionCode, emailDomain: schools.emailDomain })
+    .select({ id: schools.id, regionCode: schools.regionCode, emailDomain: schools.emailDomain, emailDomains: schools.emailDomains })
     .from(schools)
     .where(scope.length ? sql`${schools.regionCode} NOT IN (SELECT value FROM json_each(${JSON.stringify(scope)}))` : undefined);
   if (overlapsUnmanaged(scope, domain, others, selfId)) fieldErrors({ email_domain: [DOMAIN_OVERLAP] });
+}
+
+/**
+ * Enforces that every domain of a school (primary and additional) is unique
+ * across ALL schools and does not overlap with any domain of another school.
+ */
+async function assertNoDomainConflicts(db: Database, primaryDomain: string, extraDomains: string[], selfId?: number): Promise<void> {
+  const others = await db
+    .select({ id: schools.id, emailDomain: schools.emailDomain, emailDomains: schools.emailDomains })
+    .from(schools)
+    .where(selfId !== undefined ? ne(schools.id, selfId) : undefined);
+
+  // Primary domain must not clash or overlap with any other school's extra domains
+  for (const s of others) {
+    const extras = parseJsonArray<string>(s.emailDomains);
+    for (const ed of extras) {
+      if (primaryDomain === ed) {
+        fieldErrors({ email_domain: [INVALID] });
+      }
+      if (domainsOverlap(primaryDomain, ed)) {
+        fieldErrors({ email_domain: [DOMAIN_OVERLAP] });
+      }
+    }
+  }
+
+  // Each domain in extraDomains must be unique across all schools' primary and extra domains,
+  // and must not be a parent or subdomain of another school's domain.
+  for (const ed of extraDomains) {
+    for (const s of others) {
+      const accepted = schoolDomains({ email_domain: s.emailDomain, email_domains: s.emailDomains });
+      for (const od of accepted) {
+        if (ed === od) {
+          fieldErrors({ email_domains: [INVALID] });
+        }
+        if (domainsOverlap(ed, od)) {
+          fieldErrors({ email_domains: [DOMAIN_OVERLAP] });
+        }
+      }
+    }
+  }
 }
 
 /** Schools and school requests. */
@@ -102,6 +153,9 @@ function schoolJson(s: SchoolRow, lang: string | null) {
     name: s.name,
     display_name: lang ? localized(s.translations, lang, 'name', s.name) : s.name,
     email_domain: s.emailDomain,
+    email_domains: parseJsonArray<string>(s.emailDomains),
+    student_email_domain: s.studentEmailDomain || '',
+    google_domains: parseJsonArray<string>(s.googleDomains),
     translations: parseJsonObject(s.translations),
     region: s.regionCode,
     city: s.cityCode,
@@ -119,6 +173,9 @@ function schoolSelect(db: Database) {
       code: schools.code,
       name: schools.name,
       emailDomain: schools.emailDomain,
+      emailDomains: schools.emailDomains,
+      studentEmailDomain: schools.studentEmailDomain,
+      googleDomains: schools.googleDomains,
       translations: schools.translations,
       cityId: schools.cityId,
       isActive: schools.isActive,
@@ -138,6 +195,7 @@ export function schoolSearch(q: string): SQL {
     sql`REPLACE(${schools.name}, '台', '臺') LIKE ${like} ESCAPE '\\'`,
     sql`${schools.code} LIKE ${like} ESCAPE '\\'`,
     sql`${schools.emailDomain} LIKE ${like} ESCAPE '\\'`,
+    sql`EXISTS (SELECT 1 FROM json_each(${schools.emailDomains}) je WHERE je.value LIKE ${like} ESCAPE '\\')`,
     sql`EXISTS (SELECT 1 FROM json_each(${schools.translations}) je WHERE json_type(je.value) = 'object' AND REPLACE(json_extract(je.value, '$.name'), '台', '臺') LIKE ${like} ESCAPE '\\')`,
   )!;
 }
@@ -179,12 +237,39 @@ schoolRoutes.get('/schools', async (c) => {
 
 const translationsSchema = z.record(z.string(), z.unknown(), { message: INVALID });
 
+const domainArraySchema = z.array(z.string({ message: INVALID }), { message: INVALID }).transform((list, ctx) => {
+  const out: string[] = [];
+  for (const item of list) {
+    const norm = normalizeEmailDomain(item);
+    if (!norm) {
+      ctx.addIssue({ code: 'custom', message: INVALID });
+      return z.NEVER;
+    }
+    out.push(norm);
+  }
+  return [...new Set(out)];
+});
+
+const studentDomainSchema = z.string({ message: INVALID }).transform((v, ctx) => {
+  const trimmed = v.trim().toLowerCase().replace(/^@+/, '');
+  if (!trimmed) return '';
+  const norm = normalizeEmailDomain(trimmed);
+  if (!norm) {
+    ctx.addIssue({ code: 'custom', message: INVALID });
+    return z.NEVER;
+  }
+  return norm;
+});
+
 const schoolCreate = z.object({
   code: z.string({ message: INVALID }).optional(),
   name: z.string({ message: INVALID }).min(1, INVALID).max(LIMITS.schoolName, INVALID),
   email_domain: z
     .string({ message: INVALID })
     .transform((v, ctx) => normalizeEmailDomain(v) ?? (ctx.addIssue({ code: 'custom', message: INVALID }), z.NEVER)),
+  email_domains: domainArraySchema.optional(),
+  student_email_domain: studentDomainSchema.optional(),
+  google_domains: domainArraySchema.optional(),
   translations: translationsSchema.optional(),
   region: z.string({ message: INVALID }).min(1, INVALID),
   city: z.string({ message: INVALID }).nullable().optional(),
@@ -228,9 +313,27 @@ schoolRoutes.post('/schools', invalidates('ref'), async (c) => {
     cityId = await cityIn(db, body.region, body.city);
     if (cityId === null) fieldErrors({ city: ['admin.errSchoolCityUnknown'] });
   }
-  const [dup] = await db.select({ id: schools.id }).from(schools).where(eq(schools.emailDomain, body.email_domain)).limit(1);
-  if (dup) fieldErrors({ email_domain: [INVALID] });
-  await assertDomainInScope(c, db, body.email_domain);
+
+  const emailDomain = body.email_domain;
+  const rawEmailDomains = body.email_domains ?? [];
+  const emailDomains = rawEmailDomains.filter((d) => d !== emailDomain);
+  const studentEmailDomain = body.student_email_domain ?? '';
+  const googleDomains = body.google_domains ?? [];
+
+  if (studentEmailDomain && !isAcceptedDomain(studentEmailDomain, emailDomain, emailDomains)) {
+    fieldErrors({ student_email_domain: [INVALID] });
+  }
+  for (const gd of googleDomains) {
+    if (!isAcceptedDomain(gd, emailDomain, emailDomains)) {
+      fieldErrors({ google_domains: [INVALID] });
+    }
+  }
+
+  await assertNoDomainConflicts(db, emailDomain, emailDomains);
+  await assertDomainInScope(c, db, emailDomain);
+  for (const ed of emailDomains) {
+    await assertDomainInScope(c, db, ed);
+  }
 
   if (!code) code = dedupeCode(deriveCode(body.email_domain), taken);
   const [created] = await db
@@ -239,7 +342,10 @@ schoolRoutes.post('/schools', invalidates('ref'), async (c) => {
       regionCode: body.region,
       code,
       name: body.name,
-      emailDomain: body.email_domain,
+      emailDomain,
+      emailDomains: JSON.stringify(emailDomains),
+      studentEmailDomain,
+      googleDomains: JSON.stringify(googleDomains),
       translations: JSON.stringify(body.translations ?? {}),
       cityId,
       createdAt: new Date().toISOString(),
@@ -250,7 +356,16 @@ schoolRoutes.post('/schools', invalidates('ref'), async (c) => {
     {
       actorId: c.get('user')!.id,
       kind: 'admin.school_created',
-      meta: { school_id: created.id, region: body.region, code, name: body.name, email_domain: body.email_domain },
+      meta: {
+        school_id: created.id,
+        region: body.region,
+        code,
+        name: body.name,
+        email_domain: emailDomain,
+        email_domains: emailDomains,
+        student_email_domain: studentEmailDomain,
+        google_domains: googleDomains,
+      },
       targetType: 'school',
       targetId: created.id,
     },
@@ -315,6 +430,9 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
     existing: School | undefined;
     code: string | null;
     cityId: number | null;
+    effectiveEmailDomains: string[];
+    effectiveStudentDomain: string;
+    effectiveGoogleDomains: string[];
   };
   const planned: Planned[] = [];
   const forbidden: { index: number }[] = [];
@@ -326,15 +444,65 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
     const domain = data.email_domain;
     const targetRegion = data.region ?? currentRegion;
     const existing = existingByDomain.get(domain);
+
+    const effectiveEmailDomains =
+      data.email_domains !== undefined
+        ? data.email_domains.filter((d) => d !== domain)
+        : existing
+          ? parseJsonArray<string>(existing.emailDomains)
+          : [];
+    const effectiveStudentDomain =
+      data.student_email_domain !== undefined ? data.student_email_domain : existing ? existing.studentEmailDomain : '';
+    const effectiveGoogleDomains =
+      data.google_domains !== undefined ? data.google_domains : existing ? parseJsonArray<string>(existing.googleDomains) : [];
+
     if (
       targetRegion !== currentRegion ||
       (existing && existing.regionCode !== currentRegion) ||
-      overlapsUnmanaged(scope, domain, allSchools, existing?.id)
+      overlapsUnmanaged(scope, domain, allSchools, existing?.id) ||
+      effectiveEmailDomains.some((d) => overlapsUnmanaged(scope, d, allSchools, existing?.id))
     ) {
       // By position only: naming the domain would say whether it exists in a region the caller may not manage.
       forbidden.push({ index });
       continue;
     }
+
+    if (effectiveStudentDomain && !isAcceptedDomain(effectiveStudentDomain, domain, effectiveEmailDomains)) {
+      itemErrors.push({ index, errors: { student_email_domain: [INVALID] } });
+      continue;
+    }
+    if (effectiveGoogleDomains.some((gd) => !isAcceptedDomain(gd, domain, effectiveEmailDomains))) {
+      itemErrors.push({ index, errors: { google_domains: [INVALID] } });
+      continue;
+    }
+
+    let hasDomainConflict = false;
+    for (const other of allSchools) {
+      if (other.id === existing?.id) continue;
+      const otherExtras = parseJsonArray<string>(other.emailDomains);
+      for (const oed of otherExtras) {
+        if (domain === oed || domainsOverlap(domain, oed)) {
+          itemErrors.push({ index, errors: { email_domain: [domain === oed ? INVALID : DOMAIN_OVERLAP] } });
+          hasDomainConflict = true;
+          break;
+        }
+      }
+      if (hasDomainConflict) break;
+      const otherAccepted = schoolDomains({ email_domain: other.emailDomain, email_domains: other.emailDomains });
+      for (const od of otherAccepted) {
+        for (const ed of effectiveEmailDomains) {
+          if (ed === od || domainsOverlap(ed, od)) {
+            itemErrors.push({ index, errors: { email_domains: [ed === od ? INVALID : DOMAIN_OVERLAP] } });
+            hasDomainConflict = true;
+            break;
+          }
+        }
+        if (hasDomainConflict) break;
+      }
+      if (hasDomainConflict) break;
+    }
+    if (hasDomainConflict) continue;
+
     let cityId: number | null = null;
     if (data.city) {
       const city = regionCities.get(data.city.trim().toUpperCase());
@@ -367,9 +535,10 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
       taken.add(code);
       codeOwner.set(code, domain);
     }
-    planned.push({ item, data, existing, code, cityId });
+    planned.push({ item, data, existing, code, cityId, effectiveEmailDomains, effectiveStudentDomain, effectiveGoogleDomains });
   }
 
+  if (itemErrors.length) apiError(400, INVALID, { items: itemErrors });
   if (badCities.length) apiError(400, 'admin.errSchoolCityUnknown', { domains: badCities });
   if (badCodes.length) apiError(400, 'admin.errSchoolCodeInvalid', { domains: badCodes });
   if (clashing.length) apiError(400, 'admin.errSchoolCodeTaken', { domains: clashing });
@@ -382,7 +551,7 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
   const lang = null;
   const modifiedChanges: { school_id: number; email_domain: string; changes: Record<string, { before: unknown; after: unknown }> }[] = [];
 
-  for (const { item, data, existing, code, cityId } of planned) {
+  for (const { item, data, existing, code, cityId, effectiveEmailDomains, effectiveStudentDomain, effectiveGoogleDomains } of planned) {
     const domain = data.email_domain;
     if (!existing) {
       newItems.push({ ...item, code });
@@ -393,6 +562,9 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
             code: code!,
             name: data.name,
             emailDomain: domain,
+            emailDomains: JSON.stringify(effectiveEmailDomains),
+            studentEmailDomain: effectiveStudentDomain,
+            googleDomains: JSON.stringify(effectiveGoogleDomains),
             translations: JSON.stringify(data.translations ?? {}),
             cityId,
             createdAt: now,
@@ -405,11 +577,21 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
     const newTranslations = data.translations ?? oldTranslations;
     const newCode = code ?? existing.code;
     const newCityId = data.city !== undefined ? cityId : existing.cityId;
+    const oldEmailDomains = existing.emailDomains ?? '[]';
+    const newEmailDomains = data.email_domains !== undefined ? JSON.stringify(effectiveEmailDomains) : oldEmailDomains;
+    const oldStudentDomain = existing.studentEmailDomain ?? '';
+    const newStudentDomain = data.student_email_domain !== undefined ? effectiveStudentDomain : oldStudentDomain;
+    const oldGoogleDomains = existing.googleDomains ?? '[]';
+    const newGoogleDomains = data.google_domains !== undefined ? JSON.stringify(effectiveGoogleDomains) : oldGoogleDomains;
+
     const changed =
       existing.name !== data.name ||
       JSON.stringify(sortKeys(oldTranslations)) !== JSON.stringify(sortKeys(newTranslations)) ||
       existing.code !== newCode ||
-      existing.cityId !== newCityId;
+      existing.cityId !== newCityId ||
+      oldEmailDomains !== newEmailDomains ||
+      oldStudentDomain !== newStudentDomain ||
+      oldGoogleDomains !== newGoogleDomains;
     if (!changed) {
       unchanged.push(item);
       continue;
@@ -419,7 +601,15 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
       new: item,
     });
     if (action === 'apply') {
-      const set = { name: data.name, translations: JSON.stringify(newTranslations), code: newCode, cityId: newCityId };
+      const set = {
+        name: data.name,
+        translations: JSON.stringify(newTranslations),
+        code: newCode,
+        cityId: newCityId,
+        emailDomains: newEmailDomains,
+        studentEmailDomain: newStudentDomain,
+        googleDomains: newGoogleDomains,
+      };
       modifiedChanges.push({ school_id: existing.id, email_domain: domain, changes: changedFields(existing, set) });
       writes.push(db.update(schools).set(set).where(eq(schools.id, existing.id)));
     }
@@ -512,12 +702,44 @@ schoolRoutes.patch('/schools/:id', invalidates('ref'), async (c) => {
     // Moved to another region: its old city is not one of the new region's.
     set.cityId = null;
   }
-  if (body.email_domain !== undefined && body.email_domain !== instance.emailDomain) {
-    const [dup] = await db.select({ id: schools.id }).from(schools).where(eq(schools.emailDomain, body.email_domain)).limit(1);
-    if (dup) fieldErrors({ email_domain: [INVALID] });
-    await assertDomainInScope(c, db, body.email_domain, instance.id);
-    set.emailDomain = body.email_domain;
+
+  const effectiveEmailDomain = body.email_domain ?? instance.emailDomain;
+  const effectiveEmailDomains =
+    body.email_domains !== undefined
+      ? body.email_domains.filter((d) => d !== effectiveEmailDomain)
+      : parseJsonArray<string>(instance.emailDomains);
+  const effectiveStudentDomain = body.student_email_domain !== undefined ? body.student_email_domain : instance.studentEmailDomain;
+  const effectiveGoogleDomains = body.google_domains !== undefined ? body.google_domains : parseJsonArray<string>(instance.googleDomains);
+
+  if (effectiveStudentDomain && !isAcceptedDomain(effectiveStudentDomain, effectiveEmailDomain, effectiveEmailDomains)) {
+    fieldErrors({ student_email_domain: [INVALID] });
   }
+  for (const gd of effectiveGoogleDomains) {
+    if (!isAcceptedDomain(gd, effectiveEmailDomain, effectiveEmailDomains)) {
+      fieldErrors({ google_domains: [INVALID] });
+    }
+  }
+
+  if (body.email_domain !== undefined || body.email_domains !== undefined) {
+    await assertNoDomainConflicts(db, effectiveEmailDomain, effectiveEmailDomains, instance.id);
+    if (body.email_domain !== undefined && body.email_domain !== instance.emailDomain) {
+      await assertDomainInScope(c, db, body.email_domain, instance.id);
+      set.emailDomain = body.email_domain;
+    }
+    if (body.email_domains !== undefined) {
+      for (const ed of effectiveEmailDomains) {
+        await assertDomainInScope(c, db, ed, instance.id);
+      }
+      set.emailDomains = JSON.stringify(effectiveEmailDomains);
+    }
+  }
+  if (body.student_email_domain !== undefined && body.student_email_domain !== instance.studentEmailDomain) {
+    set.studentEmailDomain = effectiveStudentDomain;
+  }
+  if (body.google_domains !== undefined) {
+    set.googleDomains = JSON.stringify(effectiveGoogleDomains);
+  }
+
   if (body.name !== undefined) set.name = body.name;
   if (body.translations !== undefined) set.translations = JSON.stringify(body.translations);
   if (body.region !== undefined) set.regionCode = body.region;

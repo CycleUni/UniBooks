@@ -148,7 +148,7 @@ describe('MetadataService cache', () => {
 
     service.getMetadata('NTU').subscribe();
     const req = httpMock.expectOne(r => r.url === '/core/metadata');
-    expect(req.request.params.get('shape')).toBe('2');
+    expect(req.request.params.get('shape')).toBe('3');
     expect(req.request.params.get('school')).toBe('NTU');
     req.flush({});
     httpMock.verify();

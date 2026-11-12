@@ -38,6 +38,79 @@
 
       <!-- Renew with the address already bound, or switch to another one. A
            verification with none bound (staff-made) goes straight to the field. -->
+      <ng-template #assistedEduEmailInputs>
+        <div *ngIf="!useManualEmail; else manualEmailBlock" class="assisted-verify-form">
+          <div class="form-group">
+            <ui-dropdown
+              [label]="'acct.verifySelectSchool' | t"
+              [placeholder]="'acct.verifySelectSchool' | t"
+              [options]="schoolDropdownOptions"
+              [(ngModel)]="selectedVerifySchoolCode"
+              (ngModelChange)="onVerifySchoolChange($event)"
+              [searchable]="true"
+              [appendToBody]="true"
+            ></ui-dropdown>
+          </div>
+
+          <div class="form-group mt-3" *ngIf="selectedVerifySchoolCode">
+            <label>{{ 'acct.eduEmailLabel' | t:{suffixesText: ''} }}</label>
+            <div class="email-assisted-row">
+              <input
+                type="text"
+                class="local-part-input"
+                [placeholder]="'acct.eduEmailLocalPlaceholder' | t"
+                [(ngModel)]="eduLocalPart"
+                (ngModelChange)="onLocalPartChange($event)"
+                (paste)="onLocalPartPaste($event)"
+                (keydown.enter)="onVerifyFormSubmit()"
+                autocomplete="username"
+                [attr.aria-label]="'acct.eduEmailLocalPlaceholder' | t"
+              />
+              <div *ngIf="schoolDomainChoices.length > 1; else singleDomain" class="domain-select-wrapper">
+                <select
+                  class="domain-select"
+                  [(ngModel)]="selectedVerifyDomain"
+                  (ngModelChange)="onDomainSelectChange($event)"
+                  aria-label="Email domain"
+                >
+                  <option *ngFor="let d of schoolDomainChoices" [value]="d">&#64;{{ d }}</option>
+                </select>
+              </div>
+              <ng-template #singleDomain>
+                <span class="domain-fixed" *ngIf="selectedVerifyDomain">&#64;{{ selectedVerifyDomain }}</span>
+              </ng-template>
+            </div>
+            <div *ngIf="isCurrentDomainGoogle" class="google-domain-hint mt-1">
+              <span class="google-badge">{{ 'acct.googleDomainHint' | t }}</span>
+            </div>
+          </div>
+
+          <div class="mt-2">
+            <button type="button" class="link-btn escape-hatch-btn" (click)="toggleManualEmail()">
+              {{ 'acct.useOtherAddress' | t }}
+            </button>
+          </div>
+        </div>
+
+        <ng-template #manualEmailBlock>
+          <div class="form-group">
+            <label>{{ 'acct.eduEmailLabel' | t:{suffixesText: currentRegion ? ' (' + currentRegion.edu_email_suffix.join(', ') + ')' : ''} }}</label>
+            <ui-input
+              type="email"
+              autocomplete="off"
+              [placeholder]="'student@university' + (currentRegion ? currentRegion.edu_email_suffix[0] : '')"
+              [(ngModel)]="eduEmail"
+              (keydown.enter)="onVerifyFormSubmit()"
+            ></ui-input>
+            <div class="mt-1">
+              <button type="button" class="link-btn escape-hatch-btn" (click)="toggleManualEmail()">
+                {{ 'acct.useAssistedAddress' | t }}
+              </button>
+            </div>
+          </div>
+        </ng-template>
+      </ng-template>
+
       <ng-template #renewActions>
         <!-- A live verification already shows its address above ("bound to"). -->
         <p *ngIf="renewOldEmail && !currentVerification" class="mt-2">{{ 'acct.renewOldEmail' | t:{email: renewOldEmail} }}</p>
@@ -48,10 +121,9 @@
           <ui-button variant="white" (onClick)="onChangeEduEmail()" [disabled]="isLoading">{{ 'acct.changeEduEmail' | t }}</ui-button>
         </div>
         <ng-template #newEduEmailForm>
-          <div class="form-group mt-2" style="max-width: 400px;">
-            <label>{{ 'acct.eduEmailLabel' | t:{suffixesText: ' (' + currentRegion!.edu_email_suffix.join(', ') + ')'} }}</label>
-            <ui-input type="email" autocomplete="off" placeholder="student@university{{ currentRegion!.edu_email_suffix[0] }}" [(ngModel)]="eduEmail" (keydown.enter)="onSubmitNewEduEmail()"></ui-input>
-            <div class="renew-actions mt-2">
+          <div class="form-group mt-2" style="max-width: 440px;">
+            <ng-container *ngTemplateOutlet="assistedEduEmailInputs"></ng-container>
+            <div class="renew-actions mt-3">
               <ui-button (onClick)="onSubmitNewEduEmail()" [disabled]="isLoading || resendCooldownSeconds > 0">
                 {{ (isLoading ? 'acct.sending' : (resendCooldownSeconds > 0 ? ('acct.resendIn' | t:{minutes: resendCooldownMinutes, seconds: resendCooldownSecondsPart}) : 'acct.sendVerification')) | t }}
               </ui-button>
@@ -94,10 +166,9 @@
         </div>
 
         <ng-container *ngIf="!showPendingVerification; else pendingVerificationBlock">
-          <div class="form-group mt-4"  style="max-width: 400px;" *ngIf="!currentLapsed">
-            <label>{{ 'acct.eduEmailLabel' | t:{suffixesText: ' (' + currentRegion.edu_email_suffix.join(', ') + ')'} }}</label>
-            <ui-input type="email" autocomplete="off" placeholder="student@university{{ currentRegion.edu_email_suffix[0] }}" [(ngModel)]="eduEmail" ></ui-input>
-            <ui-button  class="mt-2" (onClick)="onRequestVerification()" [disabled]="isLoading || resendCooldownSeconds > 0">
+          <div class="form-group mt-4" style="max-width: 440px;" *ngIf="!currentLapsed">
+            <ng-container *ngTemplateOutlet="assistedEduEmailInputs"></ng-container>
+            <ui-button class="mt-3" (onClick)="onRequestVerification()" [disabled]="isLoading || resendCooldownSeconds > 0">
               {{
                 isLoading
                   ? ('acct.sending' | t)

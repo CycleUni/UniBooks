@@ -22,6 +22,10 @@ export interface SchoolOption {
   /** Every name the school goes by, in every language, for searching. */
   names?: string[];
   email_domain?: string;
+  email_domains?: string[];
+  student_email_domain?: string;
+  google_domains?: string[];
+  accepted_domains?: string[];
   /** Code of the city the school is in; null when it has none. */
   city?: string | null;
 }

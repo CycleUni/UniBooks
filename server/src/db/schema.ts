@@ -183,6 +183,12 @@ export const schools = sqliteTable(
     name: text('name').notNull(),
     /** e.g. ntu.edu.tw — globally unique. */
     emailDomain: text('email_domain').notNull().unique(),
+    /** JSON array of additional mailbox domains (lower-case, no leading @). */
+    emailDomains: text('email_domains').notNull().default('[]'),
+    /** The ONE domain students most commonly have ('' = fall back to emailDomain). */
+    studentEmailDomain: text('student_email_domain').notNull().default(''),
+    /** JSON array: which of the school's accepted domains are Google Workspace accounts. */
+    googleDomains: text('google_domains').notNull().default('[]'),
     translations: text('translations').notNull().default('{}'),
     cityId: integer('city_id').references(() => cities.id, { onDelete: 'set null' }),
     isActive: integer('is_active').notNull().default(1),

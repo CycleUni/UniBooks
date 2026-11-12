@@ -145,6 +145,9 @@ export interface AdminSchool {
   name: string;
   display_name: string;
   email_domain: string;
+  email_domains?: string[];
+  student_email_domain?: string;
+  google_domains?: string[];
   translations: any;
   region?: string;
   /** Code of the school's city in its region; null when none is set. */

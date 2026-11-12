@@ -1,19 +1,23 @@
-import { Component, inject, OnDestroy, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit, ChangeDetectorRef, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiInput } from '../../shared/ui/input.component';
+import { UiDropdown, DropdownOption } from '../../shared/ui/dropdown.component';
 import { UiSuccessCheck } from '../../shared/ui/success-check.component';
 import { TPipe, I18nService } from '../../core/i18n.service';
 import { RegionService, Region } from '../../core/region.service';
 import { AccountService } from '../../core/services/account.service';
 import { AuthStore, PasskeyItem, isUserCancellation } from '../../core/auth.store';
+import { SchoolOption, CityOption, SchoolStateService } from '../../core/services/school-state.service';
+import { MetadataService } from '../../core/services/metadata.service';
+import { schoolKeywords } from '../../core/school-search';
 import { isSameRegion } from '../../core/region-path';
 import { ToastService } from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { ActivatedRoute, Router } from '@angular/router';
 import { parseApiError, translateApiError } from '../../core/api-error.util';
-import { domainMatchesSuffix } from '../../core/verification';
+import { domainMatchesSuffix, getSchoolDomainChoices, splitEmailAddress, findSchoolForDomain } from '../../core/verification';
 import { SchoolRequestFormComponent } from './school-request-form.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
@@ -33,6 +37,7 @@ const RENEW_WINDOW_DAYS = 30;
     FormsModule,
     UiButton,
     UiInput,
+    UiDropdown,
     UiSuccessCheck,
     TPipe,
     SchoolRequestFormComponent,
@@ -131,14 +136,18 @@ export class SettingsComponent implements OnInit, OnDestroy {
   onChangeEduEmail() {
     this.changingEduEmail = true;
     this.eduEmail = '';
+    this.eduLocalPart = '';
     this.clientVerifyMsg = '';
     this.lastVerifyError = null;
     this.autoVerifyMessage = '';
+    this.initSelectedSchool();
   }
 
   onSubmitNewEduEmail() {
     if (this.resendCooldownSeconds > 0) return;
-    this.submitEduVerification(this.eduEmail);
+    const emailToSubmit = this.buildSubmitEmail();
+    if (!emailToSubmit) return;
+    this.submitEduVerification(emailToSubmit);
   }
 
   private readonly verifyPendingEmailStorageKeyLegacy =
@@ -280,8 +289,34 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private confirms = inject(ConfirmService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  private metadataService = inject(MetadataService);
+  private schoolStateService = inject(SchoolStateService);
   private resendCountdownTimer: ReturnType<typeof setInterval> | null = null;
   private profileUserId: string | null = null;
+
+  availableSchools: SchoolOption[] = [];
+  availableCities: CityOption[] = [];
+  schoolDropdownOptions: DropdownOption[] = [];
+  selectedVerifySchoolCode = '';
+  selectedSchoolOption: SchoolOption | null = null;
+  selectedVerifyDomain = '';
+  schoolDomainChoices: string[] = [];
+  eduLocalPart = '';
+  useManualEmail = false;
+
+  constructor() {
+    effect(() => {
+      this.i18n.lang();
+      if (this.availableSchools.length > 0) {
+        this.rebuildSchoolOptions();
+        if (this.selectedVerifySchoolCode) {
+          this.selectedSchoolOption =
+            this.availableSchools.find((s) => s.code === this.selectedVerifySchoolCode) || null;
+        }
+        this.cdr.markForCheck();
+      }
+    });
+  }
 
   get showPendingVerification(): boolean {
     return !this.isEditingPendingEmail && !!this.pendingEduEmail;
@@ -325,6 +360,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.clearLegacyPendingVerificationState();
     this.loadProfile();
+    this.loadSchoolsMetadata();
     if (this.supportsPasskeys) {
       this.loadPasskeys();
     }
@@ -395,6 +431,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
           this.clearPendingVerificationState();
         } else if (this.pendingEduEmail && !this.isEditingPendingEmail) {
           this.eduEmail = this.pendingEduEmail;
+          if (this.eduEmail.includes('@')) {
+            this.handlePastedEmail(this.eduEmail);
+          }
+        } else if (this.eduEmail && !this.eduLocalPart) {
+          if (this.eduEmail.includes('@')) {
+            this.handlePastedEmail(this.eduEmail);
+          }
         }
         this.cdr.markForCheck();
       },
@@ -411,14 +454,24 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   async onRequestVerification() {
-    const verifiedRegion = this.getVerifiedRegionForEmail(this.eduEmail);
+    const emailToSubmit = this.buildSubmitEmail();
+    if (!emailToSubmit) return;
+    const verifiedRegion = this.getVerifiedRegionForEmail(emailToSubmit);
     if (verifiedRegion) {
       const proceed = await this.confirms.ask(
         this.i18n.t('acct.regionAlreadyVerifiedConfirm', { region: verifiedRegion.localized_name }),
       );
       if (!proceed) return;
     }
-    this.submitEduVerification(this.eduEmail);
+    this.submitEduVerification(emailToSubmit);
+  }
+
+  onVerifyFormSubmit() {
+    if (this.changingEduEmail) {
+      this.onSubmitNewEduEmail();
+    } else {
+      this.onRequestVerification();
+    }
   }
 
   private getVerifiedRegionForEmail(emailInput: string): Region | null {
@@ -456,7 +509,206 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.verifyIsError = false;
     this.lastVerifyError = null;
     this.eduEmail = this.pendingEduEmail || this.eduEmail;
+    if (this.eduEmail && this.eduEmail.includes('@')) {
+      this.handlePastedEmail(this.eduEmail);
+    }
     this.cdr.markForCheck();
+  }
+
+  get isCurrentDomainGoogle(): boolean {
+    if (!this.selectedSchoolOption || !this.selectedVerifyDomain) return false;
+    const googleList = this.selectedSchoolOption.google_domains || [];
+    return googleList.map((d) => d.toLowerCase()).includes(this.selectedVerifyDomain.toLowerCase());
+  }
+
+  loadSchoolsMetadata() {
+    this.metadataService.getMetadata().subscribe({
+      next: (data) => {
+        this.availableSchools = data?.schools || [];
+        this.availableCities = data?.cities || [];
+        this.rebuildSchoolOptions();
+        this.initSelectedSchool();
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        console.error('Failed to load schools metadata in settings', err);
+      },
+    });
+  }
+
+  private rebuildSchoolOptions() {
+    this.schoolDropdownOptions = this.schoolOptionsByCity(this.availableSchools, this.availableCities);
+  }
+
+  private schoolOptionsByCity(schools: SchoolOption[], cities: CityOption[]): DropdownOption[] {
+    const option = (s: SchoolOption, group?: string): DropdownOption => ({
+      value: s.code,
+      label: s.display_name || s.name,
+      group,
+      keywords: schoolKeywords(s),
+    });
+    if (cities.length === 0) return schools.map((s) => option(s));
+    const known = new Set(cities.map((c) => c.code));
+    const grouped = cities.flatMap((c) =>
+      schools.filter((s) => s.city === c.code).map((s) => option(s, c.display_name || c.name)),
+    );
+    const other = this.i18n.t('layout.otherCity');
+    const rest = schools.filter((s) => !s.city || !known.has(s.city)).map((s) => option(s, other));
+    return [...grouped, ...rest];
+  }
+
+  private initSelectedSchool() {
+    if (this.selectedVerifySchoolCode) return;
+    const current = this.schoolStateService.currentSchool || this.schoolStateService.getManualSchool();
+    if (current && this.availableSchools.some((s) => s.code === current)) {
+      this.selectVerifySchool(current);
+    }
+  }
+
+  selectVerifySchool(code: string, preserveDomain?: string) {
+    this.selectedVerifySchoolCode = code;
+    this.selectedSchoolOption = this.availableSchools.find((s) => s.code === code) || null;
+    this.updateDomainChoices(preserveDomain);
+    this.cdr.markForCheck();
+  }
+
+  onVerifySchoolChange(code: string) {
+    this.selectVerifySchool(code);
+  }
+
+  private updateDomainChoices(preserveDomain?: string) {
+    if (!this.selectedSchoolOption) {
+      this.schoolDomainChoices = [];
+      this.selectedVerifyDomain = '';
+      return;
+    }
+    this.schoolDomainChoices = getSchoolDomainChoices(this.selectedSchoolOption);
+    if (preserveDomain && this.schoolDomainChoices.includes(preserveDomain.toLowerCase())) {
+      this.selectedVerifyDomain = preserveDomain.toLowerCase();
+    } else {
+      this.selectedVerifyDomain =
+        this.selectedSchoolOption.student_email_domain ||
+        this.selectedSchoolOption.email_domain ||
+        this.schoolDomainChoices[0] ||
+        '';
+    }
+  }
+
+  onDomainSelectChange(domain: string) {
+    this.selectedVerifyDomain = domain;
+    this.cdr.markForCheck();
+  }
+
+  onLocalPartChange(val: string) {
+    if (val.includes('@')) {
+      this.handlePastedEmail(val);
+      return;
+    }
+    this.eduLocalPart = val;
+  }
+
+  onLocalPartPaste(event: ClipboardEvent) {
+    const text = event.clipboardData?.getData('text') || '';
+    if (text.includes('@')) {
+      event.preventDefault();
+      this.handlePastedEmail(text);
+    }
+  }
+
+  handlePastedEmail(raw: string) {
+    const split = splitEmailAddress(raw);
+    if (!split) {
+      this.eduLocalPart = raw.trim();
+      return;
+    }
+    const { localPart, domain } = split;
+
+    // 1. Check if the currently selected school accepts this exact domain
+    if (this.selectedSchoolOption && this.schoolDomainChoices.includes(domain)) {
+      this.eduLocalPart = localPart;
+      this.selectedVerifyDomain = domain;
+      this.useManualEmail = false;
+      this.cdr.markForCheck();
+      return;
+    }
+
+    // 2. Search available schools for this domain
+    const match = findSchoolForDomain(this.availableSchools, domain);
+    if (match) {
+      this.selectVerifySchool(match.school.code, domain);
+      this.eduLocalPart = localPart;
+      if (this.schoolDomainChoices.includes(domain)) {
+        this.selectedVerifyDomain = domain;
+        this.useManualEmail = false;
+      } else {
+        // Subdomain not in explicit choices (e.g. csie.ntu.edu.tw) -> manual mode
+        this.useManualEmail = true;
+        this.eduEmail = `${localPart}@${domain}`;
+      }
+    } else {
+      // School not matched at all -> manual mode
+      this.useManualEmail = true;
+      this.eduEmail = `${localPart}@${domain}`;
+    }
+    this.cdr.markForCheck();
+  }
+
+  toggleManualEmail() {
+    this.useManualEmail = !this.useManualEmail;
+    if (this.useManualEmail) {
+      if (this.eduLocalPart && this.selectedVerifyDomain) {
+        this.eduEmail = `${this.eduLocalPart.trim()}@${this.selectedVerifyDomain.trim()}`;
+      }
+    } else {
+      if (this.eduEmail && this.eduEmail.includes('@')) {
+        this.handlePastedEmail(this.eduEmail);
+      }
+    }
+    this.cdr.markForCheck();
+  }
+
+  buildSubmitEmail(): string | null {
+    this.clientVerifyMsg = '';
+    this.lastVerifyError = null;
+    this.verifyIsError = false;
+
+    if (this.useManualEmail) {
+      const email = this.eduEmail.trim();
+      if (!email) {
+        this.verifyIsError = true;
+        this.clientVerifyMsg = 'acct.emailRequired';
+        return null;
+      }
+      return email;
+    }
+
+    if (this.eduEmail && !this.eduLocalPart && !this.selectedVerifySchoolCode) {
+      return this.eduEmail.trim();
+    }
+
+    if (!this.selectedVerifySchoolCode) {
+      this.verifyIsError = true;
+      this.clientVerifyMsg = 'acct.errSchoolRequired';
+      return null;
+    }
+
+    const localPart = this.eduLocalPart.trim();
+    if (!localPart) {
+      this.verifyIsError = true;
+      this.clientVerifyMsg = 'acct.emailRequired';
+      return null;
+    }
+
+    const domain = this.selectedVerifyDomain.trim();
+    if (!domain) {
+      this.verifyIsError = true;
+      this.clientVerifyMsg = 'acct.emailRequired';
+      return null;
+    }
+
+    const fullEmail = `${localPart}@${domain}`;
+    this.eduEmail = fullEmail;
+    return fullEmail;
   }
 
   private submitEduVerification(emailInput: string) {

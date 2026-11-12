@@ -102,7 +102,36 @@ import { BulkController } from './bulk';
           </div>
           <div class="form-group">
             <label>{{ 'admin.colDomain' | t }}</label>
-            <input type="text" class="admin-form-control" [(ngModel)]="newSchool.email_domain" [placeholder]="'admin.domainDesc' | t">
+            <input type="text" class="admin-form-control" [(ngModel)]="newSchool.email_domain" (ngModelChange)="updateNewSchoolAcceptedDomains()" [placeholder]="'admin.domainDesc' | t">
+          </div>
+          <div class="form-group">
+            <label>{{ 'admin.schoolEmailDomains' | t }}</label>
+            <textarea
+              class="admin-form-control"
+              rows="2"
+              [(ngModel)]="newSchoolEmailDomainsText"
+              (ngModelChange)="onNewSchoolEmailDomainsChange($event)"
+              [placeholder]="'admin.schoolEmailDomainsDesc' | t"
+            ></textarea>
+            <small class="hint">{{ 'admin.schoolEmailDomainsDesc' | t }}</small>
+          </div>
+          <div class="form-group">
+            <label>{{ 'admin.studentEmailDomain' | t }}</label>
+            <select class="admin-form-control" [(ngModel)]="newSchool.student_email_domain">
+              <option value="">{{ 'admin.studentEmailDomainDefault' | t }} ({{ newSchool.email_domain || '' }})</option>
+              <option *ngFor="let d of newSchoolAcceptedDomainOptions" [value]="d">{{ d }}</option>
+            </select>
+            <small class="hint">{{ 'admin.studentEmailDomainDesc' | t }}</small>
+          </div>
+          <div class="form-group" *ngIf="newSchoolAcceptedDomainOptions.length > 0">
+            <label>{{ 'admin.googleDomains' | t }}</label>
+            <div class="domain-checkboxes">
+              <label *ngFor="let d of newSchoolAcceptedDomainOptions" class="checkbox-label">
+                <input type="checkbox" [checked]="isNewSchoolGoogleDomain(d)" (change)="toggleNewSchoolGoogleDomain(d, $event)">
+                <span>{{ d }} ({{ 'admin.googleDomainLabel' | t }})</span>
+              </label>
+            </div>
+            <small class="hint">{{ 'admin.googleDomainsDesc' | t }}</small>
           </div>
           <div class="form-group">
             <label for="new-school-code">{{ 'admin.schoolCode' | t }}</label>
@@ -142,6 +171,10 @@ import { BulkController } from './bulk';
     td.missing { color: var(--muted); }
     .code-input { text-transform: uppercase; }
     .lang-tag { flex: 0 0 auto; padding: 4px 8px; border-radius: 4px; background: var(--paper-warm); font-size: var(--text-xs); font-weight: 600; }
+    .domain-checkboxes { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+    .checkbox-label { display: flex; align-items: center; gap: 8px; font-weight: normal; font-size: var(--text-sm); cursor: pointer; }
+    .checkbox-label input { width: auto; }
+    .hint { display: block; margin-top: 4px; color: var(--muted); font-size: var(--text-xs); }
   `]
 })
 export class AdminSchoolsListComponent implements OnInit {
@@ -167,7 +200,16 @@ export class AdminSchoolsListComponent implements OnInit {
 
   showCreateModal = false;
   showImportModal = false;
-  newSchool: Partial<AdminSchool> = { name: '', email_domain: '', code: '' };
+  newSchool: Partial<AdminSchool> = {
+    name: '',
+    email_domain: '',
+    code: '',
+    email_domains: [],
+    student_email_domain: '',
+    google_domains: [],
+  };
+  newSchoolEmailDomainsText = '';
+  newSchoolAcceptedDomainOptions: string[] = [];
   /** Localized names for a new school, keyed by language. */
   newSchoolNames: Record<string, string> = {};
   readonly languages = this.regionService.translationLanguages;
@@ -233,8 +275,54 @@ export class AdminSchoolsListComponent implements OnInit {
     });
   }
 
+  onNewSchoolEmailDomainsChange(text: string) {
+    this.newSchoolEmailDomainsText = text;
+    const lines = text
+      .split(/[\n,]/)
+      .map((d) => d.trim().toLowerCase().replace(/^@+/, ''))
+      .filter(Boolean);
+    this.newSchool.email_domains = [...new Set(lines)];
+    this.updateNewSchoolAcceptedDomains();
+  }
+
+  updateNewSchoolAcceptedDomains() {
+    const primary = (this.newSchool.email_domain || '').trim().toLowerCase().replace(/^@+/, '');
+    const extras = this.newSchool.email_domains || [];
+    const all = Array.from(new Set([primary, ...extras].filter(Boolean)));
+    this.newSchoolAcceptedDomainOptions = all;
+
+    const student = this.newSchool.student_email_domain || '';
+    if (student && !all.includes(student) && !student.endsWith(`.${primary}`)) {
+      this.newSchool.student_email_domain = '';
+    }
+
+    const currentGoogle = this.newSchool.google_domains || [];
+    this.newSchool.google_domains = currentGoogle.filter((g) => all.includes(g) || (primary && g.endsWith(`.${primary}`)));
+  }
+
+  isNewSchoolGoogleDomain(domain: string): boolean {
+    return (this.newSchool.google_domains || []).includes(domain);
+  }
+
+  toggleNewSchoolGoogleDomain(domain: string, event: Event) {
+    const checked = (event.target as HTMLInputElement).checked;
+    const current = new Set(this.newSchool.google_domains || []);
+    if (checked) current.add(domain);
+    else current.delete(domain);
+    this.newSchool.google_domains = Array.from(current);
+  }
+
   openCreateModal() {
-    this.newSchool = { name: '', email_domain: '', code: '' };
+    this.newSchool = {
+      name: '',
+      email_domain: '',
+      code: '',
+      email_domains: [],
+      student_email_domain: '',
+      google_domains: [],
+    };
+    this.newSchoolEmailDomainsText = '';
+    this.newSchoolAcceptedDomainOptions = [];
     this.newSchoolNames = {};
     this.showCreateModal = true;
   }
@@ -251,6 +339,9 @@ export class AdminSchoolsListComponent implements OnInit {
       ...this.newSchool,
       code: (this.newSchool.code || '').trim().toUpperCase(),
       region: this.regionService.region().toUpperCase(),
+      email_domains: this.newSchool.email_domains || [],
+      student_email_domain: this.newSchool.student_email_domain || '',
+      google_domains: this.newSchool.google_domains || [],
     };
     const translations: Record<string, { name: string }> = {};
     for (const [lang, name] of Object.entries(this.newSchoolNames)) {

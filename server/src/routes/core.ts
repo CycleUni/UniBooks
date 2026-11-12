@@ -10,7 +10,7 @@ import { activeRegions, requireRegion, setSharedCache } from '../lib/region';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { resolveLanguage } from '../services/accounts/i18n';
 import { activeRegionDetails, localizedName, pickTranslation, type Row } from '../services/accounts/regionData';
-import { localizeDepartment, parseDepartments, parseJson } from '../lib/json';
+import { localizeDepartment, parseDepartments, parseJson, parseJsonArray } from '../lib/json';
 
 /**
  * /api/v1/core/*: health check, regions, geo region and home metadata
@@ -107,7 +107,7 @@ function allNames(row: Row): string[] {
  * new URL that no browser or edge copy answers, and the new KV key leaves
  * the copies built by the old code behind.
  */
-const METADATA_SHAPE = 2;
+const METADATA_SHAPE = 3;
 
 /**
  * Viewer-independent once the URL names the region (the app always sends it):
@@ -145,6 +145,9 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string) {
         name: schools.name,
         translations: schools.translations,
         emailDomain: schools.emailDomain,
+        emailDomains: schools.emailDomains,
+        studentEmailDomain: schools.studentEmailDomain,
+        googleDomains: schools.googleDomains,
         cityCode: cities.code,
       })
       .from(schools)
@@ -159,15 +162,25 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string) {
       .orderBy(asc(categories.sortOrder), asc(categories.id)),
   ]);
 
-  const schoolList = schoolRows.map((s) => ({
-    id: s.id,
-    code: s.code,
-    name: s.name,
-    display_name: localizedName(s, lang),
-    names: allNames(s),
-    email_domain: s.emailDomain,
-    city: s.cityCode ?? null,
-  }));
+  const schoolList = schoolRows.map((s) => {
+    const extra = parseJsonArray<string>(s.emailDomains);
+    const studentDomain = s.studentEmailDomain || s.emailDomain;
+    const googleDomains = parseJsonArray<string>(s.googleDomains);
+    const acceptedDomains = Array.from(new Set([s.emailDomain, ...extra].filter(Boolean)));
+    return {
+      id: s.id,
+      code: s.code,
+      name: s.name,
+      display_name: localizedName(s, lang),
+      names: allNames(s),
+      email_domain: s.emailDomain,
+      email_domains: extra,
+      student_email_domain: studentDomain,
+      google_domains: googleDomains,
+      accepted_domains: acceptedDomains,
+      city: s.cityCode ?? null,
+    };
+  });
   const cityList = cityRows.map((ci) => ({ code: ci.code, name: ci.name, display_name: localizedName(ci, lang) }));
   const categoryList = categoryRows.map((cat) => {
     const t = pickTranslation(cat.translations, lang);

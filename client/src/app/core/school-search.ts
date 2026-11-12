@@ -9,6 +9,7 @@ export interface SearchableSchool {
   display_name?: string;
   code?: string;
   email_domain?: string;
+  email_domains?: string[];
   /** Every name the school goes by, as /core/metadata/ lists it. */
   names?: string[];
   /** Localized fields per language, as the admin API returns them. */
@@ -24,7 +25,7 @@ export function foldText(s: string): string {
 }
 
 export function schoolKeywords(s: SearchableSchool): string[] {
-  const words = [s.display_name, s.name, ...(s.names ?? []), s.code, s.email_domain];
+  const words = [s.display_name, s.name, ...(s.names ?? []), s.code, s.email_domain, ...(s.email_domains ?? [])];
   if (s.translations && typeof s.translations === 'object') {
     for (const fields of Object.values(s.translations as Record<string, unknown>)) {
       const name = (fields as { name?: unknown } | null)?.name;
