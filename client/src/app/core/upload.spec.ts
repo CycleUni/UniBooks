@@ -1,5 +1,5 @@
 import { of } from 'rxjs';
-import { uploadImage } from './upload';
+import { sameOriginUrl, uploadImage } from './upload';
 
 describe('uploadImage', () => {
   it("asks for a ticket with the blob's own type and size, PUTs the bytes, and returns photo_url", () => {
@@ -20,9 +20,15 @@ describe('uploadImage', () => {
       content_type: 'image/webp',
       content_length: 4,
     });
-    expect(http.put).toHaveBeenCalledWith(ticket.upload_url, blob, {
+    expect(http.put).toHaveBeenCalledWith(`${window.location.origin}${ticket.upload_url}`, blob, {
       headers: { 'Content-Type': 'image/webp' },
     });
     expect(result).toEqual({ url: ticket.photo_url });
+  });
+
+  it('sends the bytes to the page origin even when the ticket names another host', () => {
+    expect(sameOriginUrl('http://unibooks.app/api/v1/admin/books/uploads/file?token=t')).toBe(
+      `${window.location.origin}/api/v1/admin/books/uploads/file?token=t`,
+    );
   });
 });

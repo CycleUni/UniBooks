@@ -527,4 +527,9 @@ export class AdminService {
   uploadAdPhoto(file: File): Observable<{ url: string }> {
     return uploadImage(this.http, '/admin/promotions/uploads', file);
   }
+
+  // Book covers are uploaded via two-step upload (core/upload.ts).
+  uploadBookCover(file: File, bookId?: string): Observable<{ url: string }> {
+    return uploadImage(this.http, '/admin/books/uploads', file, bookId ? { book_id: bookId } : {});
+  }
 }

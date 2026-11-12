@@ -159,3 +159,90 @@ export async function deleteAdImage(env: Env, origin: string, url: string | null
 export function isInternalImage(env: Env, origin: string, url: string | null | undefined): boolean {
   return !!url && !!storageKey(env, origin, url);
 }
+
+// ---------------------------------------------------------------------------
+// Custom book cover uploads
+// ---------------------------------------------------------------------------
+
+export const TMP_COVER_PREFIX = 'tmp/covers';
+export const CUSTOM_COVER_PREFIX = 'covers/custom';
+
+/** The uploader's folder for pending custom book covers: `tmp/covers/<userId>/`. */
+export const tmpCoverPrefix = (userId: string) => `${TMP_COVER_PREFIX}/${userId}/`;
+
+const TMP_COVER_RE = /^tmp\/covers\/([^/]+)\/([0-9a-f]{32}\.(?:jpg|png|webp|gif))$/;
+
+export type BookCoverResolution =
+  | { ok: true; url: string; key: string | null; promoted: boolean }
+  | {
+      ok: false;
+      code: 'listing.errPhotoHostNotAllowed' | 'listing.errPhotoNotOwned' | 'admin.errUploadFailed';
+    };
+
+/**
+ * Promote one uploaded book cover or keep/drop existing:
+ * - Empty url: drop any stored cover copy, returns url: '', key: null.
+ * - Same internal URL as current: kept as is.
+ * - Upload under tmp/covers/<userId>/...: promoted to covers/custom/<bookId>-<newHexId>.<ext>,
+ *   previous stored cover deleted if any.
+ * - External URL: previous stored cover deleted if any, returns url as is, key: null.
+ */
+export async function resolveBookCover(
+  env: Env,
+  origin: string,
+  userId: string,
+  bookId: string,
+  url: string,
+  currentR2Key: string | null,
+): Promise<BookCoverResolution> {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    if (currentR2Key && currentR2Key.startsWith('covers/')) {
+      await env.R2.delete(currentR2Key).catch((e) => console.error('[admin] failed to delete cover', currentR2Key, e));
+    }
+    return { ok: true, url: '', key: null, promoted: false };
+  }
+
+  // If keeping the existing stored cover
+  if (currentR2Key) {
+    const pub = publicUrl(env, origin, currentR2Key);
+    if (trimmed === pub || storageKey(env, origin, trimmed) === currentR2Key) {
+      return { ok: true, url: pub, key: currentR2Key, promoted: false };
+    }
+  }
+
+  const key = storageKey(env, origin, trimmed);
+  if (!key) {
+    // External URL: delete old stored cover
+    if (currentR2Key && currentR2Key.startsWith('covers/')) {
+      await env.R2.delete(currentR2Key).catch((e) => console.error('[admin] failed to delete cover', currentR2Key, e));
+    }
+    return { ok: true, url: trimmed, key: null, promoted: false };
+  }
+
+  // Internal storage key: must be a tmp upload for this user under tmp/covers/
+  const tmp = TMP_COVER_RE.exec(key);
+  if (!tmp) return { ok: false, code: 'listing.errPhotoNotOwned' };
+  if (tmp[1] !== userId) return { ok: false, code: 'listing.errPhotoNotOwned' };
+
+  const obj = await env.R2.get(key);
+  if (!obj) return { ok: false, code: 'admin.errUploadFailed' };
+
+  const ext = tmp[2].split('.').pop()!;
+  const newKey = `${CUSTOM_COVER_PREFIX}/${bookId}-${newObjectName(ext as ImageExt)}`;
+
+  await env.R2.put(newKey, obj.body, {
+    httpMetadata: {
+      contentType: IMAGE_CONTENT_TYPES[ext as ImageExt],
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+  });
+
+  await env.R2.delete(key).catch((e) => console.error('[admin] failed to delete tmp cover', key, e));
+
+  if (currentR2Key && currentR2Key.startsWith('covers/') && currentR2Key !== newKey) {
+    await env.R2.delete(currentR2Key).catch((e) => console.error('[admin] failed to delete old cover', currentR2Key, e));
+  }
+
+  return { ok: true, url: publicUrl(env, origin, newKey), key: newKey, promoted: true };
+}

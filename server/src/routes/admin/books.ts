@@ -7,7 +7,7 @@ import type { AppEnv } from '../../env';
 import { books, createDb, listings, regions, subscriptions, type Book, type Database } from '../../db';
 import { apiError, pagination, readJson } from '../../lib/http';
 import { auditInsert } from '../../services/admin/audit';
-import { notFound, regionParam, scopeOf, scopeWhere, uuidId } from '../../services/admin/scope';
+import { assertInScope, notFound, regionParam, scopeOf, scopeWhere, uuidId } from '../../services/admin/scope';
 import { cleanCoverUrl, cleanPublisher } from '../../services/catalog/common';
 import { validateBookIsbn } from '../../services/catalog/isbn';
 import {
@@ -19,9 +19,10 @@ import {
   SOURCE_BY_ENGINE,
 } from '../../services/catalog/lookups';
 import { serializeBook } from '../../services/listings/serialize';
-import { dropCoverCopy } from '../../services/catalog/covers';
 import { bookSearch } from './listings';
 import { isUniqueViolation } from '../../lib/db';
+import { resolveBookCover, tmpCoverPrefix } from '../../services/admin/uploads';
+import { issueUpload, storeUpload } from '../../lib/upload';
 
 /**
  * Correcting a book's catalogue record,
@@ -165,6 +166,47 @@ bookRoutes.post('/books/reopen-review', async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// Book cover uploads (before /books/:id/)
+// ---------------------------------------------------------------------------
+
+async function assertBookUploadScope(c: Context<AppEnv>, db: Database, bookId?: string, region?: string) {
+  const scope = await scopeOf(c);
+  if (scope === null) return;
+  if (bookId) {
+    const [b] = await db.select({ id: books.id, regionCode: books.regionCode }).from(books).where(eq(books.id, bookId)).limit(1);
+    if (!b) notFound();
+    assertInScope(scope, b.regionCode);
+  } else if (region) {
+    assertInScope(scope, region);
+  }
+}
+
+/** Step one: staff upload under their own tmp/covers/ folder; saving a book promotes it. */
+bookRoutes.post('/books/uploads', async (c) => {
+  const userId = c.get('user')!.id;
+  const body = await readJson(c.req);
+  const db = createDb(c.env.DB);
+  const bookId = typeof body.book_id === 'string' ? body.book_id : c.req.query('book_id');
+  const region = typeof body.region === 'string' ? body.region : c.req.query('region');
+  await assertBookUploadScope(c, db, bookId, region);
+  return issueUpload(c, { action: 'book_cover', userId, keyPrefix: tmpCoverPrefix(userId), base: '/api/v1/admin/books/' }, body);
+});
+
+bookRoutes.post('/books/:id/uploads', async (c) => {
+  const userId = c.get('user')!.id;
+  const bookId = uuidId(c.req.param('id'));
+  const db = createDb(c.env.DB);
+  await assertBookUploadScope(c, db, bookId);
+  const body = await readJson(c.req);
+  return issueUpload(c, { action: 'book_cover', userId, keyPrefix: tmpCoverPrefix(userId), base: '/api/v1/admin/books/' }, body);
+});
+
+/** Step two: authenticated staff PUTs the bytes, bound to the same user. */
+bookRoutes.put('/books/uploads/file', (c) =>
+  storeUpload(c, { action: 'book_cover', keyPrefix: tmpCoverPrefix, caller: c.get('user')!.id }),
+);
+
+// ---------------------------------------------------------------------------
 // Detail
 // ---------------------------------------------------------------------------
 
@@ -263,6 +305,7 @@ bookRoutes.patch('/books/:id', async (c) => {
   const isbn = updates.isbn13;
   const merge = data.merge === true;
   const me = c.get('user')!;
+  const origin = new URL(c.req.url).origin;
 
   const target = isbn ? await otherBookWith(db, book, isbn) : undefined;
   if (target && !merge) isbnTaken(target);
@@ -335,21 +378,29 @@ bookRoutes.patch('/books/:id', async (c) => {
       await c.env.R2.delete(book.coverR2Key).catch((e: unknown) => console.error(`[admin/books] failed to delete ${book.coverR2Key}`, e));
     }
     const [fresh] = await db.select().from(books).where(eq(books.id, target.id)).limit(1);
-    const origin = new URL(c.req.url).origin;
     return c.json({ merged_into: target.id, book: serializeBook(fresh ?? target, c.env, origin) });
   }
 
   const set: Partial<Book> = { ...updates };
-  if (Object.keys(updates).length) {
-    if ('isbn13' in updates && updates.isbn13 !== book.isbn13 && book.reviewedAt) {
+  // Only a cover that really changes is resolved: the editor sends every
+  // field on each save, and an unchanged cover must keep its stored copy.
+  if (updates.coverUrl !== undefined && updates.coverUrl !== book.coverUrl) {
+    const res = await resolveBookCover(c.env, origin, me.id, book.id, updates.coverUrl, book.coverR2Key);
+    if (!res.ok) apiError(res.code === 'listing.errPhotoNotOwned' ? 403 : 400, res.code);
+    if (!res.promoted && res.key !== null && res.key === book.coverR2Key) {
+      // The address of the copy we already hold: nothing changes.
+      delete set.coverUrl;
+    } else {
+      set.coverUrl = res.url;
+      set.coverR2Key = res.key;
+      set.coverCheckedAt = res.promoted ? new Date().toISOString() : null;
+    }
+  }
+  if (Object.keys(set).length) {
+    if ('isbn13' in set && set.isbn13 !== book.isbn13 && book.reviewedAt) {
       // The review vouched for the old ISBN, not the new one.
       set.reviewedAt = null;
       set.reviewedById = null;
-    }
-    if ('coverUrl' in updates && updates.coverUrl !== book.coverUrl) {
-      await dropCoverCopy(c.env, book);
-      set.coverR2Key = null;
-      set.coverCheckedAt = null;
     }
     const camelToSnake: Record<string, string> = {
       title: 'title',
@@ -357,6 +408,8 @@ bookRoutes.patch('/books/:id', async (c) => {
       publisher: 'publisher',
       publishedDate: 'published_date',
       coverUrl: 'cover_url',
+      coverR2Key: 'cover_r2_key',
+      coverCheckedAt: 'cover_checked_at',
       source: 'source',
       isbn13: 'isbn13',
       reviewedAt: 'reviewed_at',
@@ -384,7 +437,6 @@ bookRoutes.patch('/books/:id', async (c) => {
     }
   }
   const [fresh] = await db.select().from(books).where(eq(books.id, book.id)).limit(1);
-  const origin = new URL(c.req.url).origin;
   return c.json({ merged_into: null, book: serializeBook(fresh, c.env, origin) });
 });
 

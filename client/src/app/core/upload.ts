@@ -29,8 +29,23 @@ export function uploadImage(
     .pipe(
       switchMap((ticket) =>
         http
-          .put(ticket.upload_url, blob, { headers: { 'Content-Type': blob.type } })
+          .put(sameOriginUrl(ticket.upload_url), blob, { headers: { 'Content-Type': blob.type } })
           .pipe(map(() => ({ url: ticket.photo_url }))),
       ),
     );
+}
+
+/**
+ * `upload_url` on the page's own origin. The server builds it from the host
+ * it was asked on, which under `wrangler dev` is the production route's host,
+ * not localhost: the PUT then left the page's origin and the CSP refused it.
+ * Uploads are same-origin by design, so only the path and query are kept.
+ */
+export function sameOriginUrl(uploadUrl: string): string {
+  try {
+    const url = new URL(uploadUrl, window.location.origin);
+    return `${window.location.origin}${url.pathname}${url.search}`;
+  } catch {
+    return uploadUrl;
+  }
 }

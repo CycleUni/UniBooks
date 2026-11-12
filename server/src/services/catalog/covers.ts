@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, notLike, or, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { books, createDb, listings, type Book } from '../../db';
 import { IMAGE_CONTENT_TYPES, IMAGE_TYPES, publicUrl, sniffImage } from '../../lib/media';
@@ -25,6 +25,11 @@ const COVER_FETCH_TIMEOUT_MS = 8000;
 
 export type BookCoverSource =
   { coverUrl?: string | null; coverR2Key?: string | null } | { cover_url?: string | null; cover_r2_key?: string | null } | null | undefined;
+
+/** Whether a cover R2 key belongs to an admin-uploaded custom cover. */
+export function isCustomCoverKey(key: string | null | undefined): boolean {
+  return typeof key === 'string' && key.startsWith('covers/custom/');
+}
 
 /**
  * Returns the public cover URL for a book:
@@ -80,6 +85,11 @@ export async function copyBookCover(env: Env, origin: string, bookId: string, op
   // Requirement 1: Only books that have at least one listing with status active or reserved get an R2 copy.
   const listed = await isBookListed(env, book.id);
   if (!listed) return false;
+
+  // Custom covers must never be overwritten by automatic copy
+  if (isCustomCoverKey(book.coverR2Key)) {
+    return true;
+  }
 
   if (book.coverR2Key && !options.force) {
     return true;
@@ -241,6 +251,7 @@ export async function runCoverCleanup(env: Env, batchSize = COVER_CLEANUP_BATCH_
   const db = createDb(env.DB);
 
   // Books with cover_r2_key but with no active or reserved listing
+  // Custom uploaded covers (covers/custom/...) are never pruned by cleanup jobs
   const rows = await db
     .select({
       id: books.id,
@@ -250,6 +261,7 @@ export async function runCoverCleanup(env: Env, batchSize = COVER_CLEANUP_BATCH_
     .where(
       and(
         isNotNull(books.coverR2Key),
+        notLike(books.coverR2Key, 'covers/custom/%'),
         sql`NOT EXISTS (SELECT 1 FROM listings l WHERE l.book_id = ${books.id} AND l.status IN ('active', 'reserved'))`,
       ),
     )
@@ -259,6 +271,7 @@ export async function runCoverCleanup(env: Env, batchSize = COVER_CLEANUP_BATCH_
 
   const cleanedIds: string[] = [];
   for (const row of rows) {
+    if (isCustomCoverKey(row.coverR2Key)) continue;
     if (row.coverR2Key && row.coverR2Key.startsWith('covers/')) {
       try {
         await env.R2.delete(row.coverR2Key);

@@ -40,7 +40,7 @@ export interface ChatTokenPayload {
 export interface UploadTokenPayload {
   user_id: string;
   /** What the upload is for; each upload endpoint accepts exactly one. */
-  action: 'listing_photo' | 'chat_image' | 'avatar' | 'ad_image';
+  action: 'listing_photo' | 'chat_image' | 'avatar' | 'ad_image' | 'book_cover';
   /** R2 object key the bytes are written to. */
   target_key: string;
   /** The Content-Type the upload was authorised for. */

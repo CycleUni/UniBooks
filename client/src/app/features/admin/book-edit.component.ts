@@ -10,6 +10,7 @@ import { I18nService, TPipe } from '../../core/i18n.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { ToastService } from '../../core/services/toast.service';
 import { UiButton } from '../../shared/ui/button.component';
+import { BookCoverPipe } from '../../shared/pipes/book-cover.pipe';
 import { LIMITS } from '../../core/limits';
 import { STATS_PAGE_STYLES } from './stats-widgets';
 
@@ -26,7 +27,7 @@ const CATALOGUE_SOURCES = new Set(['google_api', 'openlibrary_api', 'isbnnet_api
 @Component({
   selector: 'admin-book-edit',
   standalone: true,
-  imports: [CommonModule, FormsModule, TPipe, UiButton],
+  imports: [CommonModule, FormsModule, TPipe, UiButton, BookCoverPipe],
   template: `
     <section class="card">
       <div class="section-head-row">
@@ -53,7 +54,7 @@ const CATALOGUE_SOURCES = new Set(['google_api', 'openlibrary_api', 'isbnnet_api
             <ui-button
               size="sm"
               variant="secondary"
-              [disabled]="looking || saving"
+              [disabled]="looking || saving || uploadingCover"
               (onClick)="lookUp()"
             >
               {{ (looking ? 'admin.book.lookingUp' : 'admin.book.lookUp') | t }}
@@ -122,18 +123,56 @@ const CATALOGUE_SOURCES = new Set(['google_api', 'openlibrary_api', 'isbnnet_api
         </div>
         <div class="form-group">
           <label for="book-cover">{{ 'admin.book.coverUrl' | t }}</label>
-          <input
-            id="book-cover"
-            name="cover_url"
-            type="url"
-            class="admin-form-control"
-            maxlength="1024"
-            [(ngModel)]="form.cover_url"
-          />
+          <div *ngIf="form.cover_url" class="cover-preview-row">
+            <img
+              [src]="form.cover_url | bookCover: 3"
+              class="cover-preview"
+              [alt]="'admin.book.coverPreview' | t"
+            />
+          </div>
+          <div class="cover-input-row">
+            <input
+              id="book-cover"
+              name="cover_url"
+              type="url"
+              class="admin-form-control cover-url-input"
+              maxlength="1024"
+              [(ngModel)]="form.cover_url"
+              [disabled]="uploadingCover || saving"
+              (ngModelChange)="onCoverUrlChange()"
+            />
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              style="display: none"
+              #coverFileInput
+              (change)="onCoverFileSelected($event)"
+            />
+            <ui-button
+              type="button"
+              size="sm"
+              variant="outline"
+              [disabled]="uploadingCover || saving || looking"
+              (onClick)="coverFileInput.click()"
+            >
+              {{ (uploadingCover ? 'admin.uploading' : 'admin.book.uploadCover') | t }}
+            </ui-button>
+            <ui-button
+              *ngIf="form.cover_url"
+              type="button"
+              size="sm"
+              variant="outline"
+              [disabled]="uploadingCover || saving || looking"
+              (onClick)="removeCover()"
+            >
+              {{ 'admin.book.removeCover' | t }}
+            </ui-button>
+          </div>
+          <small *ngIf="coverError" class="field-error" role="alert">{{ coverError }}</small>
         </div>
 
         <p *ngIf="formError" class="field-error form-error" role="alert">{{ formError }}</p>
-        <ui-button type="submit" variant="primary" [disabled]="saving || looking">
+        <ui-button type="submit" variant="primary" [disabled]="saving || looking || uploadingCover">
           {{ (saving ? 'admin.saving' : 'admin.save') | t }}
         </ui-button>
       </form>
@@ -164,6 +203,27 @@ const CATALOGUE_SOURCES = new Set(['google_api', 'openlibrary_api', 'isbnnet_api
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
         column-gap: 16px;
+      }
+      .cover-preview-row {
+        margin-bottom: 8px;
+      }
+      .cover-preview {
+        width: 60px;
+        height: 84px;
+        object-fit: cover;
+        border-radius: 4px;
+        border: 1px solid var(--line);
+        background: var(--paper-warm);
+      }
+      .cover-input-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .cover-url-input {
+        flex: 1;
+        min-width: min(100%, 200px);
       }
       .hint,
       .field-error {
@@ -216,7 +276,10 @@ export class AdminBookEditComponent implements OnInit, OnDestroy {
   private baseline = '';
   looking = false;
   saving = false;
+  uploadingCover = false;
+  coverError = '';
   private lookup?: Subscription;
+  private uploadSub?: Subscription;
 
   /**
    * The stored ISBN fails today's check (saved before it existed) and is
@@ -251,17 +314,20 @@ export class AdminBookEditComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.cancelLookup();
+    this.cancelUpload();
   }
 
   toggle() {
     this.open = !this.open;
     this.cancelLookup();
+    this.cancelUpload();
     if (this.open) {
       this.form = { ...this.blank(), ...this.book, isbn13: this.book.isbn13 || '' };
       this.lookedUpSource = null;
       this.mergeTarget = null;
       this.isbnError = '';
       this.formError = '';
+      this.coverError = '';
       this.titleMissing = false;
       this.baseline = JSON.stringify(this.form);
     }
@@ -372,6 +438,65 @@ export class AdminBookEditComponent implements OnInit, OnDestroy {
     this.lookup?.unsubscribe();
     this.lookup = undefined;
     this.looking = false;
+  }
+
+  onCoverUrlChange() {
+    this.coverError = '';
+  }
+
+  removeCover() {
+    this.cancelUpload();
+    this.form.cover_url = '';
+    this.coverError = '';
+    this.cdr.markForCheck();
+  }
+
+  onCoverFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    this.coverError = '';
+    const MAX_BYTES = 5 * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
+      this.coverError = this.i18n.t('upload.errTooLarge');
+      input.value = '';
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!validTypes.includes(file.type)) {
+      this.coverError = this.i18n.t('upload.errUnsupportedType');
+      input.value = '';
+      this.cdr.markForCheck();
+      return;
+    }
+
+    this.cancelUpload();
+    this.uploadingCover = true;
+    this.cdr.markForCheck();
+
+    this.uploadSub = this.admin.uploadBookCover(file, this.bookId).subscribe({
+      next: (res) => {
+        this.uploadingCover = false;
+        this.form.cover_url = res.url;
+        this.cdr.markForCheck();
+        input.value = '';
+      },
+      error: (err) => {
+        this.uploadingCover = false;
+        this.coverError = parseAdminError(err, this.i18n, 'admin.errUploadFailed');
+        this.cdr.markForCheck();
+        input.value = '';
+      },
+    });
+  }
+
+  private cancelUpload() {
+    this.uploadSub?.unsubscribe();
+    this.uploadSub = undefined;
+    this.uploadingCover = false;
   }
 
   private blank(): AdminBookRecord {

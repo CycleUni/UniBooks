@@ -27,7 +27,11 @@ const FOUND = {
 };
 
 describe('AdminBookEditComponent', () => {
-  let admin: { lookupBook: ReturnType<typeof vi.fn>; updateBook: ReturnType<typeof vi.fn> };
+  let admin: {
+    lookupBook: ReturnType<typeof vi.fn>;
+    updateBook: ReturnType<typeof vi.fn>;
+    uploadBookCover: ReturnType<typeof vi.fn>;
+  };
   let askDanger: ReturnType<typeof vi.fn>;
 
   const create = (currentSource: string | null = null) => {
@@ -53,7 +57,7 @@ describe('AdminBookEditComponent', () => {
   };
 
   beforeEach(() => {
-    admin = { lookupBook: vi.fn(), updateBook: vi.fn() };
+    admin = { lookupBook: vi.fn(), updateBook: vi.fn(), uploadBookCover: vi.fn() };
     askDanger = vi.fn();
   });
 
@@ -238,5 +242,70 @@ describe('AdminBookEditComponent', () => {
     typed.form.isbn13 = FOUND.isbn13;
     typed.lookUp();
     expect(typed.sourceChange).toBeNull();
+  });
+
+  describe('cover image upload control', () => {
+    it('refuses file larger than 5MB with upload.errTooLarge', () => {
+      const editor = create();
+      const largeFile = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' });
+      const event = { target: { files: [largeFile], value: 'big.png' } } as unknown as Event;
+
+      editor.onCoverFileSelected(event);
+
+      expect(editor.coverError).toBe('upload.errTooLarge');
+      expect(admin.uploadBookCover).not.toHaveBeenCalled();
+      expect(editor.uploadingCover).toBe(false);
+    });
+
+    it('refuses unsupported file types with upload.errUnsupportedType', () => {
+      const editor = create();
+      const svgFile = new File(['<svg></svg>'], 'image.svg', { type: 'image/svg+xml' });
+      const event = { target: { files: [svgFile], value: 'image.svg' } } as unknown as Event;
+
+      editor.onCoverFileSelected(event);
+
+      expect(editor.coverError).toBe('upload.errUnsupportedType');
+      expect(admin.uploadBookCover).not.toHaveBeenCalled();
+      expect(editor.uploadingCover).toBe(false);
+    });
+
+    it('uploads valid image, updates form.cover_url and resets uploadingCover', () => {
+      admin.uploadBookCover.mockReturnValue(of({ url: 'https://example.com/cover.png' }));
+      const editor = create();
+      const validFile = new File([new Uint8Array(100)], 'cover.png', { type: 'image/png' });
+      const event = { target: { files: [validFile], value: 'cover.png' } } as unknown as Event;
+
+      editor.onCoverFileSelected(event);
+
+      expect(admin.uploadBookCover).toHaveBeenCalledWith(validFile, '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006');
+      expect(editor.form.cover_url).toBe('https://example.com/cover.png');
+      expect(editor.uploadingCover).toBe(false);
+      expect(editor.coverError).toBe('');
+    });
+
+    it('displays error on upload failure', () => {
+      admin.uploadBookCover.mockReturnValue(
+        throwError(() => ({ status: 400, error: { error: { code: 'upload.errTooLarge' } } })),
+      );
+      const editor = create();
+      const validFile = new File([new Uint8Array(100)], 'cover.png', { type: 'image/png' });
+      const event = { target: { files: [validFile], value: 'cover.png' } } as unknown as Event;
+
+      editor.onCoverFileSelected(event);
+
+      expect(editor.uploadingCover).toBe(false);
+      expect(editor.coverError).toBe('upload.errTooLarge');
+    });
+
+    it('clears cover_url and coverError on removeCover()', () => {
+      const editor = create();
+      editor.form.cover_url = 'https://example.com/old.png';
+      editor.coverError = 'some error';
+
+      editor.removeCover();
+
+      expect(editor.form.cover_url).toBe('');
+      expect(editor.coverError).toBe('');
+    });
   });
 });
