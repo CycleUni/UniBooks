@@ -30,6 +30,8 @@ import * as ott from '../services/accounts/oneTimeTokens';
 import { issueTokens, revokeAllTokensForUser, rotateRefreshToken, verifyAndRevokeRefreshToken } from '../services/accounts/tokens';
 import { checkPassword, dummyPasswordCheck, hashPassword, needsRehash, passwordProblems } from '../services/accounts/passwords';
 import { emailAlreadyUsed, isPlainEmail, isValidEduEmail, resolveSchoolFromEmail, upsertVerification } from '../services/accounts/edu';
+import { schoolDomains } from '../services/accounts/regionData';
+import { stringList } from '../lib/json';
 import { GoogleTokenInvalid, GoogleUnavailable, verifyGoogleIdToken } from '../services/accounts/google';
 import { EMAIL_LANGUAGE_AUTO, EMAIL_LANGUAGES, resolveLanguage } from '../services/accounts/i18n';
 import {
@@ -47,6 +49,7 @@ import {
 } from '../services/accounts/users';
 import {
   beginSecondFactor,
+  challengeStore,
   countUserPasskeys,
   deleteUserPasskey,
   getPasskeyLoginOptions,
@@ -454,6 +457,110 @@ accountRoutes.post('/verify/renew', authMiddleware(), rateLimit('verify-request'
   const { token, id: tokenId } = await ott.issue(c.env, ott.EDU_VERIFY, user.id, ott.EDU_VERIFY_TTL, { edu_email: eduEmail });
   await sendLinkEmail(c, 'eduVerification', user.id, eduEmail, mailName(user), `/verify?id=${tokenId}&token=${token}&type=edu`);
   return c.json({ code: 'acct.sentVerification', edu_email: eduEmail });
+});
+
+/**
+ * Issue a single-use nonce for campus Google account verification,
+ * bound to this user and expiring in 5 minutes.
+ */
+async function issueGoogleVerifyNonce(c: C) {
+  const user = await currentUser(c);
+  const nonce = crypto.randomUUID();
+  await challengeStore(c.env, nonce).put({ challenge: nonce, type: 'google_verify', userId: user.id }, 300);
+  return c.json({ nonce });
+}
+
+accountRoutes.get('/verify/google/options', authMiddleware(), issueGoogleVerifyNonce);
+accountRoutes.post('/verify/google/options', authMiddleware(), issueGoogleVerifyNonce);
+
+/**
+ * Verify campus address via a Google ID token from the student's campus Google account.
+ * This proves control of the campus address without modifying sign-in credentials,
+ * users.google_id, users.email, or setting a new session.
+ */
+accountRoutes.post('/verify/google', authMiddleware(), rateLimit('verify-request', RATES.verifyRequest), async (c) => {
+  const user = await currentUser(c);
+  const { credential } = await readJson(c.req);
+  if (!credential || typeof credential !== 'string') apiError(400, 'auth.errMissingCredential');
+
+  const clientId = c.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    console.error('[accounts] Google verification is not configured (GOOGLE_CLIENT_ID)');
+    apiError(500, 'auth.errProviderNotConfigured');
+  }
+
+  let claims;
+  try {
+    claims = await verifyGoogleIdToken(credential, clientId);
+  } catch (e) {
+    if (e instanceof GoogleTokenInvalid) apiError(401, 'auth.errInvalidToken');
+    if (e instanceof GoogleUnavailable) {
+      console.error("[accounts] could not reach Google's certificate endpoint", e);
+      apiError(503, 'auth.errProviderNotConfigured');
+    }
+    throw e;
+  }
+
+  // Replay protection: verify and consume nonce issued for this user
+  if (!claims.nonce || typeof claims.nonce !== 'string') {
+    apiError(400, 'auth.errInvalidToken');
+  }
+  const chalRecord = await challengeStore(c.env, claims.nonce).take();
+  if (!chalRecord || chalRecord.type !== 'google_verify' || chalRecord.userId !== user.id || chalRecord.challenge !== claims.nonce) {
+    apiError(400, 'auth.errInvalidToken');
+  }
+
+  if (!claims.email) apiError(400, 'acct.errEduEmail');
+  const verified = claims.email_verified;
+  if (verified !== true && String(verified).toLowerCase() !== 'true') {
+    apiError(403, 'auth.errEmailNotVerified');
+  }
+
+  const eduEmail = claims.email.trim().toLowerCase();
+  if (!(await isValidEduEmail(c.env, eduEmail))) apiError(400, 'acct.errEduEmail');
+  const resolved = await resolveSchoolFromEmail(c.env, eduEmail);
+  if (!resolved) apiError(400, 'acct.errSchoolNotSupported');
+
+  // Verify that the email domain is in this school's google_domains list.
+  // A Google token for a domain not marked as a Google domain is refused:
+  // such an address could be a consumer Google account created on a
+  // non-Google mailbox, which proves nothing about the campus mailbox.
+  const emailDomain = eduEmail.split('@').pop()!.toLowerCase();
+  const schoolGoogleDomains = stringList(resolved.school.google_domains).map((d) => d.toLowerCase());
+  if (!schoolGoogleDomains.includes(emailDomain)) {
+    apiError(400, 'acct.errNotCampusGoogle');
+  }
+
+  // Require the token's `hd` (hosted domain) claim to be present and equal to
+  // the email's domain or a parent of it that is this school's domain.
+  if (!claims.hd || typeof claims.hd !== 'string') {
+    apiError(400, 'acct.errNotCampusGoogle');
+  }
+  const hd = claims.hd.trim().toLowerCase();
+  const acceptedDomains = schoolDomains(resolved.school).map((d) => d.toLowerCase());
+  const isExactMatch = hd === emailDomain;
+  const isParentSchoolDomain = emailDomain.endsWith(`.${hd}`) && acceptedDomains.includes(hd);
+  if (!isExactMatch && !isParentSchoolDomain) {
+    apiError(400, 'acct.errNotCampusGoogle');
+  }
+
+  // Check if sub belongs to another user as sign-in google_id
+  const userWithSub = await c.env.DB.prepare('SELECT id FROM users WHERE google_id = ? LIMIT 1').bind(claims.sub).first<{ id: string }>();
+  if (userWithSub && userWithSub.id !== user.id) {
+    apiError(400, 'acct.errEmailTaken');
+  }
+
+  // Check if email is already taken by another account (users.email or other region_verifications)
+  if (await emailAlreadyUsed(c.env, eduEmail, user.id)) {
+    apiError(400, 'acct.errEmailTaken');
+  }
+
+  // Upsert the verification
+  if (!(await upsertVerification(c.env, user.id, resolved.regionCode, resolved.school.id, eduEmail))) {
+    apiError(400, 'acct.errEmailTaken');
+  }
+
+  return c.json({ code: 'acct.verifySuccess', edu_email: eduEmail });
 });
 
 accountRoutes.post('/verify/unbind', authMiddleware(), async (c) => {

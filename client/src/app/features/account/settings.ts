@@ -1,6 +1,8 @@
 import { Component, inject, OnDestroy, OnInit, ChangeDetectorRef, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
+import { GoogleAuthService } from '../../core/services/google-auth.service';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiInput } from '../../shared/ui/input.component';
 import { UiDropdown, DropdownOption } from '../../shared/ui/dropdown.component';
@@ -291,6 +293,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private router = inject(Router);
   private metadataService = inject(MetadataService);
   private schoolStateService = inject(SchoolStateService);
+  private googleAuth = inject(GoogleAuthService);
   private resendCountdownTimer: ReturnType<typeof setInterval> | null = null;
   private profileUserId: string | null = null;
 
@@ -519,6 +522,70 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (!this.selectedSchoolOption || !this.selectedVerifyDomain) return false;
     const googleList = this.selectedSchoolOption.google_domains || [];
     return googleList.map((d) => d.toLowerCase()).includes(this.selectedVerifyDomain.toLowerCase());
+  }
+
+  get selectedSchoolHasGoogleDomain(): boolean {
+    return (this.selectedSchoolOption?.google_domains?.length ?? 0) > 0;
+  }
+
+  get renewEmailIsGoogle(): boolean {
+    if (!this.renewOldEmail) return false;
+    const domain = this.renewOldEmail.split('@')[1]?.toLowerCase();
+    if (!domain) return false;
+    for (const s of this.availableSchools) {
+      const gd = (s.google_domains || []).map((d) => d.toLowerCase());
+      if (gd.includes(domain)) return true;
+    }
+    return false;
+  }
+
+  async onVerifyWithGoogle(targetEmail?: string) {
+    if (this.isLoading) return;
+    this.isLoading = true;
+    this.clientVerifyMsg = '';
+    this.lastVerifyError = null;
+    this.verifyIsError = false;
+    this.autoVerifyMessage = '';
+    this.cdr.markForCheck();
+
+    try {
+      const { nonce } = await firstValueFrom(this.accountService.getGoogleVerifyOptions());
+
+      let hd: string | undefined;
+      let school = this.selectedSchoolOption;
+      if (!school && targetEmail) {
+        const domain = targetEmail.split('@')[1]?.toLowerCase();
+        if (domain) {
+          school = findSchoolForDomain(this.availableSchools, domain)?.school || null;
+        }
+      }
+      const googleDomains = school?.google_domains || [];
+      if (googleDomains.length === 1) {
+        hd = googleDomains[0];
+      }
+
+      const credential = await this.googleAuth.verifyCampusGoogle({ nonce, hd });
+      await firstValueFrom(this.accountService.verifyWithGoogle(credential));
+
+      this.isLoading = false;
+      this.verifyIsError = false;
+      this.clientVerifyMsg = 'acct.verifySuccess';
+      this.toast.success(this.i18n.t('acct.verifySuccess'));
+      this.accountService.clearProfileCache();
+      this.loadProfile();
+      this.clearPendingVerificationState();
+      this.cdr.markForCheck();
+    } catch (err: any) {
+      this.isLoading = false;
+      if (err?.message === 'popup_closed') {
+        this.cdr.markForCheck();
+        return;
+      }
+      this.verifyIsError = true;
+      this.lastVerifyError = err;
+      this.clientVerifyMsg = '';
+      this.cdr.markForCheck();
+    }
   }
 
   loadSchoolsMetadata() {

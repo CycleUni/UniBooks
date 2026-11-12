@@ -20,6 +20,8 @@ export interface GoogleClaims {
   picture?: string;
   exp: number;
   iat?: number;
+  hd?: string;
+  nonce?: string;
 }
 
 /** The credential is not a valid Google ID token for this app (401). */

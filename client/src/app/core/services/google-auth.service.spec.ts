@@ -123,4 +123,67 @@ describe('GoogleAuthService sign-in state', () => {
     signIn();
     expect(service.opening()).toBe(false);
   });
+
+  describe('verifyCampusGoogle', () => {
+    let mockGoogle: any;
+
+    beforeEach(() => {
+      mockGoogle = {
+        accounts: {
+          id: {
+            initialize: vi.fn(),
+            prompt: vi.fn(),
+          },
+        },
+      };
+      (window as any).google = mockGoogle;
+      (service as any).googleClientId = 'test-client-id';
+      (service as any).loadGoogleScript = () => Promise.resolve();
+    });
+
+    afterEach(() => {
+      delete (window as any).google;
+    });
+
+    it('initializes GIS with nonce and hd hint, and resolves with returned credential', async () => {
+      mockGoogle.accounts.id.prompt.mockImplementation((_momentListener: any) => {
+        // simulate user picking an account
+        const initCall = mockGoogle.accounts.id.initialize.mock.calls[0][0];
+        initCall.callback({ credential: 'campus-jwt-token' });
+      });
+
+      const cred = await service.verifyCampusGoogle({ nonce: 'test-nonce-123', hd: 'ntu.edu.tw' });
+      expect(cred).toBe('campus-jwt-token');
+
+      expect(mockGoogle.accounts.id.initialize).toHaveBeenCalledWith(
+        expect.objectContaining({
+          client_id: 'test-client-id',
+          nonce: 'test-nonce-123',
+          hd: 'ntu.edu.tw',
+        }),
+      );
+    });
+
+    it('rejects with popup_closed when prompt is dismissed without credential', async () => {
+      mockGoogle.accounts.id.prompt.mockImplementation((momentListener: any) => {
+        momentListener({
+          isDismissedMoment: () => true,
+          getDismissedReason: () => 'cancel',
+        });
+      });
+
+      await expect(service.verifyCampusGoogle({ nonce: 'test-nonce' })).rejects.toThrow('popup_closed');
+    });
+
+    it('rejects with popup_closed when prompt cannot be displayed', async () => {
+      mockGoogle.accounts.id.prompt.mockImplementation((momentListener: any) => {
+        momentListener({
+          isDismissedMoment: () => false,
+          isNotDisplayed: () => true,
+        });
+      });
+
+      await expect(service.verifyCampusGoogle({ nonce: 'test-nonce' })).rejects.toThrow('popup_closed');
+    });
+  });
 });

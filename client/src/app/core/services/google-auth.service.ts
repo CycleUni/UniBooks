@@ -236,6 +236,97 @@ export class GoogleAuthService {
     }
   }
 
+  /**
+   * Request a campus Google ID token via GIS with a server-issued nonce and
+   * optional hosted domain (hd) hint.
+   *
+   * Rejects with an Error('popup_closed') when the user dismisses the dialog.
+   */
+  public verifyCampusGoogle(options: { nonce: string; hd?: string }): Promise<string> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return Promise.reject(new Error('not_browser'));
+    }
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
+
+      const handleCredential = (res: any) => {
+        finish(() => {
+          if (res && res.credential) {
+            this.zone.run(() => resolve(res.credential));
+          } else {
+            this.zone.run(() => reject(new Error('no_credential')));
+          }
+        });
+      };
+
+      const execute = () => {
+        this.loadGoogleScript()
+          .then(() => {
+            const google = (window as any).google;
+            if (!google?.accounts?.id) {
+              finish(() => this.zone.run(() => reject(new Error('Google SDK unavailable'))));
+              return;
+            }
+
+            const initConfig: any = {
+              client_id: this.googleClientId,
+              callback: handleCredential,
+              nonce: options.nonce,
+              cancel_on_tap_outside: true,
+              use_fedcm_for_prompt: true,
+              use_fedcm_for_button: true,
+            };
+            if (options.hd) {
+              initConfig.hd = options.hd;
+            }
+
+            google.accounts.id.initialize(initConfig);
+
+            google.accounts.id.prompt((notification: any) => {
+              if (settled) return;
+              if (typeof notification?.isDismissedMoment === 'function' && notification.isDismissedMoment()) {
+                const reason = notification.getDismissedReason?.();
+                if (reason !== 'credential_returned') {
+                  finish(() => {
+                    this.zone.run(() => reject(new Error('popup_closed')));
+                  });
+                }
+              } else if (typeof notification?.isNotDisplayed === 'function' && notification.isNotDisplayed()) {
+                finish(() => {
+                  this.zone.run(() => reject(new Error('popup_closed')));
+                });
+              }
+            });
+          })
+          .catch((err) => {
+            finish(() => this.zone.run(() => reject(err)));
+          });
+      };
+
+      if (this.googleClientId) {
+        execute();
+      } else {
+        this.authStore.getAuthConfig().subscribe({
+          next: (config) => {
+            if (config?.google_client_id) {
+              this.googleClientId = config.google_client_id;
+              execute();
+            } else {
+              finish(() => this.zone.run(() => reject(new Error('Google client ID not configured'))));
+            }
+          },
+          error: (err) => finish(() => this.zone.run(() => reject(err))),
+        });
+      }
+    });
+  }
+
   private get isDarkTheme(): boolean {
     if (!isPlatformBrowser(this.platformId)) return false;
     // resolved() already collapses 'system' to the OS preference, and does so

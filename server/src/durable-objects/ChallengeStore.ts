@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 
 export interface ChallengeRecord {
   challenge: string;
-  type: 'reg' | 'auth' | 'mfa';
+  type: 'reg' | 'auth' | 'mfa' | 'google_verify';
   userId?: string;
 }
 

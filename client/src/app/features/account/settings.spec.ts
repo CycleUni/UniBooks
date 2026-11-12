@@ -607,5 +607,123 @@ describe('SettingsComponent', () => {
       expect(emailNoLocal).toBeNull();
       expect(component.clientVerifyMsg).toBe('acct.emailRequired');
     });
+
+    describe('campus Google verification button and flow', () => {
+      beforeEach(() => {
+        (component as any).regionService = { currentRegionObj: () => ({ code: 'TW', edu_email_suffix: ['edu.tw'] }) };
+      });
+
+      it('shows button when selected school has google_domains, hides otherwise', () => {
+        component.selectVerifySchool('NTU');
+        expect(component.selectedSchoolHasGoogleDomain).toBe(false);
+
+        component.selectVerifySchool('CHIHLEE');
+        expect(component.selectedSchoolHasGoogleDomain).toBe(true);
+      });
+
+      it('identifies when renewal address domain is a Google domain', () => {
+        component.verifications = [{ region: 'TW', edu_email: 'user@ntu.edu.tw', verified_at: '2024-01-01', expires_at: '2025-01-01' }];
+        expect(component.renewEmailIsGoogle).toBe(false);
+
+        component.verifications = [{ region: 'TW', edu_email: 'user@gm.chihlee.edu.tw', verified_at: '2024-01-01', expires_at: '2025-01-01' }];
+        expect(component.renewEmailIsGoogle).toBe(true);
+
+        component.verifications = [{ region: 'TW', edu_email: 'user@mail.chihlee.edu.tw', verified_at: '2024-01-01', expires_at: '2025-01-01' }];
+        expect(component.renewEmailIsGoogle).toBe(false);
+      });
+
+      it('runs verification flow with nonce and single google_domain hd hint', async () => {
+        component.selectVerifySchool('CHIHLEE');
+        const optSpy = vi.fn().mockReturnValue(of({ nonce: 'nonce-abc-123' }));
+        const verSpy = vi.fn().mockReturnValue(of({ code: 'acct.verifySuccess', edu_email: 'test@gm.chihlee.edu.tw' }));
+        const clearCacheSpy = vi.fn();
+        const loadProfileSpy = vi.spyOn(component, 'loadProfile').mockImplementation(() => {});
+
+        (component as any).accountService = {
+          getGoogleVerifyOptions: optSpy,
+          verifyWithGoogle: verSpy,
+          clearProfileCache: clearCacheSpy,
+        };
+
+        const googleAuthMock = {
+          verifyCampusGoogle: vi.fn().mockResolvedValue('fake-google-credential'),
+        };
+        (component as any).googleAuth = googleAuthMock;
+
+        await component.onVerifyWithGoogle();
+
+        expect(optSpy).toHaveBeenCalled();
+        expect(googleAuthMock.verifyCampusGoogle).toHaveBeenCalledWith({
+          nonce: 'nonce-abc-123',
+          hd: 'gm.chihlee.edu.tw',
+        });
+        expect(verSpy).toHaveBeenCalledWith('fake-google-credential');
+        expect(clearCacheSpy).toHaveBeenCalled();
+        expect(loadProfileSpy).toHaveBeenCalled();
+        expect(component.isLoading).toBe(false);
+        expect(component.verifyIsError).toBe(false);
+        expect(component.clientVerifyMsg).toBe('acct.verifySuccess');
+      });
+
+      it('handles popup_closed gracefully without showing error', async () => {
+        component.selectVerifySchool('CHIHLEE');
+        (component as any).accountService = {
+          getGoogleVerifyOptions: vi.fn().mockReturnValue(of({ nonce: 'nonce-123' })),
+        };
+        (component as any).googleAuth = {
+          verifyCampusGoogle: vi.fn().mockRejectedValue(new Error('popup_closed')),
+        };
+
+        await component.onVerifyWithGoogle();
+
+        expect(component.isLoading).toBe(false);
+        expect(component.verifyIsError).toBe(false);
+        expect(component.lastVerifyError).toBeNull();
+      });
+
+      it('handles wrong account chosen (acct.errNotCampusGoogle)', async () => {
+        component.selectVerifySchool('CHIHLEE');
+        (component as any).accountService = {
+          getGoogleVerifyOptions: vi.fn().mockReturnValue(of({ nonce: 'nonce-123' })),
+          verifyWithGoogle: vi.fn().mockReturnValue(
+            throwError(() => ({
+              error: { error: { code: 'acct.errNotCampusGoogle' } },
+            })),
+          ),
+        };
+        (component as any).googleAuth = {
+          verifyCampusGoogle: vi.fn().mockResolvedValue('fake-cred'),
+        };
+
+        await component.onVerifyWithGoogle();
+
+        expect(component.isLoading).toBe(false);
+        expect(component.verifyIsError).toBe(true);
+        expect(component.lastVerifyError?.error?.error?.code).toBe('acct.errNotCampusGoogle');
+        expect(component.verifyMessage).toBe(en['acct.errNotCampusGoogle']);
+      });
+
+      it('handles campus address taken by another account (acct.errEmailTaken)', async () => {
+        component.selectVerifySchool('CHIHLEE');
+        (component as any).accountService = {
+          getGoogleVerifyOptions: vi.fn().mockReturnValue(of({ nonce: 'nonce-123' })),
+          verifyWithGoogle: vi.fn().mockReturnValue(
+            throwError(() => ({
+              error: { error: { code: 'acct.errEmailTaken' } },
+            })),
+          ),
+        };
+        (component as any).googleAuth = {
+          verifyCampusGoogle: vi.fn().mockResolvedValue('fake-cred'),
+        };
+
+        await component.onVerifyWithGoogle();
+
+        expect(component.isLoading).toBe(false);
+        expect(component.verifyIsError).toBe(true);
+        expect(component.lastVerifyError?.error?.error?.code).toBe('acct.errEmailTaken');
+        expect(component.verifyMessage).toBe(en['acct.errEmailTaken']);
+      });
+    });
   });
 });

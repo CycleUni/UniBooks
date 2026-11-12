@@ -482,6 +482,16 @@ export class AccountService {
     );
   }
 
+  getGoogleVerifyOptions(): Observable<{ nonce: string }> {
+    return this.http.get<{ nonce: string }>('/auth/verify/google/options');
+  }
+
+  verifyWithGoogle(credential: string): Observable<{ code: string; edu_email: string }> {
+    return this.http.post<{ code: string; edu_email: string }>('/auth/verify/google', { credential }).pipe(
+      tap(() => this.profileCache.set(null))
+    );
+  }
+
   /** "My school isn't supported": files a request for staff to add it.
    *  Resolves with 201 for a new request, 200 when an identical one is
    *  already pending — both mean the report is on file. */

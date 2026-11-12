@@ -33,7 +33,7 @@ export const webauthnVerifier = {
   verifyAuthenticationResponse,
 };
 
-function challengeStore(env: AppEnv['Bindings'], id: string) {
+export function challengeStore(env: AppEnv['Bindings'], id: string) {
   const ns = env.CHALLENGE_STORE as DurableObjectNamespace<ChallengeStore>;
   return ns.get(ns.idFromName(id));
 }
