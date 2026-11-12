@@ -788,3 +788,45 @@ export const pushSent = sqliteTable('push_sent', {
   key: text('key').primaryKey(),
   sentAt: text('sent_at').notNull(),
 });
+
+// ============================================================================
+// 26. Book Reports
+// ============================================================================
+export const bookReports = sqliteTable(
+  'book_reports',
+  {
+    id: text('id').primaryKey(),
+    bookId: text('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    regionCode: text('region_code')
+      .notNull()
+      .references(() => regions.code),
+    reporterId: text('reporter_id')
+      .notNull()
+      .references(() => users.id),
+    /** JSON array of reported fields: 'title' | 'authors' | 'publisher' | 'published_date' | 'cover' | 'isbn' | 'other' */
+    fields: text('fields').notNull(),
+    detail: text('detail').notNull().default(''),
+    /** JSON object with optional suggested values */
+    suggested: text('suggested'),
+    status: text('status', { enum: ['open', 'fixed', 'dismissed'] })
+      .notNull()
+      .default('open'),
+    adminNote: text('admin_note').notNull().default(''),
+    resolvedById: text('resolved_by_id').references(() => users.id, { onDelete: 'set null' }),
+    resolvedAt: text('resolved_at'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('book_reports_region_status_created_idx').on(table.regionCode, table.status, table.createdAt),
+    index('book_reports_book_id_idx').on(table.bookId),
+    uniqueIndex('book_reports_one_open_per_user_book')
+      .on(table.reporterId, table.bookId)
+      .where(sql`${table.status} = 'open'`),
+  ],
+);
+
+export type BookReport = InferSelectModel<typeof bookReports>;
+export type InsertBookReport = InferInsertModel<typeof bookReports>;
+export type NewBookReport = InsertBookReport;

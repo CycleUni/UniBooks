@@ -28,6 +28,7 @@ export const LIMITS = {
 
   // Moderation / reports
   reportDetail: 2000,
+  bookReportDetail: 1000,
 
   // Schools & requests
   schoolRequestName: 100,

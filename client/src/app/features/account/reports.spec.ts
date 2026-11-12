@@ -53,6 +53,21 @@ describe('ReportsComponent', () => {
             created_at: '2026-08-24T15:30:00Z',
           }
         ]
+      })),
+      getMyBookReports: vi.fn().mockReturnValue(of({
+        count: 1,
+        results: [
+          {
+            id: 'book-report-1',
+            book: { id: 'book-1', title: 'Linear Algebra Done Right' },
+            reporter: { id: 'user-1', email: 'me@example.com' },
+            fields: ['authors', 'isbn'],
+            detail: 'Wrong author listed',
+            suggested: { authors: 'Sheldon Axler' },
+            status: 'open',
+            created_at: '2026-08-25T12:00:00Z',
+          }
+        ]
       }))
     };
 
@@ -70,37 +85,44 @@ describe('ReportsComponent', () => {
     fixture.detectChanges();
   });
 
-  it('should create and load both listing and chat reports on init', () => {
+  it('should create and load listing, chat, and book reports on init', () => {
     expect(component).toBeTruthy();
     expect(mockAccountService.getMyListingReports).toHaveBeenCalledWith(1);
     expect(mockAccountService.getMyChatReports).toHaveBeenCalledWith(1);
-    expect(component.reports.length).toBe(3);
-    expect(component.totalReports).toBe(3);
+    expect(mockAccountService.getMyBookReports).toHaveBeenCalledWith(1);
+    expect(component.reports.length).toBe(4);
+    expect(component.totalReports).toBe(4);
   });
 
   it('should render the list of reports and their status with type badges', () => {
     const el: HTMLElement = fixture.nativeElement;
     const cards = el.querySelectorAll('.report-card');
-    expect(cards.length).toBe(3);
+    expect(cards.length).toBe(4);
 
-    // First card is listing-report-1 (created at 11:00, newer than chat reports)
-    expect(cards[0].querySelector('.type-badge')?.textContent).toContain('Listing');
-    expect(cards[0].querySelector('.report-main-info')?.textContent).toContain('Fake item');
+    // First card is book-report-1 (created at 12:00, newest)
+    expect(cards[0].querySelector('.type-badge')?.textContent).toContain('Book');
     expect(cards[0].querySelector('.status-badge')?.textContent).toContain('Under review');
-    expect(cards[0].textContent).toContain('Physics for Scientists');
-    expect(cards[0].textContent).toContain('Counterfeit textbook');
+    expect(cards[0].textContent).toContain('Linear Algebra Done Right');
+    expect(cards[0].textContent).toContain('Wrong author listed');
 
-    // Second card is report-1 (created at 10:00)
-    expect(cards[1].querySelector('.type-badge')?.textContent).toContain('Chat');
-    expect(cards[1].querySelector('.report-main-info')?.textContent).toContain('Harassment');
+    // Second card is listing-report-1 (created at 11:00)
+    expect(cards[1].querySelector('.type-badge')?.textContent).toContain('Listing');
+    expect(cards[1].querySelector('.report-main-info')?.textContent).toContain('Fake item');
     expect(cards[1].querySelector('.status-badge')?.textContent).toContain('Under review');
-    expect(cards[1].textContent).toContain('Algorithms 4th Edition');
-    expect(cards[1].textContent).toContain('Offensive language in chat');
+    expect(cards[1].textContent).toContain('Physics for Scientists');
+    expect(cards[1].textContent).toContain('Counterfeit textbook');
 
-    // Third card is report-2 (created at 2026-08-24)
+    // Third card is report-1 (created at 10:00)
     expect(cards[2].querySelector('.type-badge')?.textContent).toContain('Chat');
-    expect(cards[2].querySelector('.status-badge')?.textContent).toContain('Action taken');
-    expect(cards[2].textContent).toContain('Calculus Early Transcendentals');
+    expect(cards[2].querySelector('.report-main-info')?.textContent).toContain('Harassment');
+    expect(cards[2].querySelector('.status-badge')?.textContent).toContain('Under review');
+    expect(cards[2].textContent).toContain('Algorithms 4th Edition');
+    expect(cards[2].textContent).toContain('Offensive language in chat');
+
+    // Fourth card is report-2 (created at 2026-08-24)
+    expect(cards[3].querySelector('.type-badge')?.textContent).toContain('Chat');
+    expect(cards[3].querySelector('.status-badge')?.textContent).toContain('Action taken');
+    expect(cards[3].textContent).toContain('Calculus Early Transcendentals');
   });
 
   it('should filter by listing reports when listing tab is clicked', () => {
@@ -121,6 +143,16 @@ describe('ReportsComponent', () => {
     expect(component.reports.length).toBe(2);
     expect(component.reports[0].type).toBe('chat');
     expect(component.reports[1].type).toBe('chat');
+  });
+
+  it('should filter by book reports when book tab is clicked', () => {
+    component.setFilter('book');
+    fixture.detectChanges();
+
+    expect(mockAccountService.getMyBookReports).toHaveBeenCalledWith(1);
+    expect(component.reports.length).toBe(1);
+    expect(component.reports[0].type).toBe('book');
+    expect(component.reports[0].book?.title).toBe('Linear Algebra Done Right');
   });
 
   it('should correctly map reason labels for both listing and chat reports', () => {
@@ -157,7 +189,7 @@ describe('ReportsComponent', () => {
     component.loadReports(1);
     fixture.detectChanges();
     expect(component.loadFailed).toBe(false);
-    expect(el.querySelectorAll('.report-card').length).toBe(3);
+    expect(el.querySelectorAll('.report-card').length).toBe(4);
   });
 
   it('"all" merges both lists by date, a page at a time, with no page longer than 20', () => {
@@ -168,6 +200,7 @@ describe('ReportsComponent', () => {
     const pageOf = (rows: any[]) => (p: number) => of({ count: rows.length, results: rows.slice((p - 1) * 20, p * 20) });
     mockAccountService.getMyListingReports = vi.fn(pageOf(listing));
     mockAccountService.getMyChatReports = vi.fn(pageOf(chat));
+    mockAccountService.getMyBookReports = vi.fn().mockReturnValue(of({ count: 0, results: [] }));
 
     component.loadReports(1);
     expect(component.reports.length).toBe(20);

@@ -121,4 +121,13 @@ export class BookService {
   unsubscribe(subscriptionId: string | number): Observable<void> {
     return this.http.delete<void>(`/subscriptions/${subscriptionId}`);
   }
+
+  reportBook(data: {
+    book: string;
+    fields: string[];
+    detail?: string;
+    suggested?: Record<string, string>;
+  }): Observable<any> {
+    return this.http.post<any>('/moderation/book-reports', data);
+  }
 }

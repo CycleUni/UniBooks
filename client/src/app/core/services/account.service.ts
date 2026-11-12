@@ -47,6 +47,30 @@ export interface ListingReportItem {
   created_at: string;
 }
 
+export interface BookReportItem {
+  id: string;
+  book?: {
+    id: string;
+    title: string;
+    authors?: string;
+    publisher?: string;
+    published_date?: string;
+    cover_url?: string;
+    isbn13?: string;
+    source?: string;
+  };
+  reporter?: {
+    id: string;
+    email: string;
+  };
+  fields: string[];
+  detail?: string;
+  suggested?: Record<string, string>;
+  status: 'open' | 'fixed' | 'dismissed';
+  admin_note?: string;
+  created_at: string;
+}
+
 export interface PaginatedResponse<T> {
   count: number;
   results: T[];
@@ -500,6 +524,11 @@ export class AccountService {
   getMyChatReports(page: number = 1): Observable<PaginatedResponse<ChatReportItem>> {
     const params = new HttpParams().set('page', page.toString());
     return this.http.get<PaginatedResponse<ChatReportItem>>('/moderation/chat-reports/mine', { params });
+  }
+
+  getMyBookReports(page: number = 1): Observable<PaginatedResponse<BookReportItem>> {
+    const params = new HttpParams().set('page', page.toString());
+    return this.http.get<PaginatedResponse<BookReportItem>>('/moderation/book-reports/mine', { params });
   }
 
   /** The member pass QR payload; it changes every step_seconds. */

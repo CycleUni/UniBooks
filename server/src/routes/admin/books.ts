@@ -4,7 +4,7 @@ import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { and, count, desc, eq, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../../env';
-import { books, createDb, listings, regions, subscriptions, type Book, type Database } from '../../db';
+import { bookReports, books, createDb, listings, regions, subscriptions, type Book, type Database } from '../../db';
 import { apiError, pagination, readJson } from '../../lib/http';
 import { auditInsert } from '../../services/admin/audit';
 import { assertInScope, notFound, regionParam, scopeOf, scopeWhere, uuidId } from '../../services/admin/scope';
@@ -23,6 +23,7 @@ import { bookSearch } from './listings';
 import { isUniqueViolation } from '../../lib/db';
 import { resolveBookCover, tmpCoverPrefix } from '../../services/admin/uploads';
 import { issueUpload, storeUpload } from '../../lib/upload';
+import { UUID_LOOSE_RE } from '../../lib/uuid';
 
 /**
  * Correcting a book's catalogue record,
@@ -52,17 +53,23 @@ function isbnTaken(other: Pick<Book, 'id' | 'title'> | null | undefined): never 
 
 const activeListingsSql = sql<number>`(SELECT count(*) FROM ${listings} WHERE ${listings.bookId} = ${outer(books.id)} AND ${listings.status} = 'active')`;
 const requestCountSql = sql<number>`(SELECT count(*) FROM ${subscriptions} WHERE ${subscriptions.bookId} = ${outer(books.id)})`;
+const openReportsSql = sql<number>`(SELECT count(*) FROM ${bookReports} WHERE ${bookReports.bookId} = ${outer(books.id)} AND ${bookReports.status} = 'open')`;
 
 function bookWithCounts(db: Database) {
-  return db.select({ b: books, activeListings: activeListingsSql, requestCount: requestCountSql }).from(books);
+  return db.select({ b: books, activeListings: activeListingsSql, requestCount: requestCountSql, openReports: openReportsSql }).from(books);
 }
 
-function adminBookJson(row: { b: Book; activeListings: number; requestCount: number }, env?: AppEnv['Bindings'], origin?: string) {
+function adminBookJson(
+  row: { b: Book; activeListings: number; requestCount: number; openReports?: number },
+  env?: AppEnv['Bindings'],
+  origin?: string,
+) {
   return {
     ...serializeBook(row.b, env, origin),
     reviewed_at: row.b.reviewedAt,
     active_listings: row.activeListings,
     request_count: row.requestCount,
+    open_reports: row.openReports ?? 0,
     pending_review: row.b.source === 'manual' && row.b.reviewedAt === null,
   };
 }
@@ -322,6 +329,10 @@ bookRoutes.patch('/books/:id', async (c) => {
     const srcSubs = await db.select().from(subscriptions).where(eq(subscriptions.bookId, book.id));
     const dropped = srcSubs.filter((s) => already.has(s.userId));
     const moved = srcSubs.filter((s) => !already.has(s.userId));
+    const openMergeReports = await db
+      .select({ id: bookReports.id })
+      .from(bookReports)
+      .where(and(eq(bookReports.bookId, book.id), eq(bookReports.status, 'open')));
     const now = new Date().toISOString();
     const statements = [
       db.update(listings).set({ bookId: target.id, updatedAt: now }).where(eq(listings.bookId, book.id)),
@@ -336,6 +347,33 @@ bookRoutes.patch('/books/:id', async (c) => {
           ]
         : []),
       db.update(subscriptions).set({ bookId: target.id }).where(eq(subscriptions.bookId, book.id)),
+      ...(openMergeReports.length
+        ? [
+            db
+              .update(bookReports)
+              .set({
+                status: 'fixed',
+                adminNote: `Merged into book ${target.id}`,
+                resolvedById: me.id,
+                resolvedAt: now,
+              })
+              .where(and(eq(bookReports.bookId, book.id), eq(bookReports.status, 'open'))),
+            ...openMergeReports.map((r) =>
+              auditInsert(
+                db,
+                {
+                  actorId: me.id,
+                  kind: 'admin.book_report_resolved',
+                  meta: { action: 'fixed', book_id: book.id, into_book_id: target.id, note: `Merged into book ${target.id}` },
+                  targetType: 'book_report',
+                  targetId: r.id,
+                },
+                c,
+              ),
+            ),
+          ]
+        : []),
+      db.update(bookReports).set({ bookId: target.id }).where(eq(bookReports.bookId, book.id)),
       db.delete(books).where(eq(books.id, book.id)),
       auditInsert(
         db,
@@ -396,6 +434,7 @@ bookRoutes.patch('/books/:id', async (c) => {
       set.coverCheckedAt = res.promoted ? new Date().toISOString() : null;
     }
   }
+  const batchStatements: Parameters<Database['batch']>[0][number][] = [];
   if (Object.keys(set).length) {
     if ('isbn13' in set && set.isbn13 !== book.isbn13 && book.reviewedAt) {
       // The review vouched for the old ISBN, not the new one.
@@ -421,15 +460,89 @@ bookRoutes.patch('/books/:id', async (c) => {
       before[camelToSnake[k]] = (book as Record<string, unknown>)[k];
       after[camelToSnake[k]] = v;
     }
-    try {
-      await db.batch([
-        db.update(books).set(set).where(eq(books.id, book.id)),
+    batchStatements.push(
+      db.update(books).set(set).where(eq(books.id, book.id)),
+      auditInsert(
+        db,
+        { actorId: me.id, kind: 'admin.book_updated', meta: { book_id: book.id, before, after }, targetType: 'book', targetId: book.id },
+        c,
+      ),
+    );
+  }
+
+  const now = new Date().toISOString();
+  if (data.resolve_reports === true) {
+    const openReps = await db
+      .select({ id: bookReports.id })
+      .from(bookReports)
+      .where(and(eq(bookReports.bookId, book.id), eq(bookReports.status, 'open')));
+    if (openReps.length) {
+      const note = typeof data.admin_note === 'string' && data.admin_note.trim() ? data.admin_note.trim() : 'Fixed via book update';
+      batchStatements.push(
+        db
+          .update(bookReports)
+          .set({
+            status: 'fixed',
+            adminNote: note,
+            resolvedById: me.id,
+            resolvedAt: now,
+          })
+          .where(and(eq(bookReports.bookId, book.id), eq(bookReports.status, 'open'))),
+      );
+      for (const r of openReps) {
+        batchStatements.push(
+          auditInsert(
+            db,
+            {
+              actorId: me.id,
+              kind: 'admin.book_report_resolved',
+              meta: { action: 'fixed', book_id: book.id, note },
+              targetType: 'book_report',
+              targetId: r.id,
+            },
+            c,
+          ),
+        );
+      }
+    }
+  } else if (typeof data.resolve_report_id === 'string' && UUID_LOOSE_RE.test(data.resolve_report_id)) {
+    const [rep] = await db
+      .select({ id: bookReports.id })
+      .from(bookReports)
+      .where(and(eq(bookReports.id, data.resolve_report_id), eq(bookReports.bookId, book.id), eq(bookReports.status, 'open')))
+      .limit(1);
+    if (rep) {
+      const note = typeof data.admin_note === 'string' && data.admin_note.trim() ? data.admin_note.trim() : 'Fixed via book update';
+      batchStatements.push(
+        db
+          .update(bookReports)
+          .set({
+            status: 'fixed',
+            adminNote: note,
+            resolvedById: me.id,
+            resolvedAt: now,
+          })
+          .where(and(eq(bookReports.id, rep.id), eq(bookReports.status, 'open'))),
+      );
+      batchStatements.push(
         auditInsert(
           db,
-          { actorId: me.id, kind: 'admin.book_updated', meta: { book_id: book.id, before, after }, targetType: 'book', targetId: book.id },
+          {
+            actorId: me.id,
+            kind: 'admin.book_report_resolved',
+            meta: { action: 'fixed', book_id: book.id, note },
+            targetType: 'book_report',
+            targetId: rep.id,
+          },
           c,
         ),
-      ]);
+      );
+    }
+  }
+
+  if (batchStatements.length) {
+    try {
+      await db.batch(batchStatements as [(typeof batchStatements)[0], ...typeof batchStatements]);
     } catch (e) {
       // (region, isbn13) is unique: another book took this ISBN meanwhile.
       if (isbn && isUniqueViolation(e)) isbnTaken(await otherBookWith(db, book, isbn));

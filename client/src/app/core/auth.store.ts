@@ -103,6 +103,7 @@ export interface AuthUser {
   /** Password and Google sign-ins also ask for a passkey. */
   passkey_2fa?: boolean;
   role?: UserRole;
+  managed_regions?: string[];
   verifications?: RegionVerification[];
   /** The language the site was last used in, as last reported. */
   site_language?: string;

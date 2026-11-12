@@ -33,8 +33,9 @@ describe('AdminBookEditComponent', () => {
     uploadBookCover: ReturnType<typeof vi.fn>;
   };
   let askDanger: ReturnType<typeof vi.fn>;
+  let ask: ReturnType<typeof vi.fn>;
 
-  const create = (currentSource: string | null = null) => {
+  const create = (currentSource: string | null = null, extra?: { initialForm?: Partial<typeof MISREAD>; reportIdToFix?: string; open_reports?: number }) => {
     TestBed.configureTestingModule({
       imports: [AdminBookEditComponent],
       providers: [
@@ -43,14 +44,16 @@ describe('AdminBookEditComponent', () => {
           provide: I18nService,
           useValue: { t: (k: string) => k, tOrNull: (k: string) => k, lang: () => 'en' },
         },
-        { provide: ConfirmService, useValue: { askDanger } },
+        { provide: ConfirmService, useValue: { askDanger, ask } },
         { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
       ],
     });
     const fixture = TestBed.createComponent(AdminBookEditComponent);
     fixture.componentInstance.bookId = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006';
-    fixture.componentInstance.book = { ...MISREAD };
+    fixture.componentInstance.book = { ...MISREAD, open_reports: extra?.open_reports };
     fixture.componentInstance.currentSource = currentSource;
+    if (extra?.initialForm) fixture.componentInstance.initialForm = extra.initialForm;
+    if (extra?.reportIdToFix) fixture.componentInstance.reportIdToFix = extra.reportIdToFix;
     fixture.detectChanges();
     fixture.componentInstance.toggle();
     return fixture.componentInstance;
@@ -59,6 +62,7 @@ describe('AdminBookEditComponent', () => {
   beforeEach(() => {
     admin = { lookupBook: vi.fn(), updateBook: vi.fn(), uploadBookCover: vi.fn() };
     askDanger = vi.fn();
+    ask = vi.fn().mockResolvedValue(false);
   });
 
   it('refuses to look up a number that is no ISBN, without asking the server', () => {
@@ -306,6 +310,52 @@ describe('AdminBookEditComponent', () => {
 
       expect(editor.form.cover_url).toBe('');
       expect(editor.coverError).toBe('');
+    });
+  });
+
+  describe('report prefilling and report resolution', () => {
+    it('prefills form values when initialForm is provided', () => {
+      const editor = create(null, {
+        initialForm: {
+          title: 'Suggested Title',
+          authors: 'Suggested Author',
+        },
+      });
+      expect(editor.form.title).toBe('Suggested Title');
+      expect(editor.form.authors).toBe('Suggested Author');
+      expect(editor.form.isbn13).toBe(MISREAD.isbn13);
+    });
+
+    it('offers to resolve open reports on save and includes resolve_reports: true when confirmed', async () => {
+      admin.updateBook.mockReturnValue(of({ merged_into: null, book: { id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006', ...MISREAD } }));
+      ask.mockResolvedValue(true);
+      const editor = create(null, { open_reports: 3 });
+
+      await editor.save();
+
+      expect(ask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'admin.book.confirmCloseReports',
+          confirmLabel: 'admin.book.closeReports',
+        }),
+      );
+      expect(admin.updateBook).toHaveBeenCalledWith(
+        '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006',
+        expect.objectContaining({ resolve_reports: true }),
+      );
+    });
+
+    it('passes resolve_report_id when reportIdToFix is provided and resolve_reports is declined', async () => {
+      admin.updateBook.mockReturnValue(of({ merged_into: null, book: { id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006', ...MISREAD } }));
+      ask.mockResolvedValue(false);
+      const editor = create(null, { open_reports: 1, reportIdToFix: 'rep-123' });
+
+      await editor.save();
+
+      expect(admin.updateBook).toHaveBeenCalledWith(
+        '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3d0006',
+        expect.objectContaining({ resolve_report_id: 'rep-123' }),
+      );
     });
   });
 });

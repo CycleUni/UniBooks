@@ -2,8 +2,8 @@ import { Component, OnDestroy, OnInit, inject, ChangeDetectorRef } from '@angula
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { Observable, Subscription, forkJoin, map, of, switchMap, tap } from 'rxjs';
-import { AccountService, ChatReportItem, ListingReportItem } from '../../core/services/account.service';
-import { TPipe } from '../../core/i18n.service';
+import { AccountService, BookReportItem, ChatReportItem, ListingReportItem } from '../../core/services/account.service';
+import { I18nService, TPipe } from '../../core/i18n.service';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { UiPagination } from '../../shared/ui/pagination.component';
@@ -12,10 +12,12 @@ import { DateTimeFormatPipe } from '../../shared/pipes/datetime-format.pipe';
 
 export interface UserReportItem {
   id: string;
-  type: 'listing' | 'chat';
-  reason: string;
+  type: 'listing' | 'chat' | 'book';
+  reason?: string;
+  fields?: string[];
+  suggested?: Record<string, string>;
   detail?: string;
-  status: 'open' | 'actioned' | 'dismissed';
+  status: 'open' | 'actioned' | 'dismissed' | 'fixed';
   created_at: string;
   listing?: {
     id: string;
@@ -27,6 +29,10 @@ export interface UserReportItem {
     id: string;
     listing_title?: string;
     listing_deleted?: boolean;
+  };
+  book?: {
+    id: string;
+    title?: string;
   };
 }
 
@@ -54,6 +60,19 @@ function toChatItem(r: ChatReportItem): UserReportItem {
   };
 }
 
+function toBookItem(r: BookReportItem): UserReportItem {
+  return {
+    id: r.id,
+    type: 'book',
+    fields: r.fields,
+    detail: r.detail,
+    suggested: r.suggested,
+    status: r.status,
+    created_at: r.created_at,
+    book: r.book,
+  };
+}
+
 @Component({
   selector: 'app-account-reports',
   standalone: true,
@@ -70,6 +89,9 @@ function toChatItem(r: ChatReportItem): UserReportItem {
       </button>
       <button class="tab" [class.active]="activeFilter === 'chat'" (click)="setFilter('chat')">
         {{ 'acct.reportFilterChat' | t }}
+      </button>
+      <button class="tab" [class.active]="activeFilter === 'book'" (click)="setFilter('book')">
+        {{ 'acct.reportFilterBook' | t }}
       </button>
     </div>
 
@@ -89,9 +111,10 @@ function toChatItem(r: ChatReportItem): UserReportItem {
           <div class="report-header">
             <div class="report-main-info">
               <span class="type-badge" [ngClass]="report.type">
-                {{ (report.type === 'listing' ? 'acct.reportTypeListing' : 'acct.reportTypeChat') | t }}
+                {{ (report.type === 'listing' ? 'acct.reportTypeListing' : report.type === 'chat' ? 'acct.reportTypeChat' : 'acct.reportTypeBook') | t }}
               </span>
-              <span class="report-reason">{{ reasonLabel(report) | t }}</span>
+              <span class="report-reason" *ngIf="report.type !== 'book'">{{ reasonLabel(report) | t }}</span>
+              <span class="report-reason" *ngIf="report.type === 'book'">{{ reportedFieldsLabel(report) }}</span>
               <span class="report-date">{{ report.created_at | dateTimeFormat }}</span>
             </div>
             <span class="status-badge" [ngClass]="report.status">
@@ -107,6 +130,14 @@ function toChatItem(r: ChatReportItem): UserReportItem {
             <div class="report-field" *ngIf="report.type === 'chat' && report.conversation?.listing_title">
               <span class="field-label">{{ 'acct.reportConversation' | t }}:</span>
               <span class="field-value">{{ report.conversation?.listing_title }}<span *ngIf="report.conversation?.listing_deleted" class="text-muted"> · {{ 'common.listingDeleted' | t }}</span></span>
+            </div>
+            <div class="report-field" *ngIf="report.type === 'book' && report.book?.title">
+              <span class="field-label">{{ 'acct.reportBook' | t }}:</span>
+              <span class="field-value">{{ report.book?.title }}</span>
+            </div>
+            <div class="report-field" *ngIf="report.type === 'book' && report.fields?.length">
+              <span class="field-label">{{ 'acct.reportFields' | t }}:</span>
+              <span class="field-value">{{ reportedFieldsLabel(report) }}</span>
             </div>
             <div class="report-field" *ngIf="report.detail">
               <span class="field-label">{{ 'acct.reportDetail' | t }}:</span>
@@ -200,6 +231,11 @@ function toChatItem(r: ChatReportItem): UserReportItem {
       color: var(--info-ink);
       border: 1px solid var(--info-border);
     }
+    .type-badge.book {
+      background: var(--paper-warm);
+      color: var(--accent);
+      border: 1px solid var(--line);
+    }
     .report-reason {
       font-weight: 600;
       font-size: var(--text-md);
@@ -221,7 +257,8 @@ function toChatItem(r: ChatReportItem): UserReportItem {
       background: var(--warn-bg);
       color: var(--warn-ink);
     }
-    .status-badge.actioned {
+    .status-badge.actioned,
+    .status-badge.fixed {
       background: var(--success-light);
       color: var(--success);
     }
@@ -252,9 +289,10 @@ function toChatItem(r: ChatReportItem): UserReportItem {
 })
 export class ReportsComponent implements OnInit, OnDestroy {
   private accountService = inject(AccountService);
+  private i18n = inject(I18nService);
   private cdr = inject(ChangeDetectorRef);
 
-  activeFilter: 'all' | 'listing' | 'chat' = 'all';
+  activeFilter: 'all' | 'listing' | 'chat' | 'book' = 'all';
   reports: UserReportItem[] = [];
   // True from the start: the first render must not show "no reports" before
   // the request has had a chance to answer.
@@ -282,7 +320,7 @@ export class ReportsComponent implements OnInit, OnDestroy {
     this.loadSub?.unsubscribe();
   }
 
-  setFilter(filter: 'all' | 'listing' | 'chat') {
+  setFilter(filter: 'all' | 'listing' | 'chat' | 'book') {
     if (this.activeFilter === filter) return;
     this.activeFilter = filter;
     this.currentPage = 1;
@@ -303,8 +341,11 @@ export class ReportsComponent implements OnInit, OnDestroy {
         : this.activeFilter === 'listing'
           ? this.accountService.getMyListingReports(page).pipe(
               map(res => ({ reports: (res.results || []).map(toListingItem), total: res.count || 0 })))
-          : this.accountService.getMyChatReports(page).pipe(
-              map(res => ({ reports: (res.results || []).map(toChatItem), total: res.count || 0 })));
+          : this.activeFilter === 'chat'
+            ? this.accountService.getMyChatReports(page).pipe(
+                map(res => ({ reports: (res.results || []).map(toChatItem), total: res.count || 0 })))
+            : this.accountService.getMyBookReports(page).pipe(
+                map(res => ({ reports: (res.results || []).map(toBookItem), total: res.count || 0 })));
 
     this.loadSub = load.subscribe({
       next: ({ reports, total }) => {
@@ -330,8 +371,10 @@ export class ReportsComponent implements OnInit, OnDestroy {
     return {
       listing: new Map<number, UserReportItem[]>(),
       chat: new Map<number, UserReportItem[]>(),
+      book: new Map<number, UserReportItem[]>(),
       listingCount: 0,
       chatCount: 0,
+      bookCount: 0,
     };
   }
 
@@ -341,30 +384,54 @@ export class ReportsComponent implements OnInit, OnDestroy {
       tap(res => { cache.listing.set(p, (res.results || []).map(toListingItem)); cache.listingCount = res.count || 0; }));
     const chatPage = (p: number) => this.accountService.getMyChatReports(p).pipe(
       tap(res => { cache.chat.set(p, (res.results || []).map(toChatItem)); cache.chatCount = res.count || 0; }));
+    const bookPage = (p: number) => this.accountService.getMyBookReports(p).pipe(
+      tap(res => { cache.book.set(p, (res.results || []).map(toBookItem)); cache.bookCount = res.count || 0; }));
     const lastPage = (count: number) => Math.min(page, Math.ceil(count / this.pageSize));
 
     // The first page of each side gives its count, which says how many more exist.
     const firsts = [
       ...(cache.listing.has(1) ? [] : [listingPage(1)]),
       ...(cache.chat.has(1) ? [] : [chatPage(1)]),
+      ...(cache.book.has(1) ? [] : [bookPage(1)]),
     ];
     return (firsts.length ? forkJoin(firsts) : of([])).pipe(
       switchMap(() => {
         const rest: Observable<unknown>[] = [];
         for (let p = 2; p <= lastPage(cache.listingCount); p++) if (!cache.listing.has(p)) rest.push(listingPage(p));
         for (let p = 2; p <= lastPage(cache.chatCount); p++) if (!cache.chat.has(p)) rest.push(chatPage(p));
+        for (let p = 2; p <= lastPage(cache.bookCount); p++) if (!cache.book.has(p)) rest.push(bookPage(p));
         return rest.length ? forkJoin(rest) : of([]);
       }),
       map(() => {
         const merged: UserReportItem[] = [];
-        for (let p = 1; p <= page; p++) merged.push(...(cache.listing.get(p) ?? []), ...(cache.chat.get(p) ?? []));
+        for (let p = 1; p <= page; p++) {
+          merged.push(
+            ...(cache.listing.get(p) ?? []),
+            ...(cache.chat.get(p) ?? []),
+            ...(cache.book.get(p) ?? []),
+          );
+        }
         merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         return {
           reports: merged.slice((page - 1) * this.pageSize, page * this.pageSize),
-          total: cache.listingCount + cache.chatCount,
+          total: cache.listingCount + cache.chatCount + cache.bookCount,
         };
       }),
     );
+  }
+
+  reportedFieldsLabel(report: UserReportItem): string {
+    if (!report.fields?.length) return '';
+    const map: Record<string, string> = {
+      title: 'bookReport.fieldTitle',
+      authors: 'bookReport.fieldAuthors',
+      publisher: 'bookReport.fieldPublisher',
+      published_date: 'bookReport.fieldPublishedDate',
+      cover: 'bookReport.fieldCover',
+      isbn: 'bookReport.fieldIsbn',
+      other: 'bookReport.fieldOther',
+    };
+    return report.fields.map(f => this.i18n.t(map[f] || f)).join(', ');
   }
 
   onPageChange(page: number) {
@@ -373,7 +440,8 @@ export class ReportsComponent implements OnInit, OnDestroy {
 
   reasonLabel(reasonOrReport: string | UserReportItem, type?: 'listing' | 'chat'): string {
     if (typeof reasonOrReport === 'object' && reasonOrReport !== null) {
-      return this.getReasonKey(reasonOrReport.reason, reasonOrReport.type);
+      if (reasonOrReport.type === 'book') return '';
+      return this.getReasonKey(reasonOrReport.reason || '', reasonOrReport.type);
     }
     return this.getReasonKey(reasonOrReport, type || 'chat');
   }

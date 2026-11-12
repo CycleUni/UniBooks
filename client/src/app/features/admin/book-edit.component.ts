@@ -258,6 +258,10 @@ export class AdminBookEditComponent implements OnInit, OnDestroy {
   @Input() initiallyOpen = false;
   /** The catalogue the stored details came from (`Book.source`). */
   @Input() currentSource: string | null = null;
+  /** Prefilled values from a user report or external source to confirm. */
+  @Input() initialForm?: Partial<AdminBookRecord>;
+  /** If fixing a specific report, its id so saving resolves it. */
+  @Input() reportIdToFix?: string;
   /** The record was saved; the page should reload it. */
   @Output() saved = new EventEmitter<void>();
   /** The book was folded into this one and no longer exists. */
@@ -322,7 +326,12 @@ export class AdminBookEditComponent implements OnInit, OnDestroy {
     this.cancelLookup();
     this.cancelUpload();
     if (this.open) {
-      this.form = { ...this.blank(), ...this.book, isbn13: this.book.isbn13 || '' };
+      const prefilled = this.initialForm
+        ? Object.fromEntries(
+            Object.entries(this.initialForm).filter(([_, v]) => v !== undefined && v !== ''),
+          )
+        : {};
+      this.form = { ...this.blank(), ...this.book, isbn13: this.book.isbn13 || '', ...prefilled };
       this.lookedUpSource = null;
       this.mergeTarget = null;
       this.isbnError = '';
@@ -383,7 +392,7 @@ export class AdminBookEditComponent implements OnInit, OnDestroy {
     });
   }
 
-  save(merge = false) {
+  async save(merge = false) {
     this.titleMissing = !this.form.title.trim();
     // The ISBN goes only when it was changed, as the seller's listing edit
     // does: an old, invalid one left as it is mustn't block the other fixes.
@@ -393,15 +402,26 @@ export class AdminBookEditComponent implements OnInit, OnDestroy {
     if (isbn === null) this.isbnError = this.i18n.t('listing.errInvalidIsbn');
     if (this.titleMissing || isbn === null) return;
 
+    let resolveReports = false;
+    if (this.book.open_reports && this.book.open_reports > 0) {
+      resolveReports = await this.confirms.ask({
+        message: this.i18n.t('admin.book.confirmCloseReports', { count: this.book.open_reports }),
+        confirmLabel: this.i18n.t('admin.book.closeReports'),
+        cancelLabel: this.i18n.t('admin.book.keepReportsOpen'),
+      });
+    }
+
     this.cancelLookup();
     this.saving = true;
     this.formError = '';
     const { isbn13: _, ...details } = this.form;
-    const changes = {
+    const changes: Parameters<AdminService['updateBook']>[1] = {
       ...details,
       ...(isbn !== undefined ? { isbn13: isbn } : {}),
       ...(this.lookedUpSource ? { source: this.lookedUpSource } : {}),
       ...(merge ? { merge: true } : {}),
+      ...(resolveReports ? { resolve_reports: true } : {}),
+      ...(!resolveReports && this.reportIdToFix ? { resolve_report_id: this.reportIdToFix } : {}),
     };
     this.admin.updateBook(this.bookId, changes).subscribe({
       next: (res) => {

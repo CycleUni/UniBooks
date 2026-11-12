@@ -47,6 +47,7 @@ describe('Book page data source footer', () => {
   let fixture: ComponentFixture<Book>;
   let getBook: ReturnType<typeof vi.fn>;
   let queryParamMap$: BehaviorSubject<any>;
+  let auth: { isLoggedIn: ReturnType<typeof vi.fn>; isAuthenticated: ReturnType<typeof vi.fn>; user: ReturnType<typeof vi.fn> };
 
   const i18n = {
     lang: () => 'zh-TW',
@@ -72,6 +73,7 @@ describe('Book page data source footer', () => {
 
   beforeEach(async () => {
     getBook = vi.fn();
+    auth = { isLoggedIn: vi.fn().mockReturnValue(false), isAuthenticated: vi.fn().mockReturnValue(false), user: vi.fn().mockReturnValue(null) };
     queryParamMap$ = new BehaviorSubject(convertToParamMap({ isbn: '9786264140720' }));
     await TestBed.configureTestingModule({
       imports: [Book, HttpClientTestingModule],
@@ -80,7 +82,7 @@ describe('Book page data source footer', () => {
         { provide: ActivatedRoute, useValue: { queryParamMap: queryParamMap$ } },
         { provide: BookService, useValue: { getBook } },
         { provide: I18nService, useValue: i18n },
-        { provide: AuthStore, useValue: { isLoggedIn: () => false, isAuthenticated: () => false, user: () => null } },
+        { provide: AuthStore, useValue: auth },
         { provide: RegionService, useValue: { region: () => 'tw', currency: () => ({ code: 'TWD', decimal_places: 0, symbol: 'NT$' }) } },
         {
           provide: SchoolStateService,
@@ -365,6 +367,42 @@ describe('Book page data source footer', () => {
       expect(page.querySelector('.book-title')?.textContent).toContain('微積分');
       expect(page.querySelector('.listings-section ui-error-state')).toBeNull();
       expect(page.querySelector('.listings-section ui-empty')).not.toBeNull();
+    });
+
+    it('shows report button when book has catalogue id and handles click', () => {
+      getBook.mockReturnValue(of({
+        id: 'b1', isbn13: '9786264140720', title: '微積分', authors: 'Stewart',
+        listings: { count: 0, results: [] }, waiting_count: 0,
+      }));
+      const page = open();
+      const reportBtn = page.querySelector('.report-book-link') as HTMLButtonElement;
+      expect(reportBtn).not.toBeNull();
+      expect(reportBtn.textContent).toContain(zhTW['book.reportIncorrect']);
+
+      // Signed out: redirects to login
+      const router = TestBed.inject(Router);
+      const navSpy = vi.spyOn(router, 'navigate');
+      auth.isLoggedIn.mockReturnValue(false);
+      reportBtn.click();
+      fixture.detectChanges();
+      expect(navSpy).toHaveBeenCalled();
+      expect(fixture.componentInstance.showReportModal).toBe(false);
+
+      // Signed in: opens modal
+      auth.isLoggedIn.mockReturnValue(true);
+      reportBtn.click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.showReportModal).toBe(true);
+      expect(page.querySelector('app-book-report-modal')).not.toBeNull();
+    });
+
+    it('hides report button when book is uncatalogued (no id)', () => {
+      getBook.mockReturnValue(of({
+        id: '', isbn13: '9786264140720', title: '微積分', authors: 'Stewart',
+        listings: { count: 0, results: [] }, waiting_count: 0,
+      }));
+      const page = open();
+      expect(page.querySelector('.report-book-link')).toBeNull();
     });
   });
 });

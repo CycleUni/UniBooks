@@ -26,6 +26,7 @@ import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { UiEmpty } from '../../shared/ui/empty.component';
 import { UiVerificationPrompt } from '../../shared/ui/verification-prompt.component';
+import { BookReportModalComponent } from './book-report-modal.component';
 import { RegionLinkService } from '../../core/region-link.service';
 import { ToastService } from '../../core/services/toast.service';
 import { isOwnListing } from '../../core/own-listing';
@@ -42,7 +43,7 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
 @Component({
   selector: 'app-book',
   standalone: true,
-  imports: [CommonModule, RouterModule, UiButton, UiBackButton, UiBreadcrumb, TPipe, UiListingCard, UiBookCover, UiPagination, UiInfiniteScroll, UiEmpty, UiSkeleton, UiErrorState, UiVerificationPrompt],
+  imports: [CommonModule, RouterModule, UiButton, UiBackButton, UiBreadcrumb, TPipe, UiListingCard, UiBookCover, UiPagination, UiInfiniteScroll, UiEmpty, UiSkeleton, UiErrorState, UiVerificationPrompt, BookReportModalComponent],
   template: `
       <!-- Opened directly (no cached preview to paint first), the page used
            to stay blank until the book request answered. -->
@@ -101,6 +102,11 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
                 <span class="meta-value"  style="font-family: monospace;">{{ book.isbn13 }}</span>
               </div>
             </div>
+            <div class="report-book-row" *ngIf="canReportBook">
+              <button type="button" class="report-book-link" (click)="openReportModal()">
+                {{ 'book.reportIncorrect' | t }}
+              </button>
+            </div>
             <div class="waitlist-banner" [class.hot]="book.waiting_count > 0" *ngIf="!isLoadingListings && !listingsFailed && totalListings === 0">
               <span class="waitlist-count" [class.hot]="book.waiting_count > 0">
                 {{ (book.waiting_count > 0 ? 'book.waitingBanner' : 'book.waitingBannerZero') | t:{n: book.waiting_count} }}
@@ -149,6 +155,14 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
         <p class="data-source" *ngIf="sourceLabelKey as key">
           {{ 'book.dataSource' | t:{ source: (key | t) } }}
         </p>
+
+        <app-book-report-modal
+          *ngIf="showReportModal && book?.id"
+          [bookId]="book.id"
+          [bookTitle]="book.title"
+          (closed)="showReportModal = false"
+          (submitted)="showReportModal = false"
+        ></app-book-report-modal>
       </div>
   `,
   styles: [`
@@ -192,7 +206,24 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
     }
     
     .meta-list {
-      margin-bottom: 32px;
+      margin-bottom: 24px;
+    }
+    .report-book-row {
+      margin-top: -16px;
+      margin-bottom: 24px;
+    }
+    .report-book-link {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: var(--text-xs);
+      color: var(--muted);
+      text-decoration: underline;
+      cursor: pointer;
+      transition: color var(--motion-fast) ease;
+    }
+    .report-book-link:hover {
+      color: var(--ink);
     }
     .meta-row {
       display: grid;
@@ -339,6 +370,19 @@ export class Book implements OnInit {
   listingsFailed = false;
   isVerified = false;
   showUnverifiedPrompt = false;
+  showReportModal = false;
+
+  get canReportBook(): boolean {
+    return !!(this.book && this.book.id);
+  }
+
+  openReportModal() {
+    if (!this.auth.isLoggedIn()) {
+      this.router.navigate(this.regionLink.path(['/login']), { queryParams: { returnUrl: this.router.url } });
+      return;
+    }
+    this.showReportModal = true;
+  }
   private isPhoneSignal = injectIsPhone();
   get isPhone(): boolean { return this.isPhoneSignal(); }
   set isPhone(v: boolean) { this.isPhoneSignal.set(v); }

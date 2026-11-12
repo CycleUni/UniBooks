@@ -219,6 +219,7 @@ export interface AdminBookRecord {
   publisher: string;
   published_date: string;
   cover_url: string;
+  open_reports?: number;
 }
 
 /** What the external catalogues hold for an ISBN; `existing_book` is the
@@ -247,6 +248,34 @@ export interface AdminBook {
   reviewed_at: string | null;
   /** A manual book no admin has checked against the catalogues yet. */
   pending_review: boolean;
+  open_reports?: number;
+}
+
+export interface AdminBookReport {
+  id: string;
+  region: string;
+  book: {
+    id: string;
+    title: string;
+    authors: string;
+    publisher: string;
+    published_date: string;
+    cover_url: string;
+    isbn13: string;
+    source: string;
+  };
+  reporter: {
+    id: string;
+    email: string;
+  };
+  fields: string[];
+  detail: string;
+  suggested: Record<string, string>;
+  status: 'open' | 'fixed' | 'dismissed';
+  admin_note: string;
+  resolved_by: { id: string; email: string } | null;
+  resolved_at: string | null;
+  created_at: string;
 }
 
 /** The book list's `review` filter, over manually added books only. */
@@ -434,8 +463,29 @@ export class AdminService {
   }
 
   /** 409 `admin.errBookIsbnTaken` when another book has the ISBN, unless `merge`. */
-  updateBook(id: string, changes: Partial<AdminBookRecord> & { source?: string; merge?: boolean }): Observable<AdminBookUpdate> {
+  updateBook(
+    id: string,
+    changes: Partial<AdminBookRecord> & {
+      source?: string;
+      merge?: boolean;
+      resolve_reports?: boolean;
+      resolve_report_id?: string;
+      admin_note?: string;
+    },
+  ): Observable<AdminBookUpdate> {
     return this.http.patch<AdminBookUpdate>(`/admin/books/${id}`, changes);
+  }
+
+  getBookReports(opts: { status?: string; page?: number; region?: string; field?: string } = {}): Observable<Paginated<AdminBookReport>> {
+    return this.http.get<Paginated<AdminBookReport>>('/moderation/book-reports/all', { params: buildParams(opts) });
+  }
+
+  getBookReport(id: string): Observable<AdminBookReport> {
+    return this.http.get<AdminBookReport>(`/moderation/book-reports/${id}`);
+  }
+
+  actionBookReport(id: string, status: 'fixed' | 'dismissed', adminNote?: string): Observable<AdminBookReport> {
+    return this.http.patch<AdminBookReport>(`/moderation/book-reports/${id}`, { status, admin_note: adminNote });
   }
 
   deleteSchool(id: string | number): Observable<void> {
