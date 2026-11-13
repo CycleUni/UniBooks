@@ -15,6 +15,8 @@ export interface Env {
   DB_ADS: D1Database;
   /** Ad impression/click events (Workers Analytics Engine). */
   AD_EVENTS?: AnalyticsEngineDataset;
+  /** Active user events (Workers Analytics Engine). */
+  ACTIVITY_EVENTS?: AnalyticsEngineDataset;
   /** Per-client cap on ad view/click events (Workers rate limiting). */
   AD_STATS_LIMIT?: RateLimit;
   /** Per-client cap on the public ad list (Workers rate limiting). */

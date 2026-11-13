@@ -197,6 +197,24 @@ export interface AdminStatsGrowth {
   requests: { requests: number; notified: number; ordered: number; bought: number; order_rate: number | null };
 }
 
+export interface ActiveUserCounts {
+  available: true;
+  region: string | null;
+  days: number;
+  today_dau: number;
+  active_7d: number;
+  active_30d: number;
+  stickiness: number | null;
+  dau_series: { date: string; dau: number }[];
+  mau_series: { month: string; mau: number }[];
+}
+
+export interface ActiveUserUnavailable {
+  available: false;
+}
+
+export type ActiveUsersResult = ActiveUserCounts | ActiveUserUnavailable;
+
 export type RetentionRole = 'all' | 'buyer' | 'seller';
 
 export interface AcademicTerm {
@@ -294,5 +312,9 @@ export class AdminStatsService {
 
   getBookStats(id: string, region: string, days: StatsDays): Observable<AdminBookStats> {
     return this.http.get<AdminBookStats>(`/admin/stats/books/${id}`, { params: params({ region, days }) });
+  }
+
+  getActiveUsers(region: string, days = 30): Observable<ActiveUsersResult> {
+    return this.http.get<ActiveUsersResult>('/admin/stats/active-users', { params: params({ region, days }) });
   }
 }

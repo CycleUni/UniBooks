@@ -33,6 +33,7 @@ import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { notFound, scopeOf, uuidId } from '../../services/admin/scope';
 import { coverUrlFor } from '../../services/catalog/covers';
 import { regionAdTotals } from '../../services/admin/adAnalytics';
+import { activeUserAnalytics } from '../../services/admin/activityAnalytics';
 import {
   ALLOWED_DAYS,
   CompetitionRank,
@@ -660,6 +661,46 @@ statsRoutes.get('/stats/overview', async (c) => {
     },
     top_schools: await topSchools(db, schoolGroups, lang),
   });
+});
+
+// ---------------------------------------------------------------------------
+// Active accounts (Workers Analytics Engine)
+// ---------------------------------------------------------------------------
+
+statsRoutes.get('/stats/active-users', async (c) => {
+  const db = createDb(c.env.DB);
+  const rawRegion = (c.req.query('region') ?? '').trim();
+  const scope = await scopeOf(c);
+
+  let regionCode: string | null = null;
+  let tz = safeTimeZone(null);
+
+  if (rawRegion) {
+    const code = rawRegion.toUpperCase();
+    const [region] = await db.select().from(regions).where(eq(regions.code, code)).limit(1);
+    if (!region) invalid();
+    if (scope !== null && !scope.includes(region.code)) apiError(403, 'admin.errRegionForbidden');
+    regionCode = region.code;
+    tz = safeTimeZone(region.timezone);
+  } else {
+    // Omitting region is only allowed for superusers who manage all regions
+    if (scope !== null) apiError(403, 'admin.errRegionForbidden');
+    const defaultCode = (c.env.DEFAULT_REGION || 'TW').toUpperCase();
+    const [defaultRegion] = await db.select().from(regions).where(eq(regions.code, defaultCode)).limit(1);
+    if (defaultRegion) tz = safeTimeZone(defaultRegion.timezone);
+  }
+
+  let days = 30;
+  const rawDays = c.req.query('days');
+  if (rawDays !== undefined && rawDays !== '') {
+    if (!/^\d+$/.test(rawDays.trim())) invalid();
+    const n = Number(rawDays);
+    if (n < 1 || n > 90) invalid();
+    days = n;
+  }
+
+  const result = await activeUserAnalytics(c.env, { regionCode, tz, days });
+  return c.json(result);
 });
 
 // ---------------------------------------------------------------------------

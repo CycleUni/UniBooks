@@ -128,6 +128,12 @@ export class AdminTrendChartComponent implements AfterViewInit, OnChanges {
   }
 
   private create() {
+    if (!this.canvas?.nativeElement) return;
+    try {
+      if (!this.canvas.nativeElement.getContext?.('2d')) return;
+    } catch {
+      return;
+    }
     this.tokens = readChartTokens(this.host.nativeElement);
     this.chart = new Chart<'bar' | 'line', number[], string>(this.canvas.nativeElement, {
       type: 'bar',

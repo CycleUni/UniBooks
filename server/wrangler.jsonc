@@ -34,7 +34,10 @@
   ],
 
   // Ad impressions and clicks: append-only events, queried via the SQL API.
-  "analytics_engine_datasets": [{ "binding": "AD_EVENTS", "dataset": "unibooks_ad_events" }],
+  "analytics_engine_datasets": [
+    { "binding": "AD_EVENTS", "dataset": "unibooks_ad_events" },
+    { "binding": "ACTIVITY_EVENTS", "dataset": "unibooks_activity" }
+  ],
 
   // Per-client caps on the public ad endpoints (list; view/click events) and on
   // all of /api: the

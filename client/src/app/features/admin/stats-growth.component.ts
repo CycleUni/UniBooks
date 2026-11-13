@@ -4,7 +4,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import {
-  AcademicTerm, AdminStatsGrowth, AdminStatsRetention, AdminStatsService, DurationFigure, RetentionRole, StatsDays,
+  AcademicTerm, ActiveUsersResult, AdminStatsGrowth, AdminStatsRetention, AdminStatsService, DurationFigure, RetentionRole, StatsDays,
 } from '../../core/services/admin-stats.service';
 import { parseAdminError } from '../../core/admin-error.util';
 import { I18nService, TPipe } from '../../core/i18n.service';
@@ -13,6 +13,7 @@ import { UiErrorState } from '../../shared/ui/error-state.component';
 import { RegionService } from '../../core/region.service';
 import { DropdownOption, UiDropdown } from '../../shared/ui/dropdown.component';
 import { AdminStatsPeriodComponent, STATS_PAGE_STYLES, StatsFormat, StatsPeriodMemory } from './stats-widgets';
+import { AdminMauChartComponent } from './mau-chart.component';
 
 const ROLES: RetentionRole[] = ['all', 'buyer', 'seller'];
 
@@ -24,7 +25,7 @@ const ROLES: RetentionRole[] = ['all', 'buyer', 'seller'];
 @Component({
   selector: 'app-admin-stats-growth',
   standalone: true,
-  imports: [CommonModule, FormsModule, TPipe, UiSkeleton, UiErrorState, AdminStatsPeriodComponent, UiDropdown],
+  imports: [CommonModule, FormsModule, TPipe, UiSkeleton, UiErrorState, AdminStatsPeriodComponent, UiDropdown, AdminMauChartComponent],
   template: `
     <div class="section-head-row">
       <h2>{{ 'admin.navStatsGrowth' | t }}</h2>
@@ -118,6 +119,25 @@ const ROLES: RetentionRole[] = ['all', 'buyer', 'seller'];
       </div>
     </ng-container>
 
+    <!-- Monthly MAU section (Workers Analytics Engine) -->
+    <section class="card">
+      <div class="section-head-row">
+        <h3>{{ 'admin.stats.monthlyMau' | t }}</h3>
+      </div>
+
+      <ui-skeleton *ngIf="loadingActiveUsers" variant="spinner"></ui-skeleton>
+
+      <div *ngIf="!loadingActiveUsers && activeUsers && !activeUsers.available" class="unavailable-box">
+        <p class="unavailable-title">{{ 'admin.stats.activityUnavailable' | t }}</p>
+        <p class="card-note">{{ 'admin.stats.activityUnavailableDesc' | t }}</p>
+      </div>
+
+      <div *ngIf="!loadingActiveUsers && activeUsers && activeUsers.available" class="mau-content">
+        <admin-mau-chart [series]="activeUsers.mau_series"></admin-mau-chart>
+        <p class="card-note foot">{{ 'admin.stats.activityFootnote' | t }}</p>
+      </div>
+    </section>
+
     <section class="card">
       <div class="section-head-row">
         <h3>{{ 'admin.stats.retention' | t }}</h3>
@@ -164,12 +184,14 @@ const ROLES: RetentionRole[] = ['all', 'buyer', 'seller'];
   styles: [STATS_PAGE_STYLES, `
     .sub { margin: 12px 0 4px; font-size: var(--text-sm); color: var(--ink-soft); }
     .sub:first-of-type { margin-top: 0; }
-    .foot { margin: 4px 0 0; font-size: var(--text-xs); }
+    .foot { margin: 12px 0 0; font-size: var(--text-xs); color: var(--muted); }
     .card > .section-head-row { margin-bottom: 12px; }
     .role { min-width: 150px; }
     .admin-table.cohort { min-width: 560px; }
     /* Shade by the retained share; an empty cell (a term not reached yet) stays plain. */
     .heat { background: color-mix(in srgb, var(--success) calc(var(--rate, 0) * 70%), transparent); }
+    .unavailable-box { padding: 16px; border: 1px dashed var(--line); border-radius: 6px; background: color-mix(in srgb, var(--surface-card) 60%, transparent); text-align: center; color: var(--muted); }
+    .unavailable-title { font-size: var(--text-base); font-weight: 600; color: var(--ink-soft); margin: 0 0 4px; }
   `],
 })
 export class AdminStatsGrowthComponent {
@@ -196,8 +218,12 @@ export class AdminStatsGrowthComponent {
   /** Why the last load failed, shown with a retry in place of the section. */
   retentionError = '';
 
+  activeUsers: ActiveUsersResult | null = null;
+  loadingActiveUsers = true;
+
   private sub?: Subscription;
   private retentionSub?: Subscription;
+  private activeUsersSub?: Subscription;
 
   constructor() {
     const qp = this.route.snapshot.queryParamMap;
@@ -215,6 +241,7 @@ export class AdminStatsGrowthComponent {
     inject(DestroyRef).onDestroy(() => {
       this.sub?.unsubscribe();
       this.retentionSub?.unsubscribe();
+      this.activeUsersSub?.unsubscribe();
     });
   }
 
@@ -279,8 +306,24 @@ export class AdminStatsGrowthComponent {
 
   load() {
     this.sub?.unsubscribe();
+    this.activeUsersSub?.unsubscribe();
     this.loading = true;
+    this.loadingActiveUsers = true;
     this.loadError = '';
+
+    this.activeUsersSub = this.stats.getActiveUsers(this.region(), 30).subscribe({
+      next: (res) => {
+        this.activeUsers = res;
+        this.loadingActiveUsers = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.activeUsers = { available: false };
+        this.loadingActiveUsers = false;
+        this.cdr.markForCheck();
+      },
+    });
+
     this.sub = this.stats.getGrowth(this.region(), this.days).subscribe({
       next: (res) => {
         this.growth = res;

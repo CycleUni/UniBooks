@@ -3,7 +3,7 @@ import { Component, ChangeDetectorRef, DestroyRef, effect, inject, untracked } f
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Subscription, forkJoin } from 'rxjs';
-import { AdminStatsOverview, AdminStatsService, StatsDays } from '../../core/services/admin-stats.service';
+import { ActiveUsersResult, AdminStatsOverview, AdminStatsService, StatsDays } from '../../core/services/admin-stats.service';
 import { parseAdminError } from '../../core/admin-error.util';
 import { I18nService, TPipe } from '../../core/i18n.service';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
@@ -11,6 +11,7 @@ import { UiErrorState } from '../../shared/ui/error-state.component';
 import { RegionService } from '../../core/region.service';
 import { PricePipe } from '../../shared/pipes/price.pipe';
 import { AdminTrendChartComponent, TrendPoint } from './trend-chart.component';
+import { AdminDauChartComponent } from './dau-chart.component';
 import {
   AdminStatsPeriodComponent, AdminStatusBarComponent, STATS_PAGE_STYLES, StatsFormat, StatsPeriodMemory,
 } from './stats-widgets';
@@ -29,7 +30,7 @@ const REPORT_REASON_KEYS: Record<string, string> = {
   standalone: true,
   imports: [
     RegionLinkDirective, CommonModule, RouterModule, TPipe, UiSkeleton, UiErrorState, PricePipe,
-    AdminTrendChartComponent, AdminStatsPeriodComponent, AdminStatusBarComponent,
+    AdminTrendChartComponent, AdminDauChartComponent, AdminStatsPeriodComponent, AdminStatusBarComponent,
   ],
   template: `
     <div class="section-head-row">
@@ -92,6 +93,49 @@ const REPORT_REASON_KEYS: Record<string, string> = {
           [barLabel]="'admin.stats.completedTransactions' | t"
           [lineLabel]="'admin.stats.newOrders' | t"
         ></admin-trend-chart>
+      </section>
+
+      <!-- Active Accounts block (Workers Analytics Engine) -->
+      <section class="card active-users-card">
+        <div class="card-head">
+          <h3>{{ 'admin.stats.activeAccounts' | t }}</h3>
+        </div>
+
+        <ui-skeleton *ngIf="loadingActiveUsers" variant="spinner"></ui-skeleton>
+
+        <div *ngIf="!loadingActiveUsers && activeUsers && !activeUsers.available" class="unavailable-box">
+          <p class="unavailable-title">{{ 'admin.stats.activityUnavailable' | t }}</p>
+          <p class="card-note">{{ 'admin.stats.activityUnavailableDesc' | t }}</p>
+        </div>
+
+        <div *ngIf="!loadingActiveUsers && activeUsers && activeUsers.available" class="active-users-content">
+          <div class="active-kpi-row">
+            <div class="kpi-mini">
+              <span class="kpi-mini-label">{{ 'admin.stats.activeToday' | t }}</span>
+              <span class="kpi-mini-value">{{ fmt.int(activeUsers.today_dau) }}</span>
+            </div>
+            <div class="kpi-mini">
+              <span class="kpi-mini-label">{{ 'admin.stats.active7d' | t }}</span>
+              <span class="kpi-mini-value">{{ fmt.int(activeUsers.active_7d) }}</span>
+            </div>
+            <div class="kpi-mini">
+              <span class="kpi-mini-label">{{ 'admin.stats.active30d' | t }}</span>
+              <span class="kpi-mini-value">{{ fmt.int(activeUsers.active_30d) }}</span>
+            </div>
+            <div class="kpi-mini">
+              <span class="kpi-mini-label">{{ 'admin.stats.stickiness' | t }}</span>
+              <span class="kpi-mini-value">{{ fmt.percent(activeUsers.stickiness) }}</span>
+              <span class="kpi-mini-sub">{{ 'admin.stats.stickinessSub' | t }}</span>
+            </div>
+          </div>
+
+          <div class="chart-block">
+            <h4 class="chart-title">{{ 'admin.stats.dauLineChart' | t }}</h4>
+            <admin-dau-chart [series]="activeUsers.dau_series"></admin-dau-chart>
+          </div>
+
+          <p class="card-note foot">{{ 'admin.stats.activityFootnote' | t }}</p>
+        </div>
       </section>
 
       <div class="grid-2">
@@ -193,6 +237,14 @@ const REPORT_REASON_KEYS: Record<string, string> = {
     .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
     .more { font-size: var(--text-sm); color: var(--accent); text-decoration: none; white-space: nowrap; }
     .more:hover { text-decoration: underline; }
+    .active-kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 12px; margin-bottom: 16px; }
+    .kpi-mini { background: var(--surface-card); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+    .kpi-mini-label { font-size: var(--text-xs); color: var(--muted); }
+    .kpi-mini-value { font-size: var(--text-lg); font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .kpi-mini-sub { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .unavailable-box { padding: 16px; border: 1px dashed var(--line); border-radius: 6px; background: color-mix(in srgb, var(--surface-card) 60%, transparent); text-align: center; color: var(--muted); }
+    .unavailable-title { font-size: var(--text-base); font-weight: 600; color: var(--ink-soft); margin: 0 0 4px; }
+    .foot { margin: 12px 0 0; font-size: var(--text-xs); color: var(--muted); }
   `],
 })
 export class AdminStatsDashboardComponent {
@@ -216,7 +268,11 @@ export class AdminStatsDashboardComponent {
   /** Why the last load failed, shown with a retry in place of the section. */
   loadError = '';
 
+  activeUsers: ActiveUsersResult | null = null;
+  loadingActiveUsers = true;
+
   private sub?: Subscription;
+  private activeUsersSub?: Subscription;
 
   constructor() {
     // Every figure belongs to one region, so a region switch reloads all of it.
@@ -224,7 +280,10 @@ export class AdminStatsDashboardComponent {
       this.regionService.region();
       untracked(() => this.load());
     });
-    inject(DestroyRef).onDestroy(() => this.sub?.unsubscribe());
+    inject(DestroyRef).onDestroy(() => {
+      this.sub?.unsubscribe();
+      this.activeUsersSub?.unsubscribe();
+    });
   }
 
   regionName(): string {
@@ -261,9 +320,25 @@ export class AdminStatsDashboardComponent {
 
   load() {
     this.sub?.unsubscribe();
+    this.activeUsersSub?.unsubscribe();
     this.loadingOverview = true;
+    this.loadingActiveUsers = true;
     this.loadError = '';
     const region = this.region();
+
+    this.activeUsersSub = this.stats.getActiveUsers(region, 30).subscribe({
+      next: (res) => {
+        this.activeUsers = res;
+        this.loadingActiveUsers = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.activeUsers = { available: false };
+        this.loadingActiveUsers = false;
+        this.cdr.markForCheck();
+      },
+    });
+
     this.sub = forkJoin({
       overview: this.stats.getOverview(region, this.days),
       series: this.stats.getTimeseries(region, this.days),
