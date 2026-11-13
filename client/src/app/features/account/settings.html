@@ -14,8 +14,9 @@
     <div class="verify-section" *ngIf="currentRegion">
       <!-- My School row (locked when verified, editable when unverified) -->
       <div class="my-school-section form-group mb-4" data-testid="my-school-row">
-        <label><strong>{{ 'acct.mySchool' | t }}</strong></label>
         <ng-container *ngIf="currentVerification; else declaredSchoolEdit">
+          <!-- The dropdown below carries its own label; only the locked card needs one. -->
+          <label><strong>{{ 'acct.mySchool' | t }}</strong></label>
           <div class="locked-school-card">
             <div class="locked-school-header" style="display: flex; align-items: center; gap: 6px;">
               <span class="school-name-display">{{ currentVerifiedSchoolName }}</span>
