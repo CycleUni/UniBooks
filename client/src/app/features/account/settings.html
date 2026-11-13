@@ -106,7 +106,19 @@
             </div>
           </div>
 
-          <div class="form-group mt-3" *ngIf="selectedVerifySchoolCode">
+          <!-- No mailbox domain on record for this school: ask for the whole address instead of guessing one. -->
+          <div class="form-group mt-3" *ngIf="schoolNeedsFullAddress" data-testid="full-address-field">
+            <label>{{ 'acct.eduEmailLabel' | t:{suffixesText: ''} }}</label>
+            <ui-input
+              type="email"
+              autocomplete="off"
+              [placeholder]="'acct.eduEmailFullPlaceholder' | t"
+              [(ngModel)]="eduEmail"
+              (keydown.enter)="onVerifyFormSubmit()"
+            ></ui-input>
+          </div>
+
+          <div class="form-group mt-3" *ngIf="selectedVerifySchoolCode && !schoolNeedsFullAddress">
             <label>{{ 'acct.eduEmailLabel' | t:{suffixesText: ''} }}</label>
             <div class="email-assisted-row">
               <input
@@ -139,7 +151,7 @@
             </div>
           </div>
 
-          <div class="mt-2">
+          <div class="mt-2" *ngIf="!schoolNeedsFullAddress">
             <button type="button" class="link-btn escape-hatch-btn" (click)="toggleManualEmail()">
               {{ 'acct.useOtherAddress' | t }}
             </button>

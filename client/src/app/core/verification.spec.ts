@@ -42,14 +42,14 @@ describe('verification core utilities', () => {
       ]);
     });
 
-    it('falls back to email_domain when student_email_domain is not set', () => {
+    it('offers no domain for a school that lists none: its website domain is not a mailbox domain', () => {
       const school: SchoolOption = {
         id: 2,
         code: 'NTU',
         name: 'National Taiwan University',
         email_domain: 'ntu.edu.tw',
       };
-      expect(getSchoolDomainChoices(school)).toEqual(['ntu.edu.tw']);
+      expect(getSchoolDomainChoices(school)).toEqual([]);
     });
   });
 

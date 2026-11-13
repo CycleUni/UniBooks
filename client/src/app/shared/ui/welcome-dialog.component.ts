@@ -168,12 +168,14 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
                 <input
                   type="text"
                   class="local-input"
-                  [placeholder]="'acct.eduEmailLocalPlaceholder' | t"
+                  [placeholder]="(domainChoices.length ? 'acct.eduEmailLocalPlaceholder' : 'acct.eduEmailFullPlaceholder') | t"
                   [(ngModel)]="eduLocalPart"
                   (keydown.enter)="onSendMail()"
-                  [attr.aria-label]="'acct.eduEmailLocalPlaceholder' | t"
+                  [attr.aria-label]="(domainChoices.length ? 'acct.eduEmailLocalPlaceholder' : 'acct.eduEmailFullPlaceholder') | t"
                 />
-                @if (domainChoices.length > 1) {
+                @if (domainChoices.length === 0) {
+                  <!-- No mailbox domain on record: the field above takes the whole address. -->
+                } @else if (domainChoices.length > 1) {
                   <select class="domain-select" [(ngModel)]="selectedDomain" aria-label="Domain">
                     @for (d of domainChoices; track d) {
                       <option [value]="d">&#64;{{ d }}</option>
@@ -699,7 +701,7 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
   private setupVerificationStep(): void {
     this.step = 'verify';
     this.domainChoices = getSchoolDomainChoices(this.selectedSchool);
-    this.selectedDomain = this.domainChoices[0] || this.selectedSchool?.email_domain || '';
+    this.selectedDomain = this.domainChoices[0] || '';
     this.eduLocalPart = '';
     this.verifyStatusMsg = '';
     this.studentNumberInput = '';
@@ -741,8 +743,15 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
 
   onSendMail(): void {
     const local = this.eduLocalPart.trim();
-    if (!local || !this.selectedDomain || this.isVerifying) return;
-    const fullEmail = `${local}@${this.selectedDomain}`;
+    if (!local || this.isVerifying) return;
+    // A school with no mailbox domain on record takes the whole address in the one field.
+    const fullEmail = this.selectedDomain ? `${local}@${this.selectedDomain}` : local;
+    if (!this.selectedDomain && !local.includes('@')) {
+      this.verifyStatusOk = false;
+      this.verifyStatusMsg = this.i18n.t('acct.errEduEmailFull');
+      this.cdr.markForCheck();
+      return;
+    }
 
     this.isVerifying = true;
     this.verifyStatusMsg = '';

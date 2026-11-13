@@ -843,12 +843,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (preserveDomain && this.schoolDomainChoices.includes(preserveDomain.toLowerCase())) {
       this.selectedVerifyDomain = preserveDomain.toLowerCase();
     } else {
-      this.selectedVerifyDomain =
-        this.selectedSchoolOption.student_email_domain ||
-        this.selectedSchoolOption.email_domain ||
-        this.schoolDomainChoices[0] ||
-        '';
+      this.selectedVerifyDomain = this.schoolDomainChoices[0] || '';
     }
+  }
+
+  /** The chosen school lists no mailbox domain, so the form takes the whole address. */
+  get schoolNeedsFullAddress(): boolean {
+    return !!this.selectedSchoolOption && this.schoolDomainChoices.length === 0;
   }
 
   onDomainSelectChange(domain: string) {
@@ -929,7 +930,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.lastVerifyError = null;
     this.verifyIsError = false;
 
-    if (this.useManualEmail) {
+    if (this.useManualEmail || this.schoolNeedsFullAddress) {
       const email = this.eduEmail.trim();
       if (!email) {
         this.verifyIsError = true;

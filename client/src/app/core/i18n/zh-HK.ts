@@ -412,6 +412,8 @@ export const zhHK: Record<string, string> = {
   'acct.errNoEduEmailToRenew': '而家冇綁定校園電郵，請輸入要驗證嘅學校電郵。',
   'acct.verifySelectSchool': '選擇你嘅院校',
   'acct.eduEmailLocalPlaceholder': '學號或帳戶名',
+  'acct.eduEmailFullPlaceholder': '完整嘅學校電郵地址',
+  'acct.errEduEmailFull': '請輸入完整嘅學校電郵地址（包埋 @ 後面嗰部分）。',
   'acct.useOtherAddress': '改用完整電郵地址',
   'acct.useAssistedAddress': '從院校網域揀選',
   'acct.googleDomainHint': 'Google Workspace 帳戶',

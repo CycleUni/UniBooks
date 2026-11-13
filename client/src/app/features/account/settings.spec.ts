@@ -578,14 +578,12 @@ describe('SettingsComponent', () => {
     });
 
     it('supports other-address fallback escape hatch', () => {
+      // NTU lists no mailbox domain: the form takes the whole address and prefills nothing.
       component.selectVerifySchool('NTU');
-      component.eduLocalPart = 'b08901001';
+      expect(component.schoolNeedsFullAddress).toBe(true);
+      expect(component.selectedVerifyDomain).toBe('');
+      component.eduEmail = 'b08901001@ntu.edu.tw';
       expect(component.buildSubmitEmail()).toBe('b08901001@ntu.edu.tw');
-
-      // Toggle to manual free-text mode
-      component.toggleManualEmail();
-      expect(component.useManualEmail).toBe(true);
-      expect(component.eduEmail).toBe('b08901001@ntu.edu.tw');
 
       // Enter an unlisted subdomain
       component.eduEmail = 'b08901001@csie.ntu.edu.tw';

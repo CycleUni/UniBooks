@@ -18,29 +18,19 @@ export function domainMatchesSuffix(domain: string, suffix: string): boolean {
 }
 
 /**
- * Return all distinct accepted domains for a school, placing student_email_domain first if set.
+ * The mailbox domains the verification form may prefill for a school: only
+ * the ones the school's record lists, the usual student one first. A school
+ * with none listed returns [] and the form asks for the whole address:
+ * `email_domain` is the school's WEBSITE domain, and showing it as a fixed
+ * "@domain" told students their address was on a domain it may not be on.
  */
 export function getSchoolDomainChoices(school: SchoolOption | null | undefined): string[] {
   if (!school) return [];
-  // A school that lists its mailbox domains offers only those: nobody's
-  // address is on the bare website domain there, and choosing it would
-  // send the link nowhere. The server still accepts it if typed in full.
-  const listed = (school.email_domains || []).filter(Boolean);
-  const list = (
-    listed.length
-      ? [school.student_email_domain, ...listed]
-      : [school.student_email_domain, school.email_domain, ...(school.accepted_domains || [])]
-  ).filter(Boolean) as string[];
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const d of list) {
-    const norm = d.trim().toLowerCase();
-    if (norm && !seen.has(norm)) {
-      seen.add(norm);
-      result.push(norm);
-    }
-  }
-  return result;
+  const listed = (school.email_domains || []).map((d) => (d || '').trim().toLowerCase()).filter(Boolean);
+  if (!listed.length) return [];
+  const preferred = (school.student_email_domain || '').trim().toLowerCase();
+  const ordered = listed.includes(preferred) ? [preferred, ...listed] : listed;
+  return [...new Set(ordered)];
 }
 
 /**
@@ -67,7 +57,11 @@ export function findSchoolForDomain(schools: SchoolOption[], domain: string): { 
   let bestDepth = -1;
 
   for (const s of schools) {
-    const choices = getSchoolDomainChoices(s);
+    // Every domain the school accepts, not only the ones the form offers:
+    // a pasted address on the website domain still belongs to that school.
+    const choices = [s.email_domain, ...(s.email_domains || []), ...(s.accepted_domains || [])]
+      .map((c) => (c || '').trim().toLowerCase())
+      .filter(Boolean);
     for (const choice of choices) {
       if (domainMatchesSuffix(d, choice)) {
         const depth = choice.split('.').length;
