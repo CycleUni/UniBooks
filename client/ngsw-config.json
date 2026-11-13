@@ -8,7 +8,9 @@
     "!/**/*__*/**",
     "!/api/**",
     "!/event",
-    "!/event/**"
+    "!/event/**",
+    "!/about",
+    "!/about/**"
   ],
   "assetGroups": [
     {
@@ -34,10 +36,7 @@
       "installMode": "lazy",
       "updateMode": "lazy",
       "resources": {
-        "files": [
-          "/*.js",
-          "!/sw.js"
-        ]
+        "files": ["/*.js", "!/sw.js"]
       }
     },
     {
@@ -47,7 +46,9 @@
       "resources": {
         "files": [
           "/**/*.(svg|cur|jpg|jpeg|png|apng|webp|avif|gif|otf|ttf|woff|woff2)",
-          "!/event/**"
+          "!/event/**",
+          "!/about/**",
+          "!/api/**"
         ]
       }
     },
@@ -55,9 +56,7 @@
       "name": "icons",
       "installMode": "prefetch",
       "resources": {
-        "files": [
-          "/icons/*.png"
-        ]
+        "files": ["/icons/*.png"]
       }
     }
   ]
