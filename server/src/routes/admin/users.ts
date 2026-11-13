@@ -252,6 +252,7 @@ async function ensureVerification(db: Database, userId: string, regionCode: stri
       userId,
       regionCode,
       eduEmail: null,
+      method: 'staff',
       isManualVerification: 1,
       verifiedAt: nowIso,
       isActive: 0,
@@ -354,7 +355,7 @@ userRoutes.patch('/users/:id', async (c) => {
     if (verifiedUpdate.value && !live) {
       await db
         .update(regionVerifications)
-        .set({ isActive: 1, verifiedAt: now, expiresAt: verificationExpiry(now) })
+        .set({ isActive: 1, verifiedAt: now, expiresAt: verificationExpiry(now), isManualVerification: 1, method: 'staff' })
         .where(eq(regionVerifications.id, row.id));
       changes.verified_at = now;
     } else if (!verifiedUpdate.value && row.isActive) {

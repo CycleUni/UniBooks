@@ -1,6 +1,8 @@
 import { Injectable, effect, inject, signal, untracked } from '@angular/core';
 import { HttpClient, HttpParams, HttpContext } from '@angular/common/http';
-import { Observable, of, shareReplay, switchMap, take, tap, catchError, throwError } from 'rxjs';
+import { Observable, from, of, shareReplay, switchMap, take, tap, catchError, throwError } from 'rxjs';
+import { importOrReload } from '../chunk-recovery';
+import { uploadImage } from '../upload';
 import { Router } from '@angular/router';
 import { I18nService } from '../i18n.service';
 import { Lang, SUPPORTED_LANGS } from '../i18n';
@@ -497,6 +499,66 @@ export class AccountService {
   verifyWithGoogle(credential: string): Observable<{ code: string; edu_email: string }> {
     return this.http.post<{ code: string; edu_email: string }>('/auth/verify/google', { credential }).pipe(
       tap(() => this.profileCache.set(null))
+    );
+  }
+
+  getStudentIdVerification(): Observable<{
+    request: {
+      id: string;
+      status: string;
+      school: string;
+      school_name: string;
+      student_number: string;
+      reject_reason: string;
+      created_at: string;
+      updated_at: string;
+      reviewed_at: string | null;
+    } | null;
+  }> {
+    return this.http.get<{
+      request: {
+        id: string;
+        status: string;
+        school: string;
+        school_name: string;
+        student_number: string;
+        reject_reason: string;
+        created_at: string;
+        updated_at: string;
+        reviewed_at: string | null;
+      } | null;
+    }>('/auth/verify/student-id');
+  }
+
+  cancelStudentIdVerification(): Observable<{ ok: boolean; status: string }> {
+    return this.http.delete<{ ok: boolean; status: string }>('/auth/verify/student-id');
+  }
+
+  uploadStudentIdPhoto(file: File, school: string): Observable<{ url: string }> {
+    return from(
+      importOrReload(() => import('browser-image-compression')).then((m) =>
+        m.default(file, {
+          maxSizeMB: 1.5,
+          maxWidthOrHeight: 1600,
+          useWebWorker: true,
+          fileType: 'image/webp',
+        }),
+      ),
+    ).pipe(
+      switchMap((compressed) =>
+        uploadImage(this.http, '/auth/verify/student-id/uploads', compressed, { school }),
+      ),
+    );
+  }
+
+  submitStudentIdVerification(data: {
+    school: string;
+    student_number: string;
+    image: string;
+  }): Observable<{ id: string; status: string; school: string; student_number: string }> {
+    return this.http.post<{ id: string; status: string; school: string; student_number: string }>(
+      '/auth/verify/student-id',
+      data,
     );
   }
 

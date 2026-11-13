@@ -193,6 +193,7 @@ export const schools = sqliteTable(
     translations: text('translations').notNull().default('{}'),
     cityId: integer('city_id').references(() => cities.id, { onDelete: 'set null' }),
     requiresVerification: integer('requires_verification').notNull().default(0),
+    allowsStudentIdVerification: integer('allows_student_id_verification').notNull().default(0),
     isActive: integer('is_active').notNull().default(1),
     createdAt: text('created_at').notNull(),
   },
@@ -246,6 +247,8 @@ export const regionVerifications = sqliteTable(
     // Lower-cased; unique across ALL rows, active or not.
     // NULL only for a manual (staff) verification.
     eduEmail: text('edu_email').unique(),
+    method: text('method', { enum: ['email', 'google', 'staff', 'student_id'] }),
+    studentNumber: text('student_number'),
     isManualVerification: integer('is_manual_verification').notNull().default(0),
     verifiedAt: text('verified_at').notNull(),
     lastReverifiedAt: text('last_reverified_at'),
@@ -262,6 +265,49 @@ export const regionVerifications = sqliteTable(
 export type RegionVerification = InferSelectModel<typeof regionVerifications>;
 export type InsertRegionVerification = InferInsertModel<typeof regionVerifications>;
 export type NewRegionVerification = InsertRegionVerification;
+
+// ============================================================================
+// 8.1 Student ID Verifications
+// ============================================================================
+export const studentIdVerifications = sqliteTable(
+  'student_id_verifications',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    regionCode: text('region_code')
+      .notNull()
+      .references(() => regions.code),
+    schoolId: integer('school_id')
+      .notNull()
+      .references(() => schools.id, { onDelete: 'cascade' }),
+    studentNumber: text('student_number').notNull(),
+    imageKey: text('image_key'),
+    status: text('status', { enum: ['pending', 'approved', 'rejected', 'cancelled'] })
+      .notNull()
+      .default('pending'),
+    rejectReason: text('reject_reason').notNull().default(''),
+    reviewedById: text('reviewed_by_id').references(() => users.id, { onDelete: 'set null' }),
+    reviewedAt: text('reviewed_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('student_id_verifications_region_status_created_idx').on(table.regionCode, table.status, table.createdAt),
+    index('student_id_verifications_user_idx').on(table.userId),
+    uniqueIndex('student_id_verifications_one_pending_per_user_region')
+      .on(table.userId, table.regionCode)
+      .where(sql`${table.status} = 'pending'`),
+    uniqueIndex('student_id_verifications_one_approved_per_school_number')
+      .on(table.schoolId, table.studentNumber)
+      .where(sql`${table.status} = 'approved'`),
+  ],
+);
+
+export type StudentIdVerification = InferSelectModel<typeof studentIdVerifications>;
+export type InsertStudentIdVerification = InferInsertModel<typeof studentIdVerifications>;
+export type NewStudentIdVerification = InsertStudentIdVerification;
 
 // ============================================================================
 // 9. Refresh Tokens

@@ -313,6 +313,37 @@ export class SettingsComponent implements OnInit, OnDestroy {
   declaredSchool: { id: number; code: string; name: string; requires_verification: boolean } | null = null;
   softInviteDismissed = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('unibooks_soft_invite_dismissed') === 'true';
 
+  studentIdRequest: {
+    id: string;
+    status: string;
+    school: string;
+    school_name: string;
+    student_number: string;
+    reject_reason: string;
+    created_at: string;
+    updated_at: string;
+    reviewed_at: string | null;
+  } | null = null;
+  studentNumberInput = '';
+  selectedStudentIdFile: File | null = null;
+  studentIdPreviewUrl: string | null = null;
+  isSubmittingStudentId = false;
+  isCancellingStudentId = false;
+  isResubmittingStudentId = false;
+  studentIdError = '';
+
+  get targetStudentIdSchool(): SchoolOption | null {
+    if (this.selectedSchoolOption) return this.selectedSchoolOption;
+    if (this.selectedDeclaredSchoolCode) {
+      return this.availableSchools.find((s) => s.code === this.selectedDeclaredSchoolCode) || null;
+    }
+    return null;
+  }
+
+  get allowsStudentIdVerification(): boolean {
+    return !!this.targetStudentIdSchool?.allows_student_id_verification;
+  }
+
   get mustVerify(): boolean {
     return this.authStore.mustVerifyIn(this.regionService.region());
   }
@@ -450,10 +481,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.stopResendCountdown();
+    if (this.studentIdPreviewUrl) {
+      URL.revokeObjectURL(this.studentIdPreviewUrl);
+    }
   }
 
   loadProfile() {
     this.profileLoadFailed = false;
+    this.loadStudentIdVerification();
     this.accountService.getMyProfile().subscribe({
       next: (data) => {
         this.profileLoaded = true;
@@ -499,6 +534,111 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.settingsIsError = true;
         this.clientSettingsMsg = 'acct.loadProfileFailed';
         console.error('Failed to load profile', err);
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  loadStudentIdVerification() {
+    if (typeof this.accountService?.getStudentIdVerification !== 'function') return;
+    this.accountService.getStudentIdVerification().subscribe({
+      next: (res) => {
+        this.studentIdRequest = res.request;
+        this.cdr.markForCheck();
+      },
+      error: () => {},
+    });
+  }
+
+  onStudentIdPhotoSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    this.selectedStudentIdFile = file;
+    if (this.studentIdPreviewUrl) {
+      URL.revokeObjectURL(this.studentIdPreviewUrl);
+    }
+    this.studentIdPreviewUrl = URL.createObjectURL(file);
+    this.studentIdError = '';
+    this.cdr.markForCheck();
+  }
+
+  onRemoveStudentIdPhoto() {
+    this.selectedStudentIdFile = null;
+    if (this.studentIdPreviewUrl) {
+      URL.revokeObjectURL(this.studentIdPreviewUrl);
+      this.studentIdPreviewUrl = null;
+    }
+    this.cdr.markForCheck();
+  }
+
+  startResubmitStudentId() {
+    this.isResubmittingStudentId = true;
+    this.studentNumberInput = this.studentIdRequest?.student_number || '';
+    this.onRemoveStudentIdPhoto();
+    this.studentIdError = '';
+    this.cdr.markForCheck();
+  }
+
+  async onSubmitStudentIdVerification() {
+    const school = this.targetStudentIdSchool;
+    if (!school || !this.selectedStudentIdFile || !this.studentNumberInput.trim() || this.isSubmittingStudentId) {
+      return;
+    }
+    this.isSubmittingStudentId = true;
+    this.studentIdError = '';
+    this.cdr.markForCheck();
+
+    try {
+      const uploadRes = await firstValueFrom(
+        this.accountService.uploadStudentIdPhoto(this.selectedStudentIdFile, school.code),
+      );
+      await firstValueFrom(
+        this.accountService.submitStudentIdVerification({
+          school: school.code,
+          student_number: this.studentNumberInput.trim().toUpperCase(),
+          image: uploadRes.url,
+        }),
+      );
+      this.isSubmittingStudentId = false;
+      this.isResubmittingStudentId = false;
+      this.onRemoveStudentIdPhoto();
+      this.studentNumberInput = '';
+      this.toast.success(this.i18n.t('acct.studentIdPendingNotice'));
+      this.loadStudentIdVerification();
+      this.cdr.markForCheck();
+    } catch (err: any) {
+      this.isSubmittingStudentId = false;
+      this.studentIdError = parseApiError(err, this.i18n, 'acct.verifyFailed');
+      this.cdr.markForCheck();
+    }
+  }
+
+  async onCancelStudentIdVerification() {
+    if (this.isCancellingStudentId) return;
+    const confirmed = await this.confirms.askDanger(
+      this.i18n.t('acct.cancelVerificationConfirm'),
+      {
+        confirmLabel: this.i18n.t('acct.cancelVerification'),
+      },
+    );
+    if (!confirmed) return;
+
+    this.isCancellingStudentId = true;
+    this.cdr.markForCheck();
+
+    this.accountService.cancelStudentIdVerification().subscribe({
+      next: () => {
+        this.isCancellingStudentId = false;
+        this.studentIdRequest = null;
+        this.isResubmittingStudentId = false;
+        this.toast.success(this.i18n.t('common.save'));
+        this.loadStudentIdVerification();
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.isCancellingStudentId = false;
+        this.toast.error(parseApiError(err, this.i18n, 'common.error'));
         this.cdr.markForCheck();
       },
     });

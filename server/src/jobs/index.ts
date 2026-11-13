@@ -1,7 +1,18 @@
-import { and, asc, eq, gt, gte, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, isNotNull, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { Env } from '../env';
-import { createDb, subscriptions, books, users, orders, regions, regionVerifications, emailSent, pushSent } from '../db';
+import {
+  createDb,
+  subscriptions,
+  books,
+  users,
+  orders,
+  regions,
+  regionVerifications,
+  emailSent,
+  pushSent,
+  studentIdVerifications,
+} from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
 import { orderLock } from '../services/orders/lock';
 import { AUTO_COMPLETE_AFTER_MS, lockKeyFor } from '../services/orders/transitions';
@@ -437,6 +448,61 @@ export async function runVerificationExpiryReminder(env: Env) {
   return result;
 }
 
+export async function purgeExpiredStudentIdVerifications(env: Env): Promise<number> {
+  const db = createDb(env.DB);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const expired = await db
+    .select({ id: studentIdVerifications.id, imageKey: studentIdVerifications.imageKey })
+    .from(studentIdVerifications)
+    .where(and(eq(studentIdVerifications.status, 'pending'), lt(studentIdVerifications.createdAt, thirtyDaysAgo)));
+
+  const now = new Date().toISOString();
+  let cancelledCount = 0;
+  for (const item of expired) {
+    if (item.imageKey) {
+      await env.R2_PRIVATE.delete(item.imageKey).catch((e) =>
+        console.error(`[StudentIdCleanup] failed to delete image ${item.imageKey}`, e),
+      );
+    }
+    await db
+      .update(studentIdVerifications)
+      .set({
+        status: 'cancelled',
+        rejectReason: 'acct.studentIdExpired',
+        imageKey: null,
+        updatedAt: now,
+      })
+      .where(and(eq(studentIdVerifications.id, item.id), eq(studentIdVerifications.status, 'pending')));
+    cancelledCount++;
+  }
+  // Photos of decided requests whose delete failed at decision time.
+  const leftovers = await db
+    .select({ id: studentIdVerifications.id, imageKey: studentIdVerifications.imageKey })
+    .from(studentIdVerifications)
+    .where(and(ne(studentIdVerifications.status, 'pending'), isNotNull(studentIdVerifications.imageKey)));
+  for (const item of leftovers) {
+    try {
+      await env.R2_PRIVATE.delete(item.imageKey!);
+      await db.update(studentIdVerifications).set({ imageKey: null }).where(eq(studentIdVerifications.id, item.id));
+    } catch (e) {
+      console.error(`[StudentIdCleanup] failed to delete image ${item.imageKey}`, e);
+    }
+  }
+
+  // Uploads that never became a request. The public bucket's tmp/ prefix is
+  // reaped by a lifecycle rule; the private bucket has none, so do it here.
+  const dayAgoMs = Date.now() - 24 * 60 * 60 * 1000;
+  let cursor: string | undefined;
+  do {
+    const page = await env.R2_PRIVATE.list({ prefix: 'tmp/student-ids/', cursor, limit: 500 });
+    const stale = page.objects.filter((o) => o.uploaded.getTime() < dayAgoMs).map((o) => o.key);
+    if (stale.length) await env.R2_PRIVATE.delete(stale);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+
+  return cancelledCount;
+}
+
 // ---------------------------------------------------------------------------
 // Cleanup ('0 3 * * *')
 // ---------------------------------------------------------------------------
@@ -452,6 +518,7 @@ export async function runCleanup(env: Env) {
   const linksPurged = await purgeOneTimeTokens(env);
   const pendingAccountsPurged = await purgePendingRegistrations(env);
   const conversationsRemoved = await sweepDeletedConversations(env);
+  const studentIdExpired = await purgeExpiredStudentIdVerifications(env);
   // Redelivery only happens within the queue's retry window, so a day is plenty.
   // A day covers a redelivery and the next run of every job that enqueues with a dedupe key (6 h at most).
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -469,6 +536,7 @@ export async function runCleanup(env: Env) {
     one_time_tokens_purged: linksPurged,
     pending_accounts_purged: pendingAccountsPurged,
     conversations_removed: conversationsRemoved,
+    student_id_verifications_expired: studentIdExpired,
     email_sent_purged: sentPurged.meta.changes ?? 0,
     push_sent_purged: pushSentPurged.meta.changes ?? 0,
   };

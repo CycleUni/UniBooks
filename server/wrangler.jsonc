@@ -27,7 +27,11 @@
     { "binding": "DB_ADS", "database_name": "unibooks-ads", "migrations_dir": "src/db/ads-migrations" }
   ],
   "kv_namespaces": [{ "binding": "KV" }],
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "unibooks-assets" }],
+  "r2_buckets": [
+    { "binding": "R2", "bucket_name": "unibooks-assets" },
+    // Private bucket for sensitive student ID verification photos (no public domain).
+    { "binding": "R2_PRIVATE", "bucket_name": "unibooks-private" }
+  ],
 
   // Ad impressions and clicks: append-only events, queried via the SQL API.
   "analytics_engine_datasets": [{ "binding": "AD_EVENTS", "dataset": "unibooks_ad_events" }],

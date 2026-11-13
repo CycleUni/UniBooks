@@ -160,6 +160,7 @@ function schoolJson(s: SchoolRow, lang: string | null) {
     region: s.regionCode,
     city: s.cityCode,
     requires_verification: s.requiresVerification === 1,
+    allows_student_id_verification: s.allowsStudentIdVerification === 1,
     user_count: s.userCount,
   };
 }
@@ -180,6 +181,7 @@ function schoolSelect(db: Database) {
       translations: schools.translations,
       cityId: schools.cityId,
       requiresVerification: schools.requiresVerification,
+      allowsStudentIdVerification: schools.allowsStudentIdVerification,
       isActive: schools.isActive,
       createdAt: schools.createdAt,
       cityCode: cities.code,
@@ -276,6 +278,7 @@ const schoolCreate = z.object({
   region: z.string({ message: INVALID }).min(1, INVALID),
   city: z.string({ message: INVALID }).nullable().optional(),
   requires_verification: z.boolean().optional(),
+  allows_student_id_verification: z.boolean().optional(),
 });
 const schoolUpdate = schoolCreate.partial();
 
@@ -352,6 +355,7 @@ schoolRoutes.post('/schools', invalidates('ref'), async (c) => {
       translations: JSON.stringify(body.translations ?? {}),
       cityId,
       requiresVerification: body.requires_verification ? 1 : 0,
+      allowsStudentIdVerification: body.allows_student_id_verification ? 1 : 0,
       createdAt: new Date().toISOString(),
     })
     .returning({ id: schools.id });
@@ -439,6 +443,7 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
     effectiveStudentDomain: string;
     effectiveGoogleDomains: string[];
     effectiveRequiresVerification: boolean;
+    effectiveAllowsStudentIdVerification: boolean;
   };
   const planned: Planned[] = [];
   const forbidden: { index: number }[] = [];
@@ -543,6 +548,12 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
     }
     const effectiveRequiresVerification =
       data.requires_verification !== undefined ? !!data.requires_verification : existing ? existing.requiresVerification === 1 : false;
+    const effectiveAllowsStudentIdVerification =
+      data.allows_student_id_verification !== undefined
+        ? !!data.allows_student_id_verification
+        : existing
+          ? existing.allowsStudentIdVerification === 1
+          : false;
     planned.push({
       item,
       data,
@@ -553,6 +564,7 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
       effectiveStudentDomain,
       effectiveGoogleDomains,
       effectiveRequiresVerification,
+      effectiveAllowsStudentIdVerification,
     });
   }
 
@@ -579,6 +591,7 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
     effectiveStudentDomain,
     effectiveGoogleDomains,
     effectiveRequiresVerification,
+    effectiveAllowsStudentIdVerification,
   } of planned) {
     const domain = data.email_domain;
     if (!existing) {
@@ -596,6 +609,7 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
             translations: JSON.stringify(data.translations ?? {}),
             cityId,
             requiresVerification: effectiveRequiresVerification ? 1 : 0,
+            allowsStudentIdVerification: effectiveAllowsStudentIdVerification ? 1 : 0,
             createdAt: now,
           }),
         );
@@ -614,6 +628,9 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
     const newGoogleDomains = data.google_domains !== undefined ? JSON.stringify(effectiveGoogleDomains) : oldGoogleDomains;
     const oldRequiresVerification = existing.requiresVerification === 1;
     const newRequiresVerification = data.requires_verification !== undefined ? !!data.requires_verification : oldRequiresVerification;
+    const oldAllowsStudentIdVerification = existing.allowsStudentIdVerification === 1;
+    const newAllowsStudentIdVerification =
+      data.allows_student_id_verification !== undefined ? !!data.allows_student_id_verification : oldAllowsStudentIdVerification;
 
     const changed =
       existing.name !== data.name ||
@@ -623,7 +640,8 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
       oldEmailDomains !== newEmailDomains ||
       oldStudentDomain !== newStudentDomain ||
       oldGoogleDomains !== newGoogleDomains ||
-      oldRequiresVerification !== newRequiresVerification;
+      oldRequiresVerification !== newRequiresVerification ||
+      oldAllowsStudentIdVerification !== newAllowsStudentIdVerification;
     if (!changed) {
       unchanged.push(item);
       continue;
@@ -642,6 +660,7 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
         studentEmailDomain: newStudentDomain,
         googleDomains: newGoogleDomains,
         requiresVerification: newRequiresVerification ? 1 : 0,
+        allowsStudentIdVerification: newAllowsStudentIdVerification ? 1 : 0,
       };
       modifiedChanges.push({ school_id: existing.id, email_domain: domain, changes: changedFields(existing, set) });
       writes.push(db.update(schools).set(set).where(eq(schools.id, existing.id)));
@@ -777,6 +796,7 @@ schoolRoutes.patch('/schools/:id', invalidates('ref'), async (c) => {
   if (body.translations !== undefined) set.translations = JSON.stringify(body.translations);
   if (body.region !== undefined) set.regionCode = body.region;
   if (body.requires_verification !== undefined) set.requiresVerification = body.requires_verification ? 1 : 0;
+  if (body.allows_student_id_verification !== undefined) set.allowsStudentIdVerification = body.allows_student_id_verification ? 1 : 0;
 
   if (Object.keys(set).length) {
     await db.batch([

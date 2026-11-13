@@ -48,6 +48,7 @@
                 {{ 'acct.verifiedTitle' | t }}
               </strong>
               <p *ngIf="currentVerification.edu_email">{{ 'acct.boundTo' | t:{email: currentVerification.edu_email} }}</p>
+              <p *ngIf="!currentVerification.edu_email && currentVerification.student_number">{{ 'acct.boundStudentId' | t:{number: currentVerification.student_number} }}</p>
               <p  style="font-size: var(--text-xs); margin-top: 4px;">{{ 'acct.verifiedAtPrefix' | t }}{{ currentVerification.verified_at | date:'yyyy/MM/dd HH:mm' }}</p>
               <p *ngIf="currentVerification.expires_at" style="font-size: var(--text-xs);">{{ 'acct.expiresAtPrefix' | t }}{{ currentVerification.expires_at | date:'yyyy/MM/dd' }}</p>
             </div>
@@ -262,6 +263,103 @@
             <!-- The address resolved to no School: offer to tell staff about
                  it, carrying the address along so they can see its domain. -->
             <app-school-request-form *ngIf="schoolNotSupported" [eduEmail]="eduEmail"></app-school-request-form>
+
+            <!-- Pending Student ID Verification -->
+            <div class="form-group auto-verify-box mt-4" *ngIf="studentIdRequest?.status === 'pending'">
+              <label><strong>{{ 'acct.verifyWithStudentId' | t }}</strong></label>
+              <div class="alert-box info mt-2">
+                <strong>{{ 'acct.studentIdPendingNotice' | t }}</strong>
+                <p style="margin: 4px 0 0 0;">{{ studentIdRequest?.school_name }} · <code>{{ studentIdRequest?.student_number }}</code></p>
+                <p style="font-size: var(--text-xs); color: var(--muted); margin-top: 4px;">{{ 'acct.studentIdPrivacyNote' | t }}</p>
+              </div>
+              <div class="mt-2">
+                <ui-button variant="white" (onClick)="onCancelStudentIdVerification()" [disabled]="isCancellingStudentId">
+                  {{ (isCancellingStudentId ? 'common.cancelling' : 'acct.cancelVerification') | t }}
+                </ui-button>
+              </div>
+            </div>
+
+            <!-- Rejected Student ID Verification -->
+            <div class="form-group auto-verify-box mt-4" *ngIf="studentIdRequest?.status === 'rejected' && !isResubmittingStudentId">
+              <label><strong>{{ 'acct.verifyWithStudentId' | t }}</strong></label>
+              <div class="alert-box warning mt-2">
+                <strong>{{ 'acct.studentIdRejectedNotice' | t:{reason: studentIdRequest?.reject_reason || ''} }}</strong>
+                <p style="margin: 4px 0 0 0;">{{ studentIdRequest?.school_name }} · <code>{{ studentIdRequest?.student_number }}</code></p>
+              </div>
+              <div class="mt-2">
+                <ui-button variant="primary" (onClick)="startResubmitStudentId()">
+                  {{ 'acct.resubmit' | t }}
+                </ui-button>
+              </div>
+            </div>
+
+            <!-- Student ID Upload Form -->
+            <div class="student-id-verify-section mt-4" *ngIf="allowsStudentIdVerification && studentIdRequest?.status !== 'pending' && (!studentIdRequest || studentIdRequest?.status !== 'rejected' || isResubmittingStudentId)">
+              <div class="verify-divider mt-3 mb-3" style="display: flex; align-items: center; text-align: center; color: var(--muted); font-size: var(--text-xs);">
+                <span style="flex: 1; border-bottom: 1px solid var(--line);"></span>
+                <span style="padding: 0 10px;">{{ 'acct.orVerifyWithStudentId' | t }}</span>
+                <span style="flex: 1; border-bottom: 1px solid var(--line);"></span>
+              </div>
+
+              <div class="student-id-verify-card">
+                <label><strong>{{ 'acct.verifyWithStudentId' | t }}</strong></label>
+
+                <div class="form-group mt-2">
+                  <label for="student-number-input">{{ 'acct.studentNumber' | t }}</label>
+                  <input
+                    id="student-number-input"
+                    type="text"
+                    class="local-part-input"
+                    style="width: 100%; text-transform: uppercase;"
+                    [(ngModel)]="studentNumberInput"
+                    [placeholder]="'acct.studentNumberPlaceholder' | t"
+                    maxlength="20"
+                  />
+                </div>
+
+                <div class="form-group mt-3">
+                  <label>{{ 'acct.studentIdPhoto' | t }}</label>
+
+                  <div class="photo-picker-row" *ngIf="!studentIdPreviewUrl">
+                    <input
+                      type="file"
+                      #settingsPhotoInput
+                      accept="image/*"
+                      capture="environment"
+                      style="display: none;"
+                      (change)="onStudentIdPhotoSelected($event)"
+                    />
+                    <ui-button variant="outline" (onClick)="settingsPhotoInput.click()" [disabled]="isSubmittingStudentId">
+                      📷 {{ 'acct.studentIdUploadPrompt' | t }}
+                    </ui-button>
+                  </div>
+
+                  <div class="photo-preview-box" *ngIf="studentIdPreviewUrl">
+                    <img [src]="studentIdPreviewUrl" alt="Student ID Preview" class="student-id-thumb" />
+                    <ui-button size="sm" variant="danger" (onClick)="onRemoveStudentIdPhoto()" [disabled]="isSubmittingStudentId">
+                      {{ 'acct.removePhoto' | t }}
+                    </ui-button>
+                  </div>
+
+                  <p class="field-hint mt-2" style="font-size: var(--text-xs); color: var(--muted);">
+                    🔒 {{ 'acct.studentIdPrivacyNote' | t }}
+                  </p>
+                </div>
+
+                <div *ngIf="studentIdError" class="inline-msg error mb-2">
+                  {{ studentIdError }}
+                </div>
+
+                <ui-button
+                  class="mt-2"
+                  variant="primary"
+                  (onClick)="onSubmitStudentIdVerification()"
+                  [disabled]="isSubmittingStudentId || !studentNumberInput.trim() || !selectedStudentIdFile"
+                >
+                  {{ (isSubmittingStudentId ? 'acct.submittingVerification' : 'acct.verifyWithStudentId') | t }}
+                </ui-button>
+              </div>
+            </div>
           </div>
         </ng-container>
 

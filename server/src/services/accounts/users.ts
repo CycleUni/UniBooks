@@ -12,6 +12,7 @@ import {
   reviews,
   schoolRequests,
   staffManagedRegions,
+  studentIdVerifications,
   subscriptions,
   userSchools,
   users,
@@ -76,6 +77,8 @@ interface VerificationRow {
   region_code: string;
   school_id: number | null;
   edu_email: string | null;
+  method: string | null;
+  student_number: string | null;
   verified_at: string;
   expires_at: string | null;
 }
@@ -87,6 +90,8 @@ export async function verificationsOf(env: Env, userId: string): Promise<(Verifi
       region_code: regionVerifications.regionCode,
       school_id: regionVerifications.schoolId,
       edu_email: regionVerifications.eduEmail,
+      method: regionVerifications.method,
+      student_number: regionVerifications.studentNumber,
       verified_at: regionVerifications.verifiedAt,
       expires_at: regionVerifications.expiresAt,
     })
@@ -309,6 +314,8 @@ export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Rec
       school_code: v.school ? String(v.school.code ?? '') : '',
       school_name: v.school ? localizedName(v.school, lang) : '',
       edu_email: v.edu_email,
+      method: v.method,
+      student_number: v.student_number,
       verified_at: v.verified_at,
       expires_at: v.expires_at,
     })),
@@ -373,6 +380,24 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
   const now = new Date().toISOString();
   const hex = newHexId();
   const own = await db.select({ photos: listings.photos }).from(listings).where(eq(listings.sellerId, userId));
+
+  // Cancel any pending student ID verification and delete its private image
+  const pendingStudentVerifs = await db
+    .select({ id: studentIdVerifications.id, imageKey: studentIdVerifications.imageKey })
+    .from(studentIdVerifications)
+    .where(and(eq(studentIdVerifications.userId, userId), eq(studentIdVerifications.status, 'pending')));
+  for (const pv of pendingStudentVerifs) {
+    if (pv.imageKey) {
+      await env.R2_PRIVATE.delete(pv.imageKey).catch((e) =>
+        console.error(`[deleteAccount] failed to delete private image ${pv.imageKey}`, e),
+      );
+    }
+  }
+  await db
+    .update(studentIdVerifications)
+    .set({ status: 'cancelled', imageKey: null, updatedAt: now })
+    .where(and(eq(studentIdVerifications.userId, userId), eq(studentIdVerifications.status, 'pending')));
+
   // Reviews hang off orders, and messages off conversations, so these four cover every record kept for the other party.
   const retained = await env.DB.prepare(
     `SELECT 1 AS hit FROM orders WHERE buyer_id = ?1 OR seller_id = ?1
@@ -393,6 +418,7 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
       db.delete(pushDevices).where(eq(pushDevices.userId, userId)),
       db.delete(passkeys).where(eq(passkeys.userId, userId)),
       db.delete(schoolRequests).where(eq(schoolRequests.userId, userId)),
+      db.delete(studentIdVerifications).where(eq(studentIdVerifications.userId, userId)),
       db.delete(oneTimeTokens).where(eq(oneTimeTokens.userId, userId)),
       db.delete(refreshTokens).where(eq(refreshTokens.userId, userId)),
       db.delete(staffManagedRegions).where(eq(staffManagedRegions.userId, userId)),

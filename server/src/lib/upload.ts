@@ -44,7 +44,7 @@ export async function putOnce(r2: R2Bucket, key: string, bytes: Uint8Array, http
  */
 export async function issueUpload(
   c: Context<AppEnv>,
-  opts: { action: Action; userId: string; keyPrefix: string; base: string },
+  opts: { action: Action; userId: string; keyPrefix: string; base: string; photoUrl?: (key: string) => string },
   body: Record<string, unknown>,
 ): Promise<Response> {
   const contentType = typeof body.content_type === 'string' ? body.content_type : '';
@@ -61,7 +61,8 @@ export async function issueUpload(
   );
   const uploadUrl = new URL(`${opts.base}uploads/file`, c.req.url);
   uploadUrl.searchParams.set('token', token);
-  return c.json({ upload_url: uploadUrl.toString(), photo_url: publicUrl(c.env, origin(c), key) });
+  const photoUrlValue = opts.photoUrl ? opts.photoUrl(key) : publicUrl(c.env, origin(c), key);
+  return c.json({ upload_url: uploadUrl.toString(), photo_url: photoUrlValue });
 }
 
 /**
@@ -71,7 +72,14 @@ export async function issueUpload(
  */
 export async function storeUpload(
   c: Context<AppEnv>,
-  opts: { action: Action; keyPrefix: (userId: string) => string; caller?: string },
+  opts: {
+    action: Action;
+    keyPrefix: (userId: string) => string;
+    caller?: string;
+    bucket?: R2Bucket;
+    cacheControl?: string;
+    photoUrl?: (key: string) => string;
+  },
 ): Promise<Response> {
   let claims: UploadTokenPayload;
   try {
@@ -98,12 +106,15 @@ export async function storeUpload(
 
   // One upload per token: a replay must never swap the image behind a URL
   // that is already in use (a sent chat image, a saved listing photo).
-  const stored = await putOnce(c.env.R2, claims.target_key, bytes, {
+  const bucket = opts.bucket ?? c.env.R2;
+  const cacheControl = opts.cacheControl ?? STORED_CACHE_CONTROL;
+  const stored = await putOnce(bucket, claims.target_key, bytes, {
     contentType: claims.content_type,
-    cacheControl: STORED_CACHE_CONTROL,
+    cacheControl,
   });
   if (!stored) apiError(409, 'upload.errTokenUsed');
-  return c.json({ photo_url: publicUrl(c.env, origin(c), claims.target_key) });
+  const photoUrlValue = opts.photoUrl ? opts.photoUrl(claims.target_key) : publicUrl(c.env, origin(c), claims.target_key);
+  return c.json({ photo_url: photoUrlValue });
 }
 
 /** Rate limit for asking to upload a file. */

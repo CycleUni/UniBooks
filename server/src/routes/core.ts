@@ -149,6 +149,7 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string) {
         studentEmailDomain: schools.studentEmailDomain,
         googleDomains: schools.googleDomains,
         cityCode: cities.code,
+        allowsStudentIdVerification: schools.allowsStudentIdVerification,
       })
       .from(schools)
       .leftJoin(cities, eq(cities.id, schools.cityId))
@@ -179,6 +180,7 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string) {
       google_domains: googleDomains,
       accepted_domains: acceptedDomains,
       city: s.cityCode ?? null,
+      allows_student_id_verification: s.allowsStudentIdVerification === 1,
     };
   });
   const cityList = cityRows.map((ci) => ({ code: ci.code, name: ci.name, display_name: localizedName(ci, lang) }));

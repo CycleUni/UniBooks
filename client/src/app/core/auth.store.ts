@@ -23,6 +23,8 @@ export interface RegionVerification {
   school_code?: string;
   school_name?: string;
   edu_email: string;
+  method?: string | null;
+  student_number?: string | null;
   verified_at: string | null;
   /** Two years after the last (re-)verification. */
   expires_at?: string | null;

@@ -152,6 +152,7 @@ export interface AdminSchool {
   region?: string;
   city?: string | null;
   requires_verification?: boolean;
+  allows_student_id_verification?: boolean;
   user_count?: number;
 }
 
@@ -201,6 +202,52 @@ export interface AdminSchoolRequest {
   admin_note: string;
   created_at: string;
   updated_at: string;
+}
+
+export type StudentIdVerificationStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export interface AdminStudentIdVerification {
+  id: string;
+  region: string;
+  status: StudentIdVerificationStatus;
+  student_number: string;
+  reject_reason: string;
+  has_image: boolean;
+  created_at: string;
+  updated_at: string;
+  reviewed_at: string | null;
+  reviewed_by_id: string | null;
+  school: {
+    id: number;
+    code: string;
+    name: string;
+  };
+  user: {
+    id: string;
+    email: string;
+    first_name: string;
+    last_name: string;
+    declared_school?: { code: string; name: string } | null;
+  };
+  previous_requests?: {
+    id: string;
+    status: StudentIdVerificationStatus;
+    student_number: string;
+    reject_reason: string;
+    created_at: string;
+    reviewed_at: string | null;
+    school_code: string;
+    school_name: string;
+  }[];
+  other_accounts_same_student_number?: {
+    id: string;
+    user_id: string;
+    email: string;
+    first_name: string;
+    last_name: string;
+    status: StudentIdVerificationStatus;
+    created_at: string;
+  }[];
 }
 
 function buildParams(query: Record<string, string | number | undefined | null>): HttpParams {
@@ -532,6 +579,32 @@ export class AdminService {
 
   updateSchoolRequest(id: number, changes: { status?: SchoolRequestStatus; admin_note?: string }): Observable<AdminSchoolRequest> {
     return this.http.patch<AdminSchoolRequest>(`/admin/school-requests/${id}`, changes);
+  }
+
+  getStudentIdVerifications(
+    opts: { page?: number; page_size?: number; status?: string; school?: string; region?: string } = {},
+  ): Observable<Paginated<AdminStudentIdVerification> & { pending_count: number }> {
+    return this.http.get<Paginated<AdminStudentIdVerification> & { pending_count: number }>('/admin/student-id-verifications', {
+      params: buildParams(opts),
+    });
+  }
+
+  getStudentIdVerification(id: string): Observable<AdminStudentIdVerification> {
+    return this.http.get<AdminStudentIdVerification>(`/admin/student-id-verifications/${id}`);
+  }
+
+  getStudentIdVerificationImageBlob(id: string): Observable<Blob> {
+    return this.http.get(`/admin/student-id-verifications/${id}/image`, { responseType: 'blob' });
+  }
+
+  approveStudentIdVerification(id: string): Observable<{ id: string; status: string; reviewed_at: string }> {
+    return this.http.post<{ id: string; status: string; reviewed_at: string }>(`/admin/student-id-verifications/${id}/approve`, {});
+  }
+
+  rejectStudentIdVerification(id: string, reason: string): Observable<{ id: string; status: string; reject_reason: string; reviewed_at: string }> {
+    return this.http.post<{ id: string; status: string; reject_reason: string; reviewed_at: string }>(`/admin/student-id-verifications/${id}/reject`, {
+      reason,
+    });
   }
 
   // API endpoints below renamed from 'advertisers' and 'ads' to 'sponsors' and 'promotions' to evade adblockers

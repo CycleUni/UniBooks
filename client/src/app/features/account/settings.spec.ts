@@ -758,6 +758,118 @@ describe('SettingsComponent', () => {
         component.dismissSoftInvite();
         expect(component.softInviteDismissed).toBe(true);
       });
+
+      describe('student ID card verification form states', () => {
+        beforeEach(() => {
+          (component as any).regionService = { region: () => 'tw', currentRegionObj: () => ({ code: 'TW', localized_name: 'Taiwan' }) };
+          component.availableSchools = [
+            { id: 10, code: 'CLUT', name: 'Chihlee University of Technology', allows_student_id_verification: true } as any,
+            { id: 1, code: 'NTU', name: 'National Taiwan University', allows_student_id_verification: false } as any,
+          ];
+        });
+
+        it('shows verification option only when school allows student ID verification (not started state)', () => {
+          component.selectedDeclaredSchoolCode = 'NTU';
+          expect(component.allowsStudentIdVerification).toBe(false);
+
+          component.selectedDeclaredSchoolCode = 'CLUT';
+          expect(component.allowsStudentIdVerification).toBe(true);
+        });
+
+        it('submits student ID verification when not started', async () => {
+          component.selectedDeclaredSchoolCode = 'CLUT';
+          component.studentNumberInput = 'c10901234';
+          const file = new File(['dummy'], 'card.jpg', { type: 'image/jpeg' });
+          component.selectedStudentIdFile = file;
+
+          const uploadSpy = vi.fn().mockReturnValue(of({ url: 'tmp/student-ids/u1/card.jpg' }));
+          const submitSpy = vi.fn().mockReturnValue(of({ id: 'req-1', status: 'pending', school: 'CLUT', student_number: 'C10901234' }));
+          const getVerifSpy = vi.fn().mockReturnValue(of({ request: { id: 'req-1', status: 'pending' } }));
+
+          (component as any).accountService = {
+            uploadStudentIdPhoto: uploadSpy,
+            submitStudentIdVerification: submitSpy,
+            getStudentIdVerification: getVerifSpy,
+          };
+
+          await component.onSubmitStudentIdVerification();
+
+          expect(uploadSpy).toHaveBeenCalledWith(file, 'CLUT');
+          expect(submitSpy).toHaveBeenCalledWith({
+            school: 'CLUT',
+            student_number: 'C10901234',
+            image: 'tmp/student-ids/u1/card.jpg',
+          });
+          expect(component.studentNumberInput).toBe('');
+          expect(component.selectedStudentIdFile).toBeNull();
+        });
+
+        it('displays pending request and allows user to cancel it', async () => {
+          component.studentIdRequest = {
+            id: 'req-1',
+            status: 'pending',
+            school: 'CLUT',
+            school_name: 'Chihlee',
+            student_number: 'C10901234',
+            reject_reason: '',
+            created_at: '2026-11-01T00:00:00Z',
+            updated_at: '2026-11-01T00:00:00Z',
+            reviewed_at: null,
+          };
+
+          const cancelSpy = vi.fn().mockReturnValue(of({ ok: true, status: 'cancelled' }));
+          const getVerifSpy = vi.fn().mockReturnValue(of({ request: null }));
+          (component as any).accountService = {
+            cancelStudentIdVerification: cancelSpy,
+            getStudentIdVerification: getVerifSpy,
+          };
+          (component as any).confirms = {
+            askDanger: vi.fn().mockResolvedValue(true),
+          };
+
+          await component.onCancelStudentIdVerification();
+
+          expect((component as any).confirms.askDanger).toHaveBeenCalled();
+          expect(cancelSpy).toHaveBeenCalled();
+          expect(component.studentIdRequest).toBeNull();
+        });
+
+        it('displays rejected state with reason and enters resubmit mode', () => {
+          component.studentIdRequest = {
+            id: 'req-1',
+            status: 'rejected',
+            school: 'CLUT',
+            school_name: 'Chihlee',
+            student_number: 'C10901234',
+            reject_reason: 'Photo is blurry',
+            created_at: '2026-11-01T00:00:00Z',
+            updated_at: '2026-11-01T00:00:00Z',
+            reviewed_at: '2026-11-02T00:00:00Z',
+          };
+          component.isResubmittingStudentId = false;
+
+          component.startResubmitStudentId();
+
+          expect(component.isResubmittingStudentId).toBe(true);
+          expect(component.studentNumberInput).toBe('C10901234');
+        });
+
+        it('displays approved state with student number on currentVerification', () => {
+          component.verifications = [
+            {
+              region: 'TW',
+              school: 10,
+              school_name: 'Chihlee University of Technology',
+              edu_email: '',
+              student_number: 'C10901234',
+              verified_at: '2026-11-01T00:00:00Z',
+            },
+          ];
+
+          expect(component.currentVerification).toBeTruthy();
+          expect(component.currentVerification?.student_number).toBe('C10901234');
+        });
+      });
     });
   });
 });

@@ -88,6 +88,15 @@ export type EmailMessage =
       edu_email: string | null;
       /** ISO timestamp; shown as a date in the region's timezone. */
       expires_at: string;
+    }
+  | {
+      /** Student ID verification reviewed by staff: outcome email. */
+      type: 'student_id_verification_outcome';
+      user_id: string;
+      region: string;
+      school_name: string;
+      status: 'approved' | 'rejected';
+      reason?: string;
     };
 
 export type PushMessage =

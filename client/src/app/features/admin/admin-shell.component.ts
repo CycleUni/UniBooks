@@ -7,6 +7,7 @@ import { filter, map } from 'rxjs/operators';
 import { TPipe } from '../../core/i18n.service';
 import { AuthStore, UserRole, hasStaffAccess, isAdminUser } from '../../core/auth.store';
 import { AccountService } from '../../core/services/account.service';
+import { AdminService } from '../../core/services/admin.service';
 import { RegionService } from '../../core/region.service';
 import { regionUrlTree } from '../../core/region-path';
 import { UiErrorState } from '../../shared/ui/error-state.component';
@@ -73,6 +74,12 @@ function onSuperuserRoute(router: Router): boolean {
                 <li><a regionLink="reports" routerLinkActive="active">{{ 'admin.navReports' | t }}</a></li>
                 <li><a regionLink="chat-reports" routerLinkActive="active">{{ 'admin.navChatReports' | t }}</a></li>
                 <li><a regionLink="book-reports" routerLinkActive="active">{{ 'admin.navBookReports' | t }}</a></li>
+                <li>
+                  <a regionLink="student-id-verifications" routerLinkActive="active" class="nav-link-with-badge">
+                    <span>{{ 'admin.navStudentIdVerifications' | t }}</span>
+                    <span class="nav-badge" *ngIf="pendingStudentIdCount() > 0">{{ pendingStudentIdCount() }}</span>
+                  </a>
+                </li>
               </ul>
             </li>
             <li class="nav-group">
@@ -194,6 +201,27 @@ function onSuperuserRoute(router: Router): boolean {
     .nav-group a.active {
       color: var(--accent);
       font-weight: 600;
+    }
+
+    .nav-group a.nav-link-with-badge {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 9px;
+      background-color: var(--btn-primary-bg);
+      color: var(--btn-primary-ink);
+      font-size: var(--text-xs);
+      font-weight: 700;
+      line-height: 1;
     }
     
     .admin-main {
@@ -335,7 +363,9 @@ export class AdminShellComponent {
   private destroyRef = inject(DestroyRef);
   private router = inject(Router);
   private accountService = inject(AccountService);
+  private adminService = inject(AdminService);
   private regionService = inject(RegionService);
+  readonly pendingStudentIdCount = signal(0);
 
   private readonly superuserRoute = toSignal(
     this.router.events.pipe(filter(e => e instanceof NavigationEnd), map(() => onSuperuserRoute(this.router))),
@@ -369,6 +399,8 @@ export class AdminShellComponent {
     effect(() => {
       if (this.access() === 'denied' && this.auth.isAuthenticated()) {
         untracked(() => this.router.navigateByUrl(regionUrlTree(this.router, this.regionService, ['/']), { replaceUrl: true }));
+      } else if (this.access() === 'granted') {
+        untracked(() => this.loadPendingCount());
       }
     });
 
@@ -379,6 +411,9 @@ export class AdminShellComponent {
       if (this.isDrawerOpen) {
         this.closeDrawer();
       }
+      if (this.access() === 'granted') {
+        this.loadPendingCount();
+      }
     });
   }
 
@@ -387,6 +422,13 @@ export class AdminShellComponent {
     this.accountService.getMyProfile().subscribe({
       next: () => this.checking.set(false),
       error: () => this.checking.set(false),
+    });
+  }
+
+  loadPendingCount() {
+    this.adminService.getStudentIdVerifications({ page_size: 1 }).subscribe({
+      next: (res) => this.pendingStudentIdCount.set(res.pending_count ?? 0),
+      error: () => {},
     });
   }
 

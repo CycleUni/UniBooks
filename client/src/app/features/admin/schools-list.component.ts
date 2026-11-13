@@ -67,6 +67,7 @@ import { BulkController } from './bulk';
             <th *ngFor="let lang of languages()">{{ 'admin.schoolNameIn' | t:{ lang: lang } }}</th>
             <th>{{ 'admin.colDomain' | t }}</th>
             <th>{{ 'admin.requiresVerification' | t }}</th>
+            <th>{{ 'admin.allowsStudentIdVerification' | t }}</th>
             <th>{{ 'admin.colActions' | t }}</th>
           </tr>
         </thead>
@@ -88,6 +89,14 @@ import { BulkController } from './bulk';
                 [checked]="school.requires_verification"
                 (change)="toggleVerification(school, $event)"
                 [attr.aria-label]="'admin.requiresVerification' | t"
+              />
+            </td>
+            <td>
+              <input
+                type="checkbox"
+                [checked]="school.allows_student_id_verification"
+                (change)="toggleAllowsStudentIdVerification(school, $event)"
+                [attr.aria-label]="'admin.allowsStudentIdVerification' | t"
               />
             </td>
             <td>
@@ -152,6 +161,13 @@ import { BulkController } from './bulk';
               <span>{{ 'admin.requiresVerification' | t }}</span>
             </label>
             <small class="hint">{{ 'admin.requiresVerificationDesc' | t }}</small>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" [(ngModel)]="newSchool.allows_student_id_verification">
+              <span>{{ 'admin.allowsStudentIdVerification' | t }}</span>
+            </label>
+            <small class="hint">{{ 'admin.allowsStudentIdVerificationDesc' | t }}</small>
           </div>
           <div class="form-group">
             <label>{{ 'admin.translationsSection' | t }}</label>
@@ -224,6 +240,7 @@ export class AdminSchoolsListComponent implements OnInit {
     student_email_domain: '',
     google_domains: [],
     requires_verification: false,
+    allows_student_id_verification: false,
   };
   newSchoolEmailDomainsText = '';
   newSchoolAcceptedDomainOptions: string[] = [];
@@ -344,6 +361,21 @@ export class AdminSchoolsListComponent implements OnInit {
     });
   }
 
+  toggleAllowsStudentIdVerification(school: AdminSchool, event: Event) {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.adminService.updateSchool(school.id, { allows_student_id_verification: checked }).subscribe({
+      next: (updated) => {
+        school.allows_student_id_verification = updated.allows_student_id_verification;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        (event.target as HTMLInputElement).checked = !checked;
+        this.toast.error(parseAdminError(err, this.i18n));
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
   openCreateModal() {
     this.newSchool = {
       name: '',
@@ -353,6 +385,7 @@ export class AdminSchoolsListComponent implements OnInit {
       student_email_domain: '',
       google_domains: [],
       requires_verification: false,
+      allows_student_id_verification: false,
     };
     this.newSchoolEmailDomainsText = '';
     this.newSchoolAcceptedDomainOptions = [];
@@ -376,6 +409,7 @@ export class AdminSchoolsListComponent implements OnInit {
       student_email_domain: this.newSchool.student_email_domain || '',
       google_domains: this.newSchool.google_domains || [],
       requires_verification: !!this.newSchool.requires_verification,
+      allows_student_id_verification: !!this.newSchool.allows_student_id_verification,
     };
     const translations: Record<string, { name: string }> = {};
     for (const [lang, name] of Object.entries(this.newSchoolNames)) {

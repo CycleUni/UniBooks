@@ -38,6 +38,8 @@ export interface Env {
   RATE_LIMITER: DurableObjectNamespace;
   CHALLENGE_STORE: DurableObjectNamespace;
   R2: R2Bucket;
+  /** Private bucket for sensitive student ID verification photos (no public domain). */
+  R2_PRIVATE: R2Bucket;
   KV: KVNamespace;
   EMAIL_QUEUE: Queue;
   PUSH_QUEUE: Queue;

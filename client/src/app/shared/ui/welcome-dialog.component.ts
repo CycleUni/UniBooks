@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, OnInit, inject, effect, untracked } from '@angular/core';
+import { Component, ChangeDetectorRef, OnInit, OnDestroy, inject, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, NavigationEnd } from '@angular/router';
@@ -15,6 +15,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { injectIsPhone } from '../../core/viewport';
 import { keywordsMatch, schoolKeywords } from '../../core/school-search';
 import { getSchoolDomainChoices } from '../../core/verification';
+import { parseApiError } from '../../core/api-error.util';
 import { UiButton } from './button.component';
 import { UiInput } from './input.component';
 import { UiBottomSheet } from './bottom-sheet.component';
@@ -128,6 +129,15 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
             </div>
           } @else if (step === 'verify') {
             <div class="verify-step">
+              @if (studentIdSubmitted) {
+                <div class="alert-box info mt-3" style="padding: 12px; background: var(--surface-raised); border: 1px solid var(--line); border-radius: 6px;">
+                  <strong>{{ 'acct.studentIdPendingNotice' | t }}</strong>
+                  <p style="font-size: var(--text-xs); color: var(--muted); margin-top: 4px;">{{ 'acct.studentIdPrivacyNote' | t }}</p>
+                </div>
+                <div class="dialog-actions mt-3">
+                  <ui-button variant="primary" (onClick)="finishAndClose()">{{ 'common.close' | t }}</ui-button>
+                </div>
+              } @else {
               <p class="welcome-desc">
                 {{ 'welcome.mandatoryNoticeDesc' | t: { school: selectedSchoolName } }}
               </p>
@@ -190,6 +200,66 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
                 </ui-button>
               </div>
 
+              @if (allowsStudentIdVerification) {
+                <div class="divider">
+                  <span>{{ 'acct.orVerifyWithStudentId' | t }}</span>
+                </div>
+
+                <div class="student-id-verify-block">
+                  <div class="email-input-row" style="margin-bottom: var(--space-2);">
+                    <input
+                      type="text"
+                      class="local-part-input"
+                      style="width: 100%; text-transform: uppercase;"
+                      [(ngModel)]="studentNumberInput"
+                      [placeholder]="'acct.studentNumberPlaceholder' | t"
+                      maxlength="20"
+                    />
+                  </div>
+
+                  <div class="photo-picker-row" *ngIf="!studentIdPreviewUrl" style="margin-bottom: var(--space-2);">
+                    <input
+                      type="file"
+                      #welcomePhotoInput
+                      accept="image/*"
+                      capture="environment"
+                      style="display: none;"
+                      (change)="onStudentIdPhotoSelected($event)"
+                    />
+                    <ui-button variant="outline" (onClick)="welcomePhotoInput.click()" [disabled]="isSubmittingStudentId" style="width: 100%;">
+                      📷 {{ 'acct.studentIdUploadPrompt' | t }}
+                    </ui-button>
+                  </div>
+
+                  <div class="photo-preview-box" *ngIf="studentIdPreviewUrl" style="margin-bottom: var(--space-2); text-align: center;">
+                    <img [src]="studentIdPreviewUrl" alt="Student ID" style="max-height: 120px; border-radius: 4px; border: 1px solid var(--line); display: block; margin: 0 auto 6px auto;" />
+                    <ui-button size="sm" variant="danger" (onClick)="onRemoveStudentIdPhoto()" [disabled]="isSubmittingStudentId">
+                      {{ 'acct.removePhoto' | t }}
+                    </ui-button>
+                  </div>
+
+                  <p style="font-size: var(--text-xs); color: var(--muted); margin: 4px 0 8px 0;">
+                    🔒 {{ 'acct.studentIdPrivacyNote' | t }}
+                  </p>
+
+                  @if (studentIdError) {
+                    <p class="inline-msg error" role="status" style="margin-bottom: var(--space-2);">
+                      {{ studentIdError }}
+                    </p>
+                  }
+
+                  <div class="verify-action-buttons">
+                    <ui-button
+                      variant="primary"
+                      (onClick)="onSubmitStudentId()"
+                      [disabled]="isSubmittingStudentId || !studentNumberInput.trim() || !selectedStudentIdFile"
+                    >
+                      {{ isSubmittingStudentId ? ('acct.submittingVerification' | t) : ('acct.verifyWithStudentId' | t) }}
+                    </ui-button>
+                  </div>
+                </div>
+              }
+
               <div class="dialog-actions mt-3">
                 <ui-button
                   variant="ghost"
@@ -198,10 +268,11 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
                   {{ 'welcome.continueWithoutVerification' | t }}
                 </ui-button>
               </div>
-            </div>
-          }
-        </div>
-      </ng-template>
+            }
+          </div>
+        }
+      </div>
+    </ng-template>
     }
   `,
   styles: [`
@@ -402,7 +473,7 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
     }
   `],
 })
-export class UiWelcomeDialog implements OnInit {
+export class UiWelcomeDialog implements OnInit, OnDestroy {
   protected readonly isPhone = injectIsPhone();
   private authStore = inject(AuthStore);
   private regionService = inject(RegionService);
@@ -432,6 +503,17 @@ export class UiWelcomeDialog implements OnInit {
   isVerifying = false;
   verifyStatusMsg = '';
   verifyStatusOk = false;
+
+  get allowsStudentIdVerification(): boolean {
+    return !!this.selectedSchool?.allows_student_id_verification;
+  }
+
+  studentNumberInput = '';
+  selectedStudentIdFile: File | null = null;
+  studentIdPreviewUrl: string | null = null;
+  isSubmittingStudentId = false;
+  studentIdSubmitted = false;
+  studentIdError = '';
 
   get sheetTitle(): string {
     return this.step === 'school'
@@ -608,12 +690,22 @@ export class UiWelcomeDialog implements OnInit {
     });
   }
 
+  ngOnDestroy(): void {
+    if (this.studentIdPreviewUrl) {
+      URL.revokeObjectURL(this.studentIdPreviewUrl);
+    }
+  }
+
   private setupVerificationStep(): void {
     this.step = 'verify';
     this.domainChoices = getSchoolDomainChoices(this.selectedSchool);
     this.selectedDomain = this.domainChoices[0] || this.selectedSchool?.email_domain || '';
     this.eduLocalPart = '';
     this.verifyStatusMsg = '';
+    this.studentNumberInput = '';
+    this.studentIdSubmitted = false;
+    this.studentIdError = '';
+    this.onRemoveStudentIdPhoto();
   }
 
   async onVerifyWithGoogle(): Promise<void> {
@@ -671,6 +763,59 @@ export class UiWelcomeDialog implements OnInit {
         this.cdr.markForCheck();
       },
     });
+  }
+
+  onStudentIdPhotoSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    this.selectedStudentIdFile = file;
+    if (this.studentIdPreviewUrl) {
+      URL.revokeObjectURL(this.studentIdPreviewUrl);
+    }
+    this.studentIdPreviewUrl = URL.createObjectURL(file);
+    this.studentIdError = '';
+    this.cdr.markForCheck();
+  }
+
+  onRemoveStudentIdPhoto(): void {
+    this.selectedStudentIdFile = null;
+    if (this.studentIdPreviewUrl) {
+      URL.revokeObjectURL(this.studentIdPreviewUrl);
+      this.studentIdPreviewUrl = null;
+    }
+    this.cdr.markForCheck();
+  }
+
+  async onSubmitStudentId(): Promise<void> {
+    if (!this.selectedSchool || !this.selectedStudentIdFile || !this.studentNumberInput.trim() || this.isSubmittingStudentId) {
+      return;
+    }
+    this.isSubmittingStudentId = true;
+    this.studentIdError = '';
+    this.cdr.markForCheck();
+
+    try {
+      const uploadRes = await firstValueFrom(
+        this.accountService.uploadStudentIdPhoto(this.selectedStudentIdFile, this.selectedSchool.code),
+      );
+      await firstValueFrom(
+        this.accountService.submitStudentIdVerification({
+          school: this.selectedSchool.code,
+          student_number: this.studentNumberInput.trim().toUpperCase(),
+          image: uploadRes.url,
+        }),
+      );
+      this.isSubmittingStudentId = false;
+      this.studentIdSubmitted = true;
+      this.onRemoveStudentIdPhoto();
+      this.toast.success(this.i18n.t('acct.studentIdPendingNotice'));
+      this.cdr.markForCheck();
+    } catch (err: any) {
+      this.isSubmittingStudentId = false;
+      this.studentIdError = parseApiError(err, this.i18n, 'acct.verifyFailed');
+      this.cdr.markForCheck();
+    }
   }
 
   finishAndClose(): void {

@@ -10,6 +10,7 @@ import { authMiddleware, optionalAuthMiddleware, requireRecentSignIn, requireSta
 import { checkRate, outcomeLimit, platformRateLimit, rateLimit, takeRate } from '../middleware/rateLimit';
 import { turnstileEnabled, verifyTurnstile } from '../lib/turnstile';
 import { InvalidTokenError, verifyToken } from '../lib/jwt';
+import { issueUpload, storeUpload } from '../lib/upload';
 import {
   books,
   createDb,
@@ -18,6 +19,7 @@ import {
   regionVerifications,
   schoolRequests,
   schools,
+  studentIdVerifications,
   subscriptions,
   userSchools,
   users,
@@ -109,6 +111,7 @@ const RATES = {
   passkeyRegister: '10/hour',
   memberToken: '60/min',
   memberTokenVerify: '120/min',
+  studentIdVerify: '5/day',
 } as const;
 
 const PUSH_TOKEN_MAX_LENGTH = LIMITS.pushToken;
@@ -558,7 +561,7 @@ accountRoutes.post('/verify/google', authMiddleware(), rateLimit('verify-request
   }
 
   // Upsert the verification
-  if (!(await upsertVerification(c.env, user.id, resolved.regionCode, resolved.school.id, eduEmail))) {
+  if (!(await upsertVerification(c.env, user.id, resolved.regionCode, resolved.school.id, eduEmail, 'google'))) {
     apiError(400, 'acct.errEmailTaken');
   }
 
@@ -581,6 +584,247 @@ accountRoutes.post('/verify/unbind', authMiddleware(), async (c) => {
     .run();
   if (!res.meta.changes) apiError(400, 'acct.errNotVerified');
   return c.json({ code: 'acct.unbindSuccess' });
+});
+
+// ------------------------------------------------ student ID verification --
+
+accountRoutes.post('/verify/student-id/uploads', authMiddleware(), rateLimit('student-id-verify', RATES.studentIdVerify), async (c) => {
+  const region = await getRegion(c);
+  if (!region) apiError(400, 'sys.errUnknownRegion');
+  const user = c.get('user')!;
+  const db = createDb(c.env.DB);
+
+  // Check eligibility: user has no live verification in that region
+  const [liveVerif] = await db
+    .select({ id: regionVerifications.id })
+    .from(regionVerifications)
+    .where(and(eq(regionVerifications.userId, user.id), eq(regionVerifications.regionCode, region.code), liveVerification()))
+    .limit(1);
+  if (liveVerif) apiError(400, 'acct.errAlreadyVerified');
+
+  // No pending request in that region
+  const [pending] = await db
+    .select({ id: studentIdVerifications.id })
+    .from(studentIdVerifications)
+    .where(
+      and(
+        eq(studentIdVerifications.userId, user.id),
+        eq(studentIdVerifications.regionCode, region.code),
+        eq(studentIdVerifications.status, 'pending'),
+      ),
+    )
+    .limit(1);
+  if (pending) apiError(400, 'acct.errVerificationPending');
+
+  const body = await readJson(c.req);
+  if (body.school && typeof body.school === 'string') {
+    const schoolCode = body.school.trim().toUpperCase();
+    const [schoolRow] = await db
+      .select({ id: schools.id, allows: schools.allowsStudentIdVerification })
+      .from(schools)
+      .where(and(eq(schools.regionCode, region.code), eq(schools.code, schoolCode), eq(schools.isActive, 1)))
+      .limit(1);
+    if (!schoolRow) apiError(400, 'acct.errSchoolNotSupported');
+    if (!schoolRow.allows) apiError(400, 'acct.errStudentIdVerificationNotAllowed');
+  }
+
+  return issueUpload(
+    c,
+    {
+      action: 'student_id',
+      userId: user.id,
+      keyPrefix: `tmp/student-ids/${user.id}/`,
+      base: '/api/v1/auth/verify/student-id/',
+      photoUrl: (key) => key,
+    },
+    body,
+  );
+});
+
+accountRoutes.put('/verify/student-id/uploads/file', (c) =>
+  storeUpload(c, {
+    action: 'student_id',
+    keyPrefix: (userId) => `tmp/student-ids/${userId}/`,
+    bucket: c.env.R2_PRIVATE,
+    cacheControl: 'private, no-store',
+    photoUrl: (key) => key,
+  }),
+);
+
+accountRoutes.post('/verify/student-id', authMiddleware(), rateLimit('student-id-verify', RATES.studentIdVerify), async (c) => {
+  const region = await getRegion(c);
+  if (!region) apiError(400, 'sys.errUnknownRegion');
+  const user = c.get('user')!;
+  const db = createDb(c.env.DB);
+  const body = await readJson(c.req);
+
+  const schoolCode = typeof body.school === 'string' ? body.school.trim().toUpperCase() : '';
+  if (!schoolCode) fieldErrors({ school: ['common.errValidation'] });
+  const [schoolRow] = await db
+    .select()
+    .from(schools)
+    .where(and(eq(schools.regionCode, region.code), eq(schools.code, schoolCode), eq(schools.isActive, 1)))
+    .limit(1);
+  if (!schoolRow) apiError(400, 'acct.errSchoolNotSupported');
+  if (!schoolRow.allowsStudentIdVerification) {
+    apiError(400, 'acct.errStudentIdVerificationNotAllowed');
+  }
+
+  const studentNumber = typeof body.student_number === 'string' ? body.student_number.trim().toUpperCase() : '';
+  if (!/^[A-Z0-9-]{4,20}$/.test(studentNumber)) {
+    apiError(400, 'acct.errInvalidStudentNumber');
+  }
+
+  // Eligibility: live verification
+  const [liveVerif] = await db
+    .select({ id: regionVerifications.id })
+    .from(regionVerifications)
+    .where(and(eq(regionVerifications.userId, user.id), eq(regionVerifications.regionCode, region.code), liveVerification()))
+    .limit(1);
+  if (liveVerif) apiError(400, 'acct.errAlreadyVerified');
+
+  // Eligibility: pending request
+  const [pending] = await db
+    .select({ id: studentIdVerifications.id })
+    .from(studentIdVerifications)
+    .where(
+      and(
+        eq(studentIdVerifications.userId, user.id),
+        eq(studentIdVerifications.regionCode, region.code),
+        eq(studentIdVerifications.status, 'pending'),
+      ),
+    )
+    .limit(1);
+  if (pending) apiError(400, 'acct.errVerificationPending');
+
+  // Check upload reference ownership
+  const imageRef = typeof body.image === 'string' ? body.image.trim() : '';
+  const expectedPrefix = `tmp/student-ids/${user.id}/`;
+  let tempKey = imageRef;
+  if (!tempKey.startsWith(expectedPrefix)) {
+    const idx = tempKey.indexOf(expectedPrefix);
+    if (idx !== -1) {
+      tempKey = tempKey.slice(idx);
+    } else {
+      apiError(403, 'upload.errTokenInvalid');
+    }
+  }
+
+  const tmpObj = await c.env.R2_PRIVATE.get(tempKey);
+  if (!tmpObj) apiError(400, 'acct.errUploadNotFound');
+
+  const ext = tempKey.split('.').pop() || 'jpg';
+  const permanentKey = `student-ids/${user.id}/${crypto.randomUUID()}.${ext}`;
+  await c.env.R2_PRIVATE.put(permanentKey, tmpObj.body, {
+    httpMetadata: tmpObj.httpMetadata,
+    customMetadata: tmpObj.customMetadata,
+  });
+  await c.env.R2_PRIVATE.delete(tempKey);
+
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  try {
+    await db.insert(studentIdVerifications).values({
+      id,
+      userId: user.id,
+      regionCode: region.code,
+      schoolId: schoolRow.id,
+      studentNumber,
+      imageKey: permanentKey,
+      status: 'pending',
+      rejectReason: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+  } catch (e) {
+    await c.env.R2_PRIVATE.delete(permanentKey).catch(() => undefined);
+    if (isUniqueViolation(e)) {
+      apiError(400, 'acct.errVerificationPending');
+    }
+    throw e;
+  }
+
+  return c.json({
+    id,
+    status: 'pending',
+    school: schoolRow.code,
+    student_number: studentNumber,
+    created_at: now,
+  });
+});
+
+accountRoutes.get('/verify/student-id', authMiddleware(), async (c) => {
+  const region = await getRegion(c);
+  if (!region) apiError(400, 'sys.errUnknownRegion');
+  const user = c.get('user')!;
+  const db = createDb(c.env.DB);
+
+  const [row] = await db
+    .select({
+      id: studentIdVerifications.id,
+      status: studentIdVerifications.status,
+      studentNumber: studentIdVerifications.studentNumber,
+      rejectReason: studentIdVerifications.rejectReason,
+      createdAt: studentIdVerifications.createdAt,
+      updatedAt: studentIdVerifications.updatedAt,
+      reviewedAt: studentIdVerifications.reviewedAt,
+      schoolCode: schools.code,
+      schoolName: schools.name,
+    })
+    .from(studentIdVerifications)
+    .innerJoin(schools, eq(schools.id, studentIdVerifications.schoolId))
+    .where(and(eq(studentIdVerifications.userId, user.id), eq(studentIdVerifications.regionCode, region.code)))
+    .orderBy(desc(studentIdVerifications.createdAt), desc(studentIdVerifications.id))
+    .limit(1);
+
+  if (!row) return c.json({ request: null });
+
+  return c.json({
+    request: {
+      id: row.id,
+      status: row.status,
+      school: row.schoolCode,
+      school_name: row.schoolName,
+      student_number: row.studentNumber,
+      reject_reason: row.rejectReason,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+      reviewed_at: row.reviewedAt,
+    },
+  });
+});
+
+accountRoutes.delete('/verify/student-id', authMiddleware(), async (c) => {
+  const region = await getRegion(c);
+  if (!region) apiError(400, 'sys.errUnknownRegion');
+  const user = c.get('user')!;
+  const db = createDb(c.env.DB);
+
+  const [row] = await db
+    .select()
+    .from(studentIdVerifications)
+    .where(
+      and(
+        eq(studentIdVerifications.userId, user.id),
+        eq(studentIdVerifications.regionCode, region.code),
+        eq(studentIdVerifications.status, 'pending'),
+      ),
+    )
+    .limit(1);
+
+  if (!row) apiError(400, 'acct.errNoPendingVerification');
+
+  if (row.imageKey) {
+    await c.env.R2_PRIVATE.delete(row.imageKey).catch(() => undefined);
+  }
+
+  const now = new Date().toISOString();
+  await db
+    .update(studentIdVerifications)
+    .set({ status: 'cancelled', imageKey: null, updatedAt: now })
+    .where(eq(studentIdVerifications.id, row.id));
+
+  return c.json({ ok: true, status: 'cancelled' });
 });
 
 function validWebsite(value: string): boolean {
@@ -846,7 +1090,7 @@ accountRoutes.post('/google', rateLimit('login', RATES.login), async (c) => {
   if (await isValidEduEmail(c.env, email)) {
     const resolved = await resolveSchoolFromEmail(c.env, email);
     if (resolved && !(await emailAlreadyUsed(c.env, email, user.id))) {
-      await upsertVerification(c.env, user.id, resolved.regionCode, resolved.school.id, email);
+      await upsertVerification(c.env, user.id, resolved.regionCode, resolved.school.id, email, 'google');
     }
   }
 

@@ -392,3 +392,19 @@
     font-size: var(--text-md);
   }
 }
+
+.student-id-verify-card {
+  padding: var(--space-4, 16px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card, 8px);
+  background: var(--surface-card);
+}
+
+.student-id-thumb {
+  max-width: 240px;
+  max-height: 160px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--line);
+  display: block;
+  margin-bottom: var(--space-2, 8px);
+}

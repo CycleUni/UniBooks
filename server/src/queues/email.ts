@@ -301,6 +301,33 @@ async function verificationExpiry(env: Env, msg: Extract<EmailMessage, { type: '
   ]);
 }
 
+async function studentIdOutcome(
+  env: Env,
+  msg: Extract<EmailMessage, { type: 'student_id_verification_outcome' }>,
+): Promise<RenderedEmail | null> {
+  const user = await loadUser(env, msg.user_id);
+  if (!reachable(user)) return null;
+  const lang = await languageFor(env, user, msg.region);
+  const settings = `${frontend(env)}/account/settings`;
+  const school = msg.school_name || '';
+
+  if (msg.status === 'approved') {
+    return render(user.email, displayName(user.first_name, user.last_name), t(lang, 'email.studentIdApproved.subject', { school }), [
+      t(lang, 'email.studentIdApproved.intro', { school }),
+      '',
+      { text: t(lang, 'email.studentIdApproved.action', { link: settings }), link: settings },
+    ]);
+  } else {
+    const reason = msg.reason || '';
+    const lines: Line[] = [t(lang, 'email.studentIdRejected.intro', { school }), ''];
+    if (reason) {
+      lines.push(t(lang, 'email.studentIdRejected.reason', { reason }), '');
+    }
+    lines.push({ text: t(lang, 'email.studentIdRejected.action', { link: settings }), link: settings });
+    return render(user.email, displayName(user.first_name, user.last_name), t(lang, 'email.studentIdRejected.subject', { school }), lines);
+  }
+}
+
 /** Build the email for a queue message, or null when nothing should be sent. */
 export async function buildEmail(msg: EmailMessage, env: Env): Promise<RenderedEmail | null> {
   origin = siteOrigin(env);
@@ -319,6 +346,8 @@ export async function buildEmail(msg: EmailMessage, env: Env): Promise<RenderedE
       return meetupReminder(env, msg);
     case 'verification_expiry':
       return verificationExpiry(env, msg);
+    case 'student_id_verification_outcome':
+      return studentIdOutcome(env, msg);
     default:
       console.warn('[email] unknown message type', (msg as { type?: unknown }).type);
       return null;

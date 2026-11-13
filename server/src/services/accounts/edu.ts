@@ -112,6 +112,7 @@ export async function upsertVerification(
   regionCode: string,
   schoolId: number,
   eduEmail: string,
+  method: 'email' | 'google' = 'email',
 ): Promise<boolean> {
   const now = new Date().toISOString();
   try {
@@ -122,6 +123,7 @@ export async function upsertVerification(
         regionCode,
         schoolId,
         eduEmail: eduEmail.toLowerCase(),
+        method,
         isManualVerification: 0,
         verifiedAt: now,
         expiresAt: verificationExpiry(now),
@@ -135,6 +137,7 @@ export async function upsertVerification(
           verifiedAt: sql`CASE WHEN ${regionVerifications.isActive} = 1 AND ${regionVerifications.eduEmail} = excluded.edu_email THEN ${regionVerifications.verifiedAt} ELSE excluded.verified_at END`,
           lastReverifiedAt: sql`CASE WHEN ${regionVerifications.isActive} = 1 AND ${regionVerifications.eduEmail} = excluded.edu_email THEN excluded.verified_at END`,
           eduEmail: sql`excluded.edu_email`,
+          method: sql`excluded.method`,
           expiresAt: sql`excluded.expires_at`,
           isActive: 1,
         },
@@ -167,4 +170,69 @@ export async function upsertVerification(
     if (isUniqueViolation(e)) return false;
     throw e;
   }
+}
+
+/**
+ * Staff approval of a student ID verification: binds the user to that
+ * school in `regionCode`, marked with method='student_id' and their student number.
+ */
+export async function upsertStudentIdVerification(
+  env: Env,
+  userId: string,
+  regionCode: string,
+  schoolId: number,
+  studentNumber: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await createDb(env.DB)
+    .insert(regionVerifications)
+    .values({
+      userId,
+      regionCode,
+      schoolId,
+      eduEmail: null,
+      method: 'student_id',
+      studentNumber,
+      isManualVerification: 1,
+      verifiedAt: now,
+      expiresAt: verificationExpiry(now),
+      isActive: 1,
+      createdAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [regionVerifications.userId, regionVerifications.regionCode],
+      set: {
+        schoolId: sql`excluded.school_id`,
+        eduEmail: sql`excluded.edu_email`,
+        method: sql`excluded.method`,
+        studentNumber: sql`excluded.student_number`,
+        isManualVerification: 1,
+        verifiedAt: sql`excluded.verified_at`,
+        expiresAt: sql`excluded.expires_at`,
+        isActive: 1,
+      },
+    })
+    .run();
+  await createDb(env.DB)
+    .insert(userSchools)
+    .values({
+      userId,
+      regionCode,
+      schoolId,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [userSchools.userId, userSchools.regionCode],
+      set: {
+        schoolId: sql`excluded.school_id`,
+        updatedAt: sql`excluded.updated_at`,
+      },
+    })
+    .run();
+  await createDb(env.DB)
+    .update(users)
+    .set({ schoolPromptedAt: now, updatedAt: now })
+    .where(and(eq(users.id, userId), isNull(users.schoolPromptedAt)))
+    .run();
 }
