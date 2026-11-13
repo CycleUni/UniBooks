@@ -1613,6 +1613,7 @@ export const en: Record<string, string> = {
   'common.all': 'All',
   'acct.boundStudentId': 'Verified by student ID (student number: {number})',
   'acct.cancelVerification': 'Cancel request',
+  'acct.keepVerificationRequest': 'Keep request',
   'acct.cancelVerificationConfirm': 'Are you sure you want to cancel your student ID verification request?',
   'acct.orVerifyWithStudentId': 'Or verify with student ID',
   'acct.removePhoto': 'Remove photo',

@@ -6,7 +6,7 @@ import { formatDate, formatMeetupTime } from '../lib/time';
 import { siteOrigin } from '../lib/origin';
 import type { AccountLinkKind, EmailMessage } from './types';
 import { emailLanguageFor, t } from '../services/accounts/i18n';
-import { regionDetails } from '../services/accounts/regionData';
+import { pickTranslation, regionDetails } from '../services/accounts/regionData';
 import { displayName } from '../services/accounts/users';
 
 /**
@@ -309,7 +309,7 @@ async function studentIdOutcome(
   if (!reachable(user)) return null;
   const lang = await languageFor(env, user, msg.region);
   const settings = `${frontend(env)}/account/settings`;
-  const school = msg.school_name || '';
+  const school = pickTranslation(msg.school_translations, lang).name || msg.school_name || '';
 
   if (msg.status === 'approved') {
     return render(user.email, displayName(user.first_name, user.last_name), t(lang, 'email.studentIdApproved.subject', { school }), [

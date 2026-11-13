@@ -95,6 +95,8 @@ export type EmailMessage =
       user_id: string;
       region: string;
       school_name: string;
+      /** The school's translations JSON, so the mail names it in the reader's language. */
+      school_translations?: string;
       status: 'approved' | 'rejected';
       reason?: string;
     };

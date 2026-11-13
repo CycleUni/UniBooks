@@ -1609,6 +1609,7 @@ export const zhHK: Record<string, string> = {
   'common.all': '全部',
   'acct.boundStudentId': '已驗證學生證（學生編號：{number}）',
   'acct.cancelVerification': '取消申請',
+  'acct.keepVerificationRequest': '保留申請',
   'acct.cancelVerificationConfirm': '確定要取消學生證審核申請嗎？',
   'acct.orVerifyWithStudentId': '或者用學生證驗證',
   'acct.removePhoto': '移除相片',

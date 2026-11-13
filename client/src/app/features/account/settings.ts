@@ -620,6 +620,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.i18n.t('acct.cancelVerificationConfirm'),
       {
         confirmLabel: this.i18n.t('acct.cancelVerification'),
+        // "Cancel" beside "Cancel request" read as the same action twice.
+        cancelLabel: this.i18n.t('acct.keepVerificationRequest'),
       },
     );
     if (!confirmed) return;

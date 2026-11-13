@@ -347,12 +347,17 @@ studentIdVerificationRoutes.post('/student-id-verifications/:id/approve', async 
   );
 
   // Enqueue outcome email
-  const [school] = await db.select({ name: schools.name }).from(schools).where(eq(schools.id, row.schoolId)).limit(1);
+  const [school] = await db
+    .select({ name: schools.name, translations: schools.translations })
+    .from(schools)
+    .where(eq(schools.id, row.schoolId))
+    .limit(1);
   await c.env.EMAIL_QUEUE.send({
     type: 'student_id_verification_outcome',
     user_id: row.userId,
     region: row.regionCode,
     school_name: school?.name || '',
+    school_translations: school?.translations,
     status: 'approved',
   }).catch((e) => console.error('[admin] failed to enqueue approved email', e));
 
@@ -428,12 +433,17 @@ studentIdVerificationRoutes.post('/student-id-verifications/:id/reject', async (
   );
 
   // Enqueue outcome email
-  const [school] = await db.select({ name: schools.name }).from(schools).where(eq(schools.id, row.schoolId)).limit(1);
+  const [school] = await db
+    .select({ name: schools.name, translations: schools.translations })
+    .from(schools)
+    .where(eq(schools.id, row.schoolId))
+    .limit(1);
   await c.env.EMAIL_QUEUE.send({
     type: 'student_id_verification_outcome',
     user_id: row.userId,
     region: row.regionCode,
     school_name: school?.name || '',
+    school_translations: school?.translations,
     status: 'rejected',
     reason,
   }).catch((e) => console.error('[admin] failed to enqueue rejected email', e));

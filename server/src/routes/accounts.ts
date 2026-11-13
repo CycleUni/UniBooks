@@ -111,7 +111,10 @@ const RATES = {
   passkeyRegister: '10/hour',
   memberToken: '60/min',
   memberTokenVerify: '120/min',
+  // A submission is one upload plus one request, and a student may re-pick the
+  // photo a few times: counted together, 5 a day locked people out after two tries.
   studentIdVerify: '5/day',
+  studentIdUpload: '20/day',
 } as const;
 
 const PUSH_TOKEN_MAX_LENGTH = LIMITS.pushToken;
@@ -588,7 +591,7 @@ accountRoutes.post('/verify/unbind', authMiddleware(), async (c) => {
 
 // ------------------------------------------------ student ID verification --
 
-accountRoutes.post('/verify/student-id/uploads', authMiddleware(), rateLimit('student-id-verify', RATES.studentIdVerify), async (c) => {
+accountRoutes.post('/verify/student-id/uploads', authMiddleware(), rateLimit('student-id-upload', RATES.studentIdUpload), async (c) => {
   const region = await getRegion(c);
   if (!region) apiError(400, 'sys.errUnknownRegion');
   const user = c.get('user')!;
