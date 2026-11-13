@@ -84,6 +84,14 @@ import { CityOption } from '../../core/services/school-state.service';
         </div>
 
         <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="editData.requires_verification">
+            <span>{{ 'admin.requiresVerification' | t }}</span>
+          </label>
+          <small class="hint">{{ 'admin.requiresVerificationDesc' | t }}</small>
+        </div>
+
+        <div class="form-group">
           <ui-dropdown
             [label]="'admin.schoolCity' | t"
             [options]="cityOptions"
@@ -214,6 +222,7 @@ export class AdminSchoolDetailComponent implements OnInit {
           email_domains: data.email_domains || [],
           student_email_domain: data.student_email_domain || '',
           google_domains: data.google_domains || [],
+          requires_verification: !!data.requires_verification,
         };
         this.emailDomainsText = (data.email_domains || []).join('\n');
         this.updateAcceptedDomains();
@@ -238,6 +247,7 @@ export class AdminSchoolDetailComponent implements OnInit {
       email_domains: this.editData.email_domains || [],
       student_email_domain: this.editData.student_email_domain || '',
       google_domains: this.editData.google_domains || [],
+      requires_verification: !!this.editData.requires_verification,
     };
     this.saving = true;
     this.adminService.updateSchool(this.schoolId, payload).subscribe({
@@ -252,6 +262,7 @@ export class AdminSchoolDetailComponent implements OnInit {
           email_domains: data.email_domains || [],
           student_email_domain: data.student_email_domain || '',
           google_domains: data.google_domains || [],
+          requires_verification: !!data.requires_verification,
         };
         this.emailDomainsText = (data.email_domains || []).join('\n');
         this.updateAcceptedDomains();

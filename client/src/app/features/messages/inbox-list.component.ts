@@ -6,6 +6,7 @@ import { BookCoverPipe } from '../../shared/pipes/book-cover.pipe';
 import { UiRoleBadge } from '../../shared/ui/role-badge.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiBottomSheet } from '../../shared/ui/bottom-sheet.component';
+import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
 import { injectIsPhone } from '../../core/viewport';
 import { formatInboxTime } from './message-formatting.util';
 
@@ -31,7 +32,7 @@ const GESTURE_CLICK_MS = 400;
 @Component({
   selector: 'messages-inbox-list',
   standalone: true,
-  imports: [CommonModule, TPipe, UiRoleBadge, UiSkeleton, UiBottomSheet, BookCoverPipe],
+  imports: [CommonModule, TPipe, UiRoleBadge, UiSkeleton, UiBottomSheet, BookCoverPipe, UiVerifiedBadge],
   // Checked with its parent, not only on a new `chats` array. The Messages
   // page updates rows in place — a live message's preview and time, the
   // unread dot — and under OnPush (Angular's default) those never showed
@@ -84,7 +85,7 @@ const GESTURE_CLICK_MS = 400;
           <div class="chat-meta">
             <!-- The school rides along because display names are not unique:
                  two chats with two different 周恭煥 looked identical. -->
-            <span class="chat-partner">{{ chat.other_party }}<span class="chat-partner-school" *ngIf="chat.other_party_school_name"> · {{ chat.other_party_school_name }}</span></span>
+            <span class="chat-partner">{{ chat.other_party }}<ui-verified-badge *ngIf="chat.other_party_is_verified"></ui-verified-badge><span class="chat-partner-school" *ngIf="chat.other_party_school_name"> · {{ chat.other_party_school_name }}</span></span>
             <div class="chat-meta-right">
               <ui-role-badge [role]="chat.other_party_role"></ui-role-badge>
               <span class="unread-dot" *ngIf="chat._hubUnread" role="img" [attr.aria-label]="'msg.unread' | t"></span>

@@ -1,7 +1,7 @@
 import { and, desc, eq, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { Env } from '../../env';
-import { createDb, orders, users, listings, books, reviews, conversations, regionVerifications, schools } from '../../db';
+import { createDb, orders, users, listings, books, reviews, conversations, regionVerifications, schools, userSchools } from '../../db';
 import { displayName } from '../accounts/users';
 
 /**
@@ -19,13 +19,28 @@ function likeEscape(s: string) {
 }
 
 function schoolOf(userId: typeof orders.buyerId | typeof orders.sellerId, nowIso: string) {
-  return sql<string | null>`(SELECT json_object('name', ${schools.name}, 'tr', ${schools.translations}) FROM ${regionVerifications}
-    JOIN ${schools} ON ${schools.id} = ${regionVerifications.schoolId}
+  return sql<string | null>`COALESCE(
+    (SELECT json_object('name', ${schools.name}, 'tr', ${schools.translations}) FROM ${regionVerifications}
+      JOIN ${schools} ON ${schools.id} = ${regionVerifications.schoolId}
+      WHERE ${regionVerifications.userId} = ${userId}
+        AND ${regionVerifications.regionCode} = ${orders.regionCode}
+        AND ${regionVerifications.isActive} = 1
+        AND (${regionVerifications.expiresAt} IS NULL OR ${regionVerifications.expiresAt} > ${nowIso})
+      LIMIT 1),
+    (SELECT json_object('name', ${schools.name}, 'tr', ${schools.translations}) FROM ${userSchools}
+      JOIN ${schools} ON ${schools.id} = ${userSchools.schoolId}
+      WHERE ${userSchools.userId} = ${userId}
+        AND ${userSchools.regionCode} = ${orders.regionCode}
+      LIMIT 1)
+  )`;
+}
+
+function isVerifiedOf(userId: typeof orders.buyerId | typeof orders.sellerId, nowIso: string) {
+  return sql<number>`EXISTS (SELECT 1 FROM ${regionVerifications}
     WHERE ${regionVerifications.userId} = ${userId}
       AND ${regionVerifications.regionCode} = ${orders.regionCode}
       AND ${regionVerifications.isActive} = 1
-      AND (${regionVerifications.expiresAt} IS NULL OR ${regionVerifications.expiresAt} > ${nowIso})
-    LIMIT 1)`;
+      AND (${regionVerifications.expiresAt} IS NULL OR ${regionVerifications.expiresAt} > ${nowIso}))`;
 }
 
 function baseWhere(viewerId: string, regionCode: string, opts: { id?: string; q?: string }) {
@@ -58,6 +73,8 @@ function selection(viewerId: string, nowIso: string) {
     sellerShowAvatar: sellerU.showAvatar,
     buyerSchool: schoolOf(orders.buyerId, nowIso),
     sellerSchool: schoolOf(orders.sellerId, nowIso),
+    buyerIsVerified: isVerifiedOf(orders.buyerId, nowIso),
+    sellerIsVerified: isVerifiedOf(orders.sellerId, nowIso),
     hasReviewed: sql<number>`EXISTS (SELECT 1 FROM ${reviews} WHERE ${reviews.orderId} = ${orders.id} AND ${reviews.reviewerId} = ${viewerId})`,
     // The order's own buyer/seller conversation, unless the viewer deleted it
     // from their inbox: the messages page only
@@ -126,6 +143,8 @@ export function serializeOrder(r: Row, lang: string | null) {
     book_authors: r.bookAuthors ?? '',
     buyer_name: displayName(r.buyerFirst, r.buyerLast),
     seller_name: displayName(r.sellerFirst, r.sellerLast),
+    buyer_is_verified: !!r.buyerIsVerified,
+    seller_is_verified: !!r.sellerIsVerified,
     has_reviewed: !!r.hasReviewed,
     buyer_avatar_url: r.buyerShowAvatar ? (r.buyerAvatar ?? '') : '',
     seller_avatar_url: r.sellerShowAvatar ? (r.sellerAvatar ?? '') : '',

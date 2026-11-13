@@ -157,6 +157,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
     return this.authStore.isLoggedIn();
   }
   isVerified = false;
+  mustVerify = false;
   /** The banner came from a submit, not from arriving: an earlier dismissal does not hide it. */
   unverifiedPromptRequested = false;
   showUnverifiedPrompt = false;
@@ -373,15 +374,17 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
           // Not over a form the visitor has started in the meantime.
           if (!this.pendingDraft && this.step === 1 && !this.searchQuery) this.offerDraft();
           this.isVerified = this.authStore.isVerifiedIn(this.regionService.region());
+          this.mustVerify = this.authStore.mustVerifyIn(this.regionService.region());
           // Both triggers for this banner — landing here unverified, and a
           // later submit blocked by a stale 403 — must go through the same
           // flag, or the dismiss button only silences one of the two paths.
-          if (!this.isVerified) this.showUnverifiedPrompt = true;
+          if (this.mustVerify && !this.isVerified) this.showUnverifiedPrompt = true;
           this.cdr.markForCheck();
         },
         error: () => {
           this.isLoading = false;
           this.isVerified = false;
+          this.mustVerify = false;
           this.cdr.markForCheck();
         }
       });
@@ -809,7 +812,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
     if (this.isUploading || this.isSubmitting) return;
     this.apiError = '';
 
-    if (!this.isVerified) {
+    if (this.mustVerify && !this.isVerified) {
       this.showUnverifiedPrompt = true;
       this.unverifiedPromptRequested = true;
       this.cdr.markForCheck();
@@ -853,7 +856,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
         error: (err) => {
           this.isSubmitting = false;
           const code = err.error?.error?.code;
-          if (err.status === 403 || code === 'acct.errUnverified' || code === 'auth.errNotVerified') {
+          if (err.status === 403 || code === 'acct.errVerificationRequiredForSchool' || code === 'acct.errUnverifiedInRegion' || code === 'acct.errUnverified' || code === 'auth.errNotVerified') {
             this.showUnverifiedPrompt = true;
             this.unverifiedPromptRequested = true;
           } else {

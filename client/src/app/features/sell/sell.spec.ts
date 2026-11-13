@@ -98,7 +98,9 @@ describe('Sell Component Barcode Scanner Validation', () => {
           provide: AuthStore,
           useValue: {
             isLoggedIn: () => true,
-            user: () => ({ id: 'user-1' })
+            user: () => ({ id: 'user-1' }),
+            mustVerifyIn: () => false,
+            isVerifiedIn: () => true
           }
         },
         {
@@ -349,7 +351,7 @@ describe('Sell listing form guarding, drafts and field validation', () => {
           }
         },
         { provide: I18nService, useValue: mockI18n },
-        { provide: AuthStore, useValue: { isLoggedIn: () => true, user: () => ({ id: 'user-1' }), isVerifiedIn: () => true } },
+        { provide: AuthStore, useValue: { isLoggedIn: () => true, user: () => ({ id: 'user-1' }), isVerifiedIn: () => true, mustVerifyIn: () => false } },
         { provide: AccountService, useValue: { getMyProfile: vi.fn().mockReturnValue(of({ verified_at: '2026-01-01' })) } },
         { provide: ListingService, useValue: { uploadPhoto: vi.fn(), deletePhoto: vi.fn().mockReturnValue(of({})), createListing: vi.fn() } },
         { provide: MetadataService, useValue: { getMetadata: vi.fn().mockReturnValue(of({ categories: [{ title: 'Engineering', slug: 'engineering' }] })), getMetadataWithRetry: vi.fn().mockReturnValue(of({ categories: [{ title: 'Engineering', slug: 'engineering' }] })) } },

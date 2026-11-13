@@ -479,6 +479,7 @@ describe('campus email verification', () => {
     expect(first.last_reverified_at).toBeNull();
 
     // Two years on: no longer verified, and the profile says it lapsed.
+    await env.DB.prepare("UPDATE schools SET requires_verification = 1 WHERE region_code = 'HK'").run();
     await env.DB.prepare(
       "UPDATE region_verifications SET verified_at = '2020-01-01T00:00:00.000Z', expires_at = '2022-01-01T00:00:00.000Z' WHERE user_id = ?",
     )
@@ -489,7 +490,9 @@ describe('campus email verification', () => {
     expect(lapsed.is_verified).toBe(false);
     expect(lapsed.verifications).toEqual([]);
     expect(lapsed.lapsed_verifications).toEqual([{ region: 'HK', edu_email: 'renew@hku.hk', expires_at: '2022-01-01T00:00:00.000Z' }]);
-    expect((await call('/api/v1/listings?region=HK', { body: {}, token: access })).status).toBe(403);
+    const listRes = await call('/api/v1/listings?region=HK', { body: {}, token: access });
+    expect(listRes.status).toBe(403);
+    expect(await listRes.json()).toMatchObject({ error: { code: 'acct.errVerificationRequiredForSchool' } });
 
     // The same address again is a re-verification: first verified_at stays.
     expect(await (await call('/api/v1/auth/verify/auto', { body: {}, token: access })).json()).toEqual({ code: 'acct.verifySuccess' });
@@ -781,17 +784,13 @@ describe('notification settings, push devices, site language/region', () => {
   });
 
   it('site language and region', async () => {
-    const id = await createUser('site@example.com');
+    await createUser('site@example.com');
     const { access } = await login('site@example.com');
     expect((await call('/api/v1/auth/me/site-language', { method: 'PUT', body: { language: 'en' }, token: access })).status).toBe(204);
     expect((await call('/api/v1/auth/me/site-language', { method: 'PUT', body: { language: 'fr' }, token: access })).status).toBe(400);
-    expect((await call('/api/v1/auth/me/site-region', { method: 'PUT', body: { region: 'tw' }, token: access })).status).toBe(400);
-    await env.DB.prepare(
-      `INSERT INTO region_verifications (user_id, region_code, school_id, edu_email, verified_at, is_active, created_at)
-       VALUES (?, 'TW', 1, 'site@ntu.edu.tw', ?, 1, ?)`,
-    )
-      .bind(id, new Date().toISOString(), new Date().toISOString())
-      .run();
+    expect((await call('/api/v1/auth/me/site-region', { method: 'PUT', body: { region: 'invalid-region' }, token: access })).status).toBe(
+      400,
+    );
     expect((await call('/api/v1/auth/me/site-region', { method: 'PUT', body: { region: 'tw' }, token: access })).status).toBe(204);
     const me = (await (await call('/api/v1/auth/me?region=TW', { token: access })).json()) as any;
     expect(me.site_language).toBe('en');

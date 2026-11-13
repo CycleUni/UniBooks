@@ -150,9 +150,8 @@ export interface AdminSchool {
   google_domains?: string[];
   translations: any;
   region?: string;
-  /** Code of the school's city in its region; null when none is set. */
   city?: string | null;
-  /** Number of accounts attached to this school; a school with any cannot be deleted. */
+  requires_verification?: boolean;
   user_count?: number;
 }
 

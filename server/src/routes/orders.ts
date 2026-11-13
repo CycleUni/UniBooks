@@ -4,7 +4,7 @@ import { alias } from 'drizzle-orm/sqlite-core';
 import type { AppEnv } from '../env';
 import { createDb, orders, listings, books, conversations, reviews, users } from '../db';
 import { authMiddleware } from '../middleware/auth';
-import { getRegion, assertVerifiedIn } from '../lib/region';
+import { getRegion, assertMayTrade } from '../lib/region';
 import { apiError, fieldErrors, notFound, pagination, readJson } from '../lib/http';
 import { LIMITS } from '../lib/limits';
 import { listOrders, getOrderFor } from '../services/orders/serialize';
@@ -119,7 +119,7 @@ orderRoutes.post('/reviews', async (c) => {
   const [order] = orderId ? await db.select().from(orders).where(eq(orders.id, orderId)).limit(1) : [];
   const provided = rawOrder !== undefined && rawOrder !== null && rawOrder !== '';
   if (provided && (!order || (user.id !== order.buyerId && user.id !== order.sellerId))) return notFound(c);
-  if (order) await assertVerifiedIn(c, order.regionCode);
+  if (order) await assertMayTrade(c, order.regionCode);
 
   // Field validation, then cross-field checks.
   const errors: Record<string, string[]> = {};
@@ -220,8 +220,8 @@ orderRoutes.post('/', async (c) => {
         .limit(1)
     : [];
 
-  // Must be verified in the listing's region (checked before validation).
-  if (listing) await assertVerifiedIn(c, listing.regionCode);
+  // Must be allowed to trade in the listing's region (checked before validation).
+  if (listing) await assertMayTrade(c, listing.regionCode);
   if (!listing) fieldErrors({ listing: ['checkout.errListingUnavailable'] });
 
   // Cross-field checks.
@@ -309,7 +309,7 @@ orderRoutes.patch('/:id', async (c) => {
   await checkRate(c, 'order_update', '60/hour');
   const o = await findVisibleOrder(c, c.req.param('id'));
   if (!o) return notFound(c);
-  await assertVerifiedIn(c, o.regionCode);
+  await assertMayTrade(c, o.regionCode);
   const data = await readJson(c.req);
 
   const res = (await orderLock(c.env, lockKeyFor(o)).updateOrder({ orderId: o.id, actorId: userId, data })) as LockedResult;

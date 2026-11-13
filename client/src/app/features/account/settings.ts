@@ -21,6 +21,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { parseApiError, translateApiError } from '../../core/api-error.util';
 import { domainMatchesSuffix, getSchoolDomainChoices, splitEmailAddress, findSchoolForDomain } from '../../core/verification';
 import { SchoolRequestFormComponent } from './school-request-form.component';
+import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { clearSensitiveParams } from '../../core/sensitive-url';
@@ -45,6 +46,7 @@ const RENEW_WINDOW_DAYS = 30;
     SchoolRequestFormComponent,
     UiSkeleton,
     UiErrorState,
+    UiVerifiedBadge,
   ],
   templateUrl: './settings.html',
   styleUrls: ['./settings.css'],
@@ -307,6 +309,48 @@ export class SettingsComponent implements OnInit, OnDestroy {
   eduLocalPart = '';
   useManualEmail = false;
 
+  selectedDeclaredSchoolCode = '';
+  declaredSchool: { id: number; code: string; name: string; requires_verification: boolean } | null = null;
+  softInviteDismissed = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('unibooks_soft_invite_dismissed') === 'true';
+
+  get mustVerify(): boolean {
+    return this.authStore.mustVerifyIn(this.regionService.region());
+  }
+
+  get currentVerifiedSchoolName(): string {
+    const v = this.currentVerification;
+    if (!v) return '';
+    const school = this.availableSchools.find((s) => s.id === v.school);
+    return school ? (school.display_name || school.name) : (v.school_name || '');
+  }
+
+  get currentDeclaredSchoolName(): string {
+    return this.declaredSchool?.name || this.authStore.schoolForRegion(this.regionService.region());
+  }
+
+  dismissSoftInvite() {
+    this.softInviteDismissed = true;
+    if (typeof sessionStorage !== 'undefined') {
+      try { sessionStorage.setItem('unibooks_soft_invite_dismissed', 'true'); } catch {}
+    }
+  }
+
+  onDeclaredSchoolChange(code: string) {
+    const region = this.regionService.region();
+    this.accountService.setDeclaredSchool(region, code || null).subscribe({
+      next: () => {
+        this.selectedDeclaredSchoolCode = code || '';
+        this.schoolStateService.setManualSchool(code || '');
+        this.toast.success(this.i18n.t('acct.schoolUpdated'));
+        this.loadProfile();
+      },
+      error: (err) => {
+        this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
+        this.loadProfile();
+      },
+    });
+  }
+
   constructor() {
     effect(() => {
       this.i18n.lang();
@@ -429,6 +473,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.avatarUrl = data.avatar_url || '';
         this.showAvatar = data.show_avatar ?? true;
         this.pendingEmail = data.pending_email ?? null;
+        const regCode = (this.currentRegion?.code || '').toUpperCase();
+        const regData = data.per_region?.[regCode];
+        this.declaredSchool = regData?.declared_school || data.declared_school || null;
+        this.selectedDeclaredSchoolCode = this.declaredSchool?.code || '';
         this.restorePendingVerificationState();
         if (this.verifications.length > 0) {
           this.clearPendingVerificationState();

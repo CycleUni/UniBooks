@@ -8,6 +8,7 @@ import { UiLayout } from './shared/ui/layout.component';
 import { UiToastHost } from './shared/ui/toast-host.component';
 import { UiConfirmDialog } from './shared/ui/confirm-dialog.component';
 import { UiMeetupDetailsHost } from './shared/ui/meetup-details-host.component';
+import { UiWelcomeDialog } from './shared/ui/welcome-dialog.component';
 import { NavigationHistoryService } from './core/services/navigation-history.service';
 import { GoogleAnalyticsService } from './core/services/google-analytics.service';
 import { ClarityService } from './core/services/clarity.service';
@@ -27,7 +28,7 @@ export { chunkUrlFromError, isChunkLoadError } from './core/chunk-recovery';
  * whole chrome. */
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, UiLayout, UiToastHost, UiConfirmDialog, UiMeetupDetailsHost, TPipe],
+  imports: [RouterOutlet, UiLayout, UiToastHost, UiConfirmDialog, UiMeetupDetailsHost, UiWelcomeDialog, TPipe],
   template: `
     <ui-layout>
       <router-outlet />
@@ -42,6 +43,7 @@ export { chunkUrlFromError, isChunkLoadError } from './core/chunk-recovery';
     <ui-toast-host />
     <ui-confirm-dialog />
     <ui-meetup-details-host />
+    <ui-welcome-dialog />
     @if (updateReady()) {
       <div class="update-prompt">
         <span>{{ 'app.updateAvailable' | t }}</span>

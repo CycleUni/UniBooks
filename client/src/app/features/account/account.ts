@@ -10,6 +10,7 @@ import { OrderService } from '../../core/services/order.service';
 import { I18nService, TPipe } from '../../core/i18n.service';
 
 import { UiVerificationPrompt } from '../../shared/ui/verification-prompt.component';
+import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
@@ -28,7 +29,7 @@ const RENEW_WINDOW_DAYS = 30;
 @Component({
   selector: 'app-account',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, UiButton, UiPrefsSelector, TPipe, MemberCodeComponent, UiVerificationPrompt],
+  imports: [RegionLinkDirective, CommonModule, RouterModule, UiButton, UiPrefsSelector, TPipe, MemberCodeComponent, UiVerificationPrompt, UiVerifiedBadge],
   templateUrl: './account.html',
   styleUrls: ['./account.css']
 })
@@ -36,6 +37,7 @@ export class Account {
   activeTab = 'listings';
   hasUnreadOrders = false;
   showMemberPass = false;
+  isVerified = false;
 
   firstName = '';
   lastName = '';
@@ -157,6 +159,7 @@ export class Account {
         this.displayName = data.display_name || '';
         this.eduEmail = data.edu_email || '';
         this.schoolName = data.school_name || '';
+        this.isVerified = !!data.is_verified || (this.auth.isVerifiedIn ? this.auth.isVerifiedIn(this.regionService.region()) : false);
         this.verifiedAt = data.verified_at || null;
         this.avatarUrl = data.avatar_url || '';
         const counts = data.myListingCounts;

@@ -13,6 +13,7 @@ import { UiRoleBadge } from '../../shared/ui/role-badge.component';
 import { MessagesInboxList } from './inbox-list.component';
 import { UiVerificationPrompt } from '../../shared/ui/verification-prompt.component';
 import { UiPushPrompt } from '../../shared/ui/push-prompt.component';
+import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
 import { FormsModule } from '@angular/forms';
 import { MessageService } from '../../core/services/message.service';
 import { AuthStore } from '../../core/auth.store';
@@ -49,7 +50,7 @@ const MEETUP_DETAIL_STATUSES = ['accepted', 'handed_over'];
 @Component({
   selector: 'app-messages',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, UiEmpty, UiButton, UiInput, UiMeetupCard, TPipe, UiImageLightbox, UiReportModal, UiRoleBadge, MessagesInboxList, PricePipe, UiVerificationPrompt, UiPushPrompt, UiSkeleton, UiErrorState, UiPullToRefresh, BookCoverPipe],
+  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, UiEmpty, UiButton, UiInput, UiMeetupCard, TPipe, UiImageLightbox, UiReportModal, UiRoleBadge, MessagesInboxList, PricePipe, UiVerificationPrompt, UiPushPrompt, UiSkeleton, UiErrorState, UiPullToRefresh, BookCoverPipe, UiVerifiedBadge],
   templateUrl: './messages.html',
   styleUrls: ['./messages.css']
 })

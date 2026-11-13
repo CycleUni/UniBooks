@@ -159,6 +159,7 @@ function schoolJson(s: SchoolRow, lang: string | null) {
     translations: parseJsonObject(s.translations),
     region: s.regionCode,
     city: s.cityCode,
+    requires_verification: s.requiresVerification === 1,
     user_count: s.userCount,
   };
 }
@@ -178,6 +179,7 @@ function schoolSelect(db: Database) {
       googleDomains: schools.googleDomains,
       translations: schools.translations,
       cityId: schools.cityId,
+      requiresVerification: schools.requiresVerification,
       isActive: schools.isActive,
       createdAt: schools.createdAt,
       cityCode: cities.code,
@@ -273,6 +275,7 @@ const schoolCreate = z.object({
   translations: translationsSchema.optional(),
   region: z.string({ message: INVALID }).min(1, INVALID),
   city: z.string({ message: INVALID }).nullable().optional(),
+  requires_verification: z.boolean().optional(),
 });
 const schoolUpdate = schoolCreate.partial();
 
@@ -348,6 +351,7 @@ schoolRoutes.post('/schools', invalidates('ref'), async (c) => {
       googleDomains: JSON.stringify(googleDomains),
       translations: JSON.stringify(body.translations ?? {}),
       cityId,
+      requiresVerification: body.requires_verification ? 1 : 0,
       createdAt: new Date().toISOString(),
     })
     .returning({ id: schools.id });
@@ -365,6 +369,7 @@ schoolRoutes.post('/schools', invalidates('ref'), async (c) => {
         email_domains: emailDomains,
         student_email_domain: studentEmailDomain,
         google_domains: googleDomains,
+        requires_verification: body.requires_verification ? true : false,
       },
       targetType: 'school',
       targetId: created.id,
@@ -433,6 +438,7 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
     effectiveEmailDomains: string[];
     effectiveStudentDomain: string;
     effectiveGoogleDomains: string[];
+    effectiveRequiresVerification: boolean;
   };
   const planned: Planned[] = [];
   const forbidden: { index: number }[] = [];
@@ -535,7 +541,19 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
       taken.add(code);
       codeOwner.set(code, domain);
     }
-    planned.push({ item, data, existing, code, cityId, effectiveEmailDomains, effectiveStudentDomain, effectiveGoogleDomains });
+    const effectiveRequiresVerification =
+      data.requires_verification !== undefined ? !!data.requires_verification : existing ? existing.requiresVerification === 1 : false;
+    planned.push({
+      item,
+      data,
+      existing,
+      code,
+      cityId,
+      effectiveEmailDomains,
+      effectiveStudentDomain,
+      effectiveGoogleDomains,
+      effectiveRequiresVerification,
+    });
   }
 
   if (itemErrors.length) apiError(400, INVALID, { items: itemErrors });
@@ -551,7 +569,17 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
   const lang = null;
   const modifiedChanges: { school_id: number; email_domain: string; changes: Record<string, { before: unknown; after: unknown }> }[] = [];
 
-  for (const { item, data, existing, code, cityId, effectiveEmailDomains, effectiveStudentDomain, effectiveGoogleDomains } of planned) {
+  for (const {
+    item,
+    data,
+    existing,
+    code,
+    cityId,
+    effectiveEmailDomains,
+    effectiveStudentDomain,
+    effectiveGoogleDomains,
+    effectiveRequiresVerification,
+  } of planned) {
     const domain = data.email_domain;
     if (!existing) {
       newItems.push({ ...item, code });
@@ -567,6 +595,7 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
             googleDomains: JSON.stringify(effectiveGoogleDomains),
             translations: JSON.stringify(data.translations ?? {}),
             cityId,
+            requiresVerification: effectiveRequiresVerification ? 1 : 0,
             createdAt: now,
           }),
         );
@@ -583,6 +612,8 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
     const newStudentDomain = data.student_email_domain !== undefined ? effectiveStudentDomain : oldStudentDomain;
     const oldGoogleDomains = existing.googleDomains ?? '[]';
     const newGoogleDomains = data.google_domains !== undefined ? JSON.stringify(effectiveGoogleDomains) : oldGoogleDomains;
+    const oldRequiresVerification = existing.requiresVerification === 1;
+    const newRequiresVerification = data.requires_verification !== undefined ? !!data.requires_verification : oldRequiresVerification;
 
     const changed =
       existing.name !== data.name ||
@@ -591,7 +622,8 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
       existing.cityId !== newCityId ||
       oldEmailDomains !== newEmailDomains ||
       oldStudentDomain !== newStudentDomain ||
-      oldGoogleDomains !== newGoogleDomains;
+      oldGoogleDomains !== newGoogleDomains ||
+      oldRequiresVerification !== newRequiresVerification;
     if (!changed) {
       unchanged.push(item);
       continue;
@@ -609,6 +641,7 @@ schoolRoutes.post('/schools/bulk', invalidates('ref'), async (c) => {
         emailDomains: newEmailDomains,
         studentEmailDomain: newStudentDomain,
         googleDomains: newGoogleDomains,
+        requiresVerification: newRequiresVerification ? 1 : 0,
       };
       modifiedChanges.push({ school_id: existing.id, email_domain: domain, changes: changedFields(existing, set) });
       writes.push(db.update(schools).set(set).where(eq(schools.id, existing.id)));
@@ -743,6 +776,7 @@ schoolRoutes.patch('/schools/:id', invalidates('ref'), async (c) => {
   if (body.name !== undefined) set.name = body.name;
   if (body.translations !== undefined) set.translations = JSON.stringify(body.translations);
   if (body.region !== undefined) set.regionCode = body.region;
+  if (body.requires_verification !== undefined) set.requiresVerification = body.requires_verification ? 1 : 0;
 
   if (Object.keys(set).length) {
     await db.batch([

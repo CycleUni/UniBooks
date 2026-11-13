@@ -75,9 +75,20 @@ describe.skipIf(!ready)('messaging API', () => {
     expect((await post(open)).status).toBe(200);
   });
 
-  it('requires verification in the listing region', async () => {
+  it('requires verification in the listing region when school requires verification', async () => {
     const seller = await seedUser({ verifiedIn: 'TW' });
     const buyer = await seedUser();
+    const [school] = await env.DB.prepare(
+      "INSERT INTO schools (region_code, code, name, email_domain, requires_verification, is_active, created_at) VALUES ('TW', 'REQ', 'Mandatory School', 'req.edu.tw', 1, 1, datetime('now')) RETURNING id, code",
+    )
+      .all<{ id: number; code: string }>()
+      .then((r) => r.results);
+    await env.DB.prepare(
+      "INSERT INTO user_schools (user_id, region_code, school_id, created_at, updated_at) VALUES (?, 'TW', ?, datetime('now'), datetime('now'))",
+    )
+      .bind(buyer.id, school.id)
+      .run();
+
     const listing = await seedListing(seller.id);
     const res = await api('/api/v1/messaging/conversations', {
       method: 'POST',
@@ -85,7 +96,7 @@ describe.skipIf(!ready)('messaging API', () => {
       body: JSON.stringify({ listing_id: listing }),
     });
     expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ error: { code: 'acct.errUnverifiedInRegion' } });
+    expect(await res.json()).toMatchObject({ error: { code: 'acct.errVerificationRequiredForSchool', school: 'REQ', region: 'TW' } });
   });
 
   it('only issues chat tokens to participants; deleted listing gives observer', async () => {

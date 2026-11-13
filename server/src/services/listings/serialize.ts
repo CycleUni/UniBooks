@@ -7,7 +7,8 @@ import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { parsePhotos } from '../../lib/json';
 import { inList } from '../../lib/sql';
 import type { Env } from '../../env';
-import { createDb, users, schools, orders, reviews, books, type Book, type Listing } from '../../db';
+import { createDb, users, schools, orders, reviews, books, regionVerifications, type Book, type Listing } from '../../db';
+import { liveVerification } from '../../lib/region';
 import { cleanPublisher } from '../catalog/common';
 import { coverUrlFor } from '../catalog/covers';
 import { displayName, publicAvatarUrl } from '../accounts/users';
@@ -88,7 +89,7 @@ export async function serializeListings(
   const categoryIds = [...new Set(rows.map((r) => r.categoryId).filter((x): x is number => x !== null))];
   const bookIds = [...new Set(rows.map((r) => r.bookId))].filter((id) => !bookById?.has(id));
 
-  const [sellerRows, schoolRows, bookRows, slugs, stats] = await Promise.all([
+  const [sellerRows, schoolRows, bookRows, slugs, stats, verifiedPairs] = await Promise.all([
     db
       .select({
         id: users.id,
@@ -103,11 +104,18 @@ export async function serializeListings(
     bookIds.length ? db.select().from(books).where(inList(books.id, bookIds)) : Promise.resolve([] as Book[]),
     categorySlugsById(env, categoryIds),
     sellerStats(env, sellerIds),
+    sellerIds.length
+      ? db
+          .select({ userId: regionVerifications.userId, regionCode: regionVerifications.regionCode })
+          .from(regionVerifications)
+          .where(and(inList(regionVerifications.userId, sellerIds), liveVerification()))
+      : Promise.resolve([]),
   ]);
   const sellers = new Map(sellerRows.map((u) => [String(u.id), u]));
   const schoolMap = new Map(schoolRows.map((s) => [Number(s.id), s]));
   const bookMap = new Map<string, Book>(bookById ?? []);
   for (const b of bookRows) bookMap.set(b.id, b);
+  const verifiedSet = new Set(verifiedPairs.map((v) => `${v.userId}:${v.regionCode?.toUpperCase()}`));
 
   return rows.map((l) => {
     const seller = sellers.get(l.sellerId);
@@ -115,10 +123,13 @@ export async function serializeListings(
     const school = l.schoolId !== null ? schoolMap.get(l.schoolId) : undefined;
     const st = stats.get(l.sellerId)!;
     const photos = parsePhotos(l.photos);
+    const isVerified = verifiedSet.has(`${l.sellerId}:${l.regionCode.toUpperCase()}`);
     const out: Record<string, unknown> = {
       id: l.id,
       seller_name: displayName(seller?.firstName, seller?.lastName),
       seller_avatar_url: seller ? publicAvatarUrl(seller) : '',
+      seller_is_verified: isVerified,
+      is_verified: isVerified,
       school_name: school ? localizedSchoolName(school, opts.lang ?? null) : '',
       seller_school_id: l.schoolId,
       book_title: book?.title ?? '',

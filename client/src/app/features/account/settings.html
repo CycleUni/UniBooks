@@ -12,6 +12,33 @@
 
         <!-- Campus email verifications section -->
     <div class="verify-section" *ngIf="currentRegion">
+      <!-- My School row (locked when verified, editable when unverified) -->
+      <div class="my-school-section form-group mb-4" data-testid="my-school-row">
+        <label><strong>{{ 'acct.mySchool' | t }}</strong></label>
+        <ng-container *ngIf="currentVerification; else declaredSchoolEdit">
+          <div class="locked-school-card">
+            <div class="locked-school-header" style="display: flex; align-items: center; gap: 6px;">
+              <span class="school-name-display">{{ currentVerifiedSchoolName }}</span>
+              <ui-verified-badge></ui-verified-badge>
+            </div>
+            <small class="field-hint" style="color: var(--muted); font-size: var(--text-xs); margin-top: 4px; display: block;">{{ 'acct.schoolLockedHint' | t }}</small>
+          </div>
+        </ng-container>
+        <ng-template #declaredSchoolEdit>
+          <div class="declared-school-card">
+            <ui-dropdown
+              [label]="'acct.mySchool' | t"
+              [placeholder]="'welcome.selectSchool' | t"
+              [options]="schoolDropdownOptions"
+              [(ngModel)]="selectedDeclaredSchoolCode"
+              (ngModelChange)="onDeclaredSchoolChange($event)"
+              [searchable]="true"
+              [appendToBody]="true"
+            ></ui-dropdown>
+          </div>
+        </ng-template>
+      </div>
+
       <ng-container *ngIf="currentVerification; else unverifiedBlock">
         <div class="alert-box success mb-4" >
           <div  style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -192,9 +219,15 @@
           </ng-container>
         </div>
         <ng-template #neverVerified>
-          <div class="alert-box warning mb-4" >
+          <div class="alert-box warning mb-4" *ngIf="mustVerify">
             <strong>{{ 'acct.unverifiedTitle' | t }}</strong>
-            <p>{{ 'acct.unverifiedDesc' | t:{suffix: currentRegion.edu_email_suffix.join(', ')} }}</p>
+            <p>{{ 'acct.errVerificationRequiredForSchool' | t:{school: currentDeclaredSchoolName, region: currentRegion.code} }}</p>
+          </div>
+          <div class="alert-box info mb-4" *ngIf="!mustVerify && !softInviteDismissed" data-testid="soft-verify-invite">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>{{ 'acct.softVerifyInvite' | t }}</span>
+              <button type="button" class="close-invite-btn" (click)="dismissSoftInvite()" [attr.aria-label]="'common.close' | t" style="background: none; border: none; font-size: 1.25rem; line-height: 1; cursor: pointer; color: inherit; padding: 4px 8px;">×</button>
+            </div>
           </div>
         </ng-template>
 

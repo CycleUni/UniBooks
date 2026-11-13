@@ -102,16 +102,83 @@ export async function isVerifiedIn(env: AppEnv['Bindings'], userId: string, regi
 export async function assertVerifiedIn(c: Context<AppEnv>, regionCode: string): Promise<void> {
   const userId = c.get('userId');
   if (!userId) apiError(401, 'auth.errNotLoggedIn');
-  if (!(await isVerifiedIn(c.env, userId, regionCode))) {
-    apiError(403, 'acct.errUnverifiedInRegion', { region: regionCode });
+  if (!(await isVerifiedIn(c.env, userId, regionCode.toUpperCase()))) {
+    apiError(403, 'acct.errUnverifiedInRegion', { region: regionCode.toUpperCase() });
   }
 }
 
-/** Middleware form of assertVerifiedIn for the request's own region (unsafe methods only). */
+export interface TradeAuth {
+  schoolId: number | null;
+  schoolCode: string | null;
+  requiresVerification: boolean;
+  isVerified: boolean;
+}
+
+/**
+ * Resolves the user's school in `regionCode` (verified school if a live verification exists,
+ * else declared school); if that school has `requires_verification = 1` and the user has no
+ * live verification for it -> 403 `acct.errVerificationRequiredForSchool` with `{ region, school: <code> }`;
+ * otherwise allow. A user with no school chosen is allowed (they simply have no school).
+ */
+export async function assertMayTrade(c: Context<AppEnv>, regionCode: string): Promise<TradeAuth> {
+  const userId = c.get('userId');
+  if (!userId) apiError(401, 'auth.errNotLoggedIn');
+  const code = regionCode.toUpperCase();
+  const now = new Date().toISOString();
+
+  const row = await c.env.DB.prepare(
+    `SELECT
+       rv.id AS verification_id,
+       rv.school_id AS verified_school_id,
+       sv.code AS verified_school_code,
+       sv.requires_verification AS verified_requires_verification,
+       us.school_id AS declared_school_id,
+       sd.code AS declared_school_code,
+       sd.requires_verification AS declared_requires_verification
+     FROM (SELECT ?1 AS user_id, ?2 AS region_code) dummy
+     LEFT JOIN region_verifications rv ON rv.user_id = dummy.user_id
+       AND rv.region_code = dummy.region_code
+       AND rv.is_active = 1
+       AND (rv.expires_at IS NULL OR rv.expires_at > ?3)
+     LEFT JOIN schools sv ON sv.id = rv.school_id
+     LEFT JOIN user_schools us ON us.user_id = dummy.user_id
+       AND us.region_code = dummy.region_code
+     LEFT JOIN schools sd ON sd.id = us.school_id
+     LIMIT 1`,
+  )
+    .bind(userId, code, now)
+    .first<{
+      verification_id: number | null;
+      verified_school_id: number | null;
+      verified_school_code: string | null;
+      verified_requires_verification: number | null;
+      declared_school_id: number | null;
+      declared_school_code: string | null;
+      declared_requires_verification: number | null;
+    }>();
+
+  const isVerified = !!row?.verification_id;
+  const schoolId = isVerified ? (row?.verified_school_id ?? null) : (row?.declared_school_id ?? null);
+  const schoolCode = isVerified ? (row?.verified_school_code ?? null) : (row?.declared_school_code ?? null);
+  const requiresVerification = isVerified ? row?.verified_requires_verification === 1 : row?.declared_requires_verification === 1;
+
+  if (requiresVerification && !isVerified) {
+    apiError(403, 'acct.errVerificationRequiredForSchool', { region: code, school: schoolCode ?? '' });
+  }
+
+  return {
+    schoolId,
+    schoolCode,
+    requiresVerification,
+    isVerified,
+  };
+}
+
+/** Middleware form of assertMayTrade for the request's own region (unsafe methods only). */
 export const requireVerifiedInRequestRegion = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
     const region = await requireRegion(c);
-    await assertVerifiedIn(c, region.code);
+    await assertMayTrade(c, region.code);
   }
   await next();
 };

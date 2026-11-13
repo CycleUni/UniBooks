@@ -13,10 +13,11 @@ import {
   schoolRequests,
   staffManagedRegions,
   subscriptions,
+  userSchools,
   users,
   type User,
 } from '../../db';
-import { getRegion, liveVerification } from '../../lib/region';
+import { activeRegions, getRegion, liveVerification } from '../../lib/region';
 import { resolveLanguage } from './i18n';
 import { localizedName, type Row } from './regionData';
 import { cancelEmailChangeStatement } from './oneTimeTokens';
@@ -104,6 +105,33 @@ export async function verificationsOf(env: Env, userId: string): Promise<(Verifi
   return results.map((r) => ({ ...r, school: r.school_id !== null ? (schools.get(r.school_id) ?? null) : null }));
 }
 
+export interface DeclaredSchoolRow {
+  region_code: string;
+  school_id: number;
+  school: Row | null;
+}
+
+/** The user's declared school per region, with their school rows. */
+export async function declaredSchoolsOf(env: Env, userId: string): Promise<DeclaredSchoolRow[]> {
+  const results = await createDb(env.DB)
+    .select({
+      region_code: userSchools.regionCode,
+      school_id: userSchools.schoolId,
+    })
+    .from(userSchools)
+    .where(eq(userSchools.userId, userId))
+    .orderBy(asc(userSchools.regionCode));
+  const ids = [...new Set(results.map((r) => r.school_id))];
+  const schoolsMap = new Map<number, Row>();
+  if (ids.length) {
+    const { results: rows } = await env.DB.prepare(`SELECT * FROM schools WHERE id IN (SELECT value FROM json_each(?))`)
+      .bind(JSON.stringify(ids))
+      .all<Row>();
+    for (const s of rows) schoolsMap.set(Number(s.id), s);
+  }
+  return results.map((r) => ({ ...r, school: schoolsMap.get(r.school_id) ?? null }));
+}
+
 /**
  * The user's verifications that are still bound but past their expiry: the
  * student has to prove the address again (link, one-click, or a Google
@@ -159,32 +187,111 @@ export async function managedRegionsOf(env: Env, userId: string): Promise<string
 /** The signed-in user's own view of their account. */
 export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Record<string, unknown>> {
   const isStaff = isStaffRole(user.role);
-  const [region, lang, verifications, lapsed, reputation, managedRegions] = await Promise.all([
+  const [region, lang, verifications, declared, lapsed, reputation, managedRegions, active] = await Promise.all([
     getRegion(c),
     resolveLanguage(c),
     verificationsOf(c.env, user.id),
+    declaredSchoolsOf(c.env, user.id),
     lapsedVerificationsOf(c.env, user.id),
     reputationOf(c.env, user.id),
     isStaff ? managedRegionsOf(c.env, user.id) : Promise.resolve([]),
+    activeRegions(c.env),
   ]);
   const regions = verifications.map((v) => v.region_code.toUpperCase());
-  // The verification in the region being browsed; without a region, the first.
-  const current = region
+
+  // Current region status
+  const currentVerif = region
     ? (verifications.find((v) => v.region_code.toUpperCase() === region.code.toUpperCase()) ?? null)
     : (verifications[0] ?? null);
+  const currentDecl = region
+    ? (declared.find((d) => d.region_code.toUpperCase() === region.code.toUpperCase()) ?? null)
+    : (declared[0] ?? null);
+  const currentResolved = currentVerif?.school ?? currentDecl?.school ?? null;
+  const currentIsVerified = !!currentVerif;
+  const currentMustVerify = !!currentResolved && currentResolved.requires_verification === 1 && !currentIsVerified;
+
+  // Build per_region
+  const perRegion: Record<
+    string,
+    {
+      declared_school: { id: number; code: string; name: string; requires_verification: boolean } | null;
+      verified_school: { id: number; code: string; name: string } | null;
+      is_verified: boolean;
+      must_verify: boolean;
+    }
+  > = {};
+
+  const allRegionCodes = new Set([
+    ...Array.from(active.keys()),
+    ...verifications.map((v) => v.region_code.toUpperCase()),
+    ...declared.map((d) => d.region_code.toUpperCase()),
+  ]);
+
+  for (const regCode of allRegionCodes) {
+    const v = verifications.find((v) => v.region_code.toUpperCase() === regCode) ?? null;
+    const d = declared.find((d) => d.region_code.toUpperCase() === regCode) ?? null;
+    const isV = !!v;
+    const res = v?.school ?? d?.school ?? null;
+    const mustV = !!res && res.requires_verification === 1 && !isV;
+    perRegion[regCode] = {
+      declared_school: d?.school
+        ? {
+            id: Number(d.school.id),
+            code: String(d.school.code ?? ''),
+            name: localizedName(d.school, lang),
+            requires_verification: d.school.requires_verification === 1,
+          }
+        : null,
+      verified_school: v?.school
+        ? {
+            id: Number(v.school.id),
+            code: String(v.school.code ?? ''),
+            name: localizedName(v.school, lang),
+          }
+        : null,
+      is_verified: isV,
+      must_verify: mustV,
+    };
+  }
 
   return {
     id: user.id,
     email: user.email,
-    edu_email: current ? current.edu_email : null,
+    edu_email: currentVerif ? currentVerif.edu_email : null,
     first_name: user.firstName,
     last_name: user.lastName,
     display_name: displayName(user.firstName, user.lastName),
-    school: current ? current.school_id : null,
-    school_name: current?.school ? localizedName(current.school, lang) : '',
+    school: currentResolved ? Number(currentResolved.id) : null,
+    school_code: currentResolved ? String(currentResolved.code ?? '') : '',
+    school_name: currentResolved ? localizedName(currentResolved, lang) : '',
     is_active: !!user.isActive,
-    is_verified: !!current,
-    verified_at: current ? current.verified_at : null,
+    is_verified: currentIsVerified,
+    must_verify: currentMustVerify,
+    school_prompted: !!user.schoolPromptedAt,
+    school_prompted_at: user.schoolPromptedAt ?? null,
+    declared_school: currentDecl?.school
+      ? {
+          id: Number(currentDecl.school.id),
+          code: String(currentDecl.school.code ?? ''),
+          name: localizedName(currentDecl.school, lang),
+          requires_verification: currentDecl.school.requires_verification === 1,
+        }
+      : null,
+    verified_school: currentVerif?.school
+      ? {
+          id: Number(currentVerif.school.id),
+          code: String(currentVerif.school.code ?? ''),
+          name: localizedName(currentVerif.school, lang),
+        }
+      : null,
+    per_region: perRegion,
+    user_schools: declared.map((d) => ({
+      region: d.region_code.toUpperCase(),
+      school: d.school_id,
+      school_code: d.school ? String(d.school.code ?? '') : '',
+      school_name: d.school ? localizedName(d.school, lang) : '',
+    })),
+    verified_at: currentVerif ? currentVerif.verified_at : null,
     ...reputation,
     has_password: !!user.passwordHash,
     is_google_linked: !!user.googleId,
@@ -207,30 +314,35 @@ export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Rec
     })),
     lapsed_verifications: lapsed.map((v) => ({ region: v.region_code.toUpperCase(), edu_email: v.edu_email, expires_at: v.expires_at })),
     site_language: user.siteLanguage,
-    // Blank once the verification it was saved under has ended.
-    site_region: regions.includes(user.siteRegion) ? user.siteRegion : '',
+    site_region: active.has(user.siteRegion.toUpperCase()) ? user.siteRegion.toUpperCase() : '',
   };
 }
 
 /** The public view of a user's profile. */
 export async function serializePublicUser(c: Context<AppEnv>, user: User): Promise<Record<string, unknown>> {
-  const [region, lang, verifications, reputation] = await Promise.all([
+  const [region, lang, verifications, declared, reputation] = await Promise.all([
     getRegion(c),
     resolveLanguage(c),
     verificationsOf(c.env, user.id),
+    declaredSchoolsOf(c.env, user.id),
     reputationOf(c.env, user.id),
   ]);
-  const current = region
+  const currentVerif = region
     ? (verifications.find((v) => v.region_code.toUpperCase() === region.code.toUpperCase()) ?? null)
     : (verifications[0] ?? null);
+  const currentDecl = region
+    ? (declared.find((d) => d.region_code.toUpperCase() === region.code.toUpperCase()) ?? null)
+    : (declared[0] ?? null);
+  const currentResolved = currentVerif?.school ?? currentDecl?.school ?? null;
+
   return {
     id: user.id,
     first_name: user.firstName,
     last_name: user.lastName,
     display_name: displayName(user.firstName, user.lastName),
-    school_name: current?.school ? localizedName(current.school, lang) : '',
+    school_name: currentResolved ? localizedName(currentResolved, lang) : '',
     created_at: user.createdAt,
-    is_verified: !!current,
+    is_verified: !!currentVerif,
     ...reputation,
     avatar_url: publicAvatarUrl(user),
   };
@@ -277,6 +389,7 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
       db.delete(listings).where(eq(listings.sellerId, userId)),
       db.delete(subscriptions).where(eq(subscriptions.userId, userId)),
       db.delete(regionVerifications).where(eq(regionVerifications.userId, userId)),
+      db.delete(userSchools).where(eq(userSchools.userId, userId)),
       db.delete(pushDevices).where(eq(pushDevices.userId, userId)),
       db.delete(passkeys).where(eq(passkeys.userId, userId)),
       db.delete(schoolRequests).where(eq(schoolRequests.userId, userId)),
@@ -301,6 +414,7 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
     db.delete(subscriptions).where(eq(subscriptions.userId, userId)),
     // Ours.
     db.delete(regionVerifications).where(eq(regionVerifications.userId, userId)),
+    db.delete(userSchools).where(eq(userSchools.userId, userId)),
     db.delete(pushDevices).where(eq(pushDevices.userId, userId)),
     db.delete(passkeys).where(eq(passkeys.userId, userId)),
     db

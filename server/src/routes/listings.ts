@@ -4,10 +4,10 @@
 import { Hono, type Context } from 'hono';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../env';
-import { createDb, books, listings, regionVerifications, schools, type Listing } from '../db';
+import { createDb, books, listings, schools, type Listing } from '../db';
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { LIMITS } from '../lib/limits';
-import { assertVerifiedIn, requireRegion } from '../lib/region';
+import { assertMayTrade, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkPlatformRate, checkRate } from '../middleware/rateLimit';
 import { cleanCoverUrl } from '../services/catalog/common';
@@ -92,7 +92,7 @@ async function listFeed(c: Context<AppEnv>): Promise<Response> {
 
 listingRoutes.post('/', authMiddleware(), async (c) => {
   const region = await requireRegion(c);
-  await assertVerifiedIn(c, region.code);
+  const tradeAuth = await assertMayTrade(c, region.code);
   await checkRate(c, 'listing_create', RATES.listing_create);
   const user = c.get('user')!;
   const body = await readJson(c.req);
@@ -111,16 +111,9 @@ listingRoutes.post('/', authMiddleware(), async (c) => {
     apiError(400, 'sell.errValidation', { fields: errors });
   }
 
-  // The listing is stamped with the school the seller is verified at here:
+  // The listing is stamped with the school the seller has in this region (verified or declared):
   // every school-filtered feed reads the listing's own school.
-  const [verification] = (await createDb(c.env.DB)
-    .select()
-    .from(regionVerifications)
-    .where(
-      and(eq(regionVerifications.userId, user.id), eq(regionVerifications.regionCode, region.code), eq(regionVerifications.isActive, 1)),
-    )
-    .limit(1)) as Array<Record<string, unknown>>;
-  const schoolId = typeof verification?.schoolId === 'number' ? verification.schoolId : null;
+  const schoolId = tradeAuth.schoolId;
 
   const now = nowIso();
   const row: Listing = {
@@ -336,7 +329,7 @@ listingRoutes.patch(`/:id{${UUID_PATTERN}}`, optionalAuthMiddleware(), async (c)
   const userId = c.get('userId');
   const listing = await loadListing(c, c.req.param('id'));
   if (!listing || !userId || listing.sellerId !== userId) return notFound(c);
-  await assertVerifiedIn(c, listing.regionCode);
+  await assertMayTrade(c, listing.regionCode);
   if (listing.adminLocked) apiError(403, 'listing.errAdminLocked');
   const body = await readJson(c.req);
   // While a buyer's accepted order waits on it, the book, photos, price and

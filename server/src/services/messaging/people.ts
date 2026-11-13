@@ -84,23 +84,55 @@ export function isUsable(p: Person | null | undefined): p is Person {
   return !!p && p.isActive && !p.isBanned && !p.deleted;
 }
 
+export interface UserSchoolInfo {
+  schoolName: string;
+  isVerified: boolean;
+}
+
 /**
- * Each user's school in `regionCode` (an active, unexpired verification),
+ * Each user's school and verification status in `regionCode`:
+ * resolved school (verified first, else declared), and whether they hold an active unexpired verification.
+ */
+export async function schoolInfosIn(env: Env, userIds: readonly string[], regionCode: string): Promise<Map<string, UserSchoolInfo>> {
+  const unique = [...new Set(userIds.filter(Boolean))];
+  const out = new Map<string, UserSchoolInfo>();
+  if (!unique.length) return out;
+  const now = new Date().toISOString();
+  const { results } = await env.DB.prepare(
+    `SELECT
+       u.value AS user_id,
+       COALESCE(sv.name, sd.name, '') AS school_name,
+       CASE WHEN rv.id IS NOT NULL THEN 1 ELSE 0 END AS is_verified
+     FROM json_each(?) u
+     LEFT JOIN region_verifications rv ON rv.user_id = u.value
+       AND rv.region_code = ?
+       AND rv.is_active = 1
+       AND (rv.expires_at IS NULL OR rv.expires_at > ?)
+     LEFT JOIN schools sv ON sv.id = rv.school_id
+     LEFT JOIN user_schools us ON us.user_id = u.value
+       AND us.region_code = ?
+     LEFT JOIN schools sd ON sd.id = us.school_id`,
+  )
+    .bind(JSON.stringify(unique), regionCode, now, regionCode)
+    .all<{ user_id: string; school_name: string; is_verified: number }>();
+  for (const r of results) {
+    out.set(r.user_id, {
+      schoolName: r.school_name ?? '',
+      isVerified: r.is_verified === 1,
+    });
+  }
+  return out;
+}
+
+/**
+ * Each user's school in `regionCode` (resolved school: verified, else declared),
  * '' when none.
  */
 export async function schoolNamesIn(env: Env, userIds: readonly string[], regionCode: string): Promise<Map<string, string>> {
-  const unique = [...new Set(userIds.filter(Boolean))];
+  const infos = await schoolInfosIn(env, userIds, regionCode);
   const out = new Map<string, string>();
-  if (!unique.length) return out;
-  const { results } = await env.DB.prepare(
-    `SELECT rv.user_id AS user_id, s.name AS name
-       FROM region_verifications rv JOIN schools s ON s.id = rv.school_id
-      WHERE rv.region_code = ? AND rv.is_active = 1
-        AND (rv.expires_at IS NULL OR rv.expires_at > ?)
-        AND rv.user_id IN (SELECT value FROM json_each(?))`,
-  )
-    .bind(regionCode, new Date().toISOString(), JSON.stringify(unique))
-    .all<{ user_id: string; name: string }>();
-  for (const r of results) out.set(r.user_id, r.name ?? '');
+  for (const [id, info] of infos.entries()) {
+    out.set(id, info.schoolName);
+  }
   return out;
 }

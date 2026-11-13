@@ -277,13 +277,24 @@ describe.skipIf(!schemaReady)('orders API', () => {
     expect(rows).toHaveLength(1);
   });
 
-  it('requires verification in the listing region to order', async () => {
+  it('requires verification in the listing region to order when school requires verification', async () => {
     const seller = await makeUser('seller');
     const buyer = await makeUser('stranger', false);
+    const [school] = await env.DB.prepare(
+      "INSERT INTO schools (region_code, code, name, email_domain, requires_verification, is_active, created_at) VALUES ('TW', 'REQ2', 'Mandatory School', 'req2.edu.tw', 1, 1, datetime('now')) RETURNING id, code",
+    )
+      .all<{ id: number; code: string }>()
+      .then((r) => r.results);
+    await env.DB.prepare(
+      "INSERT INTO user_schools (user_id, region_code, school_id, created_at, updated_at) VALUES (?, 'TW', ?, datetime('now'), datetime('now'))",
+    )
+      .bind(buyer.id, school.id)
+      .run();
+
     const l = await makeListing(seller.id);
     const res = await post('', buyer.token, { listing: l.id });
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: { code: 'acct.errUnverifiedInRegion', region: 'TW' } });
+    expect(await res.json()).toEqual({ error: { code: 'acct.errVerificationRequiredForSchool', region: 'TW', school: 'REQ2' } });
   });
 
   it('hides other people’s orders', async () => {

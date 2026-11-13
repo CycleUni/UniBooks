@@ -725,5 +725,39 @@ describe('SettingsComponent', () => {
         expect(component.verifyMessage).toBe(en['acct.errEmailTaken']);
       });
     });
+
+    describe('My School row', () => {
+      it('locks school display and shows verified school name when user has live verification', () => {
+        (component as any).regionService = { currentRegionObj: () => ({ code: 'TW', localized_name: 'Taiwan' }), region: () => 'tw' };
+        component.verifications = [
+          { region: 'TW', school: 1, school_name: 'National Taiwan University', edu_email: 'test@ntu.edu.tw', verified_at: '2026-01-01T00:00:00Z' },
+        ];
+        component.availableSchools = [{ id: 1, code: 'NTU', name: 'National Taiwan University' }] as any;
+        expect(component.currentVerification).toBeTruthy();
+        expect(component.currentVerifiedSchoolName).toBe('National Taiwan University');
+      });
+
+      it('calls setDeclaredSchool and updates schoolStateService when changing declared school', () => {
+        const setDeclaredSchool = vi.fn().mockReturnValue(of({}));
+        const setManualSchool = vi.fn();
+        const loadProfile = vi.fn();
+        (component as any).accountService = { setDeclaredSchool, getMyProfile: vi.fn().mockReturnValue(of({})) };
+        (component as any).schoolStateService = { setManualSchool };
+        (component as any).regionService = { region: () => 'tw' };
+        component.loadProfile = loadProfile;
+
+        component.onDeclaredSchoolChange('NTU');
+
+        expect(setDeclaredSchool).toHaveBeenCalledWith('tw', 'NTU');
+        expect(setManualSchool).toHaveBeenCalledWith('NTU');
+        expect(component.selectedDeclaredSchoolCode).toBe('NTU');
+      });
+
+      it('allows dismissing soft verification invitation when mustVerify is false', () => {
+        component.softInviteDismissed = false;
+        component.dismissSoftInvite();
+        expect(component.softInviteDismissed).toBe(true);
+      });
+    });
   });
 });

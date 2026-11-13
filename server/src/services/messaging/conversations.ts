@@ -5,7 +5,7 @@ import { chatRoomStub } from '../../lib/chat';
 import { storageKeyFromUrl } from '../../lib/media';
 import { siteOrigin } from '../../lib/origin';
 import { chatImagePrefix } from './images';
-import { loadPeople, schoolNamesIn } from './people';
+import { loadPeople, schoolInfosIn } from './people';
 import { parsePhotos } from '../../lib/json';
 import { coverUrlFor } from '../catalog/covers';
 
@@ -255,7 +255,7 @@ export async function serializeConversations(
 
   const [people, schools, listingRows, orderRows] = await Promise.all([
     loadPeople(env, otherIds),
-    schoolNamesIn(env, otherIds, regionCode),
+    schoolInfosIn(env, otherIds, regionCode),
     // Raw: `IN json_each(...)` over the page's ids, and listings as `l.*` rows.
     listingIds.length
       ? env.DB.prepare(
@@ -315,7 +315,8 @@ export async function serializeConversations(
       listing_course: listing ? ((listing.course_name as string | undefined) ?? '') : null,
       other_party: other?.displayName ?? '',
       other_party_role: iAmBuyer ? 'seller' : 'buyer',
-      other_party_school_name: schools.get(otherId) ?? '',
+      other_party_school_name: schools.get(otherId)?.schoolName ?? '',
+      other_party_is_verified: schools.get(otherId)?.isVerified ?? false,
       other_party_avatar_url: other?.publicAvatarUrl ?? '',
       buyer_id: conv.buyer_id,
       seller_id: conv.seller_id,

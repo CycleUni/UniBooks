@@ -22,7 +22,7 @@ import { authMiddleware, requireStaff } from '../middleware/auth';
 import { isUniqueViolation } from '../lib/db';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../lib/http';
 import { LIMITS } from '../lib/limits';
-import { requireRegion, isVerifiedIn } from '../lib/region';
+import { requireRegion, assertMayTrade } from '../lib/region';
 import { managedRegionCodes } from '../services/messaging/staffScope';
 import { getConversation, isParticipant } from '../services/messaging/conversations';
 import { UUID_LOOSE_RE } from '../lib/uuid';
@@ -136,7 +136,7 @@ moderationRoutes.post('/', async (c) => {
       : [];
   const region = await requireRegion(c);
   const verifyIn = target?.regionCode ?? region.code;
-  if (!(await isVerifiedIn(c.env, user.id, verifyIn))) apiError(403, 'acct.errUnverifiedInRegion', { region: verifyIn });
+  await assertMayTrade(c, verifyIn);
 
   if (!listingId || !UUID_LOOSE_RE.test(listingId)) notFound();
   const [listing] = await db
@@ -642,7 +642,7 @@ moderationRoutes.post('/book-reports', async (c) => {
 
   const region = await requireRegion(c);
   const verifyIn = book.regionCode ?? region.code;
-  if (!(await isVerifiedIn(c.env, user.id, verifyIn))) apiError(403, 'acct.errUnverifiedInRegion', { region: verifyIn });
+  await assertMayTrade(c, verifyIn);
 
   const [pending] = await db
     .select({ id: bookReports.id })

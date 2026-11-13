@@ -66,6 +66,7 @@ import { BulkController } from './bulk';
                  translations: zh-TW in Taiwan, zh-HK in Hong Kong. -->
             <th *ngFor="let lang of languages()">{{ 'admin.schoolNameIn' | t:{ lang: lang } }}</th>
             <th>{{ 'admin.colDomain' | t }}</th>
+            <th>{{ 'admin.requiresVerification' | t }}</th>
             <th>{{ 'admin.colActions' | t }}</th>
           </tr>
         </thead>
@@ -81,6 +82,14 @@ import { BulkController } from './bulk';
             <td>{{ school.name }}</td>
             <td *ngFor="let lang of languages()" [class.missing]="!school.translations?.[lang]?.name">{{ school.translations?.[lang]?.name || ('admin.translationMissing' | t) }}</td>
             <td>{{ school.email_domain }}</td>
+            <td>
+              <input
+                type="checkbox"
+                [checked]="school.requires_verification"
+                (change)="toggleVerification(school, $event)"
+                [attr.aria-label]="'admin.requiresVerification' | t"
+              />
+            </td>
             <td>
               <ui-button size="sm" variant="outline" [link]="[school.id]">{{ 'common.edit' | t }}</ui-button>
               <ui-button size="sm" variant="danger" (onClick)="deleteSchool(school)"  style="margin-left: 8px;" [hostClass]="!!school.user_count ? 'is-blocked' : ''" [attr.aria-disabled]="school.user_count ? 'true' : null">{{ 'common.delete' | t }}</ui-button>
@@ -136,6 +145,13 @@ import { BulkController } from './bulk';
           <div class="form-group">
             <label for="new-school-code">{{ 'admin.schoolCode' | t }}</label>
             <input id="new-school-code" type="text" class="admin-form-control code-input" maxlength="20" [(ngModel)]="newSchool.code" [placeholder]="'admin.schoolCodeDesc' | t">
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" [(ngModel)]="newSchool.requires_verification">
+              <span>{{ 'admin.requiresVerification' | t }}</span>
+            </label>
+            <small class="hint">{{ 'admin.requiresVerificationDesc' | t }}</small>
           </div>
           <div class="form-group">
             <label>{{ 'admin.translationsSection' | t }}</label>
@@ -207,6 +223,7 @@ export class AdminSchoolsListComponent implements OnInit {
     email_domains: [],
     student_email_domain: '',
     google_domains: [],
+    requires_verification: false,
   };
   newSchoolEmailDomainsText = '';
   newSchoolAcceptedDomainOptions: string[] = [];
@@ -312,6 +329,21 @@ export class AdminSchoolsListComponent implements OnInit {
     this.newSchool.google_domains = Array.from(current);
   }
 
+  toggleVerification(school: AdminSchool, event: Event) {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.adminService.updateSchool(school.id, { requires_verification: checked }).subscribe({
+      next: (updated) => {
+        school.requires_verification = updated.requires_verification;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        (event.target as HTMLInputElement).checked = !checked;
+        this.toast.error(parseAdminError(err, this.i18n));
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
   openCreateModal() {
     this.newSchool = {
       name: '',
@@ -320,6 +352,7 @@ export class AdminSchoolsListComponent implements OnInit {
       email_domains: [],
       student_email_domain: '',
       google_domains: [],
+      requires_verification: false,
     };
     this.newSchoolEmailDomainsText = '';
     this.newSchoolAcceptedDomainOptions = [];
@@ -342,6 +375,7 @@ export class AdminSchoolsListComponent implements OnInit {
       email_domains: this.newSchool.email_domains || [],
       student_email_domain: this.newSchool.student_email_domain || '',
       google_domains: this.newSchool.google_domains || [],
+      requires_verification: !!this.newSchool.requires_verification,
     };
     const translations: Record<string, { name: string }> = {};
     for (const [lang, name] of Object.entries(this.newSchoolNames)) {

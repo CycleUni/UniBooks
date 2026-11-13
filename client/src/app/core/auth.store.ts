@@ -93,6 +93,25 @@ export interface AuthUser {
   last_name?: string;
   display_name?: string;
   is_active?: boolean;
+  is_verified?: boolean;
+  must_verify?: boolean;
+  school_prompted?: boolean;
+  school_prompted_at?: string | null;
+  school?: number | null;
+  school_code?: string;
+  school_name?: string;
+  declared_school?: { id: number; code: string; name: string; requires_verification: boolean } | null;
+  verified_school?: { id: number; code: string; name: string } | null;
+  per_region?: Record<
+    string,
+    {
+      declared_school: { id: number; code: string; name: string; requires_verification: boolean } | null;
+      verified_school: { id: number; code: string; name: string } | null;
+      is_verified: boolean;
+      must_verify: boolean;
+      school_prompted?: boolean;
+    }
+  >;
   average_rating?: number;
   review_count?: number;
   no_show_count?: number;
@@ -340,9 +359,12 @@ export class AuthStore {
    * Best-effort profile fetch. Idempotent: once this session's profile is
    * loaded it is not fetched again until a sign-in marks it stale.
    */
-  private fetchUserProfile(includeLists?: boolean): void {
+  fetchUserProfile(includeLists?: boolean, force = false): void {
     // No hint cookie, no session cookies: /auth/me/ could only say 401.
     if (!this._isAuthenticated() || !hasSessionHint()) return;
+    if (force) {
+      this.profileStale = true;
+    }
     const wantLists = includeLists ?? this.isAccountUrl();
     if (!this.profileStale && this._user() && (!wantLists || this.profileHasLists)) return;
 
@@ -685,7 +707,36 @@ export class AuthStore {
   }
 
   isVerifiedIn(regionCode: string): boolean {
-    return isUserVerifiedIn(this.user()?.verifications, regionCode);
+    const code = (regionCode || '').toUpperCase();
+    const user = this.user();
+    if (user?.per_region?.[code]?.is_verified !== undefined) {
+      return user.per_region[code].is_verified;
+    }
+    return isUserVerifiedIn(user?.verifications, regionCode);
+  }
+
+  mustVerifyIn(regionCode: string): boolean {
+    const code = (regionCode || '').toUpperCase();
+    const user = this.user();
+    if (user?.per_region?.[code]?.must_verify !== undefined) {
+      return user.per_region[code].must_verify;
+    }
+    return !!user?.must_verify;
+  }
+
+  schoolForRegion(regionCode: string): string {
+    const code = (regionCode || '').toUpperCase();
+    const user = this.user();
+    const reg = user?.per_region?.[code];
+    return reg?.declared_school?.name || reg?.verified_school?.name || user?.school_name || '';
+  }
+
+  setDeclaredSchool(region: string, school: string | null, skip?: boolean): Observable<any> {
+    return this.http.put('/auth/me/school', { region, school, skip }).pipe(
+      tap(() => {
+        this.fetchUserProfile(undefined, true);
+      })
+    );
   }
 
   isLoggedIn() {

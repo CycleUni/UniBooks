@@ -65,7 +65,7 @@
                 <img [src]="listing.seller_avatar_url" [attr.alt]="listing.seller_name ? (listing.seller_name + ' ' + ('acct.avatarAlt' | t)) : ('acct.avatarAlt' | t)" class="seller-avatar-image" referrerpolicy="no-referrer">
               </div>
               <div class="seller-info-text">
-                <div class="seller-name">{{ listing.seller_name }}</div>
+                <div class="seller-name">{{ listing.seller_name }} <ui-verified-badge *ngIf="listing.seller_is_verified || listing.is_verified"></ui-verified-badge></div>
                 <div class="seller-school">{{ listing.school_name || ('acct.noSchool' | t) }}</div>
                 <div class="seller-reputation">
                   <ui-seller-reputation

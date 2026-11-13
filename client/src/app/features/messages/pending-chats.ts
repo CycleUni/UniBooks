@@ -48,6 +48,7 @@ export function pendingChatFromListing(listing: any): any {
     other_party_role: 'seller',
     other_party_school_name: listing.school_name || '',
     other_party_avatar_url: listing.seller_avatar_url || '',
+    other_party_is_verified: !!(listing.seller_is_verified || listing.is_verified),
     seller_id: listing.seller,
     latest_message: '',
     updated_at: new Date().toISOString(),

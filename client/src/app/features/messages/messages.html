@@ -30,6 +30,7 @@
               <div class="partner-info">
                 <h4>
                   <span class="partner-name" [class.name-last]="conversationTitle.nameLast">{{ conversationTitle.before }}<span class="partner-name-value">{{ activeChat.other_party }}</span>{{ conversationTitle.after }}</span>
+                  <ui-verified-badge *ngIf="activeChat.other_party_is_verified"></ui-verified-badge>
                   <ui-role-badge [role]="activeChat.other_party_role"></ui-role-badge>
                 </h4>
               </div>

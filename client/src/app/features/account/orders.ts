@@ -25,12 +25,12 @@ import { scrollBehavior } from '../../core/reduced-motion';
 import { parseApiError } from '../../core/api-error.util';
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
-
+import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
 
 @Component({
   selector: 'app-orders',
   standalone: true,
-  imports: [CommonModule, RouterModule, UiSkeleton, UiErrorState, TPipe, UiButton, UiEmpty, ReviewModalComponent, DateTimeFormatPipe, PricePipe, UiSearchBarComponent, RegionLinkDirective, UiPullToRefresh],
+  imports: [CommonModule, RouterModule, UiSkeleton, UiErrorState, TPipe, UiButton, UiEmpty, ReviewModalComponent, DateTimeFormatPipe, PricePipe, UiSearchBarComponent, RegionLinkDirective, UiPullToRefresh, UiVerifiedBadge],
   template: `
     <ui-pull-to-refresh data-clarity-mask="True" [refreshing]="refreshing" (refresh)="onRefresh()">
       <h2 class="section-heading">{{ 'acct.myOrders' | t }}</h2>
@@ -125,7 +125,8 @@ import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
                 <img *ngIf="partyAvatar(order, role)" [src]="partyAvatar(order, role)" alt="" class="party-avatar" referrerpolicy="no-referrer" />
                 <span *ngIf="!partyAvatar(order, role)" class="party-avatar party-initial" aria-hidden="true">{{ partyName(order, role).charAt(0) }}</span>
                 <span>
-                  {{ (role === 'buyer' ? 'order.seller' : 'order.buyer') | t }}: {{ partyName(order, role) }}<!--
+                  {{ (role === 'buyer' ? 'order.seller' : 'order.buyer') | t }}: {{ partyName(order, role) }}
+                  <ui-verified-badge *ngIf="partyIsVerified(order, role)"></ui-verified-badge><!--
                   --><span *ngIf="partySchool(order, role)" class="party-school"> · {{ partySchool(order, role) }}</span>
                 </span>
               </p>
@@ -491,6 +492,10 @@ export class OrdersComponent implements OnInit {
   /** The other party, from the viewer's `role` on the order. */
   partyName(order: Order, role: 'buyer' | 'seller'): string {
     return (role === 'buyer' ? order.seller_name : order.buyer_name) || '';
+  }
+
+  partyIsVerified(order: Order, role: 'buyer' | 'seller'): boolean {
+    return role === 'buyer' ? !!order.seller_is_verified : !!order.buyer_is_verified;
   }
 
   partySchool(order: Order, role: 'buyer' | 'seller'): string {

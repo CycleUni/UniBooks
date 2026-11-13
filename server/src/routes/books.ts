@@ -7,7 +7,7 @@ import type { AppEnv, Env } from '../env';
 import { createDb, books, listings, subscriptions, type Book, type InsertBook } from '../db';
 import { apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { LIMITS } from '../lib/limits';
-import { assertVerifiedIn, requireRegion } from '../lib/region';
+import { assertMayTrade, requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { checkPlatformRate, checkRate } from '../middleware/rateLimit';
 import { cleanAndValidateIsbn, validateBookIsbn } from '../services/catalog/isbn';
@@ -194,7 +194,7 @@ function str(v: unknown): string | undefined {
 
 bookRoutes.post('/manual', authMiddleware(), async (c) => {
   const region = await requireRegion(c);
-  await assertVerifiedIn(c, region.code);
+  await assertMayTrade(c, region.code);
   await checkRate(c, 'book_create', '20/hour');
   const body = await readJson(c.req);
   const db = createDb(c.env.DB);

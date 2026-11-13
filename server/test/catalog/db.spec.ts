@@ -65,12 +65,17 @@ describe.skipIf(!schemaReady)('catalog against D1', () => {
         NOW,
       ),
       run(
+        `INSERT INTO schools (id, region_code, code, name, email_domain, requires_verification, created_at) VALUES (2, 'TW', 'REQ_CAT', 'Mandatory School', 'reqcat.edu.tw', 1, ?)`,
+        NOW,
+      ),
+      run(
         `INSERT INTO users (id, email, first_name, last_name, created_at, updated_at) VALUES (?, 's@ntu.edu.tw', 'Sel', 'Ler', ?, ?)`,
         SELLER,
         NOW,
         NOW,
       ),
       run(`INSERT INTO users (id, email, created_at, updated_at) VALUES (?, 'b@x.tw', ?, ?)`, BUYER, NOW, NOW),
+      run(`INSERT INTO user_schools (user_id, region_code, school_id, created_at, updated_at) VALUES (?, 'TW', 2, ?, ?)`, BUYER, NOW, NOW),
       run(
         `INSERT INTO region_verifications (user_id, region_code, school_id, verified_at, is_active) VALUES (?, 'TW', 1, ?, 1)`,
         SELLER,

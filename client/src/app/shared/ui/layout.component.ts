@@ -650,13 +650,17 @@ export class UiLayout implements OnDestroy {
           // regardless of which of the two requests happens to resolve first.
           const profile = this.authStore.user();
           const region = this.regionService.region();
+          const regInfo = profile?.per_region?.[region.toUpperCase()];
+          const resolvedCode = regInfo?.verified_school?.code || regInfo?.declared_school?.code || profile?.school_code;
           const verification = profile?.verifications?.find(
             (v) => isSameRegion(v.region, region) && !!v.verified_at,
           );
           const userSchoolId = verification?.school;
-          const userSchool = userSchoolId
-            ? this.rawSchools.find((s) => s.id === userSchoolId)
-            : undefined;
+          const userSchool = resolvedCode
+            ? this.rawSchools.find((s) => s.code.toUpperCase() === resolvedCode.toUpperCase())
+            : userSchoolId
+              ? this.rawSchools.find((s) => s.id === userSchoolId)
+              : undefined;
           this.selectedSchool = userSchool ? userSchool.code : '';
           this.schoolStateService.setSchool(this.selectedSchool);
           // Signed in but the profile not back yet: it may name a verified

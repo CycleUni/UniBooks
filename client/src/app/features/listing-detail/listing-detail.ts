@@ -24,6 +24,7 @@ import { AccountService } from '../../core/services/account.service';
 import { GoogleAnalyticsService } from '../../core/services/google-analytics.service';
 import { ReportModalComponent } from './report-modal.component';
 import { UiVerificationPrompt } from '../../shared/ui/verification-prompt.component';
+import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
 import { RegionLinkService } from '../../core/region-link.service';
 import { RegionService } from '../../core/region.service';
 import { isSameRegion } from '../../core/region-path';
@@ -35,7 +36,7 @@ import { SeoService } from '../../core/services/seo.service';
 @Component({
   selector: 'app-listing-detail',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, UiButton, UiActionBar, UiSkeleton, UiErrorState, UiEmpty, UiBackButton, UiBreadcrumb, UiListingCard, UiSellerReputation, TPipe, PricePipe, ReportModalComponent, UiVerificationPrompt],
+  imports: [RegionLinkDirective, CommonModule, RouterModule, UiButton, UiActionBar, UiSkeleton, UiErrorState, UiEmpty, UiBackButton, UiBreadcrumb, UiListingCard, UiSellerReputation, TPipe, PricePipe, ReportModalComponent, UiVerificationPrompt, UiVerifiedBadge],
   templateUrl: './listing-detail.html',
   styleUrls: ['./listing-detail.css']
 })
@@ -288,7 +289,8 @@ export class ListingDetail implements OnInit, OnDestroy {
       return false;
     }
     const user = this.auth.getUser();
-    if (user && this.listing && !this.auth.isVerifiedIn(this.listing?.region)) {
+    const region = this.listing?.region || this.regionService.region();
+    if (user && this.listing && this.auth.mustVerifyIn(region) && !this.auth.isVerifiedIn(region)) {
       this.showUnverifiedPrompt = true;
       this.cdr.markForCheck();
       return false;

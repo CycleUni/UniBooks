@@ -32,7 +32,7 @@
               <div class="avatar-image-container" *ngIf="avatarUrl">
                 <img [src]="avatarUrl" [attr.alt]="displayName ? (displayName + ' ' + ('acct.avatarAlt' | t)) : ('acct.avatarAlt' | t)" class="avatar-image" referrerpolicy="no-referrer">
               </div>
-              <h3>{{ displayName || ('acct.defaultUser' | t) }}</h3>
+              <h3>{{ displayName || ('acct.defaultUser' | t) }} <ui-verified-badge *ngIf="isVerified"></ui-verified-badge></h3>
               <p class="school-name">{{ schoolName || ('acct.noSchool' | t) }}</p>
               <!-- Counts from a failed load would be invented zeros. -->
               <p class="profile-stats" *ngIf="!profileFailed">

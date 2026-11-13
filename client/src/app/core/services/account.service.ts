@@ -299,6 +299,14 @@ export class AccountService {
     });
   }
 
+  setDeclaredSchool(region: string, school: string | null, skip?: boolean): Observable<any> {
+    return this.http.put<any>('/auth/me/school', { region, school, skip }).pipe(
+      tap(() => {
+        this.clearProfileCache();
+      })
+    );
+  }
+
 
   /**
    * `opts` narrows and orders the caller's own listings (the account's

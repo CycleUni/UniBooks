@@ -5,7 +5,7 @@ import { and, asc, desc, eq, isNull, like, ne, or, sql, type SQL } from 'drizzle
 import type { AppEnv } from '../env';
 import { afterResponse, apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { LIMITS } from '../lib/limits';
-import { getRegion, isVerifiedIn, liveVerification } from '../lib/region';
+import { activeRegions, getRegion, isVerifiedIn, liveVerification } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware, requireRecentSignIn, requireStaff } from '../middleware/auth';
 import { checkRate, outcomeLimit, platformRateLimit, rateLimit, takeRate } from '../middleware/rateLimit';
 import { turnstileEnabled, verifyTurnstile } from '../lib/turnstile';
@@ -17,7 +17,9 @@ import {
   pushDevices,
   regionVerifications,
   schoolRequests,
+  schools,
   subscriptions,
+  userSchools,
   users,
   type InsertUser,
   type Listing,
@@ -1492,16 +1494,105 @@ accountRoutes.put('/me/site-language', authMiddleware(), async (c) => {
 accountRoutes.put('/me/site-region', authMiddleware(), async (c) => {
   const { region } = await readJson(c.req);
   const userId = c.get('user')!.id;
-  if (typeof region !== 'string' || !region || !(await isVerifiedIn(c.env, userId, region.toUpperCase()))) {
+  if (typeof region !== 'string' || !region) {
     apiError(400, 'common.errValidation');
   }
   const code = region.toUpperCase();
+  const active = await activeRegions(c.env);
+  if (!active.has(code)) {
+    apiError(400, 'common.errValidation');
+  }
   await createDb(c.env.DB)
     .update(users)
     .set({ siteRegion: code })
     .where(and(eq(users.id, userId), ne(users.siteRegion, code)))
     .run();
   return c.body(null, 204);
+});
+
+accountRoutes.put('/me/school', authMiddleware(), async (c) => {
+  const body = await readJson(c.req);
+  const userId = c.get('user')!.id;
+  const { region, school, skip } = body;
+
+  if (typeof region !== 'string' || !region) {
+    fieldErrors({ region: ['common.errValidation'] });
+  }
+  const regionCode = region.toUpperCase();
+  const active = await activeRegions(c.env);
+  if (!active.has(regionCode)) {
+    fieldErrors({ region: ['common.errValidation'] });
+  }
+
+  const now = new Date().toISOString();
+  const db = createDb(c.env.DB);
+
+  // Check for live verification in this region
+  const [liveVerif] = await db
+    .select({
+      id: regionVerifications.id,
+      schoolId: regionVerifications.schoolId,
+    })
+    .from(regionVerifications)
+    .where(and(eq(regionVerifications.userId, userId), eq(regionVerifications.regionCode, regionCode), liveVerification()))
+    .limit(1);
+
+  if (skip === true) {
+    await db.update(users).set({ schoolPromptedAt: now, updatedAt: now }).where(eq(users.id, userId)).run();
+    return c.json({ ok: true });
+  }
+
+  if (school === null) {
+    if (liveVerif) {
+      apiError(400, 'acct.errSchoolLockedByVerification');
+    }
+    await db
+      .delete(userSchools)
+      .where(and(eq(userSchools.userId, userId), eq(userSchools.regionCode, regionCode)))
+      .run();
+    await db.update(users).set({ schoolPromptedAt: now, updatedAt: now }).where(eq(users.id, userId)).run();
+    return c.json({ ok: true, school: null });
+  }
+
+  if (typeof school !== 'string' || !school.trim()) {
+    fieldErrors({ school: ['common.errValidation'] });
+  }
+
+  const [schoolRow] = await db
+    .select()
+    .from(schools)
+    .where(and(eq(schools.regionCode, regionCode), eq(schools.code, school.trim().toUpperCase()), eq(schools.isActive, 1)))
+    .limit(1);
+
+  if (!schoolRow) {
+    fieldErrors({ school: ['common.errValidation'] });
+  }
+
+  if (liveVerif && liveVerif.schoolId !== schoolRow.id) {
+    apiError(400, 'acct.errSchoolLockedByVerification');
+  }
+
+  await db
+    .insert(userSchools)
+    .values({
+      userId,
+      regionCode,
+      schoolId: schoolRow.id,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [userSchools.userId, userSchools.regionCode],
+      set: {
+        schoolId: sql`excluded.school_id`,
+        updatedAt: sql`excluded.updated_at`,
+      },
+    })
+    .run();
+
+  await db.update(users).set({ schoolPromptedAt: now, updatedAt: now }).where(eq(users.id, userId)).run();
+
+  return c.json({ ok: true, school: schoolRow.code });
 });
 
 accountRoutes.get('/member-token', authMiddleware(), platformRateLimit('member_token', RATES.memberToken), async (c) =>

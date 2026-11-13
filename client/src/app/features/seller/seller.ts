@@ -22,11 +22,12 @@ import { intlLocale } from '../../core/i18n';
 import { RegionLinkService } from '../../core/region-link.service';
 import { isSameRegion } from '../../core/region-path';
 import { isUserVerifiedIn } from '../../core/verification';
+import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
 
 @Component({
   selector: 'app-seller-page',
   standalone: true,
-  imports: [CommonModule, UiSkeleton, UiErrorState, UiListingRow, UiPagination, UiInfiniteScroll, UiBreadcrumb, TPipe],
+  imports: [CommonModule, UiSkeleton, UiErrorState, UiListingRow, UiPagination, UiInfiniteScroll, UiBreadcrumb, TPipe, UiVerifiedBadge],
   template: `
     <!-- The profile request gates the whole page; hold its place instead of
          rendering nothing and then snapping the header in. -->
@@ -46,11 +47,10 @@ import { isUserVerifiedIn } from '../../core/verification';
           <img [src]="avatarUrl" [attr.alt]="seller.display_name ? (seller.display_name + ' ' + ('acct.avatarAlt' | t)) : ('acct.avatarAlt' | t)" class="seller-avatar-image" referrerpolicy="no-referrer">
         </div>
         <div class="seller-info">
-          <h1 class="seller-name">{{ seller.display_name }}</h1>
+          <h1 class="seller-name">{{ seller.display_name }} <ui-verified-badge *ngIf="isSellerVerified()"></ui-verified-badge></h1>
           <div class="seller-meta">
             <span class="seller-school">
               {{ seller.school_name }}
-              <span class="verified-badge" *ngIf="isSellerVerified()" [title]="'seller.verifiedBadge' | t">✓</span>
             </span>
             <span class="seller-joined">
               {{ 'seller.joined' | t }}{{ getFormattedDate(seller.created_at) }}
@@ -395,6 +395,7 @@ export class SellerPageComponent implements OnInit {
   }
 
   isSellerVerified(): boolean {
+    if (this.seller?.is_verified !== undefined) return !!this.seller.is_verified;
     return isUserVerifiedIn(this.seller?.verifications, this.regionService.region());
   }
 

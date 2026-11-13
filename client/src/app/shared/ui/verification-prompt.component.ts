@@ -1,14 +1,13 @@
 import { Component, Input, Output, EventEmitter, booleanAttribute, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { TPipe } from '../../core/i18n.service';
+import { I18nService, TPipe } from '../../core/i18n.service';
 import { RegionService } from '../../core/region.service';
 import { AuthStore } from '../../core/auth.store';
 import { UiFloatingPrompt } from './floating-prompt.component';
 
 /**
- * Tells a member whose school email is not verified yet that listing and
- * messaging need it, as a floating card (ui-floating-prompt) in the same style
- * as the language and push offers; the three share one slot, so they queue.
+ * Tells a member whose school requires campus verification that trading
+ * needs it, as a floating card (ui-floating-prompt).
  */
 @Component({
   selector: 'ui-verification-prompt',
@@ -20,15 +19,8 @@ import { UiFloatingPrompt } from './floating-prompt.component';
         icon="mail"
         testId="verification-prompt"
         [priority]="2"
-        [title]="title || ('acct.unverifiedTitle' | t)"
-        [description]="
-          message ||
-          ('acct.unverifiedDesc'
-            | t
-              : {
-                  suffix: regionService.currentRegionObj()?.edu_email_suffix?.join(', ') || '.edu',
-                })
-        "
+        [title]="promptTitle"
+        [description]="promptMessage"
         [acceptLabel]="'verifyPrompt.go' | t"
         [dismissLabel]="'verifyPrompt.later' | t"
         (accept)="goVerify()"
@@ -41,6 +33,7 @@ export class UiVerificationPrompt {
   protected regionService = inject(RegionService);
   private router = inject(Router);
   private authStore = inject(AuthStore);
+  private i18n = inject(I18nService);
 
   @Input() storageKey = 'unibooks.verification_prompt.dismissed';
   /**
@@ -51,9 +44,9 @@ export class UiVerificationPrompt {
    */
   @Input() requested = false;
   /**
-   * The card decides for itself: only for a signed-in member (profile loaded)
-   * without a verified school email in this region. Without it the owner
-   * decides by rendering it or not.
+   * The card decides for itself: only for a signed-in member whose school
+   * requires verification and who does not hold a live verification in this region.
+   * Without it the owner decides by rendering it or not.
    */
   @Input({ transform: booleanAttribute }) whenUnverified = false;
   @Input() title = '';
@@ -62,7 +55,26 @@ export class UiVerificationPrompt {
 
   get shouldShow(): boolean {
     if (!this.whenUnverified || this.requested) return true;
-    return !!this.authStore.user() && !this.authStore.isVerifiedIn(this.regionService.region());
+    const user = this.authStore.user();
+    if (!user) return false;
+    const region = this.regionService.region();
+    return this.authStore.mustVerifyIn(region) && !this.authStore.isVerifiedIn(region);
+  }
+
+  get promptTitle(): string {
+    return this.title || this.i18n.t('acct.unverifiedTitle');
+  }
+
+  get promptMessage(): string {
+    if (this.message) return this.message;
+    const region = this.regionService.region();
+    const school = this.authStore.schoolForRegion(region);
+    if (school) {
+      return this.i18n.t('acct.errVerificationRequiredForSchool', { school, region });
+    }
+    return this.i18n.t('acct.unverifiedDesc', {
+      suffix: this.regionService.currentRegionObj()?.edu_email_suffix?.join(', ') || '.edu',
+    });
   }
 
   get isDismissed(): boolean {

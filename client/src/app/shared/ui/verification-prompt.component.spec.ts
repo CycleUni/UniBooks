@@ -1,24 +1,45 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { UiVerificationPrompt } from './verification-prompt.component';
 import { provideRouter } from '@angular/router';
 import { I18nService } from '../../core/i18n.service';
 import { RegionService } from '../../core/region.service';
-
+import { AuthStore } from '../../core/auth.store';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 
 describe('UiVerificationPrompt', () => {
   let component: UiVerificationPrompt;
   let fixture: ComponentFixture<UiVerificationPrompt>;
+  let mockAuth: any;
+  let userSignal: any;
 
   beforeEach(async () => {
-    sessionStorage.clear();
+    const storage = typeof window !== 'undefined' ? window.sessionStorage : (globalThis as any).sessionStorage;
+    if (storage) storage.clear();
+    userSignal = signal({ email: 'test@example.com' });
+    mockAuth = {
+      user: userSignal,
+      mustVerifyIn: () => true,
+      isVerifiedIn: () => false,
+      schoolForRegion: () => 'National Taiwan Univ',
+    };
 
     await TestBed.configureTestingModule({
       imports: [UiVerificationPrompt],
       providers: [
-        { provide: RegionService, useValue: { regions: () => [{ code: 'tw', currency: { code: 'TWD', decimal_places: 0 } }], currency: () => ({ code: 'TWD', decimal_places: 0 }), region: () => 'tw', currentRegionObj: () => ({ search_engines: ['googlebooks'] }) } },
+        {
+          provide: RegionService,
+          useValue: {
+            regions: () => [{ code: 'tw', currency: { code: 'TWD', decimal_places: 0 } }],
+            currency: () => ({ code: 'TWD', decimal_places: 0 }),
+            region: () => 'tw',
+            currentRegionObj: () => ({ search_engines: ['googlebooks'], edu_email_suffix: ['.edu.tw'] }),
+          },
+        },
         provideRouter([]),
-        { provide: I18nService, useValue: { t: (k: string) => k, lang: () => 'zh-TW' } }
-      ]
+        { provide: I18nService, useValue: { t: (k: string, p?: any) => (p?.school ? `${p.school} 要求先驗證` : k), lang: () => 'zh-TW' } },
+        { provide: AuthStore, useValue: mockAuth },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(UiVerificationPrompt);
@@ -31,7 +52,8 @@ describe('UiVerificationPrompt', () => {
     fixture.nativeElement.querySelectorAll('[data-testid="verification-prompt"] button')[1] as HTMLButtonElement;
 
   afterEach(() => {
-    sessionStorage.clear();
+    const storage = typeof window !== 'undefined' ? window.sessionStorage : (globalThis as any).sessionStorage;
+    if (storage) storage.clear();
   });
 
   it('should render the prompt when not dismissed', () => {
@@ -65,6 +87,21 @@ describe('UiVerificationPrompt', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="verification-prompt"]')).toBeNull();
 
     fixture.componentRef.setInput('requested', true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="verification-prompt"]')).toBeTruthy();
+  });
+
+  it('whenUnverified only shows when mustVerifyIn is true', async () => {
+    fixture.componentRef.setInput('whenUnverified', true);
+    mockAuth.mustVerifyIn = () => false;
+    userSignal.set({ email: 'test@example.com', v: 1 });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="verification-prompt"]')).toBeNull();
+
+    mockAuth.mustVerifyIn = () => true;
+    userSignal.set({ email: 'test@example.com', v: 2 });
+    fixture.detectChanges();
+    await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="verification-prompt"]')).toBeTruthy();
   });

@@ -1,6 +1,6 @@
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
-import { createDb, regionVerifications } from '../../db';
+import { createDb, regionVerifications, userSchools, users } from '../../db';
 import { isUniqueViolation } from '../../lib/db';
 import { activeRegionDetails, schoolDomains, type Row } from './regionData';
 
@@ -139,6 +139,28 @@ export async function upsertVerification(
           isActive: 1,
         },
       })
+      .run();
+    await createDb(env.DB)
+      .insert(userSchools)
+      .values({
+        userId,
+        regionCode,
+        schoolId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [userSchools.userId, userSchools.regionCode],
+        set: {
+          schoolId: sql`excluded.school_id`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+      })
+      .run();
+    await createDb(env.DB)
+      .update(users)
+      .set({ schoolPromptedAt: now, updatedAt: now })
+      .where(and(eq(users.id, userId), isNull(users.schoolPromptedAt)))
       .run();
     return true;
   } catch (e) {

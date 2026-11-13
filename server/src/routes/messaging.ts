@@ -5,7 +5,7 @@ import { books, conversations, createDb, listings } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
 import { apiError, notFound, pagination, readJson } from '../lib/http';
-import { requireRegion, isVerifiedIn } from '../lib/region';
+import { requireRegion, assertMayTrade } from '../lib/region';
 import { mintChatToken } from '../services/chatTokens';
 import {
   getConversation,
@@ -84,9 +84,7 @@ authed.post('/conversations', async (c) => {
       : [];
   const region = await requireRegion(c);
   const verifyIn = target?.regionCode ?? region.code;
-  if (!(await isVerifiedIn(c.env, user.id, verifyIn))) {
-    apiError(403, 'acct.errUnverifiedInRegion', { region: verifyIn });
-  }
+  await assertMayTrade(c, verifyIn);
 
   if (!listingId) apiError(400, 'msg.errListingRequired');
   if (!UUID_LOOSE_RE.test(listingId)) apiError(404, 'msg.errListingNotFound');

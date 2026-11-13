@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex, unique } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex, unique, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 
@@ -157,6 +157,7 @@ export const users = sqliteTable('users', {
   emailLanguage: text('email_language').notNull().default('auto'),
   siteLanguage: text('site_language').notNull().default(''),
   siteRegion: text('site_region').notNull().default(''),
+  schoolPromptedAt: text('school_prompted_at'),
   // Set when the owner deletes the account; the row stays, anonymized.
   deletedAt: text('deleted_at'),
   createdAt: text('created_at').notNull(),
@@ -191,6 +192,7 @@ export const schools = sqliteTable(
     googleDomains: text('google_domains').notNull().default('[]'),
     translations: text('translations').notNull().default('{}'),
     cityId: integer('city_id').references(() => cities.id, { onDelete: 'set null' }),
+    requiresVerification: integer('requires_verification').notNull().default(0),
     isActive: integer('is_active').notNull().default(1),
     createdAt: text('created_at').notNull(),
   },
@@ -200,6 +202,31 @@ export const schools = sqliteTable(
 export type School = InferSelectModel<typeof schools>;
 export type InsertSchool = InferInsertModel<typeof schools>;
 export type NewSchool = InsertSchool;
+
+// ============================================================================
+// 7.1 User Schools (Declared school per user per region)
+// ============================================================================
+export const userSchools = sqliteTable(
+  'user_schools',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    regionCode: text('region_code')
+      .notNull()
+      .references(() => regions.code, { onDelete: 'cascade' }),
+    schoolId: integer('school_id')
+      .notNull()
+      .references(() => schools.id, { onDelete: 'cascade' }),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.regionCode] })],
+);
+
+export type UserSchool = InferSelectModel<typeof userSchools>;
+export type InsertUserSchool = InferInsertModel<typeof userSchools>;
+export type NewUserSchool = InsertUserSchool;
 
 // ============================================================================
 // 8. Region Verifications

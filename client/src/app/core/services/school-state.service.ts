@@ -28,6 +28,7 @@ export interface SchoolOption {
   accepted_domains?: string[];
   /** Code of the city the school is in; null when it has none. */
   city?: string | null;
+  requires_verification?: boolean | number;
 }
 
 /** A city as listed by /core/metadata/, in display order. */
