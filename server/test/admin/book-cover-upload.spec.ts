@@ -126,8 +126,9 @@ describe('admin book cover uploads', () => {
     expect(row.coverR2Key).toMatch(new RegExp(`^covers/custom/${bookId}-[0-9a-f]{32}\\.png$`));
     expect(await env.R2.get(row.coverR2Key!)).not.toBeNull();
 
-    // The served cover_url matches the R2 public URL
-    expect(saved.book.cover_url).toContain(`/api/media/${row.coverR2Key}`);
+    // The served cover_url is that object under whatever base serves the
+    // bucket: /api/media locally, the public R2 domain where one is configured (CI).
+    expect(saved.book.cover_url.endsWith(`/${row.coverR2Key}`)).toBe(true);
 
     // GET detail returns the served cover URL
     const getRes = await call(`/api/v1/admin/books/${bookId}`, { token: root.token });
