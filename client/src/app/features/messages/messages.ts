@@ -1104,6 +1104,19 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
     }
   }
 
+  onStartOrder(listingIds: string[]) {
+    if (!listingIds.length || !this.activeChat) return;
+    if (listingIds.length === 1) {
+      this.router.navigate(this.regionLink.path(['/checkout', listingIds[0]]), {
+        queryParams: { chat: this.activeChat.id },
+      });
+    } else {
+      this.router.navigate(this.regionLink.path(['/checkout']), {
+        queryParams: { listings: listingIds.join(','), chat: this.activeChat.id },
+      });
+    }
+  }
+
   goToOrder() {
     if (this.activeChat?.order_id) {
       this.router.navigate(this.regionLink.path(['/account/orders']), { queryParams: { orderId: this.activeChat.order_id } });

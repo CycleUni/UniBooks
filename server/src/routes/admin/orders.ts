@@ -9,6 +9,7 @@ import { likeContains, notFound, regionParam, scopeOf, scopeWhere, uuidId } from
 import { forceCancelOrder } from '../../services/orders/cancel';
 import { bookSearch, PLATFORM_CANCEL_REASON_MIN_LENGTH } from './listings';
 import { LIMITS } from '../../lib/limits';
+import { fetchItemsForOrders, type SerializedOrderItem } from '../../services/orders/serialize';
 
 /**
  * Read-only list/detail plus force-cancel.
@@ -28,20 +29,36 @@ function orderSelect(db: Database) {
 
 type OrderRow = Awaited<ReturnType<ReturnType<typeof orderSelect>['limit']>>[number];
 
-export function orderJson(row: OrderRow) {
+export function orderJson(row: OrderRow, items: SerializedOrderItem[] = []) {
   const o = row.o;
+  const resolvedItems =
+    items.length > 0
+      ? items
+      : [
+          {
+            listing_id: o.listingId,
+            listing_ref: o.listingRef ?? o.listingId ?? '',
+            title: o.bookTitle,
+            isbn: o.bookIsbn,
+            price: o.totalAmount,
+            cover_url: null,
+          },
+        ];
+  const primaryTitle = resolvedItems[0]?.title || o.bookTitle;
+  const displayTitle = resolvedItems.length > 1 ? `${primaryTitle} (+${resolvedItems.length - 1})` : primaryTitle;
   return {
     id: o.id,
     buyer: { id: o.buyerId, email: row.buyerEmail },
     seller: { id: o.sellerId, email: row.sellerEmail },
     // From the snapshot: the order outlives a deleted listing.
-    listing: { id: String(o.listingRef ?? o.listingId ?? ''), book_title: o.bookTitle, deleted: o.listingId === null },
+    listing: { id: String(o.listingRef ?? o.listingId ?? ''), book_title: displayTitle, deleted: o.listingId === null },
     region: o.regionCode,
     status: o.status,
     total_amount: o.totalAmount,
     currency: o.currencyCode,
     created_at: o.createdAt,
     updated_at: o.updatedAt,
+    items: resolvedItems,
   };
 }
 
@@ -77,7 +94,16 @@ orderRoutes.get('/orders', async (c) => {
     .innerJoin(seller, eq(seller.id, orders.sellerId))
     .where(where);
   const rows = await orderSelect(db).where(where).orderBy(desc(orders.createdAt), desc(orders.id)).limit(page.limit).offset(page.offset);
-  return c.json(page.wrap(rows.map(orderJson), n));
+  const itemsMap = await fetchItemsForOrders(
+    c.env,
+    rows.map((r) => r.o.id),
+  );
+  return c.json(
+    page.wrap(
+      rows.map((r) => orderJson(r, itemsMap.get(r.o.id) ?? [])),
+      n,
+    ),
+  );
 });
 
 async function loadOrder(c: Context<AppEnv>, db: Database, id: string): Promise<OrderRow> {
@@ -90,7 +116,10 @@ async function loadOrder(c: Context<AppEnv>, db: Database, id: string): Promise<
 
 orderRoutes.get('/orders/:id', async (c) => {
   const db = createDb(c.env.DB);
-  return c.json(orderJson(await loadOrder(c, db, uuidId(c.req.param('id')))));
+  const id = uuidId(c.req.param('id'));
+  const row = await loadOrder(c, db, id);
+  const itemsMap = await fetchItemsForOrders(c.env, [id]);
+  return c.json(orderJson(row, itemsMap.get(id) ?? []));
 });
 
 orderRoutes.post('/orders/:id/force-cancel', async (c) => {

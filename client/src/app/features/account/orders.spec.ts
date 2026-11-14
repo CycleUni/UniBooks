@@ -395,4 +395,29 @@ describe('OrdersComponent search', () => {
     component.searchQuery = 'bob';
     expect(component.filteredSoldOrders.length).toBe(1);
   });
+
+  it('renders all items when multi-item order is expanded', () => {
+    const fixture = TestBed.createComponent(OrdersComponent);
+    const comp = fixture.componentInstance;
+    comp.isLoading = false;
+    comp.boughtOrders = [{
+      ...order,
+      listing_title: '《Book 1》等 2 本',
+      total_amount: 500,
+      currency: 'TWD',
+      items: [
+        { listing_id: 'l1', listing_ref: 'r1', title: 'Book 1', isbn: '9781', price: 200, cover_url: null },
+        { listing_id: 'l2', listing_ref: 'r2', title: 'Book 2', isbn: '9782', price: 300, cover_url: null },
+      ],
+    }];
+    comp.activeTab = 'buying';
+    comp.toggleDetails(comp.boughtOrders[0]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const itemEntries = el.querySelectorAll('.order-item-entry');
+    expect(itemEntries.length).toBe(2);
+    expect(itemEntries[0].textContent).toContain('Book 1');
+    expect(itemEntries[1].textContent).toContain('Book 2');
+  });
 });

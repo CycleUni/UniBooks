@@ -197,6 +197,24 @@ beforeAll(async () => {
     completedAt: ago(2),
   });
 
+  await env.DB.prepare(
+    `
+    INSERT INTO order_items (id, order_id, listing_id, listing_ref, book_title, book_isbn, price, buyer_id, is_open, created_at)
+    SELECT
+      lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-a' || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))),
+      id,
+      listing_id,
+      coalesce(listing_ref, listing_id, ''),
+      book_title,
+      book_isbn,
+      total_amount,
+      buyer_id,
+      CASE WHEN status IN ('pending', 'accepted', 'handed_over') THEN 1 ELSE 0 END,
+      created_at
+    FROM orders;
+  `,
+  ).run();
+
   for (let i = 0; i < 24; i++) {
     const id = `40000000-0000-4000-8000-0000000000${String(i).padStart(2, '0')}`;
     const hours = Math.floor(rnd() * 3000);

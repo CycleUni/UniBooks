@@ -15,6 +15,7 @@ import {
   createDb,
   listings,
   orders,
+  orderItems,
   regionVerifications,
   regions,
   reports,
@@ -125,12 +126,13 @@ async function orderGroups(db: Database, code: string, start: string | null, lis
       orderCount: sql<number>`count(*)`,
       completedCount: sql<number>`coalesce(sum(${completed}), 0)`,
       cancelledCount: sql<number>`coalesce(sum(${orders.status} = 'cancelled'), 0)`,
-      gmv: sql<number>`coalesce(sum(CASE WHEN ${completed} THEN ${orders.totalAmount} END), 0)`,
-      minPrice: sql<number | null>`min(CASE WHEN ${completed} THEN ${orders.totalAmount} END)`,
-      maxPrice: sql<number | null>`max(CASE WHEN ${completed} THEN ${orders.totalAmount} END)`,
+      gmv: sql<number>`coalesce(sum(CASE WHEN ${completed} THEN ${orderItems.price} END), 0)`,
+      minPrice: sql<number | null>`min(CASE WHEN ${completed} THEN ${orderItems.price} END)`,
+      maxPrice: sql<number | null>`max(CASE WHEN ${completed} THEN ${orderItems.price} END)`,
     })
     .from(orders)
-    .leftJoin(listings, eq(listings.id, orders.listingId))
+    .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+    .leftJoin(listings, eq(listings.id, orderItems.listingId))
     .where(and(eq(orders.regionCode, code), inWindow(orders.createdAt, start), listingCond))
     .groupBy(listings.bookId);
   return new Map(
@@ -166,9 +168,10 @@ async function completedBySchool(
   extra?: SQL,
 ): Promise<{ schoolId: number; n: number; gmv: number }[]> {
   const rows = await db
-    .select({ schoolId: listings.schoolId, n: count(), gmv: sql<number>`coalesce(sum(${orders.totalAmount}), 0)` })
+    .select({ schoolId: listings.schoolId, n: count(), gmv: sql<number>`coalesce(sum(${orderItems.price}), 0)` })
     .from(orders)
-    .innerJoin(listings, eq(listings.id, orders.listingId))
+    .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+    .innerJoin(listings, eq(listings.id, orderItems.listingId))
     .where(
       and(
         eq(orders.regionCode, code),
@@ -185,12 +188,20 @@ async function completedBySchool(
 /** `{status: n}` for the region's orders in the window (every known status present), plus the extra statuses found. */
 async function orderStatusCounts(db: Database, code: string, start: string | null, extra?: SQL): Promise<Record<string, number>> {
   const out: Record<string, number> = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0]));
-  const rows = await db
-    .select({ status: orders.status, n: count() })
-    .from(orders)
-    .leftJoin(listings, eq(listings.id, orders.listingId))
-    .where(and(eq(orders.regionCode, code), inWindow(orders.createdAt, start), extra))
-    .groupBy(orders.status);
+  const query = extra
+    ? db
+        .select({ status: orders.status, n: count() })
+        .from(orders)
+        .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+        .leftJoin(listings, eq(listings.id, orderItems.listingId))
+        .where(and(eq(orders.regionCode, code), inWindow(orders.createdAt, start), extra))
+        .groupBy(orders.status)
+    : db
+        .select({ status: orders.status, n: count() })
+        .from(orders)
+        .where(and(eq(orders.regionCode, code), inWindow(orders.createdAt, start)))
+        .groupBy(orders.status);
+  const rows = await query;
   for (const r of rows) out[r.status] = (out[r.status] ?? 0) + r.n;
   return out;
 }
@@ -246,14 +257,17 @@ async function bucketTotals(db: Database, buckets: SeriesBuckets, rows: SQL): Pr
 
 /** Orders per bucket, completed orders and (with `withGmv`) their GMV, of the orders `where` selects; `join` adds the listing when `where` needs it. */
 async function orderSeries(db: Database, buckets: SeriesBuckets, where: SQL, { withGmv = true, join = false } = {}) {
-  const from = join ? sql`FROM orders INNER JOIN listings ON listings.id = orders.listing_id` : sql`FROM orders`;
+  const from = join
+    ? sql`FROM orders INNER JOIN order_items ON order_items.order_id = orders.id INNER JOIN listings ON listings.id = order_items.listing_id`
+    : sql`FROM orders`;
+  const amountCol = join ? sql`order_items.price` : sql`orders.total_amount`;
   const since = sql`orders.created_at >= ${buckets.start}`;
   const [all, done] = await Promise.all([
     bucketTotals(db, buckets, sql`SELECT orders.created_at AS at, 0 AS v ${from} WHERE ${where} AND ${since}`),
     bucketTotals(
       db,
       buckets,
-      sql`SELECT orders.created_at AS at, orders.total_amount AS v ${from} WHERE ${where} AND ${since} AND orders.status = 'completed'`,
+      sql`SELECT orders.created_at AS at, ${amountCol} AS v ${from} WHERE ${where} AND ${since} AND orders.status = 'completed'`,
     ),
   ]);
   return buckets.labels.map((label) => {
@@ -926,10 +940,11 @@ statsRoutes.get('/stats/breakdown', async (c) => {
       key: groupCol,
       orders: count(),
       completed: sql<number>`coalesce(sum(${orders.status} = 'completed'), 0)`,
-      gmv: sql<number>`coalesce(sum(CASE WHEN ${orders.status} = 'completed' THEN ${orders.totalAmount} END), 0)`,
+      gmv: sql<number>`coalesce(sum(CASE WHEN ${orders.status} = 'completed' THEN ${orderItems.price} END), 0)`,
     })
     .from(orders)
-    .leftJoin(listings, eq(listings.id, orders.listingId))
+    .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+    .leftJoin(listings, eq(listings.id, orderItems.listingId))
     .where(and(eq(orders.regionCode, region.code), inWindow(orders.createdAt, start), school ? eq(listings.schoolId, school) : undefined))
     .groupBy(groupCol);
   for (const g of orderGroupsByKey) {
@@ -1044,18 +1059,20 @@ statsRoutes.get('/stats/books/:id', async (c) => {
     db
       .select({ n: count() })
       .from(orders)
-      .innerJoin(listings, eq(listings.id, orders.listingId))
+      .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+      .innerJoin(listings, eq(listings.id, orderItems.listingId))
       .where(and(thisBook, eq(orders.status, 'completed'))),
     db
       .select({
         id: orders.id,
         status: orders.status,
-        totalAmount: orders.totalAmount,
+        totalAmount: orderItems.price,
         createdAt: orders.createdAt,
         schoolId: listings.schoolId,
       })
       .from(orders)
-      .innerJoin(listings, eq(listings.id, orders.listingId))
+      .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+      .innerJoin(listings, eq(listings.id, orderItems.listingId))
       .where(thisBook)
       .orderBy(desc(orders.createdAt), sql`${orders}.rowid`)
       .limit(10),
@@ -1161,9 +1178,9 @@ statsRoutes.get('/stats/growth', async (c) => {
   // join-free statement, which would bind the inner columns to themselves.
   // A chat and an order are the same pair when they name the same listing (kept by its ref once deleted) and buyer.
   const chatOrder = (completed: boolean) =>
-    sql`EXISTS (SELECT 1 FROM orders o WHERE o.region_code = ${code} AND coalesce(o.listing_ref, o.listing_id) IS coalesce(conversations.listing_ref, conversations.listing_id) AND o.buyer_id = conversations.buyer_id AND (${completed ? 1 : 0} = 0 OR o.status = 'completed'))`;
+    sql`EXISTS (SELECT 1 FROM orders o INNER JOIN order_items oi ON oi.order_id = o.id WHERE o.region_code = ${code} AND (coalesce(oi.listing_ref, oi.listing_id) IS coalesce(conversations.listing_ref, conversations.listing_id) OR EXISTS (SELECT 1 FROM conversation_listings cl WHERE cl.conversation_id = conversations.id AND coalesce(oi.listing_ref, oi.listing_id) = cl.listing_ref)) AND o.buyer_id = conversations.buyer_id AND (${completed ? 1 : 0} = 0 OR o.status = 'completed'))`;
   const requestOrder = (completed: boolean) =>
-    sql`EXISTS (SELECT 1 FROM orders o INNER JOIN listings l ON l.id = o.listing_id WHERE o.region_code = ${code} AND o.buyer_id = subscriptions.user_id AND l.book_id = subscriptions.book_id AND o.created_at >= subscriptions.created_at AND (${completed ? 1 : 0} = 0 OR o.status = 'completed'))`;
+    sql`EXISTS (SELECT 1 FROM orders o INNER JOIN order_items oi ON oi.order_id = o.id INNER JOIN listings l ON l.id = oi.listing_id WHERE o.region_code = ${code} AND o.buyer_id = subscriptions.user_id AND l.book_id = subscriptions.book_id AND o.created_at >= subscriptions.created_at AND (${completed ? 1 : 0} = 0 OR o.status = 'completed'))`;
 
   const [periodListings, firstChat, firstOrder, sales, buyerRows, orderSellers, listingSellers, chatTotals, requestTotals] =
     await Promise.all([
@@ -1178,14 +1195,16 @@ statsRoutes.get('/stats/growth', async (c) => {
         .where(and(eq(conversations.regionCode, code), inArray(conversations.listingId, windowListingIds)))
         .groupBy(conversations.listingId),
       db
-        .select({ listingId: orders.listingId, at: sql<string>`min(${orders.createdAt})` })
-        .from(orders)
-        .where(and(eq(orders.regionCode, code), inArray(orders.listingId, windowListingIds)))
-        .groupBy(orders.listingId),
+        .select({ listingId: orderItems.listingId, at: sql<string>`min(${orders.createdAt})` })
+        .from(orderItems)
+        .innerJoin(orders, eq(orders.id, orderItems.orderId))
+        .where(and(eq(orders.regionCode, code), inArray(orderItems.listingId, windowListingIds)))
+        .groupBy(orderItems.listingId),
       db
         .select({ createdAt: orders.createdAt, completedAt: orders.completedAt, listingCreatedAt: listings.createdAt })
         .from(orders)
-        .leftJoin(listings, eq(listings.id, orders.listingId))
+        .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+        .leftJoin(listings, eq(listings.id, orderItems.listingId))
         .where(and(periodOrderCond, eq(orders.status, 'completed'), isNotNull(orders.completedAt))),
       // People
       db.select({ id: orders.buyerId, n: count() }).from(orders).where(periodOrderCond).groupBy(orders.buyerId),

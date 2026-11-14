@@ -69,6 +69,7 @@ const featureRoutes: Routes = [
   // the same answer, instead of leaving them on a page whose only button fails.
   // actionBar: the page pins its primary actions to the bottom on phones
   // (ui-action-bar), so the layout drops the tab bar there.
+  { path: 'checkout', data: { seo: { titleKey: 'checkout.title' }, actionBar: true, hidePrefs: true }, canActivate: [authGuard], loadComponent: () => import('./features/checkout/checkout').then(m => m.CheckoutComponent) },
   { path: 'checkout/:id', data: { seo: { titleKey: 'checkout.title' }, actionBar: true, hidePrefs: true }, canActivate: [authGuard], loadComponent: () => import('./features/checkout/checkout').then(m => m.CheckoutComponent) },
   { path: 'listing/:id', data: { preload: true, actionBar: true }, loadComponent: () => import('./features/listing-detail/listing-detail').then(m => m.ListingDetail) },
   { path: 'seller/:id', data: { preload: true }, loadComponent: () => import('./features/seller/seller').then(m => m.SellerPageComponent) },

@@ -148,6 +148,15 @@ import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
         >{{ (isExpanded(order) ? 'order.hideDetails' : 'order.showDetails') | t }}</button>
 
         <div class="order-details" *ngIf="isExpanded(order)" [id]="'order-details-' + order.id">
+          <div class="order-items-section" *ngIf="order.items && order.items.length > 1">
+            <h4 class="order-items-heading">{{ 'order.itemsList' | t }}</h4>
+            <ul class="order-items-list">
+              <li *ngFor="let it of order.items" class="order-item-entry">
+                <span class="item-title">{{ it.title }}</span>
+                <span class="item-price">{{ it.price | price: order.currency }}</span>
+              </li>
+            </ul>
+          </div>
           <dl>
             <div class="detail-row">
               <dt>{{ 'order.orderId' | t }}</dt>
@@ -180,8 +189,15 @@ import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
             </div>
           </dl>
           <div class="detail-links">
-            <a *ngIf="!order.listing_deleted" [regionLink]="['/listing', order.listing]">{{ 'order.viewListing' | t }}</a>
-            <span *ngIf="order.listing_deleted" class="text-muted">{{ 'common.listingDeleted' | t }}</span>
+            <ng-container *ngIf="order.items && order.items.length > 1; else singleLink">
+              <ng-container *ngFor="let it of order.items">
+                <a *ngIf="it.listing_id" [regionLink]="['/listing', it.listing_id]">{{ it.title }}</a>
+              </ng-container>
+            </ng-container>
+            <ng-template #singleLink>
+              <a *ngIf="!order.listing_deleted" [regionLink]="['/listing', order.listing]">{{ 'order.viewListing' | t }}</a>
+              <span *ngIf="order.listing_deleted" class="text-muted">{{ 'common.listingDeleted' | t }}</span>
+            </ng-template>
             <a *ngIf="order.conversation_id" [regionLink]="['/messages']" [queryParams]="{ chat: order.conversation_id }">{{ 'order.openConversation' | t }}</a>
           </div>
         </div>
@@ -191,6 +207,39 @@ import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
       <app-review-modal *ngIf="reviewingOrderId" [orderId]="reviewingOrderId" (onClosed)="onReviewModalClosed($event)"></app-review-modal>
   `,
   styles: [`
+    .order-items-section {
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .order-items-heading {
+      margin: 0 0 8px;
+      font-size: var(--text-sm);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .order-items-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .order-item-entry {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--text-sm);
+    }
+    .order-item-entry .item-title {
+      color: var(--ink);
+      font-weight: 500;
+    }
+    .order-item-entry .item-price {
+      color: var(--accent);
+      font-weight: 600;
+    }
     .tabs {
       display: flex;
       gap: 16px;

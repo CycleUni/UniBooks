@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { and, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../../env';
-import { books, createDb, listings, orders, schools, users, type Database } from '../../db';
+import { books, createDb, listings, orders, orderItems, schools, users, type Database } from '../../db';
 import { apiError, pagination, readJson } from '../../lib/http';
 import { LIMITS } from '../../lib/limits';
 import { getRegion } from '../../lib/region';
@@ -174,7 +174,15 @@ listingRoutes.patch('/listings/:id', async (c) => {
       const [{ n: openOrders }] = await db
         .select({ n: count() })
         .from(orders)
-        .where(and(eq(orders.listingId, l.id), inArray(orders.status, [...ACTIVE_ORDER_STATUSES])));
+        .where(
+          and(
+            inArray(orders.status, [...ACTIVE_ORDER_STATUSES]),
+            or(
+              eq(orders.listingId, l.id),
+              sql`EXISTS (SELECT 1 FROM ${orderItems} WHERE ${orderItems.orderId} = ${orders.id} AND ${orderItems.listingId} = ${l.id})`,
+            ),
+          ),
+        );
       if (openOrders && s !== 'removed') apiError(409, 'listing.errHasActiveOrders');
       if (openOrders) {
         // Same as the admin delete: a written reason, and the open orders
@@ -264,7 +272,15 @@ listingRoutes.delete('/listings/:id', async (c) => {
   const [{ n: openOrders }] = await db
     .select({ n: count() })
     .from(orders)
-    .where(and(eq(orders.listingId, l.id), inArray(orders.status, [...ACTIVE_ORDER_STATUSES])));
+    .where(
+      and(
+        inArray(orders.status, [...ACTIVE_ORDER_STATUSES]),
+        or(
+          eq(orders.listingId, l.id),
+          sql`EXISTS (SELECT 1 FROM ${orderItems} WHERE ${orderItems.orderId} = ${orders.id} AND ${orderItems.listingId} = ${l.id})`,
+        ),
+      ),
+    );
   if (reason.length > LIMITS.cancelReason) {
     throw new HTTPException(400, {
       res: Response.json({ error: { code: 'admin.errInvalidReason' }, open_orders: openOrders }, { status: 400 }),

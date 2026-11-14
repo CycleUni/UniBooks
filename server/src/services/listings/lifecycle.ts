@@ -3,7 +3,7 @@
  */
 import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
-import { books, conversations, conversationListings, createDb, listings, orders, subscriptions } from '../../db';
+import { books, conversations, conversationListings, createDb, listings, orders, orderItems, subscriptions } from '../../db';
 import { parsePhotos } from '../../lib/json';
 import { deleteListingPhotos } from './photos';
 import { chatRoomStub } from '../../lib/chat';
@@ -16,7 +16,15 @@ export async function hasActiveOrders(env: Env, listingId: string): Promise<bool
   const [row] = await createDb(env.DB)
     .select({ id: orders.id })
     .from(orders)
-    .where(and(eq(orders.listingId, listingId), inArray(orders.status, ACTIVE_ORDER_STATUSES)))
+    .where(
+      and(
+        inArray(orders.status, ACTIVE_ORDER_STATUSES),
+        or(
+          eq(orders.listingId, listingId),
+          sql`EXISTS (SELECT 1 FROM ${orderItems} WHERE ${orderItems.orderId} = ${orders.id} AND ${orderItems.listingId} = ${listingId})`,
+        ),
+      ),
+    )
     .limit(1);
   return !!row;
 }

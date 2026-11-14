@@ -15,6 +15,8 @@ import {
   userSchools,
 } from '../../db';
 import { displayName } from '../accounts/users';
+import { coverUrlFor } from '../catalog/covers';
+import { parsePhotos } from '../../lib/json';
 
 /**
  * The viewer's orders (as
@@ -150,11 +152,94 @@ function schoolName(raw: string | null, lang: string | null): string {
   }
 }
 
-export function serializeOrder(r: Row, lang: string | null) {
+export interface SerializedOrderItem {
+  listing_id: string | null;
+  listing_ref: string;
+  title: string;
+  isbn: string;
+  price: number;
+  cover_url: string | null;
+}
+
+export async function fetchItemsForOrders(env: Env, orderIds: string[]): Promise<Map<string, SerializedOrderItem[]>> {
+  const ids = [...new Set(orderIds.filter(Boolean))];
+  const map = new Map<string, SerializedOrderItem[]>();
+  if (!ids.length) return map;
+
+  const rows = await env.DB.prepare(
+    `SELECT oi.order_id, oi.listing_id, oi.listing_ref, oi.book_title, oi.book_isbn, oi.price,
+            l.photos AS l_photos, b.cover_url AS b_cover, b.cover_r2_key AS b_cover_r2_key
+     FROM order_items oi
+     LEFT JOIN listings l ON l.id = oi.listing_id
+     LEFT JOIN books b ON b.id = l.book_id
+     WHERE oi.order_id IN (SELECT value FROM json_each(?))
+     ORDER BY oi.created_at ASC, oi.rowid ASC`,
+  )
+    .bind(JSON.stringify(ids))
+    .all<{
+      order_id: string;
+      listing_id: string | null;
+      listing_ref: string;
+      book_title: string;
+      book_isbn: string;
+      price: number;
+      l_photos: string | null;
+      b_cover: string | null;
+      b_cover_r2_key: string | null;
+    }>()
+    .then((r) => r.results);
+
+  for (const row of rows) {
+    const photos = parsePhotos(row.l_photos);
+    const cover =
+      photos[0] ??
+      coverUrlFor(env, undefined, {
+        cover_url: typeof row.b_cover === 'string' ? row.b_cover : null,
+        cover_r2_key: typeof row.b_cover_r2_key === 'string' ? row.b_cover_r2_key : null,
+      }) ??
+      null;
+
+    const item: SerializedOrderItem = {
+      listing_id: row.listing_id,
+      listing_ref: row.listing_ref,
+      title: row.book_title,
+      isbn: row.book_isbn,
+      price: row.price,
+      cover_url: cover,
+    };
+    const list = map.get(row.order_id);
+    if (list) list.push(item);
+    else map.set(row.order_id, [item]);
+  }
+  return map;
+}
+
+export function serializeOrder(r: Row, lang: string | null, items: SerializedOrderItem[] = []) {
   const o = r.order;
+  const resolvedItems =
+    items.length > 0
+      ? items
+      : [
+          {
+            listing_id: o.listingId,
+            listing_ref: o.listingRef ?? o.listingId ?? '',
+            title: o.bookTitle,
+            isbn: o.bookIsbn,
+            price: o.totalAmount,
+            cover_url: null,
+          },
+        ];
+  const primaryTitle = resolvedItems[0]?.title || o.bookTitle;
+  const displayTitle =
+    resolvedItems.length > 1
+      ? lang && lang.toLowerCase().startsWith('en')
+        ? `"${primaryTitle}" etc. ${resolvedItems.length} books`
+        : `《${primaryTitle}》等 ${resolvedItems.length} 本`
+      : o.bookTitle || primaryTitle;
+
   return {
     id: o.id,
-    listing_title: o.bookTitle,
+    listing_title: displayTitle,
     listing_deleted: o.listingId === null,
     book_authors: r.bookAuthors ?? '',
     buyer_name: displayName(r.buyerFirst, r.buyerLast),
@@ -186,6 +271,7 @@ export function serializeOrder(r: Row, lang: string | null) {
     created_at: o.createdAt,
     updated_at: o.updatedAt,
     completed_at: o.completedAt,
+    items: resolvedItems,
   };
 }
 
@@ -208,7 +294,9 @@ export async function listOrders(
       .leftJoin(books, eq(books.id, listings.bookId))
       .where(where),
   ]);
-  return { rows: rows.map((r) => serializeOrder(r, opts.lang)), count: Number(n) };
+  const orderIds = rows.map((r) => r.order.id);
+  const itemsMap = await fetchItemsForOrders(env, orderIds);
+  return { rows: rows.map((r) => serializeOrder(r, opts.lang, itemsMap.get(r.order.id) ?? [])), count: Number(n) };
 }
 
 /** One of the viewer's orders in `regionCode`, serialized; null when not theirs / not there. */
@@ -220,5 +308,7 @@ export async function getOrderFor(
   lang: string | null,
 ): Promise<SerializedOrder | null> {
   const [row] = await runSelect(env, viewerId, baseWhere(viewerId, regionCode, { id }), 1, 0);
-  return row ? serializeOrder(row, lang) : null;
+  if (!row) return null;
+  const itemsMap = await fetchItemsForOrders(env, [id]);
+  return serializeOrder(row, lang, itemsMap.get(id) ?? []);
 }

@@ -80,7 +80,7 @@ describe('ChatListingsHeaderComponent', () => {
     expect(titles).toEqual(['Calculus I', 'Physics II', 'Deleted Book']);
 
     expect(chips[2].classList.contains('unavailable')).toBe(true);
-    expect(el.querySelector('.badge.danger')?.textContent).toContain('common.listingDeleted');
+    expect(el.querySelector('.badge.danger')?.textContent).toContain('msg.statusRemoved');
   });
 
   it('emits goListing when clicking an available chip', () => {
@@ -209,5 +209,50 @@ describe('ChatListingsHeaderComponent', () => {
     const selected = fixture.componentInstance.getSelectedListings();
     expect(selected.length).toBe(2);
     expect(selected.map((s) => s.ref)).toEqual(['ref-1', 'ref-2']);
+  });
+
+  it('renders checkboxes for available listings and emits startOrder on order button click', () => {
+    const fixture = TestBed.createComponent(ChatListingsHeaderComponent);
+    fixture.componentRef.setInput('listings', sampleListings);
+    fixture.componentRef.setInput('isBuyer', true);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const checkboxes = el.querySelectorAll<HTMLInputElement>('.chip-checkbox');
+    expect(checkboxes.length).toBe(2);
+    expect(checkboxes[0].checked).toBe(true);
+    expect(checkboxes[1].checked).toBe(true);
+
+    const startOrderSpy = vi.fn();
+    fixture.componentInstance.startOrder.subscribe(startOrderSpy);
+
+    const orderBtn = el.querySelector('.header-actions ui-button button') as HTMLElement;
+    expect(orderBtn).not.toBeNull();
+    orderBtn.click();
+    expect(startOrderSpy).toHaveBeenCalledWith(['listing-1', 'listing-2']);
+
+    // Uncheck first item
+    checkboxes[0].click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.selectedCount).toBe(1);
+
+    orderBtn.click();
+    expect(startOrderSpy).toHaveBeenCalledWith(['listing-2']);
+  });
+
+  it('displays specific reasons for sold and reserved items', () => {
+    const mixedListings: ChatListingItem[] = [
+      { ref: 'r1', id: '1', title: 'Sold', isbn: '1', price: 100, status: 'sold', cover_url: '', is_available: false },
+      { ref: 'r2', id: '2', title: 'Reserved', isbn: '2', price: 200, status: 'reserved', cover_url: '', is_available: false },
+      { ref: 'r3', id: '3', title: 'Removed', isbn: '3', price: 300, status: 'removed', cover_url: '', is_available: false },
+    ];
+    const fixture = TestBed.createComponent(ChatListingsHeaderComponent);
+    fixture.componentRef.setInput('listings', mixedListings);
+    fixture.detectChanges();
+
+    const badges = fixture.nativeElement.querySelectorAll('.badge.danger');
+    expect(badges[0].textContent).toContain('msg.statusSold');
+    expect(badges[1].textContent).toContain('msg.statusReserved');
+    expect(badges[2].textContent).toContain('msg.statusRemoved');
   });
 });

@@ -5,6 +5,8 @@ import {
   EventEmitter,
   inject,
   ChangeDetectionStrategy,
+  OnChanges,
+  SimpleChanges,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TPipe, I18nService } from '../../core/i18n.service';
@@ -37,6 +39,20 @@ export interface ChatListingItem {
           class="listing-chip"
           [class.unavailable]="!item.is_available"
         >
+          <label
+            class="chip-checkbox-label"
+            *ngIf="isBuyer && item.is_available"
+            (click)="$event.stopPropagation()"
+          >
+            <input
+              type="checkbox"
+              class="chip-checkbox"
+              [checked]="selectedRefs.has(item.ref)"
+              (change)="toggleSelection(item, $event)"
+              [attr.aria-label]="item.title"
+            />
+          </label>
+
           <button
             type="button"
             class="chip-content"
@@ -57,7 +73,7 @@ export interface ChatListingItem {
               <span class="chip-meta">
                 <span class="chip-price" *ngIf="item.price !== null">{{ item.price | price }}</span>
                 <span class="badge danger" *ngIf="!item.is_available">
-                  {{ 'common.listingDeleted' | t }}
+                  {{ getUnavailableReasonKey(item) | t }}
                 </span>
               </span>
             </div>
@@ -86,13 +102,16 @@ export interface ChatListingItem {
         </button>
       </div>
 
-      <!-- =========================================================================
-           EXTENSION POINT: Order Placement Seam
-           The next task will add an ordering button / checkout trigger here with
-           direct access to the conversation's active listings.
-           ========================================================================= -->
-      <div class="header-actions" *ngIf="hasOrder">
-        <ui-button variant="ghost" (onClick)="viewOrder.emit()">
+      <div class="header-actions">
+        <ui-button
+          *ngIf="isBuyer && hasAvailableListings"
+          size="sm"
+          [disabled]="selectedCount === 0"
+          (onClick)="onOrderClick()"
+        >
+          {{ 'msg.orderAction' | t:{ count: selectedCount, total: (selectedTotal | price) } }}
+        </ui-button>
+        <ui-button *ngIf="hasOrder" variant="ghost" size="sm" (onClick)="viewOrder.emit()">
           {{ 'msg.viewOrder' | t }}
         </ui-button>
       </div>
@@ -140,12 +159,26 @@ export interface ChatListingItem {
       border-radius: var(--radius-md);
       padding: 4px 8px;
       flex-shrink: 0;
-      max-width: 220px;
+      max-width: 240px;
       transition: background var(--motion-fast);
     }
 
     .listing-chip.unavailable {
       opacity: 0.7;
+    }
+
+    .chip-checkbox-label {
+      display: flex;
+      align-items: center;
+      margin-right: 6px;
+      cursor: pointer;
+    }
+
+    .chip-checkbox {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
     }
 
     .chip-content {
@@ -262,6 +295,9 @@ export interface ChatListingItem {
     }
 
     .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       flex-shrink: 0;
     }
 
@@ -271,11 +307,21 @@ export interface ChatListingItem {
     }
   `],
 })
-export class ChatListingsHeaderComponent {
+export class ChatListingsHeaderComponent implements OnChanges {
   private confirms = inject(ConfirmService);
   private i18n = inject(I18nService);
 
-  @Input() listings: ChatListingItem[] = [];
+  private _listings: ChatListingItem[] = [];
+
+  @Input()
+  set listings(val: ChatListingItem[]) {
+    this._listings = val || [];
+    this.syncSelectedRefs();
+  }
+  get listings(): ChatListingItem[] {
+    return this._listings;
+  }
+
   @Input() isBuyer = false;
   @Input() hasOrder = false;
 
@@ -283,6 +329,33 @@ export class ChatListingsHeaderComponent {
   @Output() removeListing = new EventEmitter<ChatListingItem>();
   @Output() goListing = new EventEmitter<string>();
   @Output() viewOrder = new EventEmitter<void>();
+  @Output() startOrder = new EventEmitter<string[]>();
+
+  selectedRefs = new Set<string>();
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['listings']) {
+      this.syncSelectedRefs();
+    }
+  }
+
+  private syncSelectedRefs(): void {
+    const availableRefs = new Set(this._listings.filter((l) => l.is_available).map((l) => l.ref));
+    if (this.selectedRefs.size === 0) {
+      this.selectedRefs = new Set(availableRefs);
+    } else {
+      const next = new Set<string>();
+      for (const ref of this.selectedRefs) {
+        if (availableRefs.has(ref)) next.add(ref);
+      }
+      for (const l of this._listings) {
+        if (l.is_available && !this.selectedRefs.has(l.ref)) {
+          next.add(l.ref);
+        }
+      }
+      this.selectedRefs = next;
+    }
+  }
 
   trackByRef(_: number, item: ChatListingItem): string {
     return item.ref;
@@ -292,6 +365,33 @@ export class ChatListingsHeaderComponent {
     if (item.ref) {
       this.goListing.emit(item.ref);
     }
+  }
+
+  toggleSelection(item: ChatListingItem, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) {
+      this.selectedRefs.add(item.ref);
+    } else {
+      this.selectedRefs.delete(item.ref);
+    }
+  }
+
+  getUnavailableReasonKey(item: ChatListingItem): string {
+    if (item.status === 'sold') return 'msg.statusSold';
+    if (item.status === 'reserved') return 'msg.statusReserved';
+    return 'msg.statusRemoved';
+  }
+
+  get hasAvailableListings(): boolean {
+    return this.listings.some((l) => l.is_available);
+  }
+
+  get selectedCount(): number {
+    return this.getSelectedListings().length;
+  }
+
+  get selectedTotal(): number {
+    return this.getSelectedListings().reduce((sum, l) => sum + (l.price || 0), 0);
   }
 
   async onRemoveClick(item: ChatListingItem, event: MouseEvent): Promise<void> {
@@ -305,12 +405,15 @@ export class ChatListingsHeaderComponent {
     }
   }
 
-  // =========================================================================
-  // EXTENSION POINT: Method hook for future order placement
-  // The next task will invoke order placement for the current conversation listings.
-  // Uses 'msg.buyNow' for the action button label.
-  // =========================================================================
+  onOrderClick(): void {
+    // Uses 'msg.orderAction' (with 'msg.buyNow' fallback intent) for placing an order from chat
+    const selected = this.getSelectedListings();
+    if (!selected.length) return;
+    const ids = selected.map((l) => l.id || l.ref);
+    this.startOrder.emit(ids);
+  }
+
   getSelectedListings(): ChatListingItem[] {
-    return this.listings.filter((l) => l.is_available);
+    return this.listings.filter((l) => l.is_available && this.selectedRefs.has(l.ref));
   }
 }

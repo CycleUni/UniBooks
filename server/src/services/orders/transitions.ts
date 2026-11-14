@@ -1,9 +1,10 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
-import { createDb, orders, listings, regions, auditEvents } from '../../db';
+import { createDb, orders, orderItems, listings, regions, auditEvents } from '../../db';
 import { parseMeetupTime } from './time';
 import type { NoticeOrder, OrderNotice } from './notify';
 import { LIMITS } from '../../lib/limits';
+import { orderLock } from './lock';
 
 /**
  * Order state changes. Each runs inside the listing's OrderLock (see
@@ -71,16 +72,51 @@ export type LockedResult =
 const codeError = (status: 400 | 403 | 404, code: string): LockedResult => ({ ok: false, status, code });
 const fieldError = (fields: Record<string, string[]>): LockedResult => ({ ok: false, status: 400, code: 'common.errValidation', fields });
 
-function toNotice(o: typeof orders.$inferSelect): NoticeOrder {
+function toNotice(o: typeof orders.$inferSelect, items?: (typeof orderItems.$inferSelect)[]): NoticeOrder {
+  const primaryTitle = (items && items[0]?.bookTitle) || o.bookTitle;
+  const count = items && items.length > 0 ? items.length : 1;
+  const title = count > 1 ? `${primaryTitle} (+${count - 1})` : primaryTitle;
   return {
     id: o.id,
     buyerId: o.buyerId,
     sellerId: o.sellerId,
     listingId: o.listingId,
     listingRef: o.listingRef,
-    bookTitle: o.bookTitle,
+    bookTitle: title,
     status: o.status,
   };
+}
+
+async function acquireListingLocks(
+  env: Env,
+  listingIds: string[],
+): Promise<{ lock: ReturnType<typeof orderLock>; holder: string }[] | null> {
+  const sorted = [...new Set(listingIds.filter(Boolean))].sort();
+  const acquired: { lock: ReturnType<typeof orderLock>; holder: string }[] = [];
+  // An order of one listing already runs inside that listing's own lock
+  // (lockKeyFor), exactly as before order items existed: taking a lease on it
+  // again would cost two more Durable Object calls and turn a queued second
+  // request into a refusal. Only an order of several listings needs the
+  // others' locks, and the writes are guarded in SQL either way.
+  if (sorted.length <= 1) return acquired;
+  for (const id of sorted) {
+    const lock = orderLock(env, `listing:${id}`);
+    const holder = await lock.tryAcquire(15_000);
+    if (!holder) {
+      for (const item of acquired.reverse()) {
+        await item.lock.release(item.holder).catch(() => {});
+      }
+      return null;
+    }
+    acquired.push({ lock, holder });
+  }
+  return acquired;
+}
+
+async function releaseListingLocks(acquired: { lock: ReturnType<typeof orderLock>; holder: string }[]): Promise<void> {
+  for (const item of acquired.reverse()) {
+    await item.lock.release(item.holder).catch(() => {});
+  }
 }
 
 /** Lock key for an order: its listing while it has one. */
@@ -175,95 +211,134 @@ export async function applyOrderUpdate(
   }
   if (Object.keys(errors).length) return fieldError(errors);
 
-  // Of two racing accepts the second finds the listing reserved.
-  const accepting = newStatus === 'accepted' && oldStatus !== 'accepted';
-  if (accepting) {
-    const [listing] = order.listingId
-      ? await db.select({ status: listings.status }).from(listings).where(eq(listings.id, order.listingId)).limit(1)
-      : [];
-    if (!listing || listing.status !== 'active') return codeError(400, 'checkout.errListingUnavailable');
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+  const itemListingIds = [...new Set(items.map((it) => it.listingId).filter((id): id is string => Boolean(id)))].sort();
+  if (itemListingIds.length === 0 && order.listingId) {
+    itemListingIds.push(order.listingId);
   }
 
-  const now = new Date().toISOString();
-  set.updatedAt = now;
-  if (meetupTimeChanged) {
-    set.meetupSetAt = now;
-    set.buyerReminderSentAt = null;
-    set.sellerReminderSentAt = null;
-    set.meetupReminderSentAt = null;
-  }
-  if (newStatus === 'completed' && !order.completedAt) set.completedAt = now;
-  if (newStatus === 'handed_over') set.handedOverAt = now;
-  if (
-    newStatus === 'cancelled' &&
-    oldStatus === 'accepted' &&
-    order.meetupTime &&
-    order.meetupTime <= now &&
-    // ...and was arranged with real notice: not moved to "a minute from now"
-    // just before cancelling, to manufacture a no-show against the other side.
-    order.meetupSetAt &&
-    Date.parse(order.meetupTime) - Date.parse(order.meetupSetAt) >= NO_SHOW_MIN_NOTICE_MS
-  ) {
-    // The agreed meetup (as it stood before this request) has come and gone:
-    // a no-show report may follow this cancel, and no other.
-    set.noShowReportable = 1;
+  const acquiredLocks = await acquireListingLocks(env, itemListingIds);
+  if (acquiredLocks === null) {
+    return codeError(400, 'checkout.errListingUnavailable');
   }
 
-  const orderGuard = [eq(orders.id, order.id), eq(orders.status, oldStatus)];
-  if (accepting) {
-    orderGuard.push(sql`EXISTS (SELECT 1 FROM ${listings} WHERE ${listings.id} = ${order.listingId} AND ${listings.status} = 'active')`);
-  }
-  const orderUpdate = db
-    .update(orders)
-    .set(set)
-    .where(and(...orderGuard))
-    .returning({ id: orders.id });
-  // Each listing write applies only if this very order write did.
-  const thisWrite = sql`EXISTS (SELECT 1 FROM ${orders} WHERE ${orders.id} = ${order.id} AND ${orders.status} = ${newStatus} AND ${orders.updatedAt} = ${now})`;
-
-  let listingUpdate;
-  if (order.listingId && newStatus !== oldStatus) {
-    if (newStatus === 'cancelled' && (oldStatus === 'accepted' || oldStatus === 'handed_over')) {
-      // Release only a reservation this order held, and never un-sell.
-      listingUpdate = db
-        .update(listings)
-        .set({ status: 'active' })
-        .where(and(eq(listings.id, order.listingId), eq(listings.status, 'reserved'), thisWrite));
-    } else if (newStatus === 'accepted') {
-      listingUpdate = db
-        .update(listings)
-        .set({ status: 'reserved' })
-        .where(and(eq(listings.id, order.listingId), eq(listings.status, 'active'), thisWrite));
-    } else if (newStatus === 'completed') {
-      listingUpdate = db
-        .update(listings)
-        .set({ status: 'sold' })
-        // Only the reservation this order holds becomes a sale: a listing
-        // taken down meanwhile stays removed.
-        .where(and(eq(listings.id, order.listingId), eq(listings.status, 'reserved'), thisWrite));
+  try {
+    // Of two racing accepts the second finds the listing reserved.
+    const accepting = newStatus === 'accepted' && oldStatus !== 'accepted';
+    if (accepting) {
+      if (itemListingIds.length > 0) {
+        const foundListings = await db
+          .select({ id: listings.id, status: listings.status })
+          .from(listings)
+          .where(inArray(listings.id, itemListingIds));
+        if (foundListings.length !== itemListingIds.length || foundListings.some((l) => l.status !== 'active')) {
+          return codeError(400, 'checkout.errListingUnavailable');
+        }
+      }
     }
-  }
 
-  const results = listingUpdate ? await db.batch([orderUpdate, listingUpdate]) : await db.batch([orderUpdate]);
-  const updated = results[0] as { id: string }[];
-  if (!updated.length) {
-    // The order (or its listing) moved on between the read and the write.
-    return accepting ? codeError(400, 'checkout.errListingUnavailable') : fieldError({ status: ['order.errInvalidTransition'] });
-  }
+    const now = new Date().toISOString();
+    set.updatedAt = now;
+    if (meetupTimeChanged) {
+      set.meetupSetAt = now;
+      set.buyerReminderSentAt = null;
+      set.sellerReminderSentAt = null;
+      set.meetupReminderSentAt = null;
+    }
+    if (newStatus === 'completed' && !order.completedAt) set.completedAt = now;
+    if (newStatus === 'handed_over') set.handedOverAt = now;
+    if (
+      newStatus === 'cancelled' &&
+      oldStatus === 'accepted' &&
+      order.meetupTime &&
+      order.meetupTime <= now &&
+      // ...and was arranged with real notice: not moved to "a minute from now"
+      // just before cancelling, to manufacture a no-show against the other side.
+      order.meetupSetAt &&
+      Date.parse(order.meetupTime) - Date.parse(order.meetupSetAt) >= NO_SHOW_MIN_NOTICE_MS
+    ) {
+      // The agreed meetup (as it stood before this request) has come and gone:
+      // a no-show report may follow this cancel, and no other.
+      set.noShowReportable = 1;
+    }
 
-  const after = { ...order, ...set } as typeof orders.$inferSelect;
-  const notices: OrderNotice[] = [];
-  if (newStatus !== oldStatus) {
-    const key = TRANSITION_NOTICE[`${oldStatus}>${newStatus}>${isSeller ? 'seller' : 'buyer'}`];
-    if (key) notices.push({ key, senderId: actorId, push: true });
-  } else if (
-    (set.meetupTime !== undefined && set.meetupTime !== order.meetupTime) ||
-    (set.meetupLocation !== undefined && set.meetupLocation !== order.meetupLocation)
-  ) {
-    // The seller edited the agreed time/place.
-    notices.push({ key: 'order.notify.meetup_updated', senderId: order.sellerId, push: false });
+    const orderGuard = [eq(orders.id, order.id), eq(orders.status, oldStatus)];
+    if (accepting && itemListingIds.length > 0) {
+      for (const lid of itemListingIds) {
+        orderGuard.push(sql`EXISTS (SELECT 1 FROM ${listings} WHERE ${listings.id} = ${lid} AND ${listings.status} = 'active')`);
+      }
+    }
+    const orderUpdate = db
+      .update(orders)
+      .set(set)
+      .where(and(...orderGuard))
+      .returning({ id: orders.id });
+    // Each listing write applies only if this very order write did.
+    const thisWrite = sql`EXISTS (SELECT 1 FROM ${orders} WHERE ${orders.id} = ${order.id} AND ${orders.status} = ${newStatus} AND ${orders.updatedAt} = ${now})`;
+
+    const stmts: any[] = [orderUpdate];
+
+    if (newStatus !== oldStatus) {
+      const newIsOpen = ['pending', 'accepted', 'handed_over'].includes(newStatus) ? 1 : 0;
+      stmts.push(
+        db
+          .update(orderItems)
+          .set({ isOpen: newIsOpen })
+          .where(and(eq(orderItems.orderId, order.id), thisWrite)),
+      );
+    }
+
+    if (itemListingIds.length > 0 && newStatus !== oldStatus) {
+      if (newStatus === 'cancelled' && (oldStatus === 'accepted' || oldStatus === 'handed_over')) {
+        // Release only a reservation this order held, and never un-sell.
+        stmts.push(
+          db
+            .update(listings)
+            .set({ status: 'active' })
+            .where(and(inArray(listings.id, itemListingIds), eq(listings.status, 'reserved'), thisWrite)),
+        );
+      } else if (newStatus === 'accepted') {
+        stmts.push(
+          db
+            .update(listings)
+            .set({ status: 'reserved' })
+            .where(and(inArray(listings.id, itemListingIds), eq(listings.status, 'active'), thisWrite)),
+        );
+      } else if (newStatus === 'completed') {
+        stmts.push(
+          db
+            .update(listings)
+            .set({ status: 'sold' })
+            // Only the reservation this order holds becomes a sale: a listing
+            // taken down meanwhile stays removed.
+            .where(and(inArray(listings.id, itemListingIds), eq(listings.status, 'reserved'), thisWrite)),
+        );
+      }
+    }
+
+    const results = await db.batch(stmts as [any, ...any[]]);
+    const updated = results[0] as { id: string }[];
+    if (!updated.length) {
+      // The order (or its listing) moved on between the read and the write.
+      return accepting ? codeError(400, 'checkout.errListingUnavailable') : fieldError({ status: ['order.errInvalidTransition'] });
+    }
+
+    const after = { ...order, ...set } as typeof orders.$inferSelect;
+    const notices: OrderNotice[] = [];
+    if (newStatus !== oldStatus) {
+      const key = TRANSITION_NOTICE[`${oldStatus}>${newStatus}>${isSeller ? 'seller' : 'buyer'}`];
+      if (key) notices.push({ key, senderId: actorId, push: true });
+    } else if (
+      (set.meetupTime !== undefined && set.meetupTime !== order.meetupTime) ||
+      (set.meetupLocation !== undefined && set.meetupLocation !== order.meetupLocation)
+    ) {
+      // The seller edited the agreed time/place.
+      notices.push({ key: 'order.notify.meetup_updated', senderId: order.sellerId, push: false });
+    }
+    return { ok: true, order: toNotice(after, items), notices };
+  } finally {
+    await releaseListingLocks(acquiredLocks);
   }
-  return { ok: true, order: toNotice(after), notices };
 }
 
 /** How long after the agreed meetup (or the handover mark, if later) a silent buyer's order completes by itself. */
@@ -294,33 +369,47 @@ export async function applyAutoComplete(
   const now = new Date().toISOString();
   if (autoCompleteDueAt(order) > now) return { ok: false };
 
-  const stmts = [
-    db
-      .update(orders)
-      .set({ status: 'completed', completedAt: order.completedAt ?? now, updatedAt: now })
-      .where(and(eq(orders.id, order.id), eq(orders.status, 'handed_over'), eq(orders.updatedAt, order.updatedAt)))
-      .returning({ id: orders.id }),
-  ] as const;
-  const listingStmt = order.listingId
-    ? db
-        .update(listings)
-        .set({ status: 'sold' })
-        .where(
-          and(
-            eq(listings.id, order.listingId),
-            eq(listings.status, 'reserved'),
-            sql`EXISTS (SELECT 1 FROM ${orders} WHERE ${orders.id} = ${order.id} AND ${orders.status} = 'completed' AND ${orders.updatedAt} = ${now})`,
-          ),
-        )
-    : null;
-  const results = listingStmt ? await db.batch([stmts[0], listingStmt]) : await db.batch([stmts[0]]);
-  if (!(results[0] as { id: string }[]).length) return { ok: false };
-  return {
-    ok: true,
-    order: toNotice({ ...order, status: 'completed', completedAt: order.completedAt ?? now, updatedAt: now }),
-    // As if the buyer had confirmed: no message, the handover already said it.
-    notices: [],
-  };
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+  const itemListingIds = [...new Set(items.map((it) => it.listingId).filter((id): id is string => Boolean(id)))].sort();
+  if (itemListingIds.length === 0 && order.listingId) {
+    itemListingIds.push(order.listingId);
+  }
+
+  const acquiredLocks = await acquireListingLocks(env, itemListingIds);
+  if (acquiredLocks === null) return { ok: false };
+
+  try {
+    const thisWrite = sql`EXISTS (SELECT 1 FROM ${orders} WHERE ${orders.id} = ${order.id} AND ${orders.status} = 'completed' AND ${orders.updatedAt} = ${now})`;
+    const stmts: any[] = [
+      db
+        .update(orders)
+        .set({ status: 'completed', completedAt: order.completedAt ?? now, updatedAt: now })
+        .where(and(eq(orders.id, order.id), eq(orders.status, 'handed_over'), eq(orders.updatedAt, order.updatedAt)))
+        .returning({ id: orders.id }),
+      db
+        .update(orderItems)
+        .set({ isOpen: 0 })
+        .where(and(eq(orderItems.orderId, order.id), thisWrite)),
+    ];
+    if (itemListingIds.length > 0) {
+      stmts.push(
+        db
+          .update(listings)
+          .set({ status: 'sold' })
+          .where(and(inArray(listings.id, itemListingIds), eq(listings.status, 'reserved'), thisWrite)),
+      );
+    }
+    const results = await db.batch(stmts as [any, ...any[]]);
+    if (!(results[0] as { id: string }[]).length) return { ok: false };
+    return {
+      ok: true,
+      order: toNotice({ ...order, status: 'completed', completedAt: order.completedAt ?? now, updatedAt: now }, items),
+      // As if the buyer had confirmed: no message, the handover already said it.
+      notices: [],
+    };
+  } finally {
+    await releaseListingLocks(acquiredLocks);
+  }
 }
 
 /**
@@ -339,44 +428,55 @@ export async function applyPlatformCancel(
   const oldStatus = order.status;
   const now = new Date().toISOString();
 
-  const stmts = [];
-  stmts.push(
-    db
-      .update(orders)
-      .set({ status: 'cancelled', cancelReason: args.cancelReason, updatedAt: now })
-      .where(and(eq(orders.id, order.id), eq(orders.status, oldStatus)))
-      .returning({ id: orders.id }),
-  );
-  if (order.listingId && (oldStatus === 'accepted' || oldStatus === 'handed_over')) {
-    stmts.push(
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+  const itemListingIds = [...new Set(items.map((it) => it.listingId).filter((id): id is string => Boolean(id)))].sort();
+  if (itemListingIds.length === 0 && order.listingId) {
+    itemListingIds.push(order.listingId);
+  }
+
+  const acquiredLocks = await acquireListingLocks(env, itemListingIds);
+  if (acquiredLocks === null) return { ok: false, final: false };
+
+  try {
+    const thisWrite = sql`EXISTS (SELECT 1 FROM ${orders} WHERE ${orders.id} = ${order.id} AND ${orders.status} = 'cancelled' AND ${orders.updatedAt} = ${now})`;
+    const stmts: any[] = [
       db
-        .update(listings)
-        .set({ status: 'active' })
-        .where(
-          and(
-            eq(listings.id, order.listingId),
-            eq(listings.status, 'reserved'),
-            sql`EXISTS (SELECT 1 FROM ${orders} WHERE ${orders.id} = ${order.id} AND ${orders.status} = 'cancelled' AND ${orders.updatedAt} = ${now})`,
-          ),
-        ),
-    );
+        .update(orders)
+        .set({ status: 'cancelled', cancelReason: args.cancelReason, updatedAt: now })
+        .where(and(eq(orders.id, order.id), eq(orders.status, oldStatus)))
+        .returning({ id: orders.id }),
+      db
+        .update(orderItems)
+        .set({ isOpen: 0 })
+        .where(and(eq(orderItems.orderId, order.id), thisWrite)),
+    ];
+    if (itemListingIds.length > 0 && (oldStatus === 'accepted' || oldStatus === 'handed_over')) {
+      stmts.push(
+        db
+          .update(listings)
+          .set({ status: 'active' })
+          .where(and(inArray(listings.id, itemListingIds), eq(listings.status, 'reserved'), thisWrite)),
+      );
+    }
+    const results = await db.batch(stmts as [any, ...any[]]);
+    if (!(results[0] as { id: string }[]).length) return { ok: false, final: true };
+    if (args.audit) {
+      // Written only once the conditional cancel above is known to have applied.
+      await db.insert(auditEvents).values({
+        actorId: args.actorId,
+        action: 'admin.order_force_cancelled',
+        targetType: 'order',
+        targetId: order.id,
+        details: JSON.stringify({ order_id: order.id, reason: args.audit.reason }),
+        createdAt: now,
+      });
+    }
+    return {
+      ok: true,
+      order: toNotice({ ...order, status: 'cancelled', cancelReason: args.cancelReason, updatedAt: now }, items),
+      notices: [{ key: args.noticeKey, senderId: args.actorId, push: true }],
+    };
+  } finally {
+    await releaseListingLocks(acquiredLocks);
   }
-  const results = await db.batch(stmts as [(typeof stmts)[number], ...(typeof stmts)[number][]]);
-  if (!(results[0] as { id: string }[]).length) return { ok: false, final: true };
-  if (args.audit) {
-    // Written only once the conditional cancel above is known to have applied.
-    await db.insert(auditEvents).values({
-      actorId: args.actorId,
-      action: 'admin.order_force_cancelled',
-      targetType: 'order',
-      targetId: order.id,
-      details: JSON.stringify({ order_id: order.id, reason: args.audit.reason }),
-      createdAt: now,
-    });
-  }
-  return {
-    ok: true,
-    order: toNotice({ ...order, status: 'cancelled', cancelReason: args.cancelReason, updatedAt: now }),
-    notices: [{ key: args.noticeKey, senderId: args.actorId, push: true }],
-  };
 }

@@ -1,7 +1,7 @@
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
 import { apiError } from '../../lib/http';
-import { createDb, orders } from '../../db';
+import { createDb, orders, orderItems } from '../../db';
 import { ACTIVE_ORDER_STATUSES, lockKeyFor } from './transitions';
 import { orderLock } from './lock';
 import { deliverNotices } from './notify';
@@ -32,7 +32,15 @@ export async function cancelOpenOrdersForListing(
   const open = await db
     .select({ id: orders.id, listingId: orders.listingId })
     .from(orders)
-    .where(and(eq(orders.listingId, args.listingId), inArray(orders.status, [...ACTIVE_ORDER_STATUSES])));
+    .where(
+      and(
+        inArray(orders.status, [...ACTIVE_ORDER_STATUSES]),
+        or(
+          eq(orders.listingId, args.listingId),
+          sql`EXISTS (SELECT 1 FROM ${orderItems} WHERE ${orderItems.orderId} = ${orders.id} AND ${orderItems.listingId} = ${args.listingId})`,
+        ),
+      ),
+    );
   const admin = args.reason === 'admin_removed';
   const note = (args.note ?? '').trim() || 'listing_removed';
   let cancelled = 0;

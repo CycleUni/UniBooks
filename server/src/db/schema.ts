@@ -590,6 +590,40 @@ export type InsertOrder = InferInsertModel<typeof orders>;
 export type NewOrder = InsertOrder;
 
 // ============================================================================
+// 15.1 Order Items
+// ============================================================================
+export const orderItems = sqliteTable(
+  'order_items',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    listingId: text('listing_id').references(() => listings.id, { onDelete: 'set null' }),
+    listingRef: text('listing_ref').notNull(),
+    bookTitle: text('book_title').notNull().default(''),
+    bookIsbn: text('book_isbn').notNull().default(''),
+    price: integer('price').notNull(),
+    buyerId: text('buyer_id')
+      .notNull()
+      .references(() => users.id),
+    isOpen: integer('is_open').notNull().default(1),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('order_items_order_id_idx').on(table.orderId),
+    index('order_items_listing_id_idx').on(table.listingId),
+    uniqueIndex('order_items_open_buyer_listing_uniq')
+      .on(table.listingId, table.buyerId)
+      .where(sql`is_open = 1`),
+  ],
+);
+
+export type OrderItem = InferSelectModel<typeof orderItems>;
+export type InsertOrderItem = InferInsertModel<typeof orderItems>;
+export type NewOrderItem = InsertOrderItem;
+
+// ============================================================================
 // 16. Reviews
 // ============================================================================
 export const reviews = sqliteTable(

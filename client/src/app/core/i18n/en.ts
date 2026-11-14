@@ -593,6 +593,10 @@ export const en: Record<string, string> = {
   'msg.statusProcessed': 'Processed',
   'msg.statusPendingApproval': 'Awaiting Confirmation',
   'msg.statusCompleted': 'Completed',
+  'msg.statusSold': 'Sold',
+  'msg.statusReserved': 'Reserved',
+  'msg.statusRemoved': 'Removed',
+  'msg.orderAction': 'Order ({count} books, {total})',
 
   // Sell wizard
   'sell.title': 'List a Book',
@@ -736,6 +740,11 @@ export const en: Record<string, string> = {
   'checkout.meetupFormTitle': 'Meetup Request',
   'checkout.meetupFormDesc': 'Confirming will send a meetup request to the seller. Please make sure you have discussed the meetup details with the seller via messages.',
   'checkout.sendMeetupRequest': 'Send Meetup Request',
+  'checkout.errItemCount': 'Orders must contain between 1 and 10 books.',
+  'checkout.errMixedSellers': 'All books in one order must be from the same seller.',
+  'checkout.removeItem': 'Remove',
+  'checkout.itemsUnavailableHint': 'Some books are no longer available. Please remove them to proceed.',
+  'checkout.total': 'Total',
 
   'acct.myOrders': 'My Orders',
   'acct.buying': 'Purchases',
@@ -833,6 +842,7 @@ export const en: Record<string, string> = {
   'order.updatedAt': 'Last updated',
   'order.notArrangedYet': 'Not arranged yet',
   'order.viewListing': 'View listing',
+  'order.itemsList': 'Items',
   'order.openConversation': 'Open conversation',
 
   // Message errors
@@ -1003,6 +1013,7 @@ export const en: Record<string, string> = {
   'admin.colBook': 'Book',
   'admin.colSeller': 'Seller',
   'admin.colPrice': 'Price',
+  'admin.items': 'Items',
   'admin.colStatus': 'Status',
   'admin.colCondition': 'Condition',
   'admin.colReporter': 'Reporter',

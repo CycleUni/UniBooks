@@ -31,6 +31,15 @@ import { PricePipe } from '../../shared/pipes/price.pipe';
         <div class="field"><label>{{ 'order.seller' | t }}</label><span>{{ order.seller?.email | adminEmail }}</span></div>
         <div class="field"><label>{{ 'admin.colPrice' | t }}</label><span>{{ order.total_amount | price: order.currency }}</span></div>
         <div class="field"><label>{{ 'admin.colStatus' | t }}</label><span class="admin-status-badge">{{ ('order.status.' + order.status) | t }}</span></div>
+        <div class="field items-field" *ngIf="order.items && order.items.length > 1">
+          <label>{{ 'admin.items' | t }}</label>
+          <div class="admin-order-items">
+            <div class="admin-order-item" *ngFor="let it of order.items">
+              <span>{{ it.title }}</span>
+              <span class="mono">{{ it.price | price: order.currency }}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <p *ngIf="cancelledMsg" class="inline-msg ok">{{ cancelledMsg }}</p>
@@ -57,6 +66,9 @@ import { PricePipe } from '../../shared/pipes/price.pipe';
     .field { display: flex; flex-direction: column; gap: 2px; }
     .field label { font-size: var(--text-xs); color: var(--muted); }
     .field span { font-size: var(--text-base); color: var(--ink); }
+    .items-field { grid-column: 1 / -1; }
+    .admin-order-items { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--line); border-radius: 6px; }
+    .admin-order-item { display: flex; justify-content: space-between; align-items: center; font-size: var(--text-sm); }
   `]
 })
 export class AdminOrderDetailComponent implements OnInit {

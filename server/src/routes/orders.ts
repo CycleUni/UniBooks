@@ -1,8 +1,8 @@
 import { Hono, type Context } from 'hono';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { AppEnv } from '../env';
-import { createDb, orders, listings, books, conversations, reviews, users } from '../db';
+import { createDb, orders, orderItems, listings, books, conversations, conversationListings, reviews, users } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { getRegion, assertMayTrade } from '../lib/region';
 import { apiError, fieldErrors, notFound, pagination, readJson } from '../lib/http';
@@ -12,6 +12,7 @@ import { resolveLanguage } from '../services/accounts/i18n';
 import type { LockedResult } from '../services/orders/transitions';
 import { lockKeyFor } from '../services/orders/transitions';
 import { orderLock } from '../services/orders/lock';
+import { isUniqueViolation } from '../lib/db';
 import { deliverNotices } from '../services/orders/notify';
 import { checkRate } from '../middleware/rateLimit';
 import { UUID_LOOSE_RE, normUuid } from '../lib/uuid';
@@ -199,83 +200,236 @@ orderRoutes.post('/', async (c) => {
   const data = await readJson(c.req);
   const db = createDb(c.env.DB);
 
-  const raw = data.listing;
-  if (raw === undefined || raw === null || raw === '') fieldErrors({ listing: ['common.errValidation'] });
-  const listingId = typeof raw === 'string' && UUID_LOOSE_RE.test(raw) ? normUuid(raw) : null;
-  const [listing] = listingId
-    ? await db
-        .select({
-          id: listings.id,
-          status: listings.status,
-          regionCode: listings.regionCode,
-          currencyCode: listings.currencyCode,
-          sellerId: listings.sellerId,
-          price: listings.price,
-          title: books.title,
-          isbn13: books.isbn13,
-        })
-        .from(listings)
-        .innerJoin(books, eq(books.id, listings.bookId))
-        .where(eq(listings.id, listingId))
-        .limit(1)
-    : [];
+  const rawListing = data.listing;
+  const rawListingIds = data.listing_ids;
+  const rawConv = data.conversation_id;
 
-  // Must be allowed to trade in the listing's region (checked before validation).
-  if (listing) await assertMayTrade(c, listing.regionCode);
-  if (!listing) fieldErrors({ listing: ['checkout.errListingUnavailable'] });
+  if (rawListing === undefined && rawListingIds === undefined) {
+    fieldErrors({ listing: ['common.errValidation'] });
+  }
 
-  // Cross-field checks.
-  if (listing.status !== 'active') fieldErrors({ listing: ['checkout.errListingUnavailable'] });
-  const region = await getRegion(c);
-  if (region && region.code !== listing.regionCode) fieldErrors({ listing: ['checkout.errRegionMismatch'] });
-  if (user.id === listing.sellerId) fieldErrors({ listing: ['checkout.errOwnListing'] });
-  const [conv] = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(and(eq(conversations.buyerId, user.id), eq(conversations.listingId, listing.id)))
-    .limit(1);
-  if (!conv) fieldErrors({ listing: ['checkout.errNoChat'] });
+  const isMulti = rawListingIds !== undefined;
 
-  // Amount, region and currency come from the listing, never the request.
-  const now = new Date().toISOString();
-  const id = crypto.randomUUID();
-  // The partial unique index orders_open_buyer_listing_uniq refuses a second
-  // open order from the same buyer on the same listing.
-  const inserted = await db
-    .insert(orders)
-    .values({
-      id,
-      regionCode: listing.regionCode,
-      currencyCode: listing.currencyCode,
-      listingId: listing.id,
-      listingRef: listing.id,
-      bookTitle: (listing.title ?? '').slice(0, 255),
-      bookIsbn: listing.isbn13 ?? '',
-      buyerId: user.id,
-      sellerId: listing.sellerId,
-      status: 'pending',
-      totalAmount: listing.price,
-      meetupLocation: '',
-      createdAt: now,
-      updatedAt: now,
+  let distinctIds: string[] = [];
+  if (isMulti) {
+    if (!Array.isArray(rawListingIds)) {
+      fieldErrors({ listing_ids: ['common.errValidation'] });
+    }
+    if (rawListingIds.length < 1 || rawListingIds.length > 10) {
+      fieldErrors({ listing_ids: ['checkout.errItemCount'] });
+    }
+    for (const raw of rawListingIds) {
+      if (typeof raw !== 'string' || !UUID_LOOSE_RE.test(raw)) {
+        fieldErrors({ listing_ids: ['common.errValidation'] });
+      }
+      const id = normUuid(raw);
+      if (!distinctIds.includes(id)) distinctIds.push(id);
+    }
+    if (distinctIds.length < 1 || distinctIds.length > 10) {
+      fieldErrors({ listing_ids: ['checkout.errItemCount'] });
+    }
+  } else {
+    if (rawListing === undefined || rawListing === null || rawListing === '') {
+      fieldErrors({ listing: ['common.errValidation'] });
+    }
+    const listingId = typeof rawListing === 'string' && UUID_LOOSE_RE.test(rawListing) ? normUuid(rawListing) : null;
+    if (!listingId) fieldErrors({ listing: ['checkout.errListingUnavailable'] });
+    distinctIds = [listingId!];
+  }
+
+  let convId: string | null = null;
+  if (rawConv !== undefined && rawConv !== null && rawConv !== '') {
+    if (typeof rawConv !== 'string' || !UUID_LOOSE_RE.test(rawConv)) {
+      fieldErrors({ conversation_id: ['common.errValidation'] });
+    }
+    convId = normUuid(rawConv);
+  }
+
+  // Fetch all requested listings
+  const foundRows = await db
+    .select({
+      id: listings.id,
+      status: listings.status,
+      regionCode: listings.regionCode,
+      currencyCode: listings.currencyCode,
+      sellerId: listings.sellerId,
+      price: listings.price,
+      title: books.title,
+      isbn13: books.isbn13,
     })
-    .onConflictDoNothing()
-    .returning({ id: orders.id });
-  if (!inserted.length) fieldErrors({ listing: ['checkout.errListingUnavailable'] });
+    .from(listings)
+    .innerJoin(books, eq(books.id, listings.bookId))
+    .where(inArray(listings.id, distinctIds));
 
+  const listingMap = new Map(foundRows.map((l) => [l.id, l]));
+
+  // Check missing
+  const unavailableErrors: Record<string, string[]> = {};
+  for (const id of distinctIds) {
+    if (!listingMap.has(id)) {
+      unavailableErrors[isMulti ? id : 'listing'] = ['checkout.errListingUnavailable'];
+    }
+  }
+  if (Object.keys(unavailableErrors).length) fieldErrors(unavailableErrors);
+
+  const orderedListings = distinctIds.map((id) => listingMap.get(id)!);
+  const firstListing = orderedListings[0];
+
+  // Must be allowed to trade in the listings' region (checked before validation).
+  await assertMayTrade(c, firstListing.regionCode);
+
+  const region = await getRegion(c);
+  const mismatchErrors: Record<string, string[]> = {};
+  for (const l of orderedListings) {
+    if ((region && l.regionCode !== region.code) || l.regionCode !== firstListing.regionCode) {
+      mismatchErrors[isMulti ? l.id : 'listing'] = ['checkout.errRegionMismatch'];
+    }
+    if (user.id === l.sellerId) {
+      mismatchErrors[isMulti ? l.id : 'listing'] = ['checkout.errOwnListing'];
+    }
+  }
+  if (Object.keys(mismatchErrors).length) fieldErrors(mismatchErrors);
+
+  if (orderedListings.some((l) => l.sellerId !== firstListing.sellerId)) {
+    fieldErrors({ listing_ids: ['checkout.errMixedSellers'] });
+  }
+
+  // Check status and duplicate open order for this buyer
+  const openItems = await db
+    .select({ listingId: orderItems.listingId })
+    .from(orderItems)
+    .where(and(eq(orderItems.buyerId, user.id), eq(orderItems.isOpen, 1), inArray(orderItems.listingId, distinctIds)));
+  const openListingIds = new Set(openItems.map((oi) => oi.listingId));
+
+  for (const l of orderedListings) {
+    if (l.status !== 'active' || openListingIds.has(l.id)) {
+      unavailableErrors[isMulti ? l.id : 'listing'] = ['checkout.errListingUnavailable'];
+    }
+  }
+  if (Object.keys(unavailableErrors).length) fieldErrors(unavailableErrors);
+
+  // Conversation scoping check
+  if (convId) {
+    const [conv] = await db
+      .select({ id: conversations.id, listingId: conversations.listingId, listingRef: conversations.listingRef })
+      .from(conversations)
+      .where(and(eq(conversations.id, convId), eq(conversations.buyerId, user.id), eq(conversations.sellerId, firstListing.sellerId)))
+      .limit(1);
+    if (!conv) fieldErrors({ conversation_id: ['checkout.errNoChat'] });
+
+    const convListings = await db
+      .select({ listingId: conversationListings.listingId, listingRef: conversationListings.listingRef })
+      .from(conversationListings)
+      .where(eq(conversationListings.conversationId, conv.id));
+    const attachedIds = new Set<string>();
+    if (conv.listingId) attachedIds.add(conv.listingId);
+    if (conv.listingRef) attachedIds.add(conv.listingRef);
+    for (const cl of convListings) {
+      if (cl.listingId) attachedIds.add(cl.listingId);
+      if (cl.listingRef) attachedIds.add(cl.listingRef);
+    }
+
+    const chatErrors: Record<string, string[]> = {};
+    for (const id of distinctIds) {
+      if (!attachedIds.has(id)) {
+        chatErrors[isMulti ? id : 'listing'] = ['checkout.errNoChat'];
+      }
+    }
+    if (Object.keys(chatErrors).length) fieldErrors(chatErrors);
+  } else {
+    const userConvs = await db
+      .select({ id: conversations.id, listingId: conversations.listingId, listingRef: conversations.listingRef })
+      .from(conversations)
+      .where(and(eq(conversations.buyerId, user.id), eq(conversations.sellerId, firstListing.sellerId)));
+    const userConvIds = userConvs.map((cv) => cv.id);
+    const userConvListings =
+      userConvIds.length > 0
+        ? await db
+            .select({ listingId: conversationListings.listingId, listingRef: conversationListings.listingRef })
+            .from(conversationListings)
+            .where(inArray(conversationListings.conversationId, userConvIds))
+        : [];
+
+    const coveredIds = new Set<string>();
+    for (const cv of userConvs) {
+      if (cv.listingId) coveredIds.add(cv.listingId);
+      if (cv.listingRef) coveredIds.add(cv.listingRef);
+    }
+    for (const cl of userConvListings) {
+      if (cl.listingId) coveredIds.add(cl.listingId);
+      if (cl.listingRef) coveredIds.add(cl.listingRef);
+    }
+
+    const chatErrors: Record<string, string[]> = {};
+    for (const id of distinctIds) {
+      if (!coveredIds.has(id)) {
+        chatErrors[isMulti ? id : 'listing'] = ['checkout.errNoChat'];
+      }
+    }
+    if (Object.keys(chatErrors).length) fieldErrors(chatErrors);
+  }
+
+  // Placing an order reserves nothing (the seller's accept does, under the
+  // listing lock), so there is nothing to lock here: the order and its items
+  // go in as one batch, and the partial unique indexes refuse a second open
+  // order of this buyer on any of the listings, leaving nothing behind.
+  const totalAmount = orderedListings.reduce((sum, l) => sum + l.price, 0);
+  const primary = orderedListings[0];
+  const now = new Date().toISOString();
+  const orderId = crypto.randomUUID();
+  try {
+    await db.batch([
+      db.insert(orders).values({
+        id: orderId,
+        regionCode: primary.regionCode,
+        currencyCode: primary.currencyCode,
+        listingId: primary.id,
+        listingRef: primary.id,
+        bookTitle: (primary.title ?? '').slice(0, 255),
+        bookIsbn: primary.isbn13 ?? '',
+        buyerId: user.id,
+        sellerId: primary.sellerId,
+        status: 'pending',
+        totalAmount,
+        meetupLocation: '',
+        createdAt: now,
+        updatedAt: now,
+      }),
+      db.insert(orderItems).values(
+        orderedListings.map((l) => ({
+          id: crypto.randomUUID(),
+          orderId,
+          listingId: l.id,
+          listingRef: l.id,
+          bookTitle: (l.title ?? '').slice(0, 255),
+          bookIsbn: l.isbn13 ?? '',
+          price: l.price,
+          buyerId: user.id,
+          isOpen: 1,
+          createdAt: now,
+        })),
+      ),
+    ]);
+  } catch (e) {
+    if (!isUniqueViolation(e)) throw e;
+    fieldErrors({ [isMulti ? primary.id : 'listing']: ['checkout.errListingUnavailable'] });
+  }
+
+  // The count rides on the title in a form that needs no translation.
+  const noticeTitle = orderedListings.length > 1 ? `${primary.title ?? ''} (+${orderedListings.length - 1})` : (primary.title ?? '');
   const notice = {
-    id,
+    id: orderId,
     buyerId: user.id,
-    sellerId: listing.sellerId,
-    listingId: listing.id,
-    listingRef: listing.id,
-    bookTitle: listing.title ?? '',
+    sellerId: primary.sellerId,
+    listingId: primary.id,
+    listingRef: primary.id,
+    bookTitle: noticeTitle,
     status: 'pending',
   };
   // Best-effort (never throws).
   await deliverNotices(c.env, notice, [{ key: 'order.notify.meetup_requested', senderId: user.id, push: true }]);
 
-  const body = await getOrderFor(c.env, user.id, listing.regionCode, id, await resolveLanguage(c));
+  const body = await getOrderFor(c.env, user.id, primary.regionCode, orderId, await resolveLanguage(c));
   return c.json(body, 201);
 });
 

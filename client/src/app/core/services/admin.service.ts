@@ -73,6 +73,15 @@ export interface AdminListing {
   locked_at?: string | null;
 }
 
+export interface AdminOrderItem {
+  listing_id: string | null;
+  listing_ref: string;
+  title: string;
+  isbn: string;
+  price: number;
+  cover_url: string | null;
+}
+
 export interface AdminOrder {
   id: string;
   buyer: { id: string | number; email: string };
@@ -85,6 +94,7 @@ export interface AdminOrder {
   region?: string;
   created_at: string;
   updated_at: string;
+  items?: AdminOrderItem[];
 }
 
 

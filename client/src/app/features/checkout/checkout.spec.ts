@@ -91,4 +91,56 @@ describe('CheckoutComponent placing the order', () => {
     component.placeOrder();
     expect(createOrder).toHaveBeenCalledTimes(1);
   });
+
+  it('supports multiple items, removal while > 1 item, and refusal marking', () => {
+    const createOrder = vi.fn();
+    const component = make(createOrder);
+    component.listings = [
+      { id: 'l1', book_title: 'Book 1', price: 200, currency: 'TWD' },
+      { id: 'l2', book_title: 'Book 2', price: 300, currency: 'TWD' },
+    ];
+    component.conversationId = 'chat-1';
+
+    expect(component.totalPrice).toBe(500);
+
+    // Simulate server refusal on l2
+    createOrder.mockReturnValueOnce(
+      throwError(() => ({
+        status: 409,
+        error: {
+          error: {
+            code: 'common.errValidation',
+            fields: { l2: ['checkout.errListingUnavailable'] },
+          },
+        },
+      }))
+    );
+
+    component.placeOrder();
+    expect(createOrder).toHaveBeenCalledWith({
+      listing_ids: ['l1', 'l2'],
+      conversation_id: 'chat-1',
+    });
+    expect(component.errorKey).toBe('checkout.itemsUnavailableHint');
+    expect(component.refusedListingErrors['l2']).toBe('checkout.errListingUnavailable');
+
+    // Remove refused item l2
+    component.removeItem(component.listings[1]);
+    expect(component.listings.length).toBe(1);
+    expect(component.totalPrice).toBe(200);
+    expect(component.refusedListingErrors['l2']).toBeUndefined();
+    expect(component.errorKey).toBe('');
+
+    // Cannot remove when only 1 item remains
+    component.removeItem(component.listings[0]);
+    expect(component.listings.length).toBe(1);
+
+    // Order again with single item
+    createOrder.mockReturnValueOnce(of({ id: 'ord-1', total_amount: 200 }));
+    component.placeOrder();
+    expect(createOrder).toHaveBeenCalledWith({
+      listing: 'l1',
+      conversation_id: 'chat-1',
+    });
+  });
 });

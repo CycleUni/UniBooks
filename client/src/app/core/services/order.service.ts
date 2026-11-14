@@ -4,6 +4,15 @@ import { finalize, map, shareReplay, tap } from 'rxjs/operators';
 import { Observable, BehaviorSubject, of } from 'rxjs';
 import { I18nService } from '../i18n.service';
 
+export interface OrderItem {
+  listing_id: string | null;
+  listing_ref: string;
+  title: string;
+  isbn: string;
+  price: number;
+  cover_url: string | null;
+}
+
 export interface Order {
   id?: string;
   buyer?: string;
@@ -37,6 +46,7 @@ export interface Order {
   created_at?: string;
   updated_at?: string;
   has_reviewed?: boolean;
+  items?: OrderItem[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -127,7 +137,7 @@ export class OrderService {
     return this.http.get<Order>(`${this.url}/${id}`);
   }
 
-  createOrder(order: Order) {
+  createOrder(order: Partial<Order> & { listing_ids?: string[]; listing?: string; conversation_id?: string | null }) {
     return this.http.post<Order>(this.url, order).pipe(tap(() => { this.recentOrders = null; }));
   }
 

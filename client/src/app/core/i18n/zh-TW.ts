@@ -583,6 +583,10 @@ export const zhTW: Record<string, string> = {
   'msg.statusProcessed': '已處理',
   'msg.statusPendingApproval': '待確認',
   'msg.statusCompleted': '已完成',
+  'msg.statusSold': '已售出',
+  'msg.statusReserved': '已保留',
+  'msg.statusRemoved': '已下架',
+  'msg.orderAction': '下單 ({count} 本，{total})',
 
   // Sell wizard
   'sell.title': '上架商品',
@@ -729,6 +733,11 @@ export const zhTW: Record<string, string> = {
   'checkout.meetupFormTitle': '面交請求',
   'checkout.meetupFormDesc': '確認後將向賣家發送面交請求。請確保你已透過訊息與賣家確認面交細節。',
   'checkout.sendMeetupRequest': '發送面交請求',
+  'checkout.errItemCount': '一筆訂單最多可包含 1 至 10 本書。',
+  'checkout.errMixedSellers': '一筆訂單中的書籍必須來自同一位賣家。',
+  'checkout.removeItem': '移除',
+  'checkout.itemsUnavailableHint': '部分書籍已無法購買，請移除後再送出訂單。',
+  'checkout.total': '總計',
 
   'acct.myOrders': '我的訂單',
   'acct.buying': '購買紀錄',
@@ -826,6 +835,7 @@ export const zhTW: Record<string, string> = {
   'order.updatedAt': '最後更新',
   'order.notArrangedYet': '尚未約定',
   'order.viewListing': '查看商品',
+  'order.itemsList': '商品明細',
   'order.openConversation': '開啟對話',
 
   // Message errors
@@ -999,6 +1009,7 @@ export const zhTW: Record<string, string> = {
   'admin.colBook': '書名',
   'admin.colSeller': '賣家',
   'admin.colPrice': '價格',
+  'admin.items': '購買項目',
   'admin.colStatus': '狀態',
   'admin.colCondition': '書況',
   'admin.colReporter': '檢舉人',

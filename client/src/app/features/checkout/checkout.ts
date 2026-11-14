@@ -2,6 +2,7 @@ import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { forkJoin, of } from 'rxjs';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiInput } from '../../shared/ui/input.component';
 import { UiBookCover } from '../../shared/ui/book-cover.component';
@@ -43,21 +44,53 @@ import { translateApiError } from '../../core/api-error.util';
           (onAction)="goSearch()"
         ></ui-empty>
 
-        <div *ngIf="!isLoading && listing" class="checkout-grid">
+        <div *ngIf="!isLoading && (listing || listings.length > 0)" class="checkout-grid">
           <!-- Order Summary -->
           <div class="summary-card">
             <h3>{{ 'checkout.summary' | t }}</h3>
-            <div class="book-info">
-              <ui-book-cover
-                class="book-cover"
-                [coverUrl]="listing.photos?.length ? listing.photos[0] : listing.book_cover_url"
-                [title]="listing.book_title"
-                [author]="listing.book_authors"
-              ></ui-book-cover>
-              <div>
-                <h4 class="book-title-serif">{{ listing.book_title }}</h4>
-                <p class="muted" *ngIf="listing.book_authors">{{ listing.book_authors }}</p>
-                <div class="price" #summaryPrice>{{ listing.price | price: listing.currency }}</div>
+
+            <div class="items-list">
+              <div
+                class="checkout-item"
+                *ngFor="let item of listings; trackBy: trackByItem"
+                [class.item-refused]="!!refusedListingErrors[item.id]"
+              >
+                <div class="book-info">
+                  <ui-book-cover
+                    class="book-cover"
+                    [coverUrl]="item.photos?.length ? item.photos[0] : item.book_cover_url"
+                    [title]="item.book_title"
+                    [author]="item.book_authors"
+                  ></ui-book-cover>
+                  <div class="item-details">
+                    <h4 class="book-title-serif">{{ item.book_title }}</h4>
+                    <p class="muted" *ngIf="item.book_authors">{{ item.book_authors }}</p>
+                    <div class="price" *ngIf="listings.length > 1">{{ item.price | price: item.currency }}</div>
+                    <div class="inline-msg error item-err" *ngIf="refusedListingErrors[item.id]">
+                      {{ refusedListingErrors[item.id] | t }}
+                    </div>
+                  </div>
+                  <button
+                    *ngIf="listings.length > 1"
+                    type="button"
+                    class="item-remove-btn"
+                    [title]="'checkout.removeItem' | t"
+                    [attr.aria-label]="'checkout.removeItem' | t"
+                    (click)="removeItem(item)"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="summary-total-container" #summaryPrice>
+              <div class="total-row" *ngIf="listings.length > 1">
+                <span class="total-label">{{ 'checkout.total' | t }}</span>
+                <div class="price total-price">{{ totalPrice | price: currency }}</div>
+              </div>
+              <div class="price single-price" *ngIf="listings.length === 1">
+                {{ totalPrice | price: currency }}
               </div>
             </div>
           </div>
@@ -77,8 +110,8 @@ import { translateApiError } from '../../core/api-error.util';
             </div>
 
             <ui-action-bar class="mt-5" [leadFor]="summaryPrice">
-              <span actionBarLead>{{ listing.price | price: listing.currency }}</span>
-              <ui-button block class="flex-1" (onClick)="placeOrder()" [disabled]="isSubmitting">
+              <span actionBarLead>{{ totalPrice | price: currency }}</span>
+              <ui-button block class="flex-1" (onClick)="placeOrder()" [disabled]="isSubmitting || (listings.length === 0 && !listingId)">
                 {{ (isSubmitting ? 'checkout.processing' : 'checkout.sendMeetupRequest') | t }}
               </ui-button>
             </ui-action-bar>
@@ -106,21 +139,46 @@ import { translateApiError } from '../../core/api-error.util';
       border: 1px solid var(--line);
       border-radius: 8px;
     }
-    .book-info {
+    .items-list {
       display: flex;
+      flex-direction: column;
       gap: 16px;
       margin-top: 16px;
     }
-    .book-info > div {
+    .checkout-item {
+      position: relative;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .checkout-item:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    .checkout-item.item-refused {
+      border: 1px solid var(--danger);
+      background-color: var(--danger-light);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+    }
+    .item-err {
+      margin-top: 6px;
+      font-size: var(--text-xs);
+    }
+    .book-info {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .item-details {
       flex: 1;
       min-width: 0;
     }
-    .book-info h4 {
+    .item-details h4 {
       margin: 0 0 4px;
       overflow-wrap: anywhere;
       word-break: break-word;
     }
-    .book-info .muted {
+    .item-details .muted {
       margin: 0;
       overflow-wrap: anywhere;
       word-break: break-word;
@@ -139,6 +197,48 @@ import { translateApiError } from '../../core/api-error.util';
       color: var(--accent);
       margin-top: 8px;
     }
+    .item-remove-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      transition: color var(--motion-fast), background var(--motion-fast);
+      flex-shrink: 0;
+    }
+    .item-remove-btn:hover {
+      background: var(--danger-light);
+      color: var(--danger);
+    }
+    .summary-total-container {
+      margin-top: 16px;
+    }
+    .total-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 2px solid var(--line-strong);
+    }
+    .total-label {
+      font-size: var(--text-base);
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .total-price {
+      margin-top: 0;
+    }
+    .single-price {
+      margin-top: 8px;
+    }
     @media (max-width: 768px) {
       .checkout-grid {
         grid-template-columns: 1fr;
@@ -147,7 +247,23 @@ import { translateApiError } from '../../core/api-error.util';
   `]
 })
 export class CheckoutComponent implements OnInit {
-  listing: any = null;
+  listings: any[] = [];
+  get listing(): any {
+    return this.listings[0] || null;
+  }
+  set listing(val: any) {
+    if (val) {
+      if (this.listings.length === 0) {
+        this.listings = [val];
+      } else {
+        this.listings[0] = val;
+      }
+    } else {
+      this.listings = [];
+    }
+  }
+
+  conversationId: string | null = null;
   isLoading = true;
   /** The listing failed to load for a reason other than not existing. */
   loadFailed = false;
@@ -157,8 +273,10 @@ export class CheckoutComponent implements OnInit {
   errorKey = '';
   errorMsg = '';
   isNoChatError = false;
+  refusedListingErrors: Record<string, string> = {};
 
   listingId: string | null = null;
+  listingIds: string[] = [];
 
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -169,29 +287,76 @@ export class CheckoutComponent implements OnInit {
   private cdr = inject(ChangeDetectorRef);
   private ga = inject(GoogleAnalyticsService);
 
+  get totalPrice(): number {
+    if (this.listings.length === 0) return this.listing?.price || 0;
+    return this.listings.reduce((sum, item) => sum + (item?.price || 0), 0);
+  }
+
+  get currency(): string {
+    return this.listings[0]?.currency || this.listing?.currency || 'TWD';
+  }
+
+  trackByItem(_: number, item: any): string {
+    return item?.id || '';
+  }
+
   ngOnInit() {
-    this.route.paramMap.subscribe(params => {
+    this.route.paramMap?.subscribe(params => {
       const id = params.get('id');
       if (id) {
         this.listingId = id;
-        this.loadListing();
+        this.listingIds = [id];
       }
     });
+
+    if (this.route.queryParamMap) {
+      this.route.queryParamMap.subscribe(queryParams => {
+        const chat = queryParams.get('chat');
+        if (chat) this.conversationId = chat;
+
+        const rawListings = queryParams.get('listings');
+        if (rawListings) {
+          const ids = rawListings.split(',').map(s => s.trim()).filter(Boolean);
+          if (ids.length > 0) {
+            this.listingIds = ids;
+            this.listingId = ids[0];
+          }
+        }
+        this.loadListings();
+      });
+    } else {
+      this.loadListings();
+    }
   }
 
-  loadListing() {
-    this.listingService.getListing(this.listingId!).subscribe({
-      next: (data) => {
-        this.listing = data;
+  loadListings() {
+    const ids = this.listingIds.length > 0 ? this.listingIds : (this.listingId ? [this.listingId] : []);
+    if (!ids.length) {
+      this.isLoading = false;
+      this.notFound = true;
+      this.cdr.markForCheck();
+      return;
+    }
+
+    this.isLoading = true;
+    this.loadFailed = false;
+    this.notFound = false;
+
+    const requests = ids.map(id => this.listingService.getListing(id));
+    forkJoin(requests).subscribe({
+      next: (dataList) => {
+        this.listings = dataList;
         this.isLoading = false;
-        this.ga.trackBeginCheckout({
-          listingId: data.id,
-          bookId: data.book,
-          isbn: data.isbn,
-          itemName: data.book_title,
-          price: data.price,
-          currency: data.currency
-        });
+        for (const data of dataList) {
+          this.ga.trackBeginCheckout({
+            listingId: data.id,
+            bookId: data.book,
+            isbn: data.isbn,
+            itemName: data.book_title,
+            price: data.price,
+            currency: data.currency
+          });
+        }
         this.cdr.markForCheck();
       },
       error: (err) => {
@@ -203,10 +368,29 @@ export class CheckoutComponent implements OnInit {
     });
   }
 
+  loadListing() {
+    this.loadListings();
+  }
+
+  removeItem(item: any) {
+    if (this.listings.length <= 1) return;
+    this.listings = this.listings.filter(l => l.id !== item.id);
+    this.listingIds = this.listings.map(l => l.id);
+    if (this.refusedListingErrors[item.id]) {
+      delete this.refusedListingErrors[item.id];
+    }
+    if (Object.keys(this.refusedListingErrors).length === 0) {
+      if (this.errorKey === 'checkout.itemsUnavailableHint') {
+        this.errorKey = '';
+      }
+    }
+    this.cdr.markForCheck();
+  }
+
   retryLoad() {
     this.isLoading = true;
     this.loadFailed = false;
-    this.loadListing();
+    this.loadListings();
   }
 
   goSearch() {
@@ -226,12 +410,23 @@ export class CheckoutComponent implements OnInit {
     if (this.isSubmitting) return;
     this.isSubmitting = true;
     this.errorMsg = '';
+    this.errorKey = '';
     this.isNoChatError = false;
     this.cdr.markForCheck();
 
-    const orderData = {
-      listing: this.listingId!
-    };
+    let orderData: any;
+    if (this.listings.length > 1) {
+      orderData = {
+        listing_ids: this.listings.map(l => l.id),
+        conversation_id: this.conversationId || undefined,
+      };
+    } else {
+      const singleId = this.listings[0]?.id || this.listingId!;
+      orderData = {
+        listing: singleId,
+        conversation_id: this.conversationId || undefined,
+      };
+    }
 
     this.orderService.createOrder(orderData).subscribe({
       next: (order) => {
@@ -240,8 +435,8 @@ export class CheckoutComponent implements OnInit {
         this.ga.trackPlaceOrder({
           ...order,
           listing_title: order.listing_title || this.listing?.book_title,
-          total_amount: order.total_amount ?? this.listing?.price,
-          currency: order.currency || this.listing?.currency,
+          total_amount: order.total_amount ?? this.totalPrice,
+          currency: order.currency || this.currency,
         });
         this.router.navigate(this.regionLink.path(['/checkout/success']));
       },
@@ -250,8 +445,24 @@ export class CheckoutComponent implements OnInit {
         this.errorKey = '';
         this.errorMsg = '';
         this.isNoChatError = false;
-        // One error format (server/src/lib/http.ts): {error: {code, fields?}}.
-        if (err?.error?.error?.code === 'checkout.errNoChat') {
+
+        // Check for field errors naming listings
+        const fields = err?.error?.error?.fields;
+        this.refusedListingErrors = {};
+        let hasItemErrors = false;
+        if (fields && typeof fields === 'object') {
+          for (const [key, val] of Object.entries(fields)) {
+            if (this.listings.some(l => l.id === key)) {
+              const code = Array.isArray(val) ? val[0] : String(val);
+              this.refusedListingErrors[key] = code;
+              hasItemErrors = true;
+            }
+          }
+        }
+
+        if (hasItemErrors) {
+          this.errorKey = 'checkout.itemsUnavailableHint';
+        } else if (err?.error?.error?.code === 'checkout.errNoChat') {
           this.errorKey = 'checkout.errNoChat';
           this.isNoChatError = true;
         } else {
@@ -265,10 +476,13 @@ export class CheckoutComponent implements OnInit {
   }
 
   contactSeller() {
-    if (!this.listingId) return;
-    this.ga.trackEvent('checkout_to_chat', { listing_id: this.listingId });
-    // As on the listing page: the conversation is created by the first
-    // message, not by opening the chat.
-    this.router.navigate(this.regionLink.path(['/messages']), { queryParams: { listing: this.listingId } });
+    const targetId = this.listings[0]?.id || this.listingId;
+    if (!targetId) return;
+    this.ga.trackEvent('checkout_to_chat', { listing_id: targetId });
+    if (this.conversationId) {
+      this.router.navigate(this.regionLink.path(['/messages']), { queryParams: { chat: this.conversationId } });
+    } else {
+      this.router.navigate(this.regionLink.path(['/messages']), { queryParams: { listing: targetId } });
+    }
   }
 }
