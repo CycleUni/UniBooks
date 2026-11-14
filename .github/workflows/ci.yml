@@ -12,6 +12,8 @@ concurrency:
 jobs:
   server:
     runs-on: ubuntu-latest
+    # A run that does not end is a failure, not something to wait six hours for.
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: server
@@ -29,6 +31,8 @@ jobs:
 
   client:
     runs-on: ubuntu-latest
+    # A run that does not end is a failure, not something to wait six hours for.
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: client
@@ -47,6 +51,8 @@ jobs:
   # The Worker bundles the client build; check the whole thing deploys.
   bundle:
     runs-on: ubuntu-latest
+    # A run that does not end is a failure, not something to wait six hours for.
+    timeout-minutes: 15
     needs: [server, client]
     steps:
       - uses: actions/checkout@v7

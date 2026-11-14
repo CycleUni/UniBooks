@@ -30,6 +30,14 @@ export default defineConfig({
             binding: 'ASSETS',
             assetConfig: { not_found_handling: 'single-page-application' },
           },
+          // Production delivers mail at once (max_batch_timeout 0 in wrangler.jsonc).
+          // Under Miniflare on Linux a zero batch timeout keeps the queue broker
+          // busy after the last test, so the run never ends (CI sat until its
+          // six-hour limit). Tests do not depend on the delay, so they take 1 s.
+          queueConsumers: {
+            'unibooks-email': { maxBatchSize: 10, maxBatchTimeout: 1, maxRetries: 5 },
+            'unibooks-push': { maxBatchSize: 20, maxBatchTimeout: 10, maxRetries: 3 },
+          },
           // Test-only secrets; production values come from `wrangler secret put`.
           bindings: {
             TEST_MIGRATIONS: migrations,
