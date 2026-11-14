@@ -124,15 +124,20 @@ describe('GoogleAuthService sign-in state', () => {
     expect(service.opening()).toBe(false);
   });
 
-  describe('verifyCampusGoogle', () => {
+  describe('renderCampusVerifyButton', () => {
     let mockGoogle: any;
+    let container: HTMLElement;
 
     beforeEach(() => {
+      container = document.createElement('div');
+      container.id = 'test-campus-btn';
+      document.body.appendChild(container);
+
       mockGoogle = {
         accounts: {
           id: {
             initialize: vi.fn(),
-            prompt: vi.fn(),
+            renderButton: vi.fn(),
           },
         },
       };
@@ -142,48 +147,93 @@ describe('GoogleAuthService sign-in state', () => {
     });
 
     afterEach(() => {
+      container.remove();
       delete (window as any).google;
     });
 
-    it('initializes GIS with nonce and hd hint, and resolves with returned credential', async () => {
-      mockGoogle.accounts.id.prompt.mockImplementation((_momentListener: any) => {
-        // simulate user picking an account
-        const initCall = mockGoogle.accounts.id.initialize.mock.calls[0][0];
-        initCall.callback({ credential: 'campus-jwt-token' });
+    it('initializes GIS with nonce, hd hint, and renders button', async () => {
+      const onCredential = vi.fn();
+      const onReady = vi.fn();
+      const teardown = service.renderCampusVerifyButton(container, {
+        nonce: 'test-nonce-123',
+        hd: 'ntu.edu.tw',
+        onCredential,
+        onReady,
       });
 
-      const cred = await service.verifyCampusGoogle({ nonce: 'test-nonce-123', hd: 'ntu.edu.tw' });
-      expect(cred).toBe('campus-jwt-token');
+      await Promise.resolve();
 
       expect(mockGoogle.accounts.id.initialize).toHaveBeenCalledWith(
         expect.objectContaining({
           client_id: 'test-client-id',
           nonce: 'test-nonce-123',
           hd: 'ntu.edu.tw',
+          use_fedcm_for_button: false,
         }),
       );
+      expect(mockGoogle.accounts.id.renderButton).toHaveBeenCalledWith(
+        container,
+        expect.objectContaining({
+          size: 'large',
+          type: 'standard',
+          text: 'continue_with',
+        }),
+      );
+      expect(onReady).toHaveBeenCalled();
+      teardown();
     });
 
-    it('rejects with popup_closed when prompt is dismissed without credential', async () => {
-      mockGoogle.accounts.id.prompt.mockImplementation((momentListener: any) => {
-        momentListener({
-          isDismissedMoment: () => true,
-          getDismissedReason: () => 'cancel',
-        });
+    it('invokes onCredential when GIS returns a credential', async () => {
+      const onCredential = vi.fn();
+      const teardown = service.renderCampusVerifyButton(container, {
+        nonce: 'test-nonce-123',
+        onCredential,
       });
 
-      await expect(service.verifyCampusGoogle({ nonce: 'test-nonce' })).rejects.toThrow('popup_closed');
+      await Promise.resolve();
+
+      const initCall = mockGoogle.accounts.id.initialize.mock.calls[0][0];
+      initCall.callback({ credential: 'campus-jwt-token' });
+
+      expect(onCredential).toHaveBeenCalledWith('campus-jwt-token');
+      teardown();
     });
 
-    it('rejects with popup_closed when prompt cannot be displayed', async () => {
-      mockGoogle.accounts.id.prompt.mockImplementation((momentListener: any) => {
-        momentListener({
-          isDismissedMoment: () => false,
-          isNotDisplayed: () => true,
-        });
+    it('invokes onError when Google SDK is unavailable or script fails to load', async () => {
+      (service as any).loadGoogleScript = () => Promise.reject(new Error('Network error'));
+      const onError = vi.fn();
+
+      const teardown = service.renderCampusVerifyButton(container, {
+        nonce: 'test-nonce',
+        onCredential: vi.fn(),
+        onError,
       });
 
-      await expect(service.verifyCampusGoogle({ nonce: 'test-nonce' })).rejects.toThrow('popup_closed');
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      teardown();
+    });
+
+    it('re-initializes GIS when rendering sign-in button after campus button', async () => {
+      const teardown = service.renderCampusVerifyButton(container, {
+        nonce: 'campus-nonce',
+        onCredential: vi.fn(),
+      });
+      await Promise.resolve();
+
+      expect(mockGoogle.accounts.id.initialize).toHaveBeenCalledWith(
+        expect.objectContaining({ nonce: 'campus-nonce' }),
+      );
+
+      service.renderButton('test-campus-btn');
+      await Promise.resolve();
+
+      // Sign-in re-initializes without nonce
+      const lastInitCall = mockGoogle.accounts.id.initialize.mock.calls.at(-1)[0];
+      expect(lastInitCall.nonce).toBeUndefined();
+      teardown();
     });
   });
 });

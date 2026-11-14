@@ -1,17 +1,18 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { UiVerificationPrompt } from './verification-prompt.component';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { I18nService } from '../../core/i18n.service';
 import { RegionService } from '../../core/region.service';
 import { AuthStore } from '../../core/auth.store';
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 
 describe('UiVerificationPrompt', () => {
   let component: UiVerificationPrompt;
   let fixture: ComponentFixture<UiVerificationPrompt>;
   let mockAuth: any;
   let userSignal: any;
+  let router: Router;
 
   beforeEach(async () => {
     const storage = typeof window !== 'undefined' ? window.sessionStorage : (globalThis as any).sessionStorage;
@@ -42,11 +43,16 @@ describe('UiVerificationPrompt', () => {
       ],
     }).compileComponents();
 
+    router = TestBed.inject(Router);
+    vi.spyOn(router, 'navigate');
     fixture = TestBed.createComponent(UiVerificationPrompt);
     component = fixture.componentInstance;
     component.storageKey = 'test.verification_prompt.dismissed';
     fixture.detectChanges();
   });
+
+  const acceptButton = () =>
+    fixture.nativeElement.querySelectorAll('[data-testid="verification-prompt"] button')[0] as HTMLButtonElement;
 
   const dismissButton = () =>
     fixture.nativeElement.querySelectorAll('[data-testid="verification-prompt"] button')[1] as HTMLButtonElement;
@@ -104,5 +110,15 @@ describe('UiVerificationPrompt', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="verification-prompt"]')).toBeTruthy();
+  });
+
+  it('navigates to account/verification with returnUrl when accept button is clicked', () => {
+    const btn = acceptButton();
+    expect(btn).toBeTruthy();
+    btn.click();
+    expect(router.navigate).toHaveBeenCalledWith(
+      ['/', 'tw', 'account', 'verification'],
+      expect.objectContaining({ queryParams: expect.anything() }),
+    );
   });
 });

@@ -83,6 +83,7 @@ describe('UiWelcomeDialog', () => {
     }).compileComponents();
 
     router = TestBed.inject(Router);
+    vi.spyOn(router, 'navigate');
     fixture = TestBed.createComponent(UiWelcomeDialog);
     component = fixture.componentInstance;
   });
@@ -142,7 +143,7 @@ describe('UiWelcomeDialog', () => {
     expect(component.isOpen).toBe(false);
   });
 
-  it('confirming a mandatory school transitions to verify step in the same dialog', () => {
+  it('confirming a mandatory school transitions to verify step, where user can go to verification', () => {
     fixture.detectChanges();
     component.selectSchool(mockSchools[1]);
     component.confirmSchoolChoice();
@@ -151,8 +152,10 @@ describe('UiWelcomeDialog', () => {
     expect(mockSchoolState.setManualSchool).toHaveBeenCalledWith('MANDATORY');
     expect(component.isOpen).toBe(true);
     expect(component.step).toBe('verify');
-    expect(component.selectedDomain).toBe('mand.edu.tw');
-    expect(component.googleAvailable).toBe(true);
+
+    component.goToVerification();
+    expect(component.isOpen).toBe(false);
+    expect(router.navigate).toHaveBeenCalledWith(['/', 'tw', 'account', 'verification']);
   });
 
   it('allows continuing without verification from verify step', () => {

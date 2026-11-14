@@ -55,6 +55,7 @@ const featureRoutes: Routes = [
       { path: 'orders', canActivate: [authGuard], data: { seo: { titleKey: 'acct.myOrders' } }, loadComponent: () => import('./features/account/orders').then(m => m.OrdersComponent) },
       { path: 'reports', canActivate: [authGuard], data: { seo: { titleKey: 'acct.tabReports' } }, loadComponent: () => import('./features/account/reports').then(m => m.ReportsComponent) },
       { path: 'notifications', canActivate: [authGuard], data: { seo: { titleKey: 'acct.tabNotifications' } }, loadComponent: () => import('./features/account/notifications').then(m => m.NotificationsComponent) },
+      { path: 'verification', canActivate: [authGuard], data: { seo: { titleKey: 'acct.tabVerification' }, preload: true }, loadComponent: () => import('./features/account/verification').then(m => m.VerificationComponent) },
       { path: 'settings', canActivate: [authGuard], data: { seo: { titleKey: 'acct.tabSettings' }, preload: true }, loadComponent: () => import('./features/account/settings').then(m => m.SettingsComponent) }
     ]
   },

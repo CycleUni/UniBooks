@@ -121,7 +121,7 @@ export class Account {
     const syncAtMenu = () => {
       const path = stripRegionPrefix(this.router.url).split(/[?#]/)[0].replace(/\/$/, '');
       this.atMenu = path === '/account';
-      this.atSettings = path === '/account/settings';
+      this.atSettings = path === '/account/settings' || path === '/account/verification';
     };
     syncAtMenu();
     this.router.events

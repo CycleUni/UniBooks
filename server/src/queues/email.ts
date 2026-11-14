@@ -290,7 +290,7 @@ async function verificationExpiry(env: Env, msg: Extract<EmailMessage, { type: '
   const details = await regionDetails(env, msg.region);
   const lang = await languageFor(env, user, msg.region);
   const date = formatDate(msg.expires_at, details?.timezone || 'UTC');
-  const settings = `${frontend(env)}/account/settings`;
+  const verificationLink = `${frontend(env)}/account/verification`;
   // A Google sign-in renews it only for an account linked to Google whose
   // sign-in address is the bound campus address.
   const viaGoogle = !!user.google_id && !!msg.edu_email && user.email.toLowerCase() === msg.edu_email.toLowerCase();
@@ -303,7 +303,7 @@ async function verificationExpiry(env: Env, msg: Extract<EmailMessage, { type: '
     '',
     t(lang, 'email.verificationExpiry.after'),
     '',
-    { text: t(lang, 'email.verificationExpiry.settings', { link: settings }), link: settings },
+    { text: t(lang, 'email.verificationExpiry.settings', { link: verificationLink }), link: verificationLink },
   ]);
 }
 
@@ -314,14 +314,14 @@ async function studentIdOutcome(
   const user = await loadUser(env, msg.user_id);
   if (!reachable(user)) return null;
   const lang = await languageFor(env, user, msg.region);
-  const settings = `${frontend(env)}/account/settings`;
+  const verificationLink = `${frontend(env)}/account/verification`;
   const school = pickTranslation(msg.school_translations, lang).name || msg.school_name || '';
 
   if (msg.status === 'approved') {
     return render(user.email, displayName(user.first_name, user.last_name), t(lang, 'email.studentIdApproved.subject', { school }), [
       t(lang, 'email.studentIdApproved.intro', { school }),
       '',
-      { text: t(lang, 'email.studentIdApproved.action', { link: settings }), link: settings },
+      { text: t(lang, 'email.studentIdApproved.action', { link: verificationLink }), link: verificationLink },
     ]);
   } else {
     const reason = msg.reason || '';
@@ -329,7 +329,7 @@ async function studentIdOutcome(
     if (reason) {
       lines.push(t(lang, 'email.studentIdRejected.reason', { reason }), '');
     }
-    lines.push({ text: t(lang, 'email.studentIdRejected.action', { link: settings }), link: settings });
+    lines.push({ text: t(lang, 'email.studentIdRejected.action', { link: verificationLink }), link: verificationLink });
     return render(user.email, displayName(user.first_name, user.last_name), t(lang, 'email.studentIdRejected.subject', { school }), lines);
   }
 }

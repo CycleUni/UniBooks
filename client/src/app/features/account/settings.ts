@@ -1,36 +1,25 @@
-import { Component, inject, OnDestroy, OnInit, ChangeDetectorRef, effect } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { firstValueFrom } from 'rxjs';
-import { GoogleAuthService } from '../../core/services/google-auth.service';
+import { ActivatedRoute, Router } from '@angular/router';
+import { TPipe, I18nService } from '../../core/i18n.service';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiInput } from '../../shared/ui/input.component';
-import { UiDropdown, DropdownOption } from '../../shared/ui/dropdown.component';
 import { UiSuccessCheck } from '../../shared/ui/success-check.component';
-import { TPipe, I18nService } from '../../core/i18n.service';
-import { RegionService, Region } from '../../core/region.service';
-import { AccountService } from '../../core/services/account.service';
-import { AuthStore, PasskeyItem, isUserCancellation } from '../../core/auth.store';
-import { SchoolOption, CityOption, SchoolStateService } from '../../core/services/school-state.service';
-import { MetadataService } from '../../core/services/metadata.service';
-import { schoolKeywords } from '../../core/school-search';
-import { isSameRegion } from '../../core/region-path';
-import { ToastService } from '../../core/services/toast.service';
-import { ConfirmService } from '../../core/services/confirm.service';
-import { ActivatedRoute, Router } from '@angular/router';
-import { parseApiError, translateApiError } from '../../core/api-error.util';
-import { domainMatchesSuffix, getSchoolDomainChoices, splitEmailAddress, findSchoolForDomain } from '../../core/verification';
-import { SchoolRequestFormComponent } from './school-request-form.component';
-import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
-import { clearSensitiveParams } from '../../core/sensitive-url';
+import { RegionLinkDirective } from '../../core/region-link.directive';
+import { AuthStore, PasskeyItem, isUserCancellation } from '../../core/auth.store';
+import { AccountService } from '../../core/services/account.service';
+import { RegionService, Region } from '../../core/region.service';
+import { ToastService } from '../../core/services/toast.service';
+import { ConfirmService } from '../../core/services/confirm.service';
+import { MetadataService } from '../../core/services/metadata.service';
+import { SchoolOption } from '../../core/services/school-state.service';
+import { isSameRegion } from '../../core/region-path';
+import { parseApiError, translateApiError } from '../../core/api-error.util';
 import { LIMITS } from '../../core/limits';
-
-/** The verification answer that means "valid campus address, unknown campus". */
-const SCHOOL_NOT_SUPPORTED = 'acct.errSchoolNotSupported';
-/** How close to its expiry a verification starts offering renewal. */
-const RENEW_WINDOW_DAYS = 30;
+import { clearSensitiveParams } from '../../core/sensitive-url';
 
 @Component({
   selector: 'app-account-settings',
@@ -38,21 +27,76 @@ const RENEW_WINDOW_DAYS = 30;
   imports: [
     CommonModule,
     FormsModule,
+    TPipe,
     UiButton,
     UiInput,
-    UiDropdown,
     UiSuccessCheck,
-    TPipe,
-    SchoolRequestFormComponent,
     UiSkeleton,
     UiErrorState,
-    UiVerifiedBadge,
   ],
   templateUrl: './settings.html',
   styleUrls: ['./settings.css'],
 })
-export class SettingsComponent implements OnInit, OnDestroy {
+export class SettingsComponent implements OnInit {
   readonly LIMITS = LIMITS;
+
+  private authStore = inject(AuthStore);
+  private accountService = inject(AccountService);
+  public regionService = inject(RegionService);
+  private cdr = inject(ChangeDetectorRef);
+  readonly i18n = inject(I18nService);
+  private toast = inject(ToastService);
+  private confirms = inject(ConfirmService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private metadataService = inject(MetadataService);
+
+  email = '';
+  firstName = '';
+  lastName = '';
+  verifications: any[] = [];
+  availableSchools: SchoolOption[] = [];
+  isLoading = false;
+  profileLoaded = false;
+  profileLoadFailed = false;
+  settingsIsError = false;
+  isGoogleLinked = false;
+  avatarUrl = '';
+  showAvatar = true;
+  savingShowAvatar = false;
+
+  oldPassword = '';
+  newPassword = '';
+  confirmPassword = '';
+  pwdIsError = false;
+  hasPassword = true;
+
+  passkeys: PasskeyItem[] = [];
+  passkeyTwoStep = false;
+  savingTwoStep = false;
+  passkeysLoading = false;
+  isAddingPasskey = false;
+  editingPasskeyId: string | null = null;
+  editingPasskeyName = '';
+  isSavingPasskeyRename = false;
+  deletingPasskeyId: string | null = null;
+  passkeyIconErrors: Record<string, boolean> = {};
+
+  pendingEmail: string | null = null;
+  private savedEmail = '';
+  emailChangePassword = '';
+
+  clientSettingsMsg = '';
+  lastSettingsError: any = null;
+
+  clientPwdMsg = '';
+  lastPwdError: any = null;
+
+  removePasswordInput = '';
+  clientRemovePwdMsg = '';
+  lastRemovePwdError: any = null;
+  removePwdIsError = false;
+
   get currentRegion(): Region | null {
     return this.regionService.currentRegionObj();
   }
@@ -66,145 +110,25 @@ export class SettingsComponent implements OnInit, OnDestroy {
     );
   }
 
-  /** The current region's verification that passed its two-year expiry,
-   *  while no live one replaces it. */
-  get currentLapsed(): any | null {
-    if (!this.currentRegion || this.currentVerification) return null;
-    return (this.lapsedVerifications || []).find((v) => isSameRegion(v.region, this.currentRegion!.code)) || null;
+  get isVerified(): boolean {
+    return !!this.currentVerification;
   }
 
-  /** The live verification expires within RENEW_WINDOW_DAYS: offer to renew it now. */
-  get renewalDue(): boolean {
-    const expires = this.currentVerification?.expires_at;
-    return !!expires && new Date(expires).getTime() - Date.now() < RENEW_WINDOW_DAYS * 86_400_000;
+  get currentVerifiedSchoolName(): string {
+    const v = this.currentVerification;
+    if (!v) return '';
+    const school = this.availableSchools.find((s) => s.id === v.school);
+    return school ? school.display_name || school.name : v.school_name || '';
   }
 
-  /** Whether the sign-in email itself is a campus address of the current region,
-   *  so it can be (re-)verified in one click. */
-  private get loginEmailIsCampus(): boolean {
-    const domain = this.email.split('@')[1]?.toLowerCase();
-    return !!domain && !!this.currentRegion?.edu_email_suffix.some((s) => domainMatchesSuffix(domain, s));
+  get mustVerify(): boolean {
+    return this.authStore.mustVerifyIn(this.regionService.region());
   }
 
-  /** The campus address a renewal re-proves: the one bound to the live or
-   *  lapsed verification. Null for a manual (staff) verification. */
-  get renewOldEmail(): string | null {
-    return this.currentVerification?.edu_email || this.currentLapsed?.edu_email || null;
+  get emailChanged(): boolean {
+    return this.email.trim().toLowerCase() !== this.savedEmail.toLowerCase();
   }
 
-  /** The student chose to renew with a different campus address. */
-  changingEduEmail = false;
-
-  /** A Google sign-in renews the verification only for an account already
-   *  linked to Google whose sign-in email is the bound campus address, so
-   *  the hint is shown only then. */
-  get googleRenews(): boolean {
-    const old = this.renewOldEmail;
-    return this.isGoogleLinked && !!old && old.toLowerCase() === this.email.toLowerCase();
-  }
-
-  /** Renew the bound address. The server reads which one from the account,
-   *  so nothing here can redirect it: it renews at once when that address is
-   *  the sign-in email, otherwise it mails a link there. */
-  onVerifyWithOldEmail() {
-    if (this.isLoading || this.resendCooldownSeconds > 0) return;
-    this.isLoading = true;
-    this.clientVerifyMsg = '';
-    this.lastVerifyError = null;
-    this.autoVerifyMessage = '';
-    this.cdr.markForCheck();
-    this.accountService.renewVerification().subscribe({
-      next: (res) => {
-        this.isLoading = false;
-        this.verifyIsError = false;
-        if (res.code === 'acct.sentVerification') {
-          this.clientVerifyMsg = 'acct.sentVerification';
-          this.startResendCooldown(180);
-        } else {
-          this.clientVerifyMsg = 'acct.verifySuccess';
-          this.loadProfile();
-        }
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.isLoading = false;
-        this.verifyIsError = true;
-        this.lastVerifyError = err;
-        const throttledSeconds = this.extractThrottleSeconds(err);
-        if (throttledSeconds !== null) this.applyCooldownUntil(Date.now() + throttledSeconds * 1000);
-        this.cdr.markForCheck();
-      },
-    });
-  }
-
-  onChangeEduEmail() {
-    this.changingEduEmail = true;
-    this.eduEmail = '';
-    this.eduLocalPart = '';
-    this.clientVerifyMsg = '';
-    this.lastVerifyError = null;
-    this.autoVerifyMessage = '';
-    this.initSelectedSchool();
-  }
-
-  onSubmitNewEduEmail() {
-    if (this.resendCooldownSeconds > 0) return;
-    const emailToSubmit = this.buildSubmitEmail();
-    if (!emailToSubmit) return;
-    this.submitEduVerification(emailToSubmit);
-  }
-
-  private readonly verifyPendingEmailStorageKeyLegacy =
-    'unibooks.account.eduVerification.pendingEmail';
-  private readonly verifyCooldownUntilStorageKeyLegacy =
-    'unibooks.account.eduVerification.cooldownUntil';
-
-  email = '';
-  firstName = '';
-  lastName = '';
-  eduEmail = '';
-  verifications: any[] = [];
-  lapsedVerifications: any[] = [];
-  pendingEduEmail: string | null = null;
-  resendCooldownSeconds = 0;
-  isEditingPendingEmail = false;
-  isLoading = false;
-  /** The first profile load has answered. Until then the form shows a
-   *  placeholder: empty inputs and an "unverified" banner read as facts
-   *  about the account, not as "still loading". */
-  profileLoaded = false;
-  /** The first profile load failed; nothing on the form can be trusted. */
-  profileLoadFailed = false;
-  verifyIsError = false;
-  settingsIsError = false;
-  isGoogleLinked = false;
-  avatarUrl = '';
-  /** Whether other users see the avatar; the owner always does. */
-  showAvatar = true;
-  savingShowAvatar = false;
-
-  oldPassword = '';
-  newPassword = '';
-  confirmPassword = '';
-  pwdIsError = false;
-  hasPassword = true;
-  passkeys: PasskeyItem[] = [];
-  passkeyTwoStep = false;
-  savingTwoStep = false;
-  passkeysLoading = false;
-  isAddingPasskey = false;
-  editingPasskeyId: string | null = null;
-  editingPasskeyName = '';
-  isSavingPasskeyRename = false;
-  deletingPasskeyId: string | null = null;
-  passkeyIconErrors: Record<string, boolean> = {};
-
-  onPasskeyIconError(id: string): void {
-    this.passkeyIconErrors[id] = true;
-    this.cdr.markForCheck();
-  }
-
-  /** Names only the sign-in methods this account really has, so the warning never mentions one it lacks. */
   get removePasswordConfirmKey(): string {
     const hasPasskey = this.passkeys.length > 0;
     if (this.isGoogleLinked && hasPasskey) return 'acct.removePasswordConfirmBoth';
@@ -215,53 +139,16 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return this.authStore.supportsPasskeys();
   }
 
-  clientVerifyMsg = '';
-  lastVerifyError: any = null;
-  get verifyMessage(): string {
-    if (this.clientVerifyMsg) return this.i18n.t(this.clientVerifyMsg);
-    if (!this.lastVerifyError) return '';
-    const err = this.lastVerifyError;
-    const code = err.error?.error?.code;
-    if (code) return this.i18n.t(code);
-    const throttledSeconds = this.extractThrottleSeconds(err);
-    if (throttledSeconds !== null) {
-      return this.i18n.t('acct.verifyThrottled', {
-        minutes: this.resendCooldownMinutes,
-        seconds: this.resendCooldownSecondsPart,
-      });
-    }
-    return translateApiError(err, this.i18n) ?? this.i18n.t('acct.verifyFailed');
-  }
-
-  /** Whether the last manual verification attempt failed because the
-   *  address's school is not in the registry — the case the "report my
-   *  school" form is offered for. */
-  get schoolNotSupported(): boolean {
-    return (
-      !this.clientVerifyMsg && this.lastVerifyError?.error?.error?.code === SCHOOL_NOT_SUPPORTED
-    );
-  }
-
-  clientSettingsMsg = '';
-  lastSettingsError: any = null;
   get settingsMessage(): string {
     if (this.clientSettingsMsg) return this.i18n.t(this.clientSettingsMsg);
     if (!this.lastSettingsError) return '';
-    const err = this.lastSettingsError;
-    return translateApiError(err, this.i18n) ?? this.i18n.t('acct.saveFailed');
+    return translateApiError(this.lastSettingsError, this.i18n) ?? this.i18n.t('acct.saveFailed');
   }
 
-  clientPwdMsg = '';
-  lastPwdError: any = null;
   get pwdMessage(): string {
     if (this.clientPwdMsg) return this.i18n.t(this.clientPwdMsg);
     if (!this.lastPwdError) return '';
     const err = this.lastPwdError;
-    // The server's password validators answer with every problem of the new
-    // password under fields.new_password, so "too short", "too common" and
-    // "entirely numeric" are shown together rather than as a bare "update
-    // failed". A rejected old password is a different field and reads through
-    // translateApiError below.
     const rejected: string[] = err.error?.error?.fields?.new_password ?? [];
     if (rejected.length) {
       const detail = rejected
@@ -273,179 +160,21 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return translateApiError(err, this.i18n) ?? this.i18n.t('acct.updateFailed');
   }
 
-  removePasswordInput = '';
-  clientRemovePwdMsg = '';
-  lastRemovePwdError: any = null;
-  removePwdIsError = false;
   get removePwdMessage(): string {
     if (this.clientRemovePwdMsg) return this.i18n.t(this.clientRemovePwdMsg);
     if (!this.lastRemovePwdError) return '';
-    const err = this.lastRemovePwdError;
-    return translateApiError(err, this.i18n) ?? this.i18n.t('acct.updateFailed');
-  }
-
-  private authStore = inject(AuthStore);
-  private accountService = inject(AccountService);
-  public regionService = inject(RegionService);
-  private cdr = inject(ChangeDetectorRef);
-  readonly i18n = inject(I18nService);
-  private toast = inject(ToastService);
-  private confirms = inject(ConfirmService);
-  private route = inject(ActivatedRoute);
-  private router = inject(Router);
-  private metadataService = inject(MetadataService);
-  private schoolStateService = inject(SchoolStateService);
-  private googleAuth = inject(GoogleAuthService);
-  private resendCountdownTimer: ReturnType<typeof setInterval> | null = null;
-  private profileUserId: string | null = null;
-
-  availableSchools: SchoolOption[] = [];
-  availableCities: CityOption[] = [];
-  schoolDropdownOptions: DropdownOption[] = [];
-  selectedVerifySchoolCode = '';
-  selectedSchoolOption: SchoolOption | null = null;
-  selectedVerifyDomain = '';
-  schoolDomainChoices: string[] = [];
-  eduLocalPart = '';
-  useManualEmail = false;
-
-  selectedDeclaredSchoolCode = '';
-  declaredSchool: { id: number; code: string; name: string; requires_verification: boolean } | null = null;
-  softInviteDismissed = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('unibooks_soft_invite_dismissed') === 'true';
-
-  studentIdRequest: {
-    id: string;
-    status: string;
-    school: string;
-    school_name: string;
-    student_number: string;
-    reject_reason: string;
-    created_at: string;
-    updated_at: string;
-    reviewed_at: string | null;
-  } | null = null;
-  studentNumberInput = '';
-  selectedStudentIdFile: File | null = null;
-  studentIdPreviewUrl: string | null = null;
-  isSubmittingStudentId = false;
-  isCancellingStudentId = false;
-  isResubmittingStudentId = false;
-  studentIdError = '';
-
-  get targetStudentIdSchool(): SchoolOption | null {
-    if (this.selectedSchoolOption) return this.selectedSchoolOption;
-    if (this.selectedDeclaredSchoolCode) {
-      return this.availableSchools.find((s) => s.code === this.selectedDeclaredSchoolCode) || null;
-    }
-    return null;
-  }
-
-  get allowsStudentIdVerification(): boolean {
-    return !!this.targetStudentIdSchool?.allows_student_id_verification;
-  }
-
-  get mustVerify(): boolean {
-    return this.authStore.mustVerifyIn(this.regionService.region());
-  }
-
-  get currentVerifiedSchoolName(): string {
-    const v = this.currentVerification;
-    if (!v) return '';
-    const school = this.availableSchools.find((s) => s.id === v.school);
-    return school ? (school.display_name || school.name) : (v.school_name || '');
-  }
-
-  get currentDeclaredSchoolName(): string {
-    return this.declaredSchool?.name || this.authStore.schoolForRegion(this.regionService.region());
-  }
-
-  dismissSoftInvite() {
-    this.softInviteDismissed = true;
-    if (typeof sessionStorage !== 'undefined') {
-      try { sessionStorage.setItem('unibooks_soft_invite_dismissed', 'true'); } catch {}
-    }
-  }
-
-  onDeclaredSchoolChange(code: string) {
-    const region = this.regionService.region();
-    this.accountService.setDeclaredSchool(region, code || null).subscribe({
-      next: () => {
-        this.selectedDeclaredSchoolCode = code || '';
-        this.schoolStateService.setManualSchool(code || '');
-        this.toast.success(this.i18n.t('acct.schoolUpdated'));
-        this.loadProfile();
-      },
-      error: (err) => {
-        this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
-        this.loadProfile();
-      },
-    });
-  }
-
-  constructor() {
-    effect(() => {
-      this.i18n.lang();
-      if (this.availableSchools.length > 0) {
-        this.rebuildSchoolOptions();
-        if (this.selectedVerifySchoolCode) {
-          this.selectedSchoolOption =
-            this.availableSchools.find((s) => s.code === this.selectedVerifySchoolCode) || null;
-        }
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  get showPendingVerification(): boolean {
-    return !this.isEditingPendingEmail && !!this.pendingEduEmail;
-  }
-
-  get resendCooldownMinutes(): number {
-    return Math.floor(this.resendCooldownSeconds / 60);
-  }
-
-  get resendCooldownSecondsPart(): string {
-    return (this.resendCooldownSeconds % 60).toString().padStart(2, '0');
-  }
-
-  get pendingEduEmailDisplay(): string {
-    return this.pendingEduEmail || '';
-  }
-
-  get autoVerifyRegion(): Region | null {
-    if (!this.email || this.currentVerification || !this.currentRegion) return null;
-    const parts = this.email.split('@');
-    if (parts.length !== 2) return null;
-    const loginDomain = parts[1].toLowerCase();
-
-    if (this.currentRegion.edu_email_suffix.some((s) => domainMatchesSuffix(loginDomain, s))) {
-      return this.currentRegion;
-    }
-    return null;
-  }
-
-  /** A sign-in-email change waiting for the link in the new mailbox to be
-   *  followed. Until then `email` below is still the address that works. */
-  pendingEmail: string | null = null;
-
-  /** The sign-in email as loaded; changing it needs the current password. */
-  private savedEmail = '';
-  emailChangePassword = '';
-  get emailChanged(): boolean {
-    return this.email.trim().toLowerCase() !== this.savedEmail.toLowerCase();
+    return (
+      translateApiError(this.lastRemovePwdError, this.i18n) ?? this.i18n.t('acct.updateFailed')
+    );
   }
 
   ngOnInit() {
-    this.clearLegacyPendingVerificationState();
     this.loadProfile();
     this.loadSchoolsMetadata();
     if (this.supportsPasskeys) {
       this.loadPasskeys();
     }
 
-    // The confirmation mail links back here with the token on the query
-    // string; the address it was sent to may well be open in a browser that
-    // is not signed in, which is why the endpoint takes the token as proof.
     const token = this.route.snapshot.queryParamMap.get('email_change_token');
     if (token) {
       clearSensitiveParams(this.router, this.route);
@@ -453,83 +182,26 @@ export class SettingsComponent implements OnInit, OnDestroy {
     }
   }
 
-  private confirmEmailChange(token: string) {
-    this.accountService.confirmEmailChange(token).pipe(this.toast.working(this.i18n.t('common.processing'))).subscribe({
-      next: () => {
-        this.toast.success(this.i18n.t('acct.emailChanged'));
-        this.accountService.clearProfileCache();
-        this.loadProfile();
-      },
-      error: (err) => {
-        this.toast.error(parseApiError(err, this.i18n, 'acct.errEmailChangeTokenInvalid'));
-      },
-    });
-  }
-
-  onCancelEmailChange() {
-    this.accountService.cancelEmailChange().pipe(this.toast.working(this.i18n.t('common.cancelling'))).subscribe({
-      next: () => {
-        this.pendingEmail = null;
-        this.toast.success(this.i18n.t('acct.emailChangeCancelled'));
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
-      },
-    });
-  }
-
-  ngOnDestroy() {
-    this.stopResendCountdown();
-    if (this.studentIdPreviewUrl) {
-      URL.revokeObjectURL(this.studentIdPreviewUrl);
-    }
-  }
-
   loadProfile() {
     this.profileLoadFailed = false;
-    this.loadStudentIdVerification();
     this.accountService.getMyProfile().subscribe({
       next: (data) => {
         this.profileLoaded = true;
-        this.profileUserId = data.id ? String(data.id) : null;
         this.email = data.email || '';
         this.savedEmail = this.email;
         this.emailChangePassword = '';
         this.firstName = data.first_name || '';
         this.lastName = data.last_name || '';
-        this.eduEmail = data.edu_email || '';
         this.verifications = data.verifications || [];
-        this.lapsedVerifications = data.lapsed_verifications || [];
-        this.changingEduEmail = false;
         this.hasPassword = data.has_password ?? true;
         this.isGoogleLinked = data.is_google_linked ?? false;
         this.passkeyTwoStep = data.passkey_2fa ?? false;
         this.avatarUrl = data.avatar_url || '';
         this.showAvatar = data.show_avatar ?? true;
         this.pendingEmail = data.pending_email ?? null;
-        const regCode = (this.currentRegion?.code || '').toUpperCase();
-        const regData = data.per_region?.[regCode];
-        this.declaredSchool = regData?.declared_school || data.declared_school || null;
-        this.selectedDeclaredSchoolCode = this.declaredSchool?.code || '';
-        this.restorePendingVerificationState();
-        if (this.verifications.length > 0) {
-          this.clearPendingVerificationState();
-        } else if (this.pendingEduEmail && !this.isEditingPendingEmail) {
-          this.eduEmail = this.pendingEduEmail;
-          if (this.eduEmail.includes('@')) {
-            this.handlePastedEmail(this.eduEmail);
-          }
-        } else if (this.eduEmail && !this.eduLocalPart) {
-          if (this.eduEmail.includes('@')) {
-            this.handlePastedEmail(this.eduEmail);
-          }
-        }
         this.cdr.markForCheck();
       },
       error: (err) => {
-        // A reload after the form is up (e.g. confirming an email change)
-        // keeps the form and says so inline; a first load has no form yet.
         if (!this.profileLoaded) this.profileLoadFailed = true;
         this.settingsIsError = true;
         this.clientSettingsMsg = 'acct.loadProfileFailed';
@@ -539,506 +211,46 @@ export class SettingsComponent implements OnInit, OnDestroy {
     });
   }
 
-  loadStudentIdVerification() {
-    if (typeof this.accountService?.getStudentIdVerification !== 'function') return;
-    this.accountService.getStudentIdVerification().subscribe({
-      next: (res) => {
-        this.studentIdRequest = res.request;
+  loadSchoolsMetadata() {
+    this.metadataService.getMetadata().subscribe({
+      next: (data) => {
+        this.availableSchools = data?.schools || [];
         this.cdr.markForCheck();
       },
       error: () => {},
     });
   }
 
-  onStudentIdPhotoSelected(event: Event) {
-    const input = event.target as HTMLInputElement;
-    if (!input.files || input.files.length === 0) return;
-    const file = input.files[0];
-    this.selectedStudentIdFile = file;
-    if (this.studentIdPreviewUrl) {
-      URL.revokeObjectURL(this.studentIdPreviewUrl);
-    }
-    this.studentIdPreviewUrl = URL.createObjectURL(file);
-    this.studentIdError = '';
-    this.cdr.markForCheck();
+  private confirmEmailChange(token: string) {
+    this.accountService
+      .confirmEmailChange(token)
+      .pipe(this.toast.working(this.i18n.t('common.processing')))
+      .subscribe({
+        next: () => {
+          this.toast.success(this.i18n.t('acct.emailChanged'));
+          this.accountService.clearProfileCache();
+          this.loadProfile();
+        },
+        error: (err) => {
+          this.toast.error(parseApiError(err, this.i18n, 'acct.errEmailChangeTokenInvalid'));
+        },
+      });
   }
 
-  onRemoveStudentIdPhoto() {
-    this.selectedStudentIdFile = null;
-    if (this.studentIdPreviewUrl) {
-      URL.revokeObjectURL(this.studentIdPreviewUrl);
-      this.studentIdPreviewUrl = null;
-    }
-    this.cdr.markForCheck();
-  }
-
-  startResubmitStudentId() {
-    this.isResubmittingStudentId = true;
-    this.studentNumberInput = this.studentIdRequest?.student_number || '';
-    this.onRemoveStudentIdPhoto();
-    this.studentIdError = '';
-    this.cdr.markForCheck();
-  }
-
-  async onSubmitStudentIdVerification() {
-    const school = this.targetStudentIdSchool;
-    if (!school || !this.selectedStudentIdFile || !this.studentNumberInput.trim() || this.isSubmittingStudentId) {
-      return;
-    }
-    this.isSubmittingStudentId = true;
-    this.studentIdError = '';
-    this.cdr.markForCheck();
-
-    try {
-      const uploadRes = await firstValueFrom(
-        this.accountService.uploadStudentIdPhoto(this.selectedStudentIdFile, school.code),
-      );
-      await firstValueFrom(
-        this.accountService.submitStudentIdVerification({
-          school: school.code,
-          student_number: this.studentNumberInput.trim().toUpperCase(),
-          image: uploadRes.url,
-        }),
-      );
-      this.isSubmittingStudentId = false;
-      this.isResubmittingStudentId = false;
-      this.onRemoveStudentIdPhoto();
-      this.studentNumberInput = '';
-      this.toast.success(this.i18n.t('acct.studentIdPendingNotice'));
-      this.loadStudentIdVerification();
-      this.cdr.markForCheck();
-    } catch (err: any) {
-      this.isSubmittingStudentId = false;
-      this.studentIdError = parseApiError(err, this.i18n, 'acct.verifyFailed');
-      this.cdr.markForCheck();
-    }
-  }
-
-  async onCancelStudentIdVerification() {
-    if (this.isCancellingStudentId) return;
-    const confirmed = await this.confirms.askDanger(
-      this.i18n.t('acct.cancelVerificationConfirm'),
-      {
-        confirmLabel: this.i18n.t('acct.cancelVerification'),
-        // "Cancel" beside "Cancel request" read as the same action twice.
-        cancelLabel: this.i18n.t('acct.keepVerificationRequest'),
-      },
-    );
-    if (!confirmed) return;
-
-    this.isCancellingStudentId = true;
-    this.cdr.markForCheck();
-
-    this.accountService.cancelStudentIdVerification().subscribe({
-      next: () => {
-        this.isCancellingStudentId = false;
-        this.studentIdRequest = null;
-        this.isResubmittingStudentId = false;
-        this.toast.success(this.i18n.t('common.save'));
-        this.loadStudentIdVerification();
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.isCancellingStudentId = false;
-        this.toast.error(parseApiError(err, this.i18n, 'common.error'));
-        this.cdr.markForCheck();
-      },
-    });
-  }
-
-  async onRequestVerification() {
-    const emailToSubmit = this.buildSubmitEmail();
-    if (!emailToSubmit) return;
-    const verifiedRegion = this.getVerifiedRegionForEmail(emailToSubmit);
-    if (verifiedRegion) {
-      const proceed = await this.confirms.ask(
-        this.i18n.t('acct.regionAlreadyVerifiedConfirm', { region: verifiedRegion.localized_name }),
-      );
-      if (!proceed) return;
-    }
-    this.submitEduVerification(emailToSubmit);
-  }
-
-  onVerifyFormSubmit() {
-    if (this.changingEduEmail) {
-      this.onSubmitNewEduEmail();
-    } else {
-      this.onRequestVerification();
-    }
-  }
-
-  private getVerifiedRegionForEmail(emailInput: string): Region | null {
-    if (!emailInput) return null;
-    const parts = emailInput.trim().split('@');
-    if (parts.length !== 2) return null;
-    const loginDomain = parts[1].toLowerCase();
-
-    const regions = this.regionService.regions();
-    const matchedRegion = regions.find((r) => {
-      return r.edu_email_suffix.some((s) => domainMatchesSuffix(loginDomain, s));
-    });
-
-    if (matchedRegion) {
-      const isVerified = (this.verifications || []).some(
-        (v) => isSameRegion(v.region, matchedRegion.code) && !!v.verified_at,
-      );
-      if (isVerified) {
-        return matchedRegion;
-      }
-    }
-    return null;
-  }
-
-  onResendVerification() {
-    if (!this.pendingEduEmail || this.resendCooldownSeconds > 0) {
-      return;
-    }
-    this.submitEduVerification(this.pendingEduEmail);
-  }
-
-  onReenterEduEmail() {
-    this.isEditingPendingEmail = true;
-    this.clientVerifyMsg = '';
-    this.verifyIsError = false;
-    this.lastVerifyError = null;
-    this.eduEmail = this.pendingEduEmail || this.eduEmail;
-    if (this.eduEmail && this.eduEmail.includes('@')) {
-      this.handlePastedEmail(this.eduEmail);
-    }
-    this.cdr.markForCheck();
-  }
-
-  get isCurrentDomainGoogle(): boolean {
-    if (!this.selectedSchoolOption || !this.selectedVerifyDomain) return false;
-    const googleList = this.selectedSchoolOption.google_domains || [];
-    return googleList.map((d) => d.toLowerCase()).includes(this.selectedVerifyDomain.toLowerCase());
-  }
-
-  get selectedSchoolHasGoogleDomain(): boolean {
-    return (this.selectedSchoolOption?.google_domains?.length ?? 0) > 0;
-  }
-
-  get renewEmailIsGoogle(): boolean {
-    if (!this.renewOldEmail) return false;
-    const domain = this.renewOldEmail.split('@')[1]?.toLowerCase();
-    if (!domain) return false;
-    for (const s of this.availableSchools) {
-      const gd = (s.google_domains || []).map((d) => d.toLowerCase());
-      if (gd.includes(domain)) return true;
-    }
-    return false;
-  }
-
-  async onVerifyWithGoogle(targetEmail?: string) {
-    if (this.isLoading) return;
-    this.isLoading = true;
-    this.clientVerifyMsg = '';
-    this.lastVerifyError = null;
-    this.verifyIsError = false;
-    this.autoVerifyMessage = '';
-    this.cdr.markForCheck();
-
-    try {
-      const { nonce } = await firstValueFrom(this.accountService.getGoogleVerifyOptions());
-
-      let hd: string | undefined;
-      let school = this.selectedSchoolOption;
-      if (!school && targetEmail) {
-        const domain = targetEmail.split('@')[1]?.toLowerCase();
-        if (domain) {
-          school = findSchoolForDomain(this.availableSchools, domain)?.school || null;
-        }
-      }
-      const googleDomains = school?.google_domains || [];
-      if (googleDomains.length === 1) {
-        hd = googleDomains[0];
-      }
-
-      const credential = await this.googleAuth.verifyCampusGoogle({ nonce, hd });
-      await firstValueFrom(this.accountService.verifyWithGoogle(credential));
-
-      this.isLoading = false;
-      this.verifyIsError = false;
-      this.clientVerifyMsg = 'acct.verifySuccess';
-      this.toast.success(this.i18n.t('acct.verifySuccess'));
-      this.accountService.clearProfileCache();
-      this.loadProfile();
-      this.clearPendingVerificationState();
-      this.cdr.markForCheck();
-    } catch (err: any) {
-      this.isLoading = false;
-      if (err?.message === 'popup_closed') {
-        this.cdr.markForCheck();
-        return;
-      }
-      this.verifyIsError = true;
-      this.lastVerifyError = err;
-      this.clientVerifyMsg = '';
-      this.cdr.markForCheck();
-    }
-  }
-
-  loadSchoolsMetadata() {
-    this.metadataService.getMetadata().subscribe({
-      next: (data) => {
-        this.availableSchools = data?.schools || [];
-        this.availableCities = data?.cities || [];
-        this.rebuildSchoolOptions();
-        this.initSelectedSchool();
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        console.error('Failed to load schools metadata in settings', err);
-      },
-    });
-  }
-
-  private rebuildSchoolOptions() {
-    this.schoolDropdownOptions = this.schoolOptionsByCity(this.availableSchools, this.availableCities);
-  }
-
-  private schoolOptionsByCity(schools: SchoolOption[], cities: CityOption[]): DropdownOption[] {
-    const option = (s: SchoolOption, group?: string): DropdownOption => ({
-      value: s.code,
-      label: s.display_name || s.name,
-      group,
-      keywords: schoolKeywords(s),
-    });
-    if (cities.length === 0) return schools.map((s) => option(s));
-    const known = new Set(cities.map((c) => c.code));
-    const grouped = cities.flatMap((c) =>
-      schools.filter((s) => s.city === c.code).map((s) => option(s, c.display_name || c.name)),
-    );
-    const other = this.i18n.t('layout.otherCity');
-    const rest = schools.filter((s) => !s.city || !known.has(s.city)).map((s) => option(s, other));
-    return [...grouped, ...rest];
-  }
-
-  private initSelectedSchool() {
-    if (this.selectedVerifySchoolCode) return;
-    const current = this.schoolStateService.currentSchool || this.schoolStateService.getManualSchool();
-    if (current && this.availableSchools.some((s) => s.code === current)) {
-      this.selectVerifySchool(current);
-    }
-  }
-
-  selectVerifySchool(code: string, preserveDomain?: string) {
-    this.selectedVerifySchoolCode = code;
-    this.selectedSchoolOption = this.availableSchools.find((s) => s.code === code) || null;
-    this.updateDomainChoices(preserveDomain);
-    this.cdr.markForCheck();
-  }
-
-  onVerifySchoolChange(code: string) {
-    this.selectVerifySchool(code);
-  }
-
-  private updateDomainChoices(preserveDomain?: string) {
-    if (!this.selectedSchoolOption) {
-      this.schoolDomainChoices = [];
-      this.selectedVerifyDomain = '';
-      return;
-    }
-    this.schoolDomainChoices = getSchoolDomainChoices(this.selectedSchoolOption);
-    if (preserveDomain && this.schoolDomainChoices.includes(preserveDomain.toLowerCase())) {
-      this.selectedVerifyDomain = preserveDomain.toLowerCase();
-    } else {
-      this.selectedVerifyDomain = this.schoolDomainChoices[0] || '';
-    }
-  }
-
-  /** The chosen school lists no mailbox domain, so the form takes the whole address. */
-  get schoolNeedsFullAddress(): boolean {
-    return !!this.selectedSchoolOption && this.schoolDomainChoices.length === 0;
-  }
-
-  onDomainSelectChange(domain: string) {
-    this.selectedVerifyDomain = domain;
-    this.cdr.markForCheck();
-  }
-
-  onLocalPartChange(val: string) {
-    if (val.includes('@')) {
-      this.handlePastedEmail(val);
-      return;
-    }
-    this.eduLocalPart = val;
-  }
-
-  onLocalPartPaste(event: ClipboardEvent) {
-    const text = event.clipboardData?.getData('text') || '';
-    if (text.includes('@')) {
-      event.preventDefault();
-      this.handlePastedEmail(text);
-    }
-  }
-
-  handlePastedEmail(raw: string) {
-    const split = splitEmailAddress(raw);
-    if (!split) {
-      this.eduLocalPart = raw.trim();
-      return;
-    }
-    const { localPart, domain } = split;
-
-    // 1. Check if the currently selected school accepts this exact domain
-    if (this.selectedSchoolOption && this.schoolDomainChoices.includes(domain)) {
-      this.eduLocalPart = localPart;
-      this.selectedVerifyDomain = domain;
-      this.useManualEmail = false;
-      this.cdr.markForCheck();
-      return;
-    }
-
-    // 2. Search available schools for this domain
-    const match = findSchoolForDomain(this.availableSchools, domain);
-    if (match) {
-      this.selectVerifySchool(match.school.code, domain);
-      this.eduLocalPart = localPart;
-      if (this.schoolDomainChoices.includes(domain)) {
-        this.selectedVerifyDomain = domain;
-        this.useManualEmail = false;
-      } else {
-        // Subdomain not in explicit choices (e.g. csie.ntu.edu.tw) -> manual mode
-        this.useManualEmail = true;
-        this.eduEmail = `${localPart}@${domain}`;
-      }
-    } else {
-      // School not matched at all -> manual mode
-      this.useManualEmail = true;
-      this.eduEmail = `${localPart}@${domain}`;
-    }
-    this.cdr.markForCheck();
-  }
-
-  toggleManualEmail() {
-    this.useManualEmail = !this.useManualEmail;
-    if (this.useManualEmail) {
-      if (this.eduLocalPart && this.selectedVerifyDomain) {
-        this.eduEmail = `${this.eduLocalPart.trim()}@${this.selectedVerifyDomain.trim()}`;
-      }
-    } else {
-      if (this.eduEmail && this.eduEmail.includes('@')) {
-        this.handlePastedEmail(this.eduEmail);
-      }
-    }
-    this.cdr.markForCheck();
-  }
-
-  buildSubmitEmail(): string | null {
-    this.clientVerifyMsg = '';
-    this.lastVerifyError = null;
-    this.verifyIsError = false;
-
-    if (this.useManualEmail || this.schoolNeedsFullAddress) {
-      const email = this.eduEmail.trim();
-      if (!email) {
-        this.verifyIsError = true;
-        this.clientVerifyMsg = 'acct.emailRequired';
-        return null;
-      }
-      return email;
-    }
-
-    if (this.eduEmail && !this.eduLocalPart && !this.selectedVerifySchoolCode) {
-      return this.eduEmail.trim();
-    }
-
-    if (!this.selectedVerifySchoolCode) {
-      this.verifyIsError = true;
-      this.clientVerifyMsg = 'acct.errSchoolRequired';
-      return null;
-    }
-
-    const localPart = this.eduLocalPart.trim();
-    if (!localPart) {
-      this.verifyIsError = true;
-      this.clientVerifyMsg = 'acct.emailRequired';
-      return null;
-    }
-
-    const domain = this.selectedVerifyDomain.trim();
-    if (!domain) {
-      this.verifyIsError = true;
-      this.clientVerifyMsg = 'acct.emailRequired';
-      return null;
-    }
-
-    const fullEmail = `${localPart}@${domain}`;
-    this.eduEmail = fullEmail;
-    return fullEmail;
-  }
-
-  private submitEduVerification(emailInput: string) {
-    this.clientVerifyMsg = '';
-    this.lastVerifyError = null;
-    const normalizedEmail = emailInput.trim();
-    if (!normalizedEmail) {
-      this.verifyIsError = true;
-      this.clientVerifyMsg = 'acct.emailRequired';
-      return;
-    }
-    this.isLoading = true;
-    this.cdr.markForCheck();
-
-    this.authStore.requestEduVerification(normalizedEmail).subscribe({
-      next: () => {
-        this.isLoading = false;
-        this.verifyIsError = false;
-        this.clientVerifyMsg = 'acct.sentVerification';
-        this.eduEmail = normalizedEmail;
-        this.pendingEduEmail = normalizedEmail;
-        this.isEditingPendingEmail = false;
-        this.startResendCooldown(180);
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.isLoading = false;
-        this.verifyIsError = true;
-        this.lastVerifyError = err;
-        const throttledSeconds = this.extractThrottleSeconds(err);
-        if (throttledSeconds !== null) {
-          this.applyCooldownUntil(Date.now() + throttledSeconds * 1000);
-        }
-        this.cdr.markForCheck();
-      },
-    });
-  }
-
-  autoVerifyMessage = '';
-  autoVerifyIsError = false;
-  /** Same as schoolNotSupported, for the one-click path that verifies the
-   *  login address itself. */
-  autoVerifySchoolNotSupported = false;
-
-  onAutoVerify() {
-    this.isLoading = true;
-    this.autoVerifyMessage = '';
-    this.autoVerifyIsError = false;
-    this.autoVerifySchoolNotSupported = false;
-    this.cdr.markForCheck();
-
-    this.accountService.autoVerifyEduEmail().subscribe({
-      next: () => {
-        this.isLoading = false;
-        this.autoVerifyIsError = false;
-        // The panel hides once verified, so no need to keep a success message
-        // around (it would otherwise reappear if the user unbinds later).
-        this.autoVerifyMessage = '';
-        this.loadProfile();
-        this.eduEmail = this.email;
-        this.clearPendingVerificationState();
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.isLoading = false;
-        this.autoVerifyIsError = true;
-        const code = err.error?.error?.code;
-        this.autoVerifyMessage = code ? this.i18n.t(code) : this.i18n.t('acct.verifyFailed');
-        this.autoVerifySchoolNotSupported = code === SCHOOL_NOT_SUPPORTED;
-        this.cdr.markForCheck();
-      },
-    });
+  onCancelEmailChange() {
+    this.accountService
+      .cancelEmailChange()
+      .pipe(this.toast.working(this.i18n.t('common.cancelling')))
+      .subscribe({
+        next: () => {
+          this.pendingEmail = null;
+          this.toast.success(this.i18n.t('acct.emailChangeCancelled'));
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
+        },
+      });
   }
 
   onUpdateProfile() {
@@ -1058,14 +270,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (resp) => {
           this.isLoading = false;
-          // A new sign-in email is not applied on save — it waits for the link
-          // sent to that address — so say so rather than "profile saved", which
-          // would read as though the address had already changed.
           if (resp?.code === 'acct.emailChangePending') {
             this.clientSettingsMsg = 'acct.emailChangePending';
-            // Re-read rather than trust the response: /auth/me/ reports the
-            // pending address as well as the one still in force, and the field
-            // above must go back to showing the address that actually works.
             this.accountService.clearProfileCache();
             this.loadProfile();
           } else {
@@ -1086,8 +292,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
     const enabled = input.checked;
     if (enabled === this.showAvatar) return;
 
-    // Move the switch straight away; put it back if the save fails, so it
-    // never claims a setting the server does not have.
     const previous = this.showAvatar;
     this.showAvatar = enabled;
     this.savingShowAvatar = true;
@@ -1101,7 +305,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.showAvatar = previous;
-        // [checked] may see no change to undo, so move the box back directly.
         input.checked = previous;
         this.savingShowAvatar = false;
         this.toast.error(parseApiError(err, this.i18n, 'acct.showAvatarSaveFailed'));
@@ -1114,12 +317,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.clientPwdMsg = '';
     this.lastPwdError = null;
 
-    if (!this.oldPassword) {
-      this.pwdIsError = true;
-      this.clientPwdMsg = 'auth.errFillAll';
-      return;
-    }
-    if (!this.newPassword || !this.confirmPassword) {
+    if (!this.oldPassword || !this.newPassword || !this.confirmPassword) {
       this.pwdIsError = true;
       this.clientPwdMsg = 'auth.errFillAll';
       return;
@@ -1173,8 +371,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.removePwdIsError = false;
         this.clientRemovePwdMsg = 'acct.passwordRemoved';
         this.removePasswordInput = '';
-        this.hasPassword = false; // Immediately reflect in UI
-        this.authStore.updateUser((u) => ({ ...u, has_password: false })); // Sync AuthStore
+        this.hasPassword = false;
+        this.authStore.updateUser((u) => ({ ...u, has_password: false }));
         this.cdr.markForCheck();
       },
       error: (err) => {
@@ -1184,166 +382,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       },
     });
-  }
-
-  async onUnbindEduEmail(regionCode: string) {
-    if (!(await this.confirms.askDanger(this.i18n.t('acct.unbindConfirm')))) {
-      return;
-    }
-
-    this.isLoading = true;
-    this.accountService.unbindEduEmail(regionCode).subscribe({
-      next: () => {
-        this.isLoading = false;
-        this.verifications = this.verifications.filter((v) => !isSameRegion(v.region, regionCode));
-        if (this.verifications.length === 0) {
-          this.eduEmail = '';
-        }
-        this.clearPendingVerificationState();
-        this.autoVerifyMessage = '';
-        this.clientVerifyMsg = '';
-        this.lastVerifyError = null;
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.isLoading = false;
-        this.toast.error(parseApiError(err, this.i18n, 'acct.updateFailed'));
-        this.cdr.markForCheck();
-      },
-    });
-  }
-
-  private startResendCooldown(seconds: number) {
-    const cooldownUntil = Date.now() + seconds * 1000;
-    this.applyCooldownUntil(cooldownUntil);
-  }
-
-  private applyCooldownUntil(cooldownUntil: number) {
-    this.stopResendCountdown();
-    this.updateResendCooldownSeconds(cooldownUntil);
-    this.savePendingVerificationState(cooldownUntil);
-    if (this.resendCooldownSeconds === 0) {
-      return;
-    }
-
-    this.resendCountdownTimer = setInterval(() => {
-      this.updateResendCooldownSeconds(cooldownUntil);
-      if (this.resendCooldownSeconds === 0) {
-        this.stopResendCountdown();
-        this.savePendingVerificationState();
-      }
-      this.cdr.markForCheck();
-    }, 1000);
-  }
-
-  private updateResendCooldownSeconds(cooldownUntil: number) {
-    const remainingMs = cooldownUntil - Date.now();
-    this.resendCooldownSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
-  }
-
-  private stopResendCountdown() {
-    if (this.resendCountdownTimer !== null) {
-      clearInterval(this.resendCountdownTimer);
-      this.resendCountdownTimer = null;
-    }
-  }
-
-  private clearPendingVerificationState() {
-    this.pendingEduEmail = null;
-    this.isEditingPendingEmail = false;
-    this.resendCooldownSeconds = 0;
-    this.stopResendCountdown();
-    this.savePendingVerificationState();
-  }
-
-  private restorePendingVerificationState() {
-    const pendingEmailStorageKey = this.getVerifyPendingEmailStorageKey();
-    const cooldownUntilStorageKey = this.getVerifyCooldownUntilStorageKey();
-    if (!pendingEmailStorageKey || !cooldownUntilStorageKey) {
-      return;
-    }
-    const pendingEmail = localStorage.getItem(pendingEmailStorageKey);
-    if (pendingEmail) {
-      this.pendingEduEmail = pendingEmail;
-      this.eduEmail = pendingEmail;
-      this.isEditingPendingEmail = false;
-    }
-
-    const rawCooldownUntil = localStorage.getItem(cooldownUntilStorageKey);
-    if (!rawCooldownUntil) {
-      return;
-    }
-    const cooldownUntil = Number(rawCooldownUntil);
-    if (!Number.isFinite(cooldownUntil) || cooldownUntil <= Date.now()) {
-      localStorage.removeItem(cooldownUntilStorageKey);
-      return;
-    }
-    this.applyCooldownUntil(cooldownUntil);
-  }
-
-  private savePendingVerificationState(cooldownUntil?: number) {
-    const pendingEmailStorageKey = this.getVerifyPendingEmailStorageKey();
-    const cooldownUntilStorageKey = this.getVerifyCooldownUntilStorageKey();
-    if (!pendingEmailStorageKey || !cooldownUntilStorageKey) {
-      return;
-    }
-    if (this.pendingEduEmail) {
-      localStorage.setItem(pendingEmailStorageKey, this.pendingEduEmail);
-    } else {
-      localStorage.removeItem(pendingEmailStorageKey);
-    }
-
-    if (cooldownUntil && cooldownUntil > Date.now()) {
-      localStorage.setItem(cooldownUntilStorageKey, String(cooldownUntil));
-    } else {
-      localStorage.removeItem(cooldownUntilStorageKey);
-    }
-  }
-
-  private extractThrottleSeconds(err: any): number | null {
-    const retryAfterHeader =
-      err?.headers?.get?.('Retry-After') ?? err?.headers?.get?.('retry-after');
-    if (retryAfterHeader) {
-      const retryAfterSeconds = Number(retryAfterHeader);
-      if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
-        return Math.ceil(retryAfterSeconds);
-      }
-      const retryAt = Date.parse(retryAfterHeader);
-      if (Number.isFinite(retryAt)) {
-        const remainingSeconds = Math.ceil((retryAt - Date.now()) / 1000);
-        if (remainingSeconds > 0) {
-          return remainingSeconds;
-        }
-      }
-    }
-
-    const waitValue = Number(err?.error?.error?.wait);
-    if (Number.isFinite(waitValue) && waitValue > 0) {
-      return Math.ceil(waitValue);
-    }
-    return null;
-  }
-
-  private clearLegacyPendingVerificationState() {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    localStorage.removeItem(this.verifyPendingEmailStorageKeyLegacy);
-    localStorage.removeItem(this.verifyCooldownUntilStorageKeyLegacy);
-  }
-
-  private getVerifyPendingEmailStorageKey(): string | null {
-    if (typeof window === 'undefined' || !this.profileUserId) {
-      return null;
-    }
-    return `${this.verifyPendingEmailStorageKeyLegacy}.${this.profileUserId}`;
-  }
-
-  private getVerifyCooldownUntilStorageKey(): string | null {
-    if (typeof window === 'undefined' || !this.profileUserId) {
-      return null;
-    }
-    return `${this.verifyCooldownUntilStorageKeyLegacy}.${this.profileUserId}`;
   }
 
   async onDeleteAccount() {
@@ -1361,7 +399,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.accountService.deleteAccount().subscribe({
       next: () => {
         this.isLoading = false;
-        // logout() returns an Observable; it must be subscribed to actually run and redirect.
         this.authStore.logout().subscribe();
       },
       error: (err) => {
@@ -1379,7 +416,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.accountService.listPasskeys().subscribe({
       next: (list) => {
         this.passkeys = list;
-        // The server turns two-step off with the last passkey.
         if (list.length === 0) this.passkeyTwoStep = false;
         this.passkeyIconErrors = {};
         this.passkeysLoading = false;
@@ -1500,11 +536,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /**
-   * Adding or removing a passkey, turning two-step off, and deleting the
-   * account need a recent sign-in. When the server says this one is too old, offer to sign in again
-   * and come back here. True when `err` was that refusal.
-   */
+  onPasskeyIconError(id: string): void {
+    this.passkeyIconErrors[id] = true;
+    this.cdr.markForCheck();
+  }
+
   private offerSignInAgain(err: any): boolean {
     if (err?.error?.error?.code !== 'auth.errReauthRequired') return false;
     void this.confirms

@@ -87,7 +87,10 @@ export class UiVerificationPrompt {
   }
 
   goVerify(): void {
-    void this.router.navigate(['/', this.regionService.region(), 'account', 'settings']);
+    const currentUrl = this.router.url;
+    void this.router.navigate(['/', this.regionService.region(), 'account', 'verification'], {
+      queryParams: currentUrl ? { returnUrl: currentUrl } : undefined,
+    });
   }
 
   dismiss(): void {

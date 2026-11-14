@@ -14,6 +14,15 @@ export function buttonWidthFor(container: HTMLElement): number {
   return Math.max(200, Math.min(Math.floor(container.clientWidth) || 280, 400));
 }
 
+export interface CampusVerifyButtonOptions {
+  nonce: string;
+  hd?: string;
+  onCredential: (credential: string) => void;
+  onError?: (err: any) => void;
+  onReady?: () => void;
+  onClick?: () => void;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -237,94 +246,146 @@ export class GoogleAuthService {
   }
 
   /**
-   * Request a campus Google ID token via GIS with a server-issued nonce and
-   * optional hosted domain (hd) hint.
+   * Render a real Google Sign-In button for campus verification into `element`.
+   * Re-initializes GIS with the campus verification callback, single-use nonce,
+   * and optional hosted domain (hd) hint.
    *
-   * Rejects with an Error('popup_closed') when the user dismisses the dialog.
+   * Note: `google.accounts.id.initialize` is a page-global singleton; this method
+   * points it at the campus callback, while `loadAndRenderButton` (the sign-in
+   * button) re-points it at the sign-in callback on each render.
+   *
+   * Returns a teardown function that disconnects observers and cancels timers.
    */
-  public verifyCampusGoogle(options: { nonce: string; hd?: string }): Promise<string> {
-    if (!isPlatformBrowser(this.platformId)) {
-      return Promise.reject(new Error('not_browser'));
-    }
+  public renderCampusVerifyButton(
+    element: HTMLElement | string,
+    options: CampusVerifyButtonOptions
+  ): () => void {
+    if (!isPlatformBrowser(this.platformId)) return () => {};
 
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = (fn: () => void) => {
-        if (settled) return;
-        settled = true;
-        fn();
-      };
+    let destroyed = false;
+    let observer: ResizeObserver | null = null;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let renderedWidth = 0;
 
-      const handleCredential = (res: any) => {
-        finish(() => {
-          if (res && res.credential) {
-            this.zone.run(() => resolve(res.credential));
-          } else {
-            this.zone.run(() => reject(new Error('no_credential')));
-          }
-        });
-      };
+    const teardown = () => {
+      destroyed = true;
+      if (resizeTimer) {
+        clearTimeout(resizeTimer);
+        resizeTimer = null;
+      }
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+    };
 
-      const execute = () => {
-        this.loadGoogleScript()
-          .then(() => {
-            const google = (window as any).google;
-            if (!google?.accounts?.id) {
-              finish(() => this.zone.run(() => reject(new Error('Google SDK unavailable'))));
-              return;
-            }
+    const getContainer = (): HTMLElement | null => {
+      return typeof element === 'string' ? document.getElementById(element) : element;
+    };
 
-            const initConfig: any = {
-              client_id: this.googleClientId,
-              callback: handleCredential,
-              nonce: options.nonce,
-              cancel_on_tap_outside: true,
-              use_fedcm_for_prompt: true,
-              use_fedcm_for_button: true,
-            };
-            if (options.hd) {
-              initConfig.hd = options.hd;
-            }
+    const doRender = () => {
+      if (destroyed) return;
+      const container = getContainer();
+      if (!container) return;
 
-            google.accounts.id.initialize(initConfig);
+      this.loadGoogleScript().then(() => {
+        if (destroyed) return;
+        const google = (window as any).google;
+        if (!google?.accounts?.id || !this.googleClientId) {
+          options.onError?.(new Error('Google SDK unavailable'));
+          return;
+        }
 
-            google.accounts.id.prompt((notification: any) => {
-              if (settled) return;
-              if (typeof notification?.isDismissedMoment === 'function' && notification.isDismissedMoment()) {
-                const reason = notification.getDismissedReason?.();
-                if (reason !== 'credential_returned') {
-                  finish(() => {
-                    this.zone.run(() => reject(new Error('popup_closed')));
-                  });
-                }
-              } else if (typeof notification?.isNotDisplayed === 'function' && notification.isNotDisplayed()) {
-                finish(() => {
-                  this.zone.run(() => reject(new Error('popup_closed')));
-                });
-              }
-            });
-          })
-          .catch((err) => {
-            finish(() => this.zone.run(() => reject(err)));
-          });
-      };
-
-      if (this.googleClientId) {
-        execute();
-      } else {
-        this.authStore.getAuthConfig().subscribe({
-          next: (config) => {
-            if (config?.google_client_id) {
-              this.googleClientId = config.google_client_id;
-              execute();
+        // initialize is a page-global singleton in GIS: re-initialize it here
+        // with the campus callback, single-use nonce, and optional hd restriction.
+        const initConfig: any = {
+          client_id: this.googleClientId,
+          callback: (response: any) => {
+            if (destroyed) return;
+            if (response && response.credential) {
+              this.zone.run(() => options.onCredential(response.credential));
             } else {
-              finish(() => this.zone.run(() => reject(new Error('Google client ID not configured'))));
+              this.zone.run(() => options.onError?.(new Error('no_credential')));
             }
           },
-          error: (err) => finish(() => this.zone.run(() => reject(err))),
+          nonce: options.nonce,
+          // The classic popup, not FedCM: the student is usually signed in to
+          // a personal Google account and has to pick or add the school one,
+          // which the popup's account chooser always offers. FedCM answers a
+          // click with nothing at all when the browser has no usable Google
+          // session or the user dismissed it before.
+          use_fedcm_for_button: false,
+        };
+        if (options.hd) {
+          initConfig.hd = options.hd;
+        }
+
+        google.accounts.id.initialize(initConfig);
+
+        container.innerHTML = '';
+        const langCode = this.i18n.lang() === 'en' ? 'en' : 'zh-TW';
+        const btnTheme = this.isDarkTheme ? 'filled_black' : 'outline';
+        const targetWidth = buttonWidthFor(container);
+        renderedWidth = targetWidth;
+
+        if (typeof ResizeObserver !== 'undefined' && !observer) {
+          observer = new ResizeObserver(() => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+              resizeTimer = null;
+              if (destroyed || !container.isConnected) {
+                observer?.disconnect();
+                observer = null;
+                return;
+              }
+              if (!container.clientWidth || buttonWidthFor(container) === renderedWidth) return;
+              doRender();
+            }, 150);
+          });
+          observer.observe(container);
+        }
+
+        google.accounts.id.renderButton(container, {
+          theme: btnTheme,
+          size: 'large',
+          type: 'standard',
+          text: 'continue_with',
+          locale: langCode,
+          width: targetWidth,
+          click_listener: () => {
+            this.zone.run(() => options.onClick?.());
+          },
         });
-      }
-    });
+
+        options.onReady?.();
+      }).catch((err) => {
+        if (destroyed) return;
+        console.error('Failed to load Google SDK for campus verify', err);
+        options.onError?.(err);
+      });
+    };
+
+    if (this.googleClientId) {
+      doRender();
+    } else {
+      this.authStore.getAuthConfig().subscribe({
+        next: (config) => {
+          if (destroyed) return;
+          if (config?.google_client_id) {
+            this.googleClientId = config.google_client_id;
+            doRender();
+          } else {
+            options.onError?.(new Error('Google client ID not configured'));
+          }
+        },
+        error: (err) => {
+          if (destroyed) return;
+          options.onError?.(err);
+        },
+      });
+    }
+
+    return teardown;
   }
 
   private get isDarkTheme(): boolean {
@@ -339,10 +400,12 @@ export class GoogleAuthService {
   private loadAndRenderButton(elementId: string) {
     this.loadGoogleScript().then(() => {
       if ((window as any).google && this.googleClientId) {
-        if (!this.isGoogleInitialized) {
-          (window as any).google.accounts.id.initialize(this.initOptions());
-          this.isGoogleInitialized = true;
-        }
+        // initialize is a page-global singleton in GIS: campus verification also
+        // initializes it with a per-attempt nonce and campus callback. Always
+        // re-initialize here with sign-in options so sign-in never inherits the
+        // campus callback or nonce.
+        (window as any).google.accounts.id.initialize(this.initOptions());
+        this.isGoogleInitialized = true;
         const container = document.getElementById(elementId);
         if (container) {
           container.innerHTML = '';

@@ -81,7 +81,7 @@ describe('verification expiry reminder', () => {
     // 20:00 UTC is the next day in Taipei.
     expect(mail?.subject).toBe('UniBooks 學生身分驗證將於 2028-03-02 到期');
     expect(mail?.text).toContain('您於 UniBooks 以 r@ntu.edu.tw 完成的學生身分驗證');
-    expect(mail?.text).toContain(siteOrigin(env) + '/account/settings');
+    expect(mail?.text).toContain(siteOrigin(env) + '/account/verification');
     // Not a campus sign-in: a Google sign-in would not renew it, so it is not offered.
     expect(mail?.text).not.toContain('Google');
 

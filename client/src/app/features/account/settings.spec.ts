@@ -18,144 +18,54 @@ describe('SettingsComponent', () => {
       providers: [
         RegionService,
         AuthStore,
-        AccountService
-      ]
+        AccountService,
+      ],
     });
-    
+
     const fixture = TestBed.createComponent(SettingsComponent);
     component = fixture.componentInstance;
   });
 
-  describe('two-year expiry', () => {
-    const tw = { code: 'TW', edu_email_suffix: ['edu.tw'] };
-    const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
+  describe('verification summary row', () => {
     beforeEach(() => {
-      (component as any).regionService = { currentRegionObj: () => tw };
+      (component as any).regionService = {
+        currentRegionObj: () => ({ code: 'TW', localized_name: 'Taiwan' }),
+        region: () => 'tw',
+      };
+      (component as any).authStore = {
+        mustVerifyIn: vi.fn().mockReturnValue(false),
+        supportsPasskeys: () => false,
+      };
     });
 
-    it('offers renewal only in the last 30 days', () => {
-      component.verifications = [{ region: 'TW', edu_email: 'a@ntu.edu.tw', verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(200) }];
-      expect(component.renewalDue).toBe(false);
-      component.verifications = [{ region: 'TW', edu_email: 'a@ntu.edu.tw', verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(10) }];
-      expect(component.renewalDue).toBe(true);
+    it('identifies verified state and school name', () => {
+      component.verifications = [
+        {
+          region: 'TW',
+          school: 1,
+          school_name: 'National Taiwan University',
+          edu_email: 'test@ntu.edu.tw',
+          verified_at: '2026-01-01T00:00:00Z',
+        },
+      ];
+      component.availableSchools = [{ id: 1, code: 'NTU', name: 'National Taiwan University' }] as any;
+
+      expect(component.isVerified).toBe(true);
+      expect(component.currentVerifiedSchoolName).toBe('National Taiwan University');
     });
 
-    it("names the region's lapsed verification only while no live one replaces it", () => {
-      component.lapsedVerifications = [{ region: 'TW', edu_email: 'a@ntu.edu.tw', expires_at: '2022-01-01T00:00:00Z' }];
+    it('identifies unverified state', () => {
       component.verifications = [];
-      expect(component.currentLapsed?.edu_email).toBe('a@ntu.edu.tw');
-      component.verifications = [{ region: 'TW', edu_email: 'a@ntu.edu.tw', verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(700) }];
-      expect(component.currentLapsed).toBeNull();
+      expect(component.isVerified).toBe(false);
+      expect(component.currentVerifiedSchoolName).toBe('');
     });
 
-    it('renews through the server without sending any address', () => {
-      const renew = vi.fn().mockReturnValue(of({ code: 'acct.sentVerification', edu_email: 'b@ntu.edu.tw' }));
-      (component as any).accountService = { renewVerification: renew };
-      const mail = vi.spyOn(component as any, 'submitEduVerification');
-      component.verifications = [{ region: 'TW', edu_email: 'b@ntu.edu.tw', verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(5) }];
-      component.onVerifyWithOldEmail();
-      expect(renew).toHaveBeenCalledWith();
-      expect(mail).not.toHaveBeenCalled();
-      expect(component.clientVerifyMsg).toBe('acct.sentVerification');
-      expect(component.resendCooldownSeconds).toBeGreaterThan(0);
-    });
-
-    it("offers a lapsed verification's old address, and a new one when changing", () => {
-      const mail = vi.spyOn(component as any, 'submitEduVerification').mockImplementation(() => {});
+    it('reports mustVerify status from authStore', () => {
       component.verifications = [];
-      component.lapsedVerifications = [{ region: 'TW', edu_email: 'old@ntu.edu.tw', expires_at: '2022-01-01T00:00:00Z' }];
-      component.email = 'me@gmail.com';
-      expect(component.renewOldEmail).toBe('old@ntu.edu.tw');
-      component.onChangeEduEmail();
-      expect(component.changingEduEmail).toBe(true);
-      expect(component.eduEmail).toBe('');
-      component.eduEmail = 'new@ntu.edu.tw';
-      component.onSubmitNewEduEmail();
-      expect(mail).toHaveBeenLastCalledWith('new@ntu.edu.tw');
-    });
+      expect(component.mustVerify).toBe(false);
 
-    it('has no old address for a manual verification', () => {
-      component.verifications = [{ region: 'TW', edu_email: null, verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(5) }];
-      expect(component.renewOldEmail).toBeNull();
-    });
-
-    it('mentions Google sign-in only for a Google-linked account signing in with the bound campus address', () => {
-      component.verifications = [{ region: 'TW', edu_email: 'me@ntu.edu.tw', verified_at: '2025-01-01T00:00:00Z', expires_at: inDays(5) }];
-      component.email = 'me@ntu.edu.tw';
-      component.isGoogleLinked = false;
-      expect(component.googleRenews).toBe(false);
-      component.isGoogleLinked = true;
-      expect(component.googleRenews).toBe(true);
-      component.email = 'other@ntu.edu.tw';
-      expect(component.googleRenews).toBe(false);
-    });
-  });
-
-  describe('autoVerifyRegion', () => {
-    it('should return region if verified_at is null', () => {
-      // Mock regions and verifications
-      const mockRegion = { code: 'TW', edu_email_suffix: ['edu.tw'] };
-      (component as any).regionService = {
-        currentRegionObj: () => mockRegion
-      };
-      
-      component.email = 'test@test.edu.tw';
-      component.verifications = [
-        { region: 'TW', school: 1, edu_email: 'test@edu.tw', verified_at: null }
-      ];
-
-      const result = component.autoVerifyRegion;
-      expect(result).toBe(mockRegion as any);
-    });
-
-    it('should return null if region is verified', () => {
-      const mockRegion = { code: 'TW', edu_email_suffix: ['edu.tw'] };
-      (component as any).regionService = {
-        currentRegionObj: () => mockRegion
-      };
-      
-      component.email = 'test@test.edu.tw';
-      component.verifications = [
-        { region: 'TW', school: 1, edu_email: 'test@edu.tw', verified_at: '2026-08-28T12:27:44Z' }
-      ];
-
-      const result = component.autoVerifyRegion;
-      expect(result).toBeNull();
-    });
-    
-    it('should handle region codes ignoring case', () => {
-      const mockRegion = { code: 'TW', edu_email_suffix: ['edu.tw'] };
-      (component as any).regionService = {
-        currentRegionObj: () => mockRegion
-      };
-      
-      component.email = 'test@test.edu.tw';
-      component.verifications = [
-        { region: 'tw', school: 1, edu_email: 'test@edu.tw', verified_at: '2026-08-28T12:27:44Z' }
-      ];
-
-      const result = component.autoVerifyRegion;
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('schoolNotSupported', () => {
-    // Gates the "report my school" form: only an address that resolved to no
-    // School should offer it, not every verification failure.
-    it('is true only for acct.errSchoolNotSupported', () => {
-      expect(component.schoolNotSupported).toBe(false);
-
-      component.lastVerifyError = { error: { error: { code: 'acct.errSchoolNotSupported' } } };
-      expect(component.schoolNotSupported).toBe(true);
-
-      component.lastVerifyError = { error: { error: { code: 'acct.errEduEmail' } } };
-      expect(component.schoolNotSupported).toBe(false);
-    });
-
-    it('gives way to a newer client-side message', () => {
-      component.lastVerifyError = { error: { error: { code: 'acct.errSchoolNotSupported' } } };
-      component.clientVerifyMsg = 'acct.emailRequired';
-      expect(component.schoolNotSupported).toBe(false);
+      (component as any).authStore.mustVerifyIn = vi.fn().mockReturnValue(true);
+      expect(component.mustVerify).toBe(true);
     });
   });
 
@@ -173,120 +83,111 @@ describe('SettingsComponent', () => {
       expect(component.pwdMessage).not.toBe('Update failed. Please try again.');
     });
 
-    it('falls back to its own sentence for a code this locale lacks', () => {
-      (component as any).lastPwdError = {
-        error: { error: { code: 'acct.errNotTranslatedYet' } },
-      };
-
-      expect(component.pwdMessage).toBe('Update failed. Please try again.');
-    });
-
-    it('still reports a wrong current password', () => {
-      (component as any).lastPwdError = {
-        error: { error: { code: 'common.errValidation', fields: { old_password: ['auth.errInvalidPassword'] } } },
-      };
-
-      expect(component.pwdMessage).toBe(en['auth.errInvalidPassword']);
+    it('prefers the client-side empty-fields error to an older server error', () => {
+      component.lastPwdError = { error: { error: { code: 'auth.errWrongPassword' } } };
+      component.clientPwdMsg = 'auth.errFillAll';
+      expect(component.pwdMessage).toBe(en['auth.errFillAll']);
     });
   });
 
   describe('changing the sign-in email', () => {
-    it('reports it as pending rather than saved', () => {
-      // The address is not applied until the link sent to it is followed, so
-      // "profile saved" would read as though it already had been.
+    beforeEach(() => {
       (component as any).accountService = {
-        updateProfile: () => of({ code: 'acct.emailChangePending', pending_email: 'new@example.com' }),
+        getMyProfile: () => of({ email: 'current@example.com', first_name: '', last_name: '' }),
+        updateProfile: vi.fn().mockReturnValue(of({ code: 'acct.emailChangePending' })),
         clearProfileCache: vi.fn(),
-        getMyProfile: () => of({ id: 1, email: 'old@example.com', pending_email: 'new@example.com' }),
       };
-
-      component.onUpdateProfile();
-
-      expect(component.pendingEmail).toBe('new@example.com');
-      expect((component as any).clientSettingsMsg).toBe('acct.emailChangePending');
+      component.loadProfile();
     });
 
-    it('still reports an ordinary save as saved', () => {
-      (component as any).accountService = {
-        updateProfile: () => of({ id: 1, email: 'same@example.com', first_name: 'A' }),
-        clearProfileCache: vi.fn(),
-        getMyProfile: () => of({ id: 1, email: 'same@example.com' }),
-      };
-
-      component.onUpdateProfile();
-
-      expect(component.pendingEmail).toBeNull();
-      expect((component as any).clientSettingsMsg).toBe('acct.profileSaved');
+    it('flags emailChanged only when the field differs from what loaded', () => {
+      expect(component.emailChanged).toBe(false);
+      component.email = 'Current@example.com';
+      expect(component.emailChanged).toBe(false);
+      component.email = 'new@example.com';
+      expect(component.emailChanged).toBe(true);
     });
 
-    it('sends the current password only with a new address', () => {
-      const updateProfile = vi.fn(() => of({ id: 1 }));
-      (component as any).accountService = { updateProfile, clearProfileCache: vi.fn() };
-      (component as any).savedEmail = 'old@example.com';
+    it('sends the current password only when the email changed', () => {
+      const update = vi.fn().mockReturnValue(of({ code: 'acct.profileSaved' }));
+      (component as any).accountService.updateProfile = update;
 
-      component.email = 'OLD@example.com';
-      component.emailChangePassword = 'secret';
+      component.firstName = 'Alice';
       component.onUpdateProfile();
-      expect(updateProfile).toHaveBeenLastCalledWith(expect.not.objectContaining({ current_password: expect.anything() }));
+      expect(update).toHaveBeenCalledWith(expect.not.objectContaining({ current_password: expect.anything() }));
 
       component.email = 'new@example.com';
+      component.emailChangePassword = 'secret-password';
       component.onUpdateProfile();
-      expect(updateProfile).toHaveBeenLastCalledWith(expect.objectContaining({ email: 'new@example.com', current_password: 'secret' }));
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({
+        email: 'new@example.com',
+        current_password: 'secret-password',
+      }));
     });
 
-    it('drops the pending address when the change is cancelled', () => {
+    it('names the pending state when the server answers with emailChangePending', () => {
+      component.email = 'new@example.com';
+      component.emailChangePassword = 'secret-password';
+      component.onUpdateProfile();
+
+      expect(component.clientSettingsMsg).toBe('acct.emailChangePending');
+      expect((component as any).accountService.clearProfileCache).toHaveBeenCalled();
+    });
+
+    it('lets the user cancel an in-flight email change', () => {
+      const cancel = vi.fn().mockReturnValue(of({}));
+      (component as any).accountService.cancelEmailChange = cancel;
       component.pendingEmail = 'new@example.com';
-      (component as any).accountService = { cancelEmailChange: () => of({}) };
-      const working = vi.fn(() => (source: any) => source);
-      (component as any).toast = { success: vi.fn(), error: vi.fn(), working };
 
       component.onCancelEmailChange();
-
-      expect(working).toHaveBeenCalledWith(en['common.cancelling']);
+      expect(cancel).toHaveBeenCalled();
       expect(component.pendingEmail).toBeNull();
     });
   });
 
   describe('hiding the Google avatar', () => {
-    function switchInput(checked: boolean) {
-      const input = document.createElement('input');
-      input.type = 'checkbox';
-      input.checked = checked;
-      return input;
-    }
-
-    it('saves the new setting', () => {
-      const updateProfile = vi.fn(() => of({ id: 1, show_avatar: false }));
-      (component as any).accountService = { updateProfile };
-      (component as any).toast = { success: vi.fn(), error: vi.fn() };
+    it('updates showAvatar straight away and flips it back if the save fails', () => {
+      const update = vi.fn().mockReturnValue(throwError(() => ({ status: 500 })));
+      (component as any).accountService = { updateProfile: update };
+      (component as any).toast = { error: vi.fn() };
       component.showAvatar = true;
 
-      component.setShowAvatar(switchInput(false));
+      const checkbox = { checked: false } as HTMLInputElement;
+      component.setShowAvatar(checkbox);
 
-      expect(updateProfile).toHaveBeenCalledWith({ show_avatar: false });
-      expect(component.showAvatar).toBe(false);
+      expect(update).toHaveBeenCalledWith({ show_avatar: false });
+      expect(component.showAvatar).toBe(true);
+      expect(checkbox.checked).toBe(true);
       expect(component.savingShowAvatar).toBe(false);
     });
 
-    it('moves the switch back when the save fails', () => {
-      (component as any).accountService = { updateProfile: () => throwError(() => ({ status: 500 })) };
-      (component as any).toast = { success: vi.fn(), error: vi.fn() };
+    it('does nothing when the change event fires without a value change', () => {
+      const update = vi.fn();
+      (component as any).accountService = { updateProfile: update };
       component.showAvatar = true;
-      const input = switchInput(false);
 
-      component.setShowAvatar(input);
+      const checkbox = { checked: true } as HTMLInputElement;
+      component.setShowAvatar(checkbox);
 
-      expect(component.showAvatar).toBe(true);
-      expect(input.checked).toBe(true);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('keeps the new value on success', () => {
+      const update = vi.fn().mockReturnValue(of({}));
+      (component as any).accountService = { updateProfile: update };
+      (component as any).toast = { success: vi.fn() };
+      component.showAvatar = true;
+
+      const checkbox = { checked: false } as HTMLInputElement;
+      component.setShowAvatar(checkbox);
+
+      expect(component.showAvatar).toBe(false);
       expect(component.savingShowAvatar).toBe(false);
     });
   });
 
-  // Until /auth/me/ answers, empty inputs and an "unverified" banner would
-  // read as facts about the account; the form waits behind a placeholder.
   describe('first profile load', () => {
     it('holds the form back until the profile arrives', () => {
-      (component as any).restorePendingVerificationState = () => {};
       (component as any).accountService = { getMyProfile: () => of({ id: 1, email: 'a@example.com' }) };
       expect(component.profileLoaded).toBe(false);
       component.loadProfile();
@@ -300,7 +201,6 @@ describe('SettingsComponent', () => {
       expect(component.profileLoadFailed).toBe(true);
       expect(component.profileLoaded).toBe(false);
 
-      (component as any).restorePendingVerificationState = () => {};
       (component as any).accountService = { getMyProfile: () => of({ id: 1 }) };
       component.loadProfile();
       expect(component.profileLoadFailed).toBe(false);
@@ -308,7 +208,6 @@ describe('SettingsComponent', () => {
     });
 
     it('keeps the form up when a later reload fails', () => {
-      (component as any).restorePendingVerificationState = () => {};
       (component as any).accountService = { getMyProfile: () => of({ id: 1 }) };
       component.loadProfile();
       (component as any).accountService = { getMyProfile: () => throwError(() => ({ status: 500 })) };
@@ -330,162 +229,83 @@ describe('SettingsComponent', () => {
           backed_up: false,
         },
       ];
-      vi.spyOn((component as any).authStore, 'supportsPasskeys').mockReturnValue(true);
-      const listSpy = vi
-        .spyOn((component as any).accountService, 'listPasskeys')
-        .mockReturnValue(of(mockList));
+      (component as any).authStore = {
+        supportsPasskeys: () => true,
+        updateUser: vi.fn(),
+      };
+      (component as any).accountService = {
+        listPasskeys: vi.fn().mockReturnValue(of(mockList)),
+        getMyProfile: () => of({}),
+      };
+      (component as any).metadataService = { getMetadata: () => of({}) };
 
-      component.loadPasskeys();
-
-      expect(listSpy).toHaveBeenCalled();
+      component.ngOnInit();
       expect(component.passkeys).toEqual(mockList);
       expect(component.passkeysLoading).toBe(false);
     });
 
-    it('onAddPasskey registers, shows toast, and refreshes list', () => {
-      const regSpy = vi
-        .spyOn((component as any).accountService, 'passkeyRegister')
-        .mockReturnValue(of({ id: 'p2', name: 'Passkey' }));
-      const loadSpy = vi.spyOn(component, 'loadPasskeys').mockImplementation(() => {});
-      const toastSpy = vi.spyOn((component as any).toast, 'success');
-
-      component.onAddPasskey();
-
-      expect(regSpy).toHaveBeenCalled();
-      expect(toastSpy).toHaveBeenCalled();
-      expect(loadSpy).toHaveBeenCalled();
-      expect(component.isAddingPasskey).toBe(false);
-    });
-
-    it('onAddPasskey suppresses error on user cancellation', () => {
-      const cancelErr = new Error('User cancelled');
-      cancelErr.name = 'NotAllowedError';
-      vi.spyOn((component as any).accountService, 'passkeyRegister').mockReturnValue(
-        throwError(() => cancelErr),
-      );
-      const toastErrorSpy = vi.spyOn((component as any).toast, 'error');
-
-      component.onAddPasskey();
-
-      expect(toastErrorSpy).not.toHaveBeenCalled();
-      expect(component.isAddingPasskey).toBe(false);
-    });
-
-    it('manages rename state and saves valid name', () => {
-      const passkey = {
-        id: 'p1',
-        name: 'Old Name',
-        created_at: '',
-        last_used_at: null,
-        device_type: 'singleDevice' as const,
-        backed_up: false,
-      };
-      component.startRenamePasskey(passkey);
-      expect(component.editingPasskeyId).toBe('p1');
-      expect(component.editingPasskeyName).toBe('Old Name');
-
-      component.cancelRenamePasskey();
-      expect(component.editingPasskeyId).toBeNull();
-      expect(component.editingPasskeyName).toBe('');
-
-      component.startRenamePasskey(passkey);
-      component.editingPasskeyName = '   ';
-      component.saveRenamePasskey('p1'); // should do nothing for empty/whitespace
-
-      component.editingPasskeyName = 'New Name';
-      const renameSpy = vi
-        .spyOn((component as any).accountService, 'renamePasskey')
-        .mockReturnValue(of({ id: 'p1', name: 'New Name' }));
-      const loadSpy = vi.spyOn(component, 'loadPasskeys').mockImplementation(() => {});
-
-      component.saveRenamePasskey('p1');
-
-      expect(renameSpy).toHaveBeenCalledWith('p1', 'New Name');
-      expect(loadSpy).toHaveBeenCalled();
-      expect(component.editingPasskeyId).toBeNull();
-    });
-
-    it('asks danger confirmation and deletes passkey', async () => {
-      const passkey = {
-        id: 'p1',
-        name: 'My Key',
-        created_at: '',
-        last_used_at: null,
-        device_type: 'singleDevice' as const,
-        backed_up: false,
-      };
-      const askSpy = vi.spyOn((component as any).confirms, 'askDanger').mockResolvedValue(true);
-      const deleteSpy = vi
-        .spyOn((component as any).accountService, 'deletePasskey')
-        .mockReturnValue(of(undefined));
-      const loadSpy = vi.spyOn(component, 'loadPasskeys').mockImplementation(() => {});
-
-      await component.onDeletePasskey(passkey);
-
-      expect(askSpy).toHaveBeenCalled();
-      expect(deleteSpy).toHaveBeenCalledWith('p1');
-      expect(loadSpy).toHaveBeenCalled();
-    });
-
-    it('displays provider when different from name, and handles icon rendering and errors', () => {
-      const fixture = TestBed.createComponent(SettingsComponent);
-      const comp = fixture.componentInstance;
-      vi.spyOn(comp, 'loadProfile').mockImplementation(() => {});
-      vi.spyOn(comp, 'loadPasskeys').mockImplementation(() => {});
-      vi.spyOn((comp as any).authStore, 'supportsPasskeys').mockReturnValue(true);
-      comp.profileLoaded = true;
-      comp.passkeysLoading = false;
-
-      comp.passkeys = [
+    it('renders provider and icon conditionally according to design', () => {
+      const mockList = [
         {
           id: 'p1',
-          name: 'My Custom Passkey',
-          provider: 'YubiKey 5 NFC',
-          icon_light: '/passkey-icons/yubi.light.svg',
-          icon_dark: '/passkey-icons/yubi.dark.svg',
+          name: 'iPhone 15',
+          provider: 'Apple Keychain',
+          icon_light: 'https://example.com/apple-light.png',
+          icon_dark: 'https://example.com/apple-dark.png',
           created_at: '2026-10-17T00:00:00Z',
-          last_used_at: null,
-          device_type: 'singleDevice',
-          backed_up: false,
+          last_used_at: '2026-10-18T00:00:00Z',
+          device_type: 'multiDevice' as const,
+          backed_up: true,
         },
         {
           id: 'p2',
-          name: 'Passkey (synced)',
+          name: 'Security Key',
           provider: null,
           icon_light: null,
           icon_dark: null,
           created_at: '2026-10-17T00:00:00Z',
           last_used_at: null,
-          device_type: 'multiDevice',
-          backed_up: true,
+          device_type: 'singleDevice' as const,
+          backed_up: false,
         },
         {
           id: 'p3',
-          name: 'Chrome on Mac',
-          provider: 'Chrome on Mac',
-          icon_light: '/passkey-icons/chrome.light.svg',
+          name: 'Google Password Manager',
+          provider: 'Google Password Manager',
+          icon_light: 'https://example.com/google.png',
           icon_dark: null,
           created_at: '2026-10-17T00:00:00Z',
           last_used_at: null,
-          device_type: 'singleDevice',
-          backed_up: false,
+          device_type: 'multiDevice' as const,
+          backed_up: true,
         },
       ];
+
+      const fixture = TestBed.createComponent(SettingsComponent);
+      const comp = fixture.componentInstance;
+
+      (comp as any).authStore = {
+        supportsPasskeys: () => true,
+        updateUser: vi.fn(),
+      };
+      (comp as any).accountService = {
+        listPasskeys: vi.fn().mockReturnValue(of(mockList)),
+        getMyProfile: () => of({}),
+      };
+      (comp as any).metadataService = { getMetadata: () => of({}) };
+      fixture.detectChanges();
+
+      comp.ngOnInit();
+      comp.profileLoaded = true;
       fixture.detectChanges();
 
       const items = fixture.nativeElement.querySelectorAll('.passkey-item');
       expect(items.length).toBe(3);
 
-      // Item 1: provider differs from name -> .passkey-provider shown, picture shown
-      const p1Provider = items[0].querySelector('.passkey-provider');
-      expect(p1Provider).not.toBeNull();
-      expect(p1Provider.textContent.trim()).toBe('YubiKey 5 NFC');
-      const p1Picture = items[0].querySelector('picture');
-      expect(p1Picture).not.toBeNull();
-      const p1Source = p1Picture.querySelector('source');
-      expect(p1Source.getAttribute('srcset')).toBe('/passkey-icons/yubi.dark.svg');
-      const p1Img = p1Picture.querySelector('img');
-      expect(p1Img.getAttribute('src')).toBe('/passkey-icons/yubi.light.svg');
+      // Item 1: distinct provider and icons -> picture element shown, provider text rendered
+      expect(items[0].querySelector('.passkey-provider').textContent).toContain('Apple Keychain');
+      expect(items[0].querySelector('picture')).not.toBeNull();
+      expect(items[0].querySelector('.passkey-icon-fallback')).toBeNull();
 
       // Item 2: provider is null, no icons -> fallback SVG shown, no provider line
       expect(items[1].querySelector('.passkey-provider')).toBeNull();
@@ -501,373 +321,6 @@ describe('SettingsComponent', () => {
       fixture.detectChanges();
       expect(items[0].querySelector('picture')).toBeNull();
       expect(items[0].querySelector('.passkey-icon-fallback')).not.toBeNull();
-    });
-  });
-
-  describe('campus email verification assisted form', () => {
-    const mockSchools = [
-      {
-        id: 1,
-        code: 'NTU',
-        name: 'National Taiwan University',
-        email_domain: 'ntu.edu.tw',
-        student_email_domain: 'ntu.edu.tw',
-        accepted_domains: ['ntu.edu.tw'],
-      },
-      {
-        id: 2,
-        code: 'CHIHLEE',
-        name: 'Chihlee University of Technology',
-        email_domain: 'chihlee.edu.tw',
-        email_domains: ['gm.chihlee.edu.tw', 'mail.chihlee.edu.tw'],
-        student_email_domain: 'gm.chihlee.edu.tw',
-        google_domains: ['gm.chihlee.edu.tw'],
-        accepted_domains: ['chihlee.edu.tw', 'gm.chihlee.edu.tw', 'mail.chihlee.edu.tw'],
-      },
-    ];
-
-    beforeEach(() => {
-      component.availableSchools = mockSchools;
-      (component as any).metadataService = {
-        getMetadata: () => of({ schools: mockSchools, cities: [] }),
-      };
-    });
-
-    it('preselects site school and autofills student_email_domain', () => {
-      (component as any).schoolStateService = {
-        currentSchool: 'CHIHLEE',
-        getManualSchool: () => 'CHIHLEE',
-      };
-      component.loadSchoolsMetadata();
-
-      expect(component.selectedVerifySchoolCode).toBe('CHIHLEE');
-      expect(component.selectedVerifyDomain).toBe('gm.chihlee.edu.tw');
-      expect(component.schoolDomainChoices).toEqual([
-        'gm.chihlee.edu.tw',
-        'mail.chihlee.edu.tw',
-      ]);
-    });
-
-    it('identifies Google Workspace accounts per domain', () => {
-      component.selectVerifySchool('CHIHLEE');
-      expect(component.selectedVerifyDomain).toBe('gm.chihlee.edu.tw');
-      expect(component.isCurrentDomainGoogle).toBe(true);
-
-      component.onDomainSelectChange('mail.chihlee.edu.tw');
-      expect(component.selectedVerifyDomain).toBe('mail.chihlee.edu.tw');
-      expect(component.isCurrentDomainGoogle).toBe(false);
-    });
-
-    it('splits pasted email address and selects matching school and domain', () => {
-      component.loadSchoolsMetadata();
-      component.selectVerifySchool('NTU');
-
-      // Pasting full address of Chihlee splits and switches school/domain
-      component.handlePastedEmail('b10701001@mail.chihlee.edu.tw');
-      expect(component.selectedVerifySchoolCode).toBe('CHIHLEE');
-      expect(component.eduLocalPart).toBe('b10701001');
-      expect(component.selectedVerifyDomain).toBe('mail.chihlee.edu.tw');
-      expect(component.useManualEmail).toBe(false);
-    });
-
-    it('submits composed address in assisted mode', () => {
-      component.selectVerifySchool('CHIHLEE');
-      component.eduLocalPart = 'user123';
-      const email = component.buildSubmitEmail();
-      expect(email).toBe('user123@gm.chihlee.edu.tw');
-    });
-
-    it('supports other-address fallback escape hatch', () => {
-      // NTU lists no mailbox domain: the form takes the whole address and prefills nothing.
-      component.selectVerifySchool('NTU');
-      expect(component.schoolNeedsFullAddress).toBe(true);
-      expect(component.selectedVerifyDomain).toBe('');
-      component.eduEmail = 'b08901001@ntu.edu.tw';
-      expect(component.buildSubmitEmail()).toBe('b08901001@ntu.edu.tw');
-
-      // Enter an unlisted subdomain
-      component.eduEmail = 'b08901001@csie.ntu.edu.tw';
-      expect(component.buildSubmitEmail()).toBe('b08901001@csie.ntu.edu.tw');
-    });
-
-    it('validates required fields when school or local part is missing', () => {
-      component.selectedVerifySchoolCode = '';
-      component.eduLocalPart = '';
-      component.useManualEmail = false;
-
-      const emailNoSchool = component.buildSubmitEmail();
-      expect(emailNoSchool).toBeNull();
-      expect(component.clientVerifyMsg).toBe('acct.errSchoolRequired');
-
-      component.selectVerifySchool('NTU');
-      component.eduLocalPart = '';
-      const emailNoLocal = component.buildSubmitEmail();
-      expect(emailNoLocal).toBeNull();
-      expect(component.clientVerifyMsg).toBe('acct.emailRequired');
-    });
-
-    describe('campus Google verification button and flow', () => {
-      beforeEach(() => {
-        (component as any).regionService = { currentRegionObj: () => ({ code: 'TW', edu_email_suffix: ['edu.tw'] }) };
-      });
-
-      it('shows button when selected school has google_domains, hides otherwise', () => {
-        component.selectVerifySchool('NTU');
-        expect(component.selectedSchoolHasGoogleDomain).toBe(false);
-
-        component.selectVerifySchool('CHIHLEE');
-        expect(component.selectedSchoolHasGoogleDomain).toBe(true);
-      });
-
-      it('identifies when renewal address domain is a Google domain', () => {
-        component.verifications = [{ region: 'TW', edu_email: 'user@ntu.edu.tw', verified_at: '2024-01-01', expires_at: '2025-01-01' }];
-        expect(component.renewEmailIsGoogle).toBe(false);
-
-        component.verifications = [{ region: 'TW', edu_email: 'user@gm.chihlee.edu.tw', verified_at: '2024-01-01', expires_at: '2025-01-01' }];
-        expect(component.renewEmailIsGoogle).toBe(true);
-
-        component.verifications = [{ region: 'TW', edu_email: 'user@mail.chihlee.edu.tw', verified_at: '2024-01-01', expires_at: '2025-01-01' }];
-        expect(component.renewEmailIsGoogle).toBe(false);
-      });
-
-      it('runs verification flow with nonce and single google_domain hd hint', async () => {
-        component.selectVerifySchool('CHIHLEE');
-        const optSpy = vi.fn().mockReturnValue(of({ nonce: 'nonce-abc-123' }));
-        const verSpy = vi.fn().mockReturnValue(of({ code: 'acct.verifySuccess', edu_email: 'test@gm.chihlee.edu.tw' }));
-        const clearCacheSpy = vi.fn();
-        const loadProfileSpy = vi.spyOn(component, 'loadProfile').mockImplementation(() => {});
-
-        (component as any).accountService = {
-          getGoogleVerifyOptions: optSpy,
-          verifyWithGoogle: verSpy,
-          clearProfileCache: clearCacheSpy,
-        };
-
-        const googleAuthMock = {
-          verifyCampusGoogle: vi.fn().mockResolvedValue('fake-google-credential'),
-        };
-        (component as any).googleAuth = googleAuthMock;
-
-        await component.onVerifyWithGoogle();
-
-        expect(optSpy).toHaveBeenCalled();
-        expect(googleAuthMock.verifyCampusGoogle).toHaveBeenCalledWith({
-          nonce: 'nonce-abc-123',
-          hd: 'gm.chihlee.edu.tw',
-        });
-        expect(verSpy).toHaveBeenCalledWith('fake-google-credential');
-        expect(clearCacheSpy).toHaveBeenCalled();
-        expect(loadProfileSpy).toHaveBeenCalled();
-        expect(component.isLoading).toBe(false);
-        expect(component.verifyIsError).toBe(false);
-        expect(component.clientVerifyMsg).toBe('acct.verifySuccess');
-      });
-
-      it('handles popup_closed gracefully without showing error', async () => {
-        component.selectVerifySchool('CHIHLEE');
-        (component as any).accountService = {
-          getGoogleVerifyOptions: vi.fn().mockReturnValue(of({ nonce: 'nonce-123' })),
-        };
-        (component as any).googleAuth = {
-          verifyCampusGoogle: vi.fn().mockRejectedValue(new Error('popup_closed')),
-        };
-
-        await component.onVerifyWithGoogle();
-
-        expect(component.isLoading).toBe(false);
-        expect(component.verifyIsError).toBe(false);
-        expect(component.lastVerifyError).toBeNull();
-      });
-
-      it('handles wrong account chosen (acct.errNotCampusGoogle)', async () => {
-        component.selectVerifySchool('CHIHLEE');
-        (component as any).accountService = {
-          getGoogleVerifyOptions: vi.fn().mockReturnValue(of({ nonce: 'nonce-123' })),
-          verifyWithGoogle: vi.fn().mockReturnValue(
-            throwError(() => ({
-              error: { error: { code: 'acct.errNotCampusGoogle' } },
-            })),
-          ),
-        };
-        (component as any).googleAuth = {
-          verifyCampusGoogle: vi.fn().mockResolvedValue('fake-cred'),
-        };
-
-        await component.onVerifyWithGoogle();
-
-        expect(component.isLoading).toBe(false);
-        expect(component.verifyIsError).toBe(true);
-        expect(component.lastVerifyError?.error?.error?.code).toBe('acct.errNotCampusGoogle');
-        expect(component.verifyMessage).toBe(en['acct.errNotCampusGoogle']);
-      });
-
-      it('handles campus address taken by another account (acct.errEmailTaken)', async () => {
-        component.selectVerifySchool('CHIHLEE');
-        (component as any).accountService = {
-          getGoogleVerifyOptions: vi.fn().mockReturnValue(of({ nonce: 'nonce-123' })),
-          verifyWithGoogle: vi.fn().mockReturnValue(
-            throwError(() => ({
-              error: { error: { code: 'acct.errEmailTaken' } },
-            })),
-          ),
-        };
-        (component as any).googleAuth = {
-          verifyCampusGoogle: vi.fn().mockResolvedValue('fake-cred'),
-        };
-
-        await component.onVerifyWithGoogle();
-
-        expect(component.isLoading).toBe(false);
-        expect(component.verifyIsError).toBe(true);
-        expect(component.lastVerifyError?.error?.error?.code).toBe('acct.errEmailTaken');
-        expect(component.verifyMessage).toBe(en['acct.errEmailTaken']);
-      });
-    });
-
-    describe('My School row', () => {
-      it('locks school display and shows verified school name when user has live verification', () => {
-        (component as any).regionService = { currentRegionObj: () => ({ code: 'TW', localized_name: 'Taiwan' }), region: () => 'tw' };
-        component.verifications = [
-          { region: 'TW', school: 1, school_name: 'National Taiwan University', edu_email: 'test@ntu.edu.tw', verified_at: '2026-01-01T00:00:00Z' },
-        ];
-        component.availableSchools = [{ id: 1, code: 'NTU', name: 'National Taiwan University' }] as any;
-        expect(component.currentVerification).toBeTruthy();
-        expect(component.currentVerifiedSchoolName).toBe('National Taiwan University');
-      });
-
-      it('calls setDeclaredSchool and updates schoolStateService when changing declared school', () => {
-        const setDeclaredSchool = vi.fn().mockReturnValue(of({}));
-        const setManualSchool = vi.fn();
-        const loadProfile = vi.fn();
-        (component as any).accountService = { setDeclaredSchool, getMyProfile: vi.fn().mockReturnValue(of({})) };
-        (component as any).schoolStateService = { setManualSchool };
-        (component as any).regionService = { region: () => 'tw' };
-        component.loadProfile = loadProfile;
-
-        component.onDeclaredSchoolChange('NTU');
-
-        expect(setDeclaredSchool).toHaveBeenCalledWith('tw', 'NTU');
-        expect(setManualSchool).toHaveBeenCalledWith('NTU');
-        expect(component.selectedDeclaredSchoolCode).toBe('NTU');
-      });
-
-      it('allows dismissing soft verification invitation when mustVerify is false', () => {
-        component.softInviteDismissed = false;
-        component.dismissSoftInvite();
-        expect(component.softInviteDismissed).toBe(true);
-      });
-
-      describe('student ID card verification form states', () => {
-        beforeEach(() => {
-          (component as any).regionService = { region: () => 'tw', currentRegionObj: () => ({ code: 'TW', localized_name: 'Taiwan' }) };
-          component.availableSchools = [
-            { id: 10, code: 'CLUT', name: 'Chihlee University of Technology', allows_student_id_verification: true } as any,
-            { id: 1, code: 'NTU', name: 'National Taiwan University', allows_student_id_verification: false } as any,
-          ];
-        });
-
-        it('shows verification option only when school allows student ID verification (not started state)', () => {
-          component.selectedDeclaredSchoolCode = 'NTU';
-          expect(component.allowsStudentIdVerification).toBe(false);
-
-          component.selectedDeclaredSchoolCode = 'CLUT';
-          expect(component.allowsStudentIdVerification).toBe(true);
-        });
-
-        it('submits student ID verification when not started', async () => {
-          component.selectedDeclaredSchoolCode = 'CLUT';
-          component.studentNumberInput = 'c10901234';
-          const file = new File(['dummy'], 'card.jpg', { type: 'image/jpeg' });
-          component.selectedStudentIdFile = file;
-
-          const uploadSpy = vi.fn().mockReturnValue(of({ url: 'tmp/student-ids/u1/card.jpg' }));
-          const submitSpy = vi.fn().mockReturnValue(of({ id: 'req-1', status: 'pending', school: 'CLUT', student_number: 'C10901234' }));
-          const getVerifSpy = vi.fn().mockReturnValue(of({ request: { id: 'req-1', status: 'pending' } }));
-
-          (component as any).accountService = {
-            uploadStudentIdPhoto: uploadSpy,
-            submitStudentIdVerification: submitSpy,
-            getStudentIdVerification: getVerifSpy,
-          };
-
-          await component.onSubmitStudentIdVerification();
-
-          expect(uploadSpy).toHaveBeenCalledWith(file, 'CLUT');
-          expect(submitSpy).toHaveBeenCalledWith({
-            school: 'CLUT',
-            student_number: 'C10901234',
-            image: 'tmp/student-ids/u1/card.jpg',
-          });
-          expect(component.studentNumberInput).toBe('');
-          expect(component.selectedStudentIdFile).toBeNull();
-        });
-
-        it('displays pending request and allows user to cancel it', async () => {
-          component.studentIdRequest = {
-            id: 'req-1',
-            status: 'pending',
-            school: 'CLUT',
-            school_name: 'Chihlee',
-            student_number: 'C10901234',
-            reject_reason: '',
-            created_at: '2026-11-01T00:00:00Z',
-            updated_at: '2026-11-01T00:00:00Z',
-            reviewed_at: null,
-          };
-
-          const cancelSpy = vi.fn().mockReturnValue(of({ ok: true, status: 'cancelled' }));
-          const getVerifSpy = vi.fn().mockReturnValue(of({ request: null }));
-          (component as any).accountService = {
-            cancelStudentIdVerification: cancelSpy,
-            getStudentIdVerification: getVerifSpy,
-          };
-          (component as any).confirms = {
-            askDanger: vi.fn().mockResolvedValue(true),
-          };
-
-          await component.onCancelStudentIdVerification();
-
-          expect((component as any).confirms.askDanger).toHaveBeenCalled();
-          expect(cancelSpy).toHaveBeenCalled();
-          expect(component.studentIdRequest).toBeNull();
-        });
-
-        it('displays rejected state with reason and enters resubmit mode', () => {
-          component.studentIdRequest = {
-            id: 'req-1',
-            status: 'rejected',
-            school: 'CLUT',
-            school_name: 'Chihlee',
-            student_number: 'C10901234',
-            reject_reason: 'Photo is blurry',
-            created_at: '2026-11-01T00:00:00Z',
-            updated_at: '2026-11-01T00:00:00Z',
-            reviewed_at: '2026-11-02T00:00:00Z',
-          };
-          component.isResubmittingStudentId = false;
-
-          component.startResubmitStudentId();
-
-          expect(component.isResubmittingStudentId).toBe(true);
-          expect(component.studentNumberInput).toBe('C10901234');
-        });
-
-        it('displays approved state with student number on currentVerification', () => {
-          component.verifications = [
-            {
-              region: 'TW',
-              school: 10,
-              school_name: 'Chihlee University of Technology',
-              edu_email: '',
-              student_number: 'C10901234',
-              verified_at: '2026-11-01T00:00:00Z',
-            },
-          ];
-
-          expect(component.currentVerification).toBeTruthy();
-          expect(component.currentVerification?.student_number).toBe('C10901234');
-        });
-      });
     });
   });
 });

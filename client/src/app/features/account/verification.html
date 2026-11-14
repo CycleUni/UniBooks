@@ -1,0 +1,381 @@
+<div class="verification-page" data-clarity-mask="True">
+  <h2 class="section-heading">{{ 'acct.verificationTitle' | t }}</h2>
+
+  <ui-skeleton *ngIf="!profileLoaded && !profileLoadFailed" variant="form" [count]="3" style="max-width: 480px;"></ui-skeleton>
+  <ui-error-state
+    *ngIf="profileLoadFailed"
+    [message]="'acct.loadProfileFailed' | t"
+    (retry)="loadProfile()"
+  ></ui-error-state>
+
+  <ng-container *ngIf="profileLoaded">
+    <!-- Current status card -->
+    <div class="card status-card mb-4" *ngIf="currentVerification" data-testid="verified-status-card">
+      <div class="status-header">
+        <div class="status-title-row">
+          <ui-success-check [size]="20"></ui-success-check>
+          <h3 class="status-title">{{ 'acct.verifiedTitle' | t }}</h3>
+        </div>
+        <ui-button variant="white" size="sm" (onClick)="onUnbindEduEmail(currentVerification.region)" [disabled]="isLoading">
+          {{ 'acct.unbindEmail' | t }}
+        </ui-button>
+      </div>
+
+      <div class="status-details mt-3">
+        <div class="detail-row">
+          <span class="detail-label">{{ 'acct.mySchool' | t }}:</span>
+          <span class="detail-value school-name-val">
+            {{ currentVerifiedSchoolName }}
+            <ui-verified-badge></ui-verified-badge>
+          </span>
+        </div>
+        <div class="detail-row" *ngIf="currentVerification.edu_email">
+          <span class="detail-value">{{ 'acct.boundTo' | t:{email: currentVerification.edu_email} }}</span>
+        </div>
+        <div class="detail-row" *ngIf="!currentVerification.edu_email && currentVerification.student_number">
+          <span class="detail-value">{{ 'acct.boundStudentId' | t:{number: currentVerification.student_number} }}</span>
+        </div>
+        <p class="detail-meta">
+          {{ 'acct.verifiedAtPrefix' | t }}{{ currentVerification.verified_at | date:'yyyy/MM/dd HH:mm' }}
+          <span *ngIf="currentVerification.expires_at">· {{ 'acct.expiresAtPrefix' | t }}{{ currentVerification.expires_at | date:'yyyy/MM/dd' }}</span>
+        </p>
+      </div>
+
+      <!-- Renewal alert inside status card if due -->
+      <div class="alert-box warning mt-3" *ngIf="renewalDue" data-testid="renewal-due-banner">
+        <strong>{{ 'acct.renewTitle' | t:{date: (currentVerification.expires_at | date:'yyyy/MM/dd') ?? ''} }}</strong>
+        <p class="mt-1">{{ (googleRenews ? 'acct.renewDescGoogle' : 'acct.renewDesc') | t }}</p>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+          <ui-button
+            *ngIf="renewOldEmail"
+            (onClick)="onVerifyWithOldEmail()"
+            [disabled]="isLoading || resendCooldownSeconds > 0"
+          >
+            {{
+              isLoading
+                ? ('acct.sending' | t)
+                : (resendCooldownSeconds > 0
+                  ? ('acct.resendIn' | t:{minutes: resendCooldownMinutes, seconds: resendCooldownSecondsPart})
+                  : ('acct.verifyWithOldEmail' | t))
+            }}
+          </ui-button>
+          <ui-button
+            variant="white"
+            (onClick)="onChangeEduEmail()"
+            [disabled]="isLoading"
+          >
+            {{ 'acct.changeEduEmail' | t }}
+          </ui-button>
+        </div>
+        <div *ngIf="clientVerifyMsg" class="inline-msg mt-2" [class.error]="verifyIsError">
+          {{ clientVerifyMsg | t }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Lapsed verification alert -->
+    <div class="alert-box warning mb-4" *ngIf="currentLapsed && !currentVerification" data-testid="lapsed-banner">
+      <strong>{{ 'acct.lapsedTitle' | t }}</strong>
+      <p class="mt-1">{{ (googleRenews ? 'acct.lapsedDescGoogle' : 'acct.lapsedDesc') | t:{date: (currentLapsed.expires_at | date:'yyyy/MM/dd') ?? ''} }}</p>
+      <p *ngIf="renewOldEmail" class="mt-2">{{ 'acct.renewOldEmail' | t:{email: renewOldEmail} }}</p>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;" *ngIf="!showPendingVerification">
+        <ui-button
+          *ngIf="renewOldEmail"
+          (onClick)="onVerifyWithOldEmail()"
+          [disabled]="isLoading || resendCooldownSeconds > 0"
+        >
+          {{
+            isLoading
+              ? ('acct.sending' | t)
+              : (resendCooldownSeconds > 0
+                ? ('acct.resendIn' | t:{minutes: resendCooldownMinutes, seconds: resendCooldownSecondsPart})
+                : ('acct.verifyWithOldEmail' | t))
+          }}
+        </ui-button>
+        <ui-button
+          variant="white"
+          (onClick)="onChangeEduEmail()"
+          [disabled]="isLoading"
+        >
+          {{ 'acct.changeEduEmail' | t }}
+        </ui-button>
+      </div>
+      <div *ngIf="clientVerifyMsg" class="inline-msg mt-2" [class.error]="verifyIsError">
+        {{ clientVerifyMsg | t }}
+      </div>
+    </div>
+
+    <!-- Unverified mandatory warning / soft invite -->
+    <div class="alert-box warning mb-4" *ngIf="!currentVerification && !currentLapsed && mustVerify" data-testid="must-verify-banner">
+      <strong>{{ 'acct.unverifiedTitle' | t }}</strong>
+      <p class="mt-1">{{ 'acct.errVerificationRequiredForSchool' | t:{school: currentDeclaredSchoolName, region: currentRegion?.code || ''} }}</p>
+    </div>
+
+    <div class="alert-box info mb-4" *ngIf="!currentVerification && !currentLapsed && !mustVerify && !softInviteDismissed" data-testid="soft-verify-invite">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span>{{ 'acct.softVerifyInvite' | t }}</span>
+        <button type="button" class="close-invite-btn" (click)="dismissSoftInvite()" [attr.aria-label]="'common.close' | t" style="background: none; border: none; font-size: 1.25rem; line-height: 1; cursor: pointer; color: inherit; padding: 4px 8px;">×</button>
+      </div>
+    </div>
+
+    <!-- ONE School Selector Card -->
+    <div class="card school-card mb-4" data-testid="school-card">
+      <ng-container *ngIf="currentVerification; else schoolDropdownTpl">
+        <label class="form-label"><strong>{{ 'acct.mySchool' | t }}</strong></label>
+        <div class="locked-school-header" style="display: flex; align-items: center; gap: 6px;">
+          <span class="school-name-display">{{ currentVerifiedSchoolName }}</span>
+          <ui-verified-badge></ui-verified-badge>
+        </div>
+        <small class="field-hint text-muted" style="display: block; margin-top: 4px;">{{ 'acct.schoolLockedHint' | t }}</small>
+      </ng-container>
+      <ng-template #schoolDropdownTpl>
+        <ui-dropdown
+          [label]="'acct.mySchool' | t"
+          [placeholder]="'acct.verifySelectSchool' | t"
+          [options]="schoolDropdownOptions"
+          [(ngModel)]="selectedSchoolCode"
+          (ngModelChange)="onSchoolChange($event)"
+          [searchable]="true"
+          [appendToBody]="true"
+        ></ui-dropdown>
+      </ng-template>
+    </div>
+
+    <!-- Prompt to choose school if none selected and unverified -->
+    <div class="select-school-hint text-muted mb-4" *ngIf="!currentVerification && !selectedSchoolCode">
+      {{ 'acct.selectSchoolFirstHint' | t }}
+    </div>
+
+    <!-- Verification methods: shown when not verified or when changing email during renewal -->
+    <ng-container *ngIf="(!currentVerification || changingEduEmail) && selectedSchoolCode">
+
+      <!-- Method (a) Google: School has a Google domain -->
+      <div class="card google-method-card mb-4" *ngIf="selectedSchoolHasGoogleDomain" data-testid="google-method-card">
+        <h3 class="card-title">{{ 'acct.verifyWithSchoolGoogle' | t }}</h3>
+        <p class="card-subtitle mb-3">{{ 'acct.verifyGoogleNoChangeHint' | t }}</p>
+
+        <div class="google-wrap">
+          <div *ngIf="googleFailed() || googleBlocked" class="google-failed">
+            {{ 'acct.verifyGoogleUnavailable' | t }}
+          </div>
+          <ng-container *ngIf="!googleFailed() && !googleBlocked">
+            <div *ngIf="!googleReady" class="google-placeholder" aria-hidden="true"></div>
+            <div #googleBtnRef class="google-btn"></div>
+            <div *ngIf="isVerifyingGoogle" class="google-veil blocking">
+              <span>{{ 'acct.verifying' | t }}</span>
+            </div>
+          </ng-container>
+        </div>
+
+        <div *ngIf="googleError" class="inline-msg error mt-3" data-testid="google-error-msg">
+          {{ googleError }}
+        </div>
+      </div>
+
+      <!-- Method (b) School email: Assisted or full address -->
+      <div class="card email-method-card mb-4" data-testid="email-method-card">
+        <h3 class="card-title">{{ 'acct.verifyMethodEmail' | t }}</h3>
+        <p class="card-subtitle mb-3">{{ 'acct.verifyMethodEmailDesc' | t }}</p>
+
+        <!-- One-click auto verify if sign-in email is already campus domain -->
+        <div class="alert-box success mb-3" *ngIf="!showPendingVerification && autoVerifyRegion && !currentLapsed">
+          <label class="form-label" style="color: var(--success, #10b981);"><strong>{{ 'acct.autoVerifyLabel' | t }}</strong></label>
+          <p class="desc mb-2">{{ 'acct.autoVerifyDesc' | t:{email: email, region: autoVerifyRegion.localized_name} }}</p>
+          <ui-button (onClick)="onAutoVerify()" [disabled]="isLoading">
+            {{ (isLoading ? 'acct.sending' : 'acct.autoVerifyBtn') | t }}
+          </ui-button>
+          <div *ngIf="autoVerifyMessage" class="inline-msg mt-2" [class.error]="autoVerifyIsError">
+            {{ autoVerifyMessage }}
+          </div>
+          <app-school-request-form *ngIf="autoVerifySchoolNotSupported" [eduEmail]="email"></app-school-request-form>
+        </div>
+
+        <!-- Pending verification banner -->
+        <div class="pending-verify-box" *ngIf="showPendingVerification; else emailFormTpl">
+          <div class="alert-box info mb-3">
+            <label class="form-label"><strong>{{ 'acct.pendingEmailLabel' | t }}</strong></label>
+            <p class="pending-email" style="font-weight: 600; margin: 4px 0;">{{ pendingEduEmailDisplay }}</p>
+            <p class="desc" style="font-size: var(--text-xs); color: var(--muted); margin: 0;">{{ 'acct.pendingEmailDesc' | t:{email: pendingEduEmailDisplay} }}</p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <ui-button variant="white" (onClick)="onReenterEduEmail()" [disabled]="isLoading">{{ 'acct.reenterEmail' | t }}</ui-button>
+            <ui-button (onClick)="onResendVerification()" [disabled]="isLoading || resendCooldownSeconds > 0">
+              {{
+                isLoading
+                  ? ('acct.sending' | t)
+                  : (resendCooldownSeconds > 0
+                    ? ('acct.resendIn' | t:{minutes: resendCooldownMinutes, seconds: resendCooldownSecondsPart})
+                    : ('acct.resendVerification' | t))
+              }}
+            </ui-button>
+          </div>
+          <div *ngIf="verifyMessage" class="inline-msg mt-2" [class.error]="verifyIsError">
+            {{ verifyMessage }}
+          </div>
+        </div>
+
+        <ng-template #emailFormTpl>
+          <!-- Full address input when school lists no domains or manual mode toggled -->
+          <div class="form-group mb-3" *ngIf="schoolNeedsFullAddress || useManualEmail; else assistedEmailTpl" data-testid="full-address-field">
+            <label class="form-label">{{ 'acct.eduEmailLabel' | t:{suffixesText: currentRegion ? ' (' + currentRegion.edu_email_suffix.join(', ') + ')' : ''} }}</label>
+            <ui-input
+              type="email"
+              autocomplete="off"
+              [placeholder]="'acct.eduEmailFullPlaceholder' | t"
+              [(ngModel)]="eduEmail"
+              (keydown.enter)="onVerifyFormSubmit()"
+            ></ui-input>
+            <div class="mt-1" *ngIf="!schoolNeedsFullAddress">
+              <button type="button" class="link-btn escape-hatch-btn" (click)="toggleManualEmail()">
+                {{ 'acct.useAssistedAddress' | t }}
+              </button>
+            </div>
+          </div>
+
+          <ng-template #assistedEmailTpl>
+            <div class="form-group mb-3">
+              <label class="form-label">{{ 'acct.eduEmailLabel' | t:{suffixesText: ''} }}</label>
+              <div class="email-assisted-row">
+                <input
+                  type="text"
+                  class="local-part-input"
+                  [placeholder]="'acct.eduEmailLocalPlaceholder' | t"
+                  [(ngModel)]="eduLocalPart"
+                  (ngModelChange)="onLocalPartChange($event)"
+                  (paste)="onLocalPartPaste($event)"
+                  (keydown.enter)="onVerifyFormSubmit()"
+                  autocomplete="username"
+                  [attr.aria-label]="'acct.eduEmailLocalPlaceholder' | t"
+                />
+                <div *ngIf="schoolDomainChoices.length > 1; else singleDomain" class="domain-select-wrapper">
+                  <select
+                    class="domain-select"
+                    [(ngModel)]="selectedVerifyDomain"
+                    (ngModelChange)="onDomainSelectChange($event)"
+                    aria-label="Email domain"
+                  >
+                    <option *ngFor="let d of schoolDomainChoices" [value]="d">&#64;{{ d }}</option>
+                  </select>
+                </div>
+                <ng-template #singleDomain>
+                  <span class="domain-fixed" *ngIf="selectedVerifyDomain">&#64;{{ selectedVerifyDomain }}</span>
+                </ng-template>
+              </div>
+              <div *ngIf="isCurrentDomainGoogle" class="google-domain-hint mt-1">
+                <span class="google-badge">{{ 'acct.googleDomainHint' | t }}</span>
+              </div>
+              <div class="mt-1">
+                <button type="button" class="link-btn escape-hatch-btn" (click)="toggleManualEmail()">
+                  {{ 'acct.useOtherAddress' | t }}
+                </button>
+              </div>
+            </div>
+          </ng-template>
+
+          <ui-button
+            class="mt-2"
+            (onClick)="onVerifyFormSubmit()"
+            [disabled]="isLoading || resendCooldownSeconds > 0"
+          >
+            {{
+              isLoading
+                ? ('acct.sending' | t)
+                : (resendCooldownSeconds > 0
+                  ? ('acct.resendIn' | t:{minutes: resendCooldownMinutes, seconds: resendCooldownSecondsPart})
+                  : ('acct.sendVerification' | t))
+            }}
+          </ui-button>
+          <div *ngIf="verifyMessage" class="inline-msg mt-2" [class.error]="verifyIsError">
+            {{ verifyMessage }}
+          </div>
+          <app-school-request-form *ngIf="schoolNotSupported" [eduEmail]="eduEmail"></app-school-request-form>
+        </ng-template>
+      </div>
+
+      <!-- Method (c) Student ID: shown when school allows student ID verification -->
+      <div class="card student-id-method-card mb-4" *ngIf="allowsStudentIdVerification" data-testid="student-id-method-card">
+        <h3 class="card-title">{{ 'acct.verifyWithStudentId' | t }}</h3>
+        <p class="card-subtitle mb-3">{{ 'acct.verifyMethodStudentIdDesc' | t }}</p>
+
+        <!-- Pending state -->
+        <div class="alert-box info mb-3" *ngIf="studentIdRequest?.status === 'pending'" data-testid="student-id-pending-card">
+          <strong>{{ 'acct.studentIdPendingNotice' | t }}</strong>
+          <p style="margin: 4px 0 0 0;">{{ studentIdRequest?.school_name }} · <code>{{ studentIdRequest?.student_number }}</code></p>
+          <p style="font-size: var(--text-xs); color: var(--muted); margin-top: 4px;">{{ 'acct.studentIdPrivacyNote' | t }}</p>
+          <div class="mt-3">
+            <ui-button variant="white" size="sm" (onClick)="onCancelStudentIdVerification()" [disabled]="isCancellingStudentId">
+              {{ (isCancellingStudentId ? 'common.cancelling' : 'acct.cancelVerification') | t }}
+            </ui-button>
+          </div>
+        </div>
+
+        <!-- Rejected state -->
+        <div class="alert-box warning mb-3" *ngIf="studentIdRequest?.status === 'rejected' && !isResubmittingStudentId" data-testid="student-id-rejected-card">
+          <strong>{{ 'acct.studentIdRejectedNotice' | t:{reason: studentIdRequest?.reject_reason || ''} }}</strong>
+          <p style="margin: 4px 0 0 0;">{{ studentIdRequest?.school_name }} · <code>{{ studentIdRequest?.student_number }}</code></p>
+          <div class="mt-3">
+            <ui-button variant="primary" size="sm" (onClick)="startResubmitStudentId()">
+              {{ 'acct.resubmit' | t }}
+            </ui-button>
+          </div>
+        </div>
+
+        <!-- Upload / Resubmit form -->
+        <div class="student-id-upload-form" *ngIf="studentIdRequest?.status !== 'pending' && (!studentIdRequest || studentIdRequest?.status !== 'rejected' || isResubmittingStudentId)">
+          <div class="form-group mb-3">
+            <label class="form-label" for="student-number-input">{{ 'acct.studentNumber' | t }}</label>
+            <input
+              id="student-number-input"
+              type="text"
+              class="local-part-input full-width uppercase"
+              [(ngModel)]="studentNumberInput"
+              [placeholder]="'acct.studentNumberPlaceholder' | t"
+              maxlength="20"
+            />
+          </div>
+
+          <div class="form-group mb-3">
+            <label class="form-label">{{ 'acct.studentIdPhoto' | t }}</label>
+            <div class="photo-picker-row" *ngIf="!studentIdPreviewUrl">
+              <input
+                type="file"
+                #studentIdFileInput
+                accept="image/*"
+                capture="environment"
+                style="display: none;"
+                (change)="onStudentIdPhotoSelected($event)"
+              />
+              <ui-button variant="outline" (onClick)="studentIdFileInput.click()" [disabled]="isSubmittingStudentId">
+                📷 {{ 'acct.studentIdUploadPrompt' | t }}
+              </ui-button>
+            </div>
+
+            <div class="photo-preview-box" *ngIf="studentIdPreviewUrl" style="display: flex; align-items: flex-start; gap: 8px;">
+              <img [src]="studentIdPreviewUrl" alt="Student ID Preview" class="student-id-thumb" />
+              <ui-button size="sm" variant="danger" (onClick)="onRemoveStudentIdPhoto()" [disabled]="isSubmittingStudentId">
+                {{ 'acct.removePhoto' | t }}
+              </ui-button>
+            </div>
+
+            <p class="field-hint text-muted mt-2" style="font-size: var(--text-xs);">
+              🔒 {{ 'acct.studentIdPrivacyNote' | t }}
+            </p>
+          </div>
+
+          <div *ngIf="studentIdError" class="inline-msg error mb-3">
+            {{ studentIdError }}
+          </div>
+
+          <ui-button
+            variant="primary"
+            (onClick)="onSubmitStudentIdVerification()"
+            [disabled]="isSubmittingStudentId || !studentNumberInput.trim() || !selectedStudentIdFile"
+          >
+            {{ (isSubmittingStudentId ? 'acct.submittingVerification' : 'acct.verifyWithStudentId') | t }}
+          </ui-button>
+        </div>
+      </div>
+
+    </ng-container>
+  </ng-container>
+</div>

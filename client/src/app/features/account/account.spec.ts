@@ -85,5 +85,43 @@ describe('Account shell', () => {
       expect(card.querySelector('.ph')).toBeNull();
       expect(card.querySelector('.profile-stats')).toBeNull();
     });
+
+    it('renders verification nav link with unverified hint badge when mustVerify is true', () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        imports: [Account],
+        providers: [
+          provideRouter([]),
+          { provide: AccountService, useValue: { getMyProfile: () => of({ id: 1, verifications: [] }) } },
+          { provide: OrderService, useValue: { checkUnreadOrders: vi.fn(), unreadOrders$: of(false) } },
+          {
+            provide: AuthStore,
+            useValue: {
+              user: signal({ verifications: [] } as any),
+              isAuthenticated: signal(true),
+              getUser: () => null,
+              logout: () => of(null),
+              isVerifiedIn: () => false,
+              mustVerifyIn: () => true,
+              schoolForRegion: () => '',
+            },
+          },
+          { provide: RegionService, useValue: { region: signal('tw'), regions: signal([]), currentRegionObj: signal(null), currency: signal({ code: 'TWD', decimal_places: 0 }) } },
+          { provide: I18nService, useValue: { lang: signal('zh-TW'), t: (k: string) => k } },
+        ],
+      });
+      const fixture = TestBed.createComponent(Account);
+      TestBed.tick();
+      fixture.detectChanges();
+
+      const links: NodeListOf<HTMLAnchorElement> = fixture.nativeElement.querySelectorAll('.dashboard-nav a');
+      const verifyLink = Array.from(links).find((a) => a.getAttribute('regionLink')?.includes('verification'));
+      const settingsLink = Array.from(links).find((a) => a.getAttribute('regionLink')?.includes('settings'));
+
+      expect(verifyLink).toBeTruthy();
+      expect(verifyLink?.textContent).toContain('acct.tabVerification');
+      expect(verifyLink?.querySelector('.verify-hint')?.textContent).toContain('acct.navUnverified');
+      expect(settingsLink?.querySelector('.verify-hint')).toBeNull();
+    });
   });
 });
