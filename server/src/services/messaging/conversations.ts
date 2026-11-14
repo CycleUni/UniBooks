@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, notExists, or, sql, type SQL } from 'drizzle-orm';
 import type { Env } from '../../env';
-import { chatReports, conversations, createDb, type Database } from '../../db';
-import { chatRoomStub } from '../../lib/chat';
+import { chatReports, conversations, conversationListings, createDb, type Database } from '../../db';
+import { chatRoomStub, postSystemMessage } from '../../lib/chat';
 import { storageKeyFromUrl } from '../../lib/media';
 import { siteOrigin } from '../../lib/origin';
 import { chatImagePrefix } from './images';
@@ -67,6 +67,126 @@ export const isParticipant = (conv: Pick<ConversationRow, 'buyer_id' | 'seller_i
 
 /** Whether the conversation's listing has been deleted. */
 export const listingDeleted = (conv: Pick<ConversationRow, 'listing_id'>) => conv.listing_id === null;
+
+export async function isConversationReadOnly(env: Env, conv: ConversationRow): Promise<boolean> {
+  if (conv.listing_id !== null) return false;
+  const db = createDb(env.DB);
+  const [activeListing] = await db
+    .select({ one: sql`1` })
+    .from(conversationListings)
+    .where(and(eq(conversationListings.conversationId, conv.id), isNotNull(conversationListings.listingId)))
+    .limit(1);
+  return !activeListing;
+}
+
+export async function attachListingToConversation(
+  env: Env,
+  conv: ConversationRow,
+  listing: { id: string; bookTitle?: string | null; bookIsbn?: string | null },
+  userId: string,
+): Promise<boolean> {
+  const db = createDb(env.DB);
+  const now = new Date().toISOString();
+  const title = (listing.bookTitle ?? '').slice(0, 255);
+  const isbn = listing.bookIsbn ?? '';
+
+  const res = await db
+    .insert(conversationListings)
+    .values({
+      conversationId: conv.id,
+      listingId: listing.id,
+      listingRef: listing.id,
+      bookTitle: title,
+      bookIsbn: isbn,
+      addedAt: now,
+      addedById: userId,
+    })
+    .onConflictDoNothing()
+    .run();
+
+  const newlyAdded = (res.meta.changes ?? 0) > 0;
+  if (newlyAdded) {
+    await postSystemMessage(env, {
+      roomId: conv.id,
+      participantIds: [conv.buyer_id, conv.seller_id],
+      senderId: userId,
+      content: `[SYSTEM:msg.buyerInquiredBook] ${title}`,
+    });
+  }
+  return newlyAdded;
+}
+
+export interface SerializedConversationListing {
+  ref: string;
+  id: string | null;
+  title: string;
+  isbn: string;
+  price: number | null;
+  status: string | null;
+  cover_url: string;
+  is_available: boolean;
+}
+
+interface ConversationListingJoinRow {
+  conversation_id: string;
+  listing_id: string | null;
+  listing_ref: string;
+  book_title: string;
+  book_isbn: string;
+  added_at: string;
+  added_by_id: string;
+  l_status: string | null;
+  l_price: number | null;
+  l_photos: string | null;
+  b_cover: string | null;
+  b_cover_r2_key: string | null;
+}
+
+export async function fetchListingsForConversations(
+  env: Env,
+  conversationIds: string[],
+): Promise<Map<string, SerializedConversationListing[]>> {
+  const ids = [...new Set(conversationIds.filter(Boolean))];
+  const map = new Map<string, SerializedConversationListing[]>();
+  if (!ids.length) return map;
+
+  const rows = await env.DB.prepare(
+    `SELECT cl.*, l.status AS l_status, l.price AS l_price, l.photos AS l_photos, b.cover_url AS b_cover, b.cover_r2_key AS b_cover_r2_key
+     FROM conversation_listings cl
+     LEFT JOIN listings l ON l.id = cl.listing_id
+     LEFT JOIN books b ON b.id = l.book_id
+     WHERE cl.conversation_id IN (SELECT value FROM json_each(?))
+     ORDER BY cl.added_at ASC`,
+  )
+    .bind(JSON.stringify(ids))
+    .all<ConversationListingJoinRow>()
+    .then((r) => r.results);
+
+  for (const row of rows) {
+    const photos = parsePhotos(row.l_photos);
+    const cover =
+      photos[0] ??
+      coverUrlFor(env, undefined, {
+        cover_url: typeof row.b_cover === 'string' ? row.b_cover : null,
+        cover_r2_key: typeof row.b_cover_r2_key === 'string' ? row.b_cover_r2_key : null,
+      });
+    const item: SerializedConversationListing = {
+      ref: row.listing_ref,
+      id: row.listing_id,
+      title: row.book_title,
+      isbn: row.book_isbn,
+      price: typeof row.l_price === 'number' ? row.l_price : null,
+      status: typeof row.l_status === 'string' ? row.l_status : null,
+      cover_url: cover,
+      is_available: row.l_status === 'active',
+    };
+    const list = map.get(row.conversation_id);
+    if (list) list.push(item);
+    else map.set(row.conversation_id, [item]);
+  }
+
+  return map;
+}
 
 /**
  * Mirror a new message into the conversation row: the inbox preview and its
@@ -190,7 +310,7 @@ export async function removeConversations(env: Env, where: SQL, limit = 500): Pr
   const ids = due.map((r) => r.id);
   // Checked again in the delete itself: a report filed or a mark undone in
   // between keeps the row. Whichever request removes a row purges its room.
-  const [, gone] = await db.batch([
+  const [, , gone] = await db.batch([
     db.delete(chatReports).where(
       and(
         inArray(chatReports.conversationId, ids),
@@ -199,6 +319,7 @@ export async function removeConversations(env: Env, where: SQL, limit = 500): Pr
         sql`NOT EXISTS (SELECT 1 FROM chat_reports o WHERE o.conversation_id = ${chatReports.conversationId} AND o.status = 'open')`,
       ),
     ),
+    db.delete(conversationListings).where(inArray(conversationListings.conversationId, ids)),
     db
       .delete(conversations)
       .where(and(inArray(conversations.id, ids), removable(db)))
@@ -252,8 +373,9 @@ export async function serializeConversations(
   const otherIds = rows.map((r) => (r.buyer_id === viewerId ? r.seller_id : r.buyer_id));
   const listingIds = [...new Set(rows.map((r) => r.listing_id).filter((x): x is string => !!x))];
   const refs = [...new Set(rows.map((r) => r.listing_ref).filter((x): x is string => !!x))];
+  const convIds = rows.map((r) => r.id);
 
-  const [people, schools, listingRows, orderRows] = await Promise.all([
+  const [people, schools, listingRows, listingsMap] = await Promise.all([
     loadPeople(env, otherIds),
     schoolInfosIn(env, otherIds, regionCode),
     // Raw: `IN json_each(...)` over the page's ids, and listings as `l.*` rows.
@@ -266,16 +388,20 @@ export async function serializeConversations(
           .all<Record<string, unknown>>()
           .then((r) => r.results)
       : Promise.resolve([] as Record<string, unknown>[]),
-    refs.length
-      ? env.DB.prepare(
-          `SELECT id, listing_ref, buyer_id, status, meetup_time, meetup_location, created_at FROM orders
-            WHERE listing_ref IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC`,
-        )
-          .bind(JSON.stringify(refs))
-          .all<OrderRow>()
-          .then((r) => r.results)
-      : Promise.resolve([] as OrderRow[]),
+    fetchListingsForConversations(env, convIds),
   ]);
+
+  const allRefs = [...new Set([...refs, ...Array.from(listingsMap.values()).flatMap((items) => items.map((i) => i.ref))])];
+
+  const orderRows = allRefs.length
+    ? await env.DB.prepare(
+        `SELECT id, listing_ref, buyer_id, status, meetup_time, meetup_location, created_at FROM orders
+          WHERE listing_ref IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC`,
+      )
+        .bind(JSON.stringify(allRefs))
+        .all<OrderRow>()
+        .then((r) => r.results)
+    : [];
 
   const listings = new Map(listingRows.map((l) => [String(l.id), l]));
 
@@ -285,34 +411,66 @@ export async function serializeConversations(
     const other = people.get(otherId);
     const listing = conv.listing_id ? listings.get(conv.listing_id) : undefined;
 
-    // The most recent order between this buyer and this listing, preferring
+    let convListings = listingsMap.get(conv.id);
+    if (!convListings || !convListings.length) {
+      let photo = '';
+      if (listing) {
+        const photos = parsePhotos(listing.photos);
+        photo =
+          photos[0] ??
+          coverUrlFor(env, undefined, {
+            cover_url: typeof listing._cover === 'string' ? listing._cover : null,
+            cover_r2_key: typeof listing._cover_r2_key === 'string' ? listing._cover_r2_key : null,
+          });
+      }
+      convListings = [
+        {
+          ref: conv.listing_ref || conv.listing_id || '',
+          id: conv.listing_id,
+          title: conv.book_title,
+          isbn: conv.book_isbn,
+          price: listing ? (listing.price as number) : null,
+          status: listing ? (listing.status as string) : null,
+          cover_url: photo,
+          is_available: listing ? listing.status === 'active' : false,
+        },
+      ];
+    }
+
+    const convRefs = new Set(convListings.map((l) => l.ref));
+    if (conv.listing_ref) convRefs.add(conv.listing_ref);
+
+    // The most recent order between this buyer and any listing of this conversation, preferring
     // one that is not cancelled.
-    const mine = orderRows.filter((o) => o.listing_ref === conv.listing_ref && o.buyer_id === conv.buyer_id);
+    const mine = orderRows.filter((o) => o.listing_ref && convRefs.has(o.listing_ref) && o.buyer_id === conv.buyer_id);
     const order = mine.find((o) => o.status !== 'cancelled') ?? mine[0] ?? null;
 
     let photo = '';
     if (listing) {
       const photos = parsePhotos(listing.photos);
-      // No photo: the book's cover, from its R2 copy when there is one, the
-      // same as everywhere else a cover is served.
       photo =
         photos[0] ??
         coverUrlFor(env, undefined, {
           cover_url: typeof listing._cover === 'string' ? listing._cover : null,
           cover_r2_key: typeof listing._cover_r2_key === 'string' ? listing._cover_r2_key : null,
         });
+    } else if (convListings[0]?.cover_url) {
+      photo = convListings[0].cover_url;
     }
+
+    const isAllDeleted = convListings.every((l) => l.id === null);
 
     return {
       id: conv.id,
-      listing_id: conv.listing_ref,
-      listing_title: conv.book_title,
-      listing_isbn: conv.book_isbn,
-      listing_deleted: conv.listing_id === null,
+      listing_id: conv.listing_ref ?? convListings[0]?.ref ?? null,
+      listing_title: conv.book_title || convListings[0]?.title || '',
+      listing_isbn: conv.book_isbn || convListings[0]?.isbn || '',
+      listing_deleted: isAllDeleted,
       listing_photo: photo,
-      listing_price: listing ? (listing.price as number) : null,
+      listing_price: listing ? (listing.price as number) : (convListings[0]?.price ?? null),
       listing_condition: listing ? (listing.condition as string) : null,
       listing_course: listing ? ((listing.course_name as string | undefined) ?? '') : null,
+      listings: convListings,
       other_party: other?.displayName ?? '',
       other_party_role: iAmBuyer ? 'seller' : 'buyer',
       other_party_school_name: schools.get(otherId)?.schoolName ?? '',

@@ -10,7 +10,9 @@ const CATALOG: Record<PushLang, Record<string, string>> = {
   en: {
     'push.chatMessage.title': '{sender} sent you a message',
     'push.chatMessage.listing': 'About: {title}',
+    'push.chatMessage.listingMany': 'About: {title} and {count} books',
     'push.chatMessage.generic': 'Open UniBooks to read it.',
+    'msg.buyerInquiredBook': 'Buyer inquired about "{title}"',
     'push.orderNotify.title': 'Order update: {title}',
     'push.orderNotify.meetup_requested': 'A buyer placed a meetup order and is waiting for your confirmation.',
     'push.orderNotify.meetup_updated': 'The seller updated the meetup time and place.',
@@ -31,7 +33,9 @@ const CATALOG: Record<PushLang, Record<string, string>> = {
   'zh-TW': {
     'push.chatMessage.title': '{sender} 傳送了新訊息給您',
     'push.chatMessage.listing': '書籍：{title}',
+    'push.chatMessage.listingMany': '書籍：《{title}》等 {count} 本',
     'push.chatMessage.generic': '開啟 UniBooks 查看。',
+    'msg.buyerInquiredBook': '買家想詢問《{title}》',
     'push.orderNotify.title': '訂單更新：{title}',
     'push.orderNotify.meetup_requested': '買家下了面交訂單，等待您確認。',
     'push.orderNotify.meetup_updated': '賣家更新了面交時間與地點。',
@@ -52,7 +56,9 @@ const CATALOG: Record<PushLang, Record<string, string>> = {
   'zh-HK': {
     'push.chatMessage.title': '{sender} 向你傳送了新訊息',
     'push.chatMessage.listing': '書籍：{title}',
+    'push.chatMessage.listingMany': '書籍：《{title}》等 {count} 本',
     'push.chatMessage.generic': '開啟 UniBooks 查看。',
+    'msg.buyerInquiredBook': '買家想問《{title}》',
     'push.orderNotify.title': '訂單更新：{title}',
     'push.orderNotify.meetup_requested': '買家落咗面交訂單，等緊你確認。',
     'push.orderNotify.meetup_updated': '賣家更新咗面交時間同地點。',
@@ -101,6 +107,13 @@ export const ORDER_PUSH_EVENTS = [
 ] as const;
 
 const ORDER_EVENT_PREVIEW = /^\[SYSTEM:order\.notify\.([a-z_]+)\]/;
+const ATTACH_PREVIEW = /^\[SYSTEM:msg\.buyerInquiredBook\]\s*(.*)$/;
+
+/** The book title an attach system-message preview announces, or null. */
+export function attachEventIn(preview: string | undefined | null): string | null {
+  const m = ATTACH_PREVIEW.exec(preview ?? '');
+  return m ? m[1] : null;
+}
 
 /** The order event a system-message preview announces, or null. */
 export function orderEventIn(preview: string | undefined | null): string | null {

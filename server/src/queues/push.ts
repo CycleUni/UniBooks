@@ -7,9 +7,9 @@ import { coverUrlFor } from '../services/catalog/covers';
 import { siteOrigin } from '../lib/origin';
 import { formatMeetupTime } from '../lib/time';
 import type { PushMessage } from './types';
-import { getConversation } from '../services/messaging/conversations';
+import { getConversation, fetchListingsForConversations } from '../services/messaging/conversations';
 import { loadPerson, type Person } from '../services/messaging/people';
-import { languageFor, oneLine, orderEventIn, pushT, ORDER_PUSH_EVENTS, type PushLang } from '../services/messaging/pushText';
+import { languageFor, oneLine, orderEventIn, attachEventIn, pushT, ORDER_PUSH_EVENTS, type PushLang } from '../services/messaging/pushText';
 
 /**
  * PUSH_QUEUE consumer: browser push over FCM HTTP v1.
@@ -286,16 +286,26 @@ export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPu
       const senderName = oneLine(msg.sender_name || sender?.displayName) || 'UniBooks';
       // Never quote the message: a push can be read on a locked screen.
       const event = orderEventIn(msg.preview);
+      const attachedTitle = attachEventIn(msg.preview);
       let title: string;
       let body: string;
       if (event) {
         title = pushT(lang, 'push.orderNotify.title', { title: conv.book_title || 'UniBooks' });
         body = pushT(lang, `push.orderNotify.${event}`);
+      } else if (attachedTitle !== null) {
+        title = pushT(lang, 'push.chatMessage.title', { sender: senderName });
+        body = pushT(lang, 'msg.buyerInquiredBook', { title: attachedTitle || conv.book_title });
       } else {
         title = pushT(lang, 'push.chatMessage.title', { sender: senderName });
-        body = conv.book_title
-          ? pushT(lang, 'push.chatMessage.listing', { title: conv.book_title })
-          : pushT(lang, 'push.chatMessage.generic');
+        const convListings = await fetchListingsForConversations(env, [conv.id]);
+        const items = convListings.get(conv.id) ?? [];
+        if (items.length > 1) {
+          body = pushT(lang, 'push.chatMessage.listingMany', { title: conv.book_title || items[0].title, count: items.length });
+        } else {
+          body = conv.book_title
+            ? pushT(lang, 'push.chatMessage.listing', { title: conv.book_title })
+            : pushT(lang, 'push.chatMessage.generic');
+        }
       }
       return {
         recipientId,

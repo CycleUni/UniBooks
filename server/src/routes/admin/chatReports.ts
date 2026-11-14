@@ -8,6 +8,7 @@ import { apiError, pagination, readJson } from '../../lib/http';
 import { writeAudit } from '../../services/admin/audit';
 import { notFound, regionParam, scopeOf, scopeWhere, uuidId } from '../../services/admin/scope';
 import { mintChatToken } from '../../services/chatTokens';
+import { fetchListingsForConversations, type SerializedConversationListing } from '../../services/messaging/conversations';
 
 /** Chat report review. */
 export const chatReportRoutes = new Hono<AppEnv>();
@@ -34,7 +35,7 @@ function reportSelect(db: Database) {
 
 type ReportRow = Awaited<ReturnType<ReturnType<typeof reportSelect>['limit']>>[number];
 
-function reportJson(row: ReportRow) {
+function reportJson(row: ReportRow, listings: SerializedConversationListing[] = []) {
   const r = row.r;
   return {
     id: r.id,
@@ -48,6 +49,7 @@ function reportJson(row: ReportRow) {
     created_at: r.createdAt,
     // The conversation's region: the same path the scope filters on.
     region: row.convRegion,
+    listings,
   };
 }
 
@@ -70,7 +72,14 @@ chatReportRoutes.get('/chat-reports', async (c) => {
     .orderBy(desc(chatReports.createdAt), desc(chatReports.id))
     .limit(page.limit)
     .offset(page.offset);
-  return c.json(page.wrap(rows.map(reportJson), n));
+  const convIds = rows.map((r) => String(r.r.conversationId));
+  const listingsMap = await fetchListingsForConversations(c.env, convIds);
+  return c.json(
+    page.wrap(
+      rows.map((r) => reportJson(r, listingsMap.get(String(r.r.conversationId)) ?? [])),
+      n,
+    ),
+  );
 });
 
 async function loadReport(c: Context<AppEnv>, db: Database): Promise<ReportRow> {
@@ -82,7 +91,11 @@ async function loadReport(c: Context<AppEnv>, db: Database): Promise<ReportRow> 
   return row;
 }
 
-chatReportRoutes.get('/chat-reports/:id', async (c) => c.json(reportJson(await loadReport(c, createDb(c.env.DB)))));
+chatReportRoutes.get('/chat-reports/:id', async (c) => {
+  const row = await loadReport(c, createDb(c.env.DB));
+  const listingsMap = await fetchListingsForConversations(c.env, [String(row.r.conversationId)]);
+  return c.json(reportJson(row, listingsMap.get(String(row.r.conversationId)) ?? []));
+});
 
 chatReportRoutes.patch('/chat-reports/:id', async (c) => {
   const data = await readJson(c.req);

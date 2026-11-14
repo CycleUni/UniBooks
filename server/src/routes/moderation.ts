@@ -19,6 +19,7 @@ import {
 } from '../db';
 import { cancelOpenOrdersForListing } from '../services/orders/cancel';
 import { authMiddleware, requireStaff } from '../middleware/auth';
+import { fetchListingsForConversations, type SerializedConversationListing } from '../services/messaging/conversations';
 import { isUniqueViolation } from '../lib/db';
 import { apiError, fieldErrors, pagination, readJson, validate } from '../lib/http';
 import { LIMITS } from '../lib/limits';
@@ -250,9 +251,9 @@ function parseIds(raw: string): string[] {
 }
 
 /** A chat report as the app reads it. */
-const serializeChatReport = (r: ChatReportRow) => ({
+const serializeChatReport = (r: ChatReportRow, listings: SerializedConversationListing[] = []) => ({
   id: r.id,
-  conversation: { id: r.conversation_id, listing_title: r.conv_title ?? '', listing_deleted: r.conv_listing_id === null },
+  conversation: { id: r.conversation_id, listing_title: r.conv_title ?? '', listing_deleted: r.conv_listing_id === null, listings },
   reporter: { id: r.reporter_id, email: r.reporter_email ?? '' },
   reported_party: { id: r.reported_party_id, email: r.reported_email ?? '' },
   reason: r.reason,
@@ -269,7 +270,14 @@ async function chatReportPage(c: Context<AppEnv>, where: SQL | undefined) {
     db.select({ n: count() }).from(chatReports).where(where),
     selectChatReports(db).where(where).orderBy(desc(chatReports.createdAt), asc(chatReports.id)).limit(page.limit).offset(page.offset),
   ]);
-  return c.json(page.wrap(rows.map(serializeChatReport), countRow?.n ?? 0));
+  const convIds = rows.map((r) => r.conversation_id);
+  const listingsMap = await fetchListingsForConversations(c.env, convIds);
+  return c.json(
+    page.wrap(
+      rows.map((r) => serializeChatReport(r, listingsMap.get(r.conversation_id) ?? [])),
+      countRow?.n ?? 0,
+    ),
+  );
 }
 
 const chatReportCreateSchema = z.object({

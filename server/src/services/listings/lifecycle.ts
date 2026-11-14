@@ -1,12 +1,13 @@
 /**
  * Listing deletion and page bounds.
  */
-import { and, eq, inArray, notExists, sql } from 'drizzle-orm';
+import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
-import { books, conversations, createDb, listings, orders, subscriptions } from '../../db';
+import { books, conversations, conversationListings, createDb, listings, orders, subscriptions } from '../../db';
 import { parsePhotos } from '../../lib/json';
 import { deleteListingPhotos } from './photos';
 import { chatRoomStub } from '../../lib/chat';
+import { getConversation, isConversationReadOnly } from '../messaging/conversations';
 
 /** Order statuses that still need their listing. */
 export const ACTIVE_ORDER_STATUSES = ['pending', 'accepted', 'handed_over'] as const;
@@ -34,8 +35,16 @@ export async function deleteListing(
   listing: { id: string; bookId: string; sellerId: string; photos: string },
 ): Promise<void> {
   const db = createDb(env.DB);
-  const rooms = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.listingId, listing.id));
-  const [, , , orphans] = await db.batch([
+  const rooms = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(
+      or(
+        eq(conversations.listingId, listing.id),
+        sql`EXISTS (SELECT 1 FROM ${conversationListings} WHERE ${conversationListings.conversationId} = ${conversations.id} AND ${conversationListings.listingId} = ${listing.id})`,
+      ),
+    );
+  const [, , , , orphans] = await db.batch([
     db
       .update(orders)
       .set({ listingRef: sql`COALESCE(${orders.listingRef}, ${listing.id})`, listingId: null })
@@ -44,6 +53,10 @@ export async function deleteListing(
       .update(conversations)
       .set({ listingRef: sql`COALESCE(${conversations.listingRef}, ${listing.id})`, listingId: null })
       .where(eq(conversations.listingId, listing.id)),
+    db
+      .update(conversationListings)
+      .set({ listingRef: sql`COALESCE(${conversationListings.listingRef}, ${listing.id})`, listingId: null })
+      .where(eq(conversationListings.listingId, listing.id)),
     db.delete(listings).where(eq(listings.id, listing.id)),
     db
       .delete(books)
@@ -63,13 +76,14 @@ export async function deleteListing(
       await env.R2.delete(coverR2Key).catch((e: unknown) => console.error(`[listings] failed to delete ${coverR2Key}`, e));
     }
   }
-  // Chats about it are read-only now; sockets already open learn it here.
-  await Promise.allSettled(
-    rooms.map((r) =>
-      chatRoomStub(env, r.id)
+  // Chats about it are read-only now if all their listings are gone; sockets already open learn it here.
+  for (const r of rooms) {
+    const conv = await getConversation(env, r.id);
+    if (conv && (await isConversationReadOnly(env, conv))) {
+      await chatRoomStub(env, r.id)
         .makeReadOnly()
-        .catch((e: unknown) => console.error(`[listings] could not make room ${r.id} read-only`, e)),
-    ),
-  );
+        .catch((e: unknown) => console.error(`[listings] could not make room ${r.id} read-only`, e));
+    }
+  }
   await deleteListingPhotos(env, origin, listing.sellerId, parsePhotos(listing.photos));
 }

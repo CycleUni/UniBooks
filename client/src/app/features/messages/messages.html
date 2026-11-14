@@ -46,56 +46,24 @@
               </button>
             </div>
 
-            <div class="listing-banner" *ngIf="activeChat.listing_title">
-              <!-- A real <button>, not a <div (click)>: this is the only way
-                   back to the listing from a conversation, and as a div it was
-                   unreachable by keyboard and announced as nothing at all.
-                   Everything inside is phrasing content (span) because a
-                   button may not contain flow content. -->
-              <!-- Disabled once the seller deletes the listing: there is no
-                   page to go back to, only this conversation's history. -->
-              <button type="button" class="listing-banner-left" (click)="goToListing(activeChat.listing_id)" [disabled]="activeChat.listing_deleted">
-                <img *ngIf="activeChat.listing_photo" [src]="activeChat.listing_photo | bookCover" [attr.alt]="activeChat.listing_title || ('common.bookCover' | t)" class="listing-thumb">
-                <span class="placeholder-thumb" *ngIf="!activeChat.listing_photo"></span>
-                <span class="listing-details">
-                  <span class="listing-title">{{ activeChat.listing_title }}</span>
-                  <span class="listing-meta" *ngIf="activeChat.listing_deleted">
-                    <span class="condition badge">{{ 'common.listingDeleted' | t }}</span>
-                  </span>
-                  <span class="listing-meta" *ngIf="!activeChat.listing_deleted">
-                    <span class="price">{{ activeChat.listing_price | price }}</span>
-                    <span class="condition badge">{{ ('cond.' + activeChat.listing_condition) | t }}</span>
-                    <span class="course" *ngIf="activeChat.listing_course">{{ activeChat.listing_course }}</span>
-                  </span>
-                </span>
-              </button>
-
-              <div class="listing-banner-actions">
-                <ng-container *ngIf="activeChat.order_id">
-                  <ui-button variant="ghost" (onClick)="goToOrder()">
-                    {{ 'msg.viewOrder' | t }}
-                  </ui-button>
-                </ng-container>
-
-                <ng-container *ngIf="!activeChat.order_id && !activeChat.listing_deleted">
-                  <ng-container *ngIf="activeChat.other_party_role === 'seller'">
-                    <ui-button variant="ghost" (onClick)="goToListing(activeChat.listing_id)">
-                      {{ 'msg.viewListing' | t }}
-                    </ui-button>
-                    <ui-button (onClick)="goToCheckout(activeChat.listing_id)">
-                      {{ 'msg.buyNow' | t }}
-                    </ui-button>
-                  </ng-container>
-
-                  <ng-container *ngIf="activeChat.other_party_role === 'buyer'">
-                    <ui-button variant="ghost" (onClick)="goToListing(activeChat.listing_id)">
-                      {{ 'msg.viewListing' | t }}
-                    </ui-button>
-                  </ng-container>
-                </ng-container>
-              </div>
-            </div>
+            <app-chat-listings-header
+              *ngIf="activeChat && (activeChat.listing_title || activeChat.listings?.length)"
+              [listings]="activeChatListings()"
+              [isBuyer]="isBuyerChat()"
+              [hasOrder]="!!activeChat.order_id"
+              (openPicker)="showPicker = true"
+              (removeListing)="onRemoveListing($event)"
+              (goListing)="goToListing($event)"
+              (viewOrder)="goToOrder()"
+            ></app-chat-listings-header>
           </div>
+
+          <app-candidate-listings-picker
+            *ngIf="showPicker && activeChat"
+            [conversationId]="activeChat.id"
+            (closed)="showPicker = false"
+            (listingAdded)="onListingAdded($event)"
+          ></app-candidate-listings-picker>
 
           <ui-report-modal
             *ngIf="showReport"

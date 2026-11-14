@@ -40,6 +40,8 @@ import { UiErrorState } from '../../shared/ui/error-state.component';
 import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
 import { PendingChatStore, PENDING_CHAT_PREFIX, isPendingChat, pendingChatFromListing } from './pending-chats';
 import { decodeJwtPayload } from '../../core/jwt';
+import { ChatListingsHeaderComponent, ChatListingItem } from './chat-listings-header.component';
+import { CandidateListingsPickerComponent } from './candidate-listings-picker.component';
 
 /** Listing statuses on which no new conversation can be started. */
 const LISTING_GONE_STATUSES = ['removed', 'sold'];
@@ -50,7 +52,7 @@ const MEETUP_DETAIL_STATUSES = ['accepted', 'handed_over'];
 @Component({
   selector: 'app-messages',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, UiEmpty, UiButton, UiInput, UiMeetupCard, TPipe, UiImageLightbox, UiReportModal, UiRoleBadge, MessagesInboxList, PricePipe, UiVerificationPrompt, UiPushPrompt, UiSkeleton, UiErrorState, UiPullToRefresh, BookCoverPipe, UiVerifiedBadge],
+  imports: [RegionLinkDirective, CommonModule, RouterModule, FormsModule, UiEmpty, UiButton, UiInput, UiMeetupCard, TPipe, UiImageLightbox, UiReportModal, UiRoleBadge, MessagesInboxList, UiVerificationPrompt, UiPushPrompt, UiSkeleton, UiErrorState, UiPullToRefresh, UiVerifiedBadge, ChatListingsHeaderComponent, CandidateListingsPickerComponent],
   templateUrl: './messages.html',
   styleUrls: ['./messages.css']
 })
@@ -65,6 +67,7 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   connectionState: 'connected' | 'reconnecting' | 'disconnected' = 'disconnected';
   imeComposing = false;
   showReport = false;
+  showPicker = false;
   refreshingInbox = false;
   // Image upload state
   uploadingImage = false;
@@ -469,11 +472,14 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
             }
           } else if (params['listing']) {
             const listingId = params['listing'];
-            const existingChat = this.chats.find(c => String(c.listing_id) === String(listingId));
+            const existingChat = this.chats.find(c =>
+              String(c.listing_id) === String(listingId) ||
+              c.listings?.some((l: any) => String(l.id) === String(listingId) || String(l.ref) === String(listingId))
+            );
             if (existingChat) {
               this.router.navigate([], { queryParams: { chat: existingChat.id }, replaceUrl: true });
             } else {
-              this.openPendingChat(listingId);
+              this.handleContactSellerListing(listingId);
             }
           } else if (this.activeChat) {
             // `?chat=` went away underneath an open chat: the browser's Back
@@ -499,6 +505,70 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
   onRefreshInbox() {
     this.refreshingInbox = true;
     this.loadConversations();
+  }
+
+  /**
+   * Contacting a seller about a listing. If the buyer already has a conversation
+   * with this seller, that conversation is reused and the listing attached to it.
+   * Otherwise, a pending chat is opened locally until the first message is sent.
+   */
+  private handleContactSellerListing(listingId: string) {
+    this.loadingChats = true;
+    this.listingService.getListing(listingId).subscribe({
+      next: (listing) => {
+        this.loadingChats = false;
+        if (String(listing.seller) === String(this.authStore.user()?.id)) {
+          this.toast.error(this.i18n.t('msg.cannotMessageSelf'));
+          this.clearChatParam();
+          return;
+        }
+        if (LISTING_GONE_STATUSES.includes(listing.status)) {
+          this.toast.error(this.i18n.t('msg.errListingUnavailable'));
+          this.clearChatParam();
+          return;
+        }
+
+        // If the buyer already has a conversation with this seller, attach to it
+        const existingChatWithSeller = this.chats.find(c =>
+          !isPendingChat(c) &&
+          String(c.seller_id) === String(listing.seller) &&
+          c.other_party_role === 'seller'
+        );
+
+        if (existingChatWithSeller) {
+          this.messageService.startConversation(listingId).subscribe({
+            next: (conversation) => {
+              const idx = this.chats.findIndex(c => c.id === conversation.id);
+              if (idx >= 0) {
+                this.chats[idx] = { ...this.chats[idx], ...conversation };
+              } else {
+                this.chats = [conversation, ...this.chats];
+              }
+              this.router.navigate([], { queryParams: { chat: conversation.id }, replaceUrl: true });
+              this.toast.success(this.i18n.t('msg.listingAdded'));
+              this.cdr.markForCheck();
+            },
+            error: () => {
+              this.toast.error(this.i18n.t('msg.chatOpenFailed'));
+              this.clearChatParam();
+              this.cdr.markForCheck();
+            }
+          });
+        } else {
+          const chat = pendingChatFromListing(listing);
+          this.pendingChats.save(chat);
+          this.chats = [chat, ...this.chats.filter(c => c.id !== chat.id)];
+          this.router.navigate([], { queryParams: { chat: chat.id }, replaceUrl: true });
+          this.cdr.markForCheck();
+        }
+      },
+      error: (err) => {
+        this.loadingChats = false;
+        this.toast.error(this.i18n.t(err?.status === 404 ? 'msg.errListingUnavailable' : 'msg.chatOpenFailed'));
+        this.clearChatParam();
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   /**
@@ -924,7 +994,77 @@ export class Messages implements OnInit, AfterViewChecked, OnDestroy {
    */
   messageText(body: string): string {
     const key = systemMessageKey(body);
-    return key ? (this.i18n.tOrNull(key) ?? body) : body;
+    if (!key) return body;
+    if (key === 'msg.buyerInquiredBook') {
+      const title = body.replace(/^\[SYSTEM:msg\.buyerInquiredBook\]\s*/, '').trim();
+      return this.i18n.t('msg.buyerInquiredBook', { title });
+    }
+    return this.i18n.tOrNull(key) ?? body;
+  }
+
+  activeChatListings(): ChatListingItem[] {
+    if (!this.activeChat) return [];
+    if (Array.isArray(this.activeChat.listings) && this.activeChat.listings.length > 0) {
+      return this.activeChat.listings;
+    }
+    if (this.activeChat.listing_title) {
+      return [
+        {
+          ref: String(this.activeChat.listing_id || ''),
+          id: this.activeChat.listing_id ? String(this.activeChat.listing_id) : null,
+          title: this.activeChat.listing_title,
+          isbn: this.activeChat.book_isbn || '',
+          price: this.activeChat.listing_price ?? null,
+          status: this.activeChat.listing_deleted ? 'removed' : 'active',
+          cover_url: this.activeChat.listing_photo || '',
+          is_available: !this.activeChat.listing_deleted,
+        },
+      ];
+    }
+    return [];
+  }
+
+  isBuyerChat(): boolean {
+    return this.activeChat?.other_party_role === 'seller';
+  }
+
+  onListingAdded(updatedConv: any) {
+    if (updatedConv) {
+      this.activeChat = { ...this.activeChat, ...updatedConv };
+      const idx = this.chats.findIndex(c => c.id === updatedConv.id);
+      if (idx >= 0) {
+        this.chats[idx] = { ...this.chats[idx], ...updatedConv };
+      }
+      this.cdr.markForCheck();
+    }
+  }
+
+  onRemoveListing(item: ChatListingItem) {
+    if (!this.activeChat?.id || !item?.ref) return;
+    this.messageService.removeListing(this.activeChat.id, item.ref).subscribe({
+      next: () => {
+        if (Array.isArray(this.activeChat.listings)) {
+          this.activeChat.listings = this.activeChat.listings.filter((l: any) => l.ref !== item.ref);
+        }
+        const chat = this.chats.find(c => c.id === this.activeChat.id);
+        if (chat && Array.isArray(chat.listings)) {
+          chat.listings = chat.listings.filter((l: any) => l.ref !== item.ref);
+        }
+        this.toast.success(this.i18n.t('msg.listingRemoved'));
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        const code = err?.error?.error?.code;
+        if (code === 'msg.errCannotRemoveLastListing') {
+          this.toast.error(this.i18n.t('msg.errCannotRemoveLastListing'));
+        } else if (code === 'msg.errListingHasOpenOrder') {
+          this.toast.error(this.i18n.t('msg.errListingHasOpenOrder'));
+        } else {
+          this.toast.error(this.i18n.t('msg.chatOpenFailed'));
+        }
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   onImageError(msg: any) {

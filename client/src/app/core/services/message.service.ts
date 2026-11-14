@@ -292,6 +292,23 @@ export class MessageService {
     return this.http.post<any>('/messaging/conversations', { listing_id: listingId });
   }
 
+  getCandidateListings(conversationId: string, page = 1, pageSize = 20): Observable<{ results: any[]; count: number }> {
+    return this.http.get<{ results: any[]; count: number }>(
+      `/messaging/conversations/${conversationId}/candidate-listings`,
+      { params: { page: String(page), page_size: String(pageSize) } },
+    );
+  }
+
+  attachListing(conversationId: string, listingId: string): Observable<any> {
+    return this.http.post<any>(`/messaging/conversations/${conversationId}/listings`, { listing_id: listingId });
+  }
+
+  removeListing(conversationId: string, listingRef: string): Observable<{ success: boolean }> {
+    return this.http.delete<{ success: boolean }>(
+      `/messaging/conversations/${conversationId}/listings/${listingRef}`,
+    );
+  }
+
   // Room-scoped: the backend verifies the caller is a participant of this
   // conversation before issuing a token, and the token only works for it.
   getChatToken(conversationId: string): Observable<{ token: string }> {

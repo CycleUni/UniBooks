@@ -1,6 +1,6 @@
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import type { Env } from '../../env';
-import { createDb, conversations } from '../../db';
+import { createDb, conversations, conversationListings } from '../../db';
 import { postSystemMessage } from '../../lib/chat';
 
 /** The order fields a notice needs. */
@@ -30,8 +30,18 @@ export interface OrderNotice {
  */
 export async function findOrderConversation(env: Env, order: Pick<NoticeOrder, 'buyerId' | 'listingId' | 'listingRef'>) {
   const pairs = [];
-  if (order.listingRef) pairs.push(eq(conversations.listingRef, order.listingRef));
-  if (order.listingId) pairs.push(eq(conversations.listingId, order.listingId));
+  if (order.listingRef) {
+    pairs.push(eq(conversations.listingRef, order.listingRef));
+    pairs.push(
+      sql`EXISTS (SELECT 1 FROM ${conversationListings} WHERE ${conversationListings.conversationId} = ${conversations.id} AND ${conversationListings.listingRef} = ${order.listingRef})`,
+    );
+  }
+  if (order.listingId) {
+    pairs.push(eq(conversations.listingId, order.listingId));
+    pairs.push(
+      sql`EXISTS (SELECT 1 FROM ${conversationListings} WHERE ${conversationListings.conversationId} = ${conversations.id} AND ${conversationListings.listingId} = ${order.listingId})`,
+    );
+  }
   if (!pairs.length) return null;
   const [conv] = await createDb(env.DB)
     .select({ id: conversations.id, roomId: conversations.roomId, buyerId: conversations.buyerId, sellerId: conversations.sellerId })

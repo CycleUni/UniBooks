@@ -25,7 +25,7 @@ describe('Messages pending chats', () => {
   let messageService: any;
   let connectionState: Subject<string>;
   let getListing: ReturnType<typeof vi.fn>;
-  let toast: { error: ReturnType<typeof vi.fn> };
+  let toast: { error: ReturnType<typeof vi.fn>; success?: ReturnType<typeof vi.fn> };
   let user: { id: number } | null;
 
   const listing = {
@@ -38,7 +38,7 @@ describe('Messages pending chats', () => {
     router = { navigate: vi.fn() };
     connectionState = new Subject<string>();
     getListing = vi.fn(() => of(listing));
-    toast = { error: vi.fn() };
+    toast = { error: vi.fn(), success: vi.fn() };
     messageService = {
       getConversations: vi.fn(() => of(conversations)),
       startConversation: vi.fn(() => of({ id: 'conv-new', listing_id: 'listing-1', other_party: 'Seller' })),
@@ -115,6 +115,25 @@ describe('Messages pending chats', () => {
     expect(component.activeChat.listing_title).toBe('Calculus');
     // No room to open for it yet.
     expect(messageService.getChatToken).not.toHaveBeenCalled();
+  });
+
+  it('reuses existing conversation with seller when contacting seller for another listing', () => {
+    const existing = {
+      id: 'conv-existing',
+      seller_id: '7',
+      listing_id: 'listing-old',
+      other_party: 'Seller',
+      other_party_role: 'seller',
+      listings: [{ ref: 'listing-old', id: 'listing-old', title: 'Old Book', is_available: true }],
+    };
+    setup({ listing: 'listing-1' }, [existing]);
+
+    expect(getListing).toHaveBeenCalledWith('listing-1');
+    expect(messageService.startConversation).toHaveBeenCalledWith('listing-1');
+    expect(router.navigate).toHaveBeenCalledWith([], expect.objectContaining({
+      queryParams: { chat: 'conv-new' },
+    }));
+    expect(toast.success).toHaveBeenCalledWith('msg.listingAdded');
   });
 
   it('keeps an unsent chat in the inbox while the page stays open', () => {

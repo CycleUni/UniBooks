@@ -72,6 +72,37 @@ describe('MessagesInboxList', () => {
     expect(partners[1].textContent?.trim()).toBe('周恭煥');
   });
 
+  it('formats multi-book listing title when chat has multiple listings', () => {
+    const fixture = TestBed.createComponent(MessagesInboxList);
+    fixture.componentInstance.chats = [
+      {
+        id: 'c1',
+        other_party: 'Alice',
+        other_party_role: 'seller',
+        listing_title: 'Primary Book',
+        listings: [
+          { ref: 'r1', title: 'Primary Book' },
+          { ref: 'r2', title: 'Second Book' },
+          { ref: 'r3', title: 'Third Book' },
+        ],
+      },
+    ];
+    fixture.detectChanges();
+    const listingEl = fixture.nativeElement.querySelector('.chat-subject');
+    expect(listingEl?.textContent).toContain('msg.bookPrefixMany');
+  });
+
+  it('formats preview for buyer inquiry system message with book title', () => {
+    const fixture = TestBed.createComponent(MessagesInboxList);
+    const i18n = TestBed.inject(I18nService);
+    vi.spyOn(i18n, 't').mockImplementation((key: string, params?: any) => {
+      if (key === 'msg.buyerInquiredBook') return `Buyer inquired about ${params?.title}`;
+      return key;
+    });
+    const preview = fixture.componentInstance.formatPreview('[SYSTEM:msg.buyerInquiredBook] Advanced Physics');
+    expect(preview).toBe('Buyer inquired about Advanced Physics');
+  });
+
   it('shows a book cover thumbnail through the cover proxy, and a listing photo as it is', () => {
     const fixture = TestBed.createComponent(MessagesInboxList);
     fixture.componentInstance.chats = [

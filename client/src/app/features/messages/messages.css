@@ -577,7 +577,7 @@
            already inside offsetHeight, so it isn't added again here. */
         padding-bottom: calc(16px + var(--input-area-height, calc(72px + env(safe-area-inset-bottom, 0px))));
       }
-      .chat-area:has(.listing-banner) .message-history {
+      .chat-area:has(.listing-banner, app-chat-listings-header) .message-history {
         padding-top: calc(16px + var(--chat-top-height, calc(72px + 92px + env(safe-area-inset-top, 0px))));
       }
       .msg-bubble {

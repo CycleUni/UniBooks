@@ -47,9 +47,10 @@ describe.skipIf(!ready)('messaging API', () => {
 
   it('limits how many new conversations one user starts; reopening one is not counted', async () => {
     const seller = await seedUser({ verifiedIn: 'TW' });
+    const otherSeller = await seedUser({ verifiedIn: 'TW' });
     const buyer = await seedUser({ verifiedIn: 'TW' });
     const open = await seedListing(seller.id);
-    const fresh = await seedListing(seller.id);
+    const fresh = await seedListing(otherSeller.id);
     const post = (listing: string) =>
       app.request(
         '/api/v1/messaging/conversations',

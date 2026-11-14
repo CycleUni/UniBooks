@@ -670,6 +670,31 @@ export type Conversation = InferSelectModel<typeof conversations>;
 export type InsertConversation = InferInsertModel<typeof conversations>;
 export type NewConversation = InsertConversation;
 
+export const conversationListings = sqliteTable(
+  'conversation_listings',
+  {
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    listingId: text('listing_id').references(() => listings.id, { onDelete: 'set null' }),
+    listingRef: text('listing_ref').notNull(),
+    bookTitle: text('book_title').notNull().default(''),
+    bookIsbn: text('book_isbn').notNull().default(''),
+    addedAt: text('added_at').notNull(),
+    addedById: text('added_by_id')
+      .notNull()
+      .references(() => users.id),
+  },
+  (table) => [
+    primaryKey({ columns: [table.conversationId, table.listingRef] }),
+    index('conversation_listings_listing_id_idx').on(table.listingId),
+  ],
+);
+
+export type ConversationListing = InferSelectModel<typeof conversationListings>;
+export type InsertConversationListing = InferInsertModel<typeof conversationListings>;
+export type NewConversationListing = InsertConversationListing;
+
 // ============================================================================
 // 18. Reports (listing reports)
 // ============================================================================

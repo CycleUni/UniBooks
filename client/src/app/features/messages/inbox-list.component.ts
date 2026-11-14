@@ -97,7 +97,14 @@ const GESTURE_CLICK_MS = 400;
                       (click)="$event.stopPropagation(); remove.emit(chat)">×</button>
             </div>
           </div>
-          <div class="chat-subject">{{ 'msg.bookPrefix' | t:{title: chat.listing_title} }}<span *ngIf="chat.listing_deleted"> · {{ 'common.listingDeleted' | t }}</span></div>
+          <div class="chat-subject">
+            <ng-container *ngIf="chat.listings && chat.listings.length > 1; else singleTitle">
+              {{ 'msg.bookPrefixMany' | t:{title: chat.listing_title, count: chat.listings.length} }}
+            </ng-container>
+            <ng-template #singleTitle>
+              {{ 'msg.bookPrefix' | t:{title: chat.listing_title} }}<span *ngIf="chat.listing_deleted"> · {{ 'common.listingDeleted' | t }}</span>
+            </ng-template>
+          </div>
           <div class="chat-preview" [class.pending]="chat.pending">{{ chat.pending ? ('msg.pendingPreview' | t) : formatPreview(chat.latest_message) }}</div>
         </div>
       </div>
@@ -555,6 +562,10 @@ export class MessagesInboxList implements OnDestroy {
     if (!body || !body.startsWith('[SYSTEM:')) return body;
     const match = body.match(/\[SYSTEM:([^\]]+)\]/);
     if (!match) return body;
+    if (match[1] === 'msg.buyerInquiredBook') {
+      const title = body.replace(/\[SYSTEM:[^\]]+\]\s*/, '').trim();
+      return this.i18n.t('msg.buyerInquiredBook', { title }) || body;
+    }
     return this.i18n.t(match[1]) || body;
   }
 }

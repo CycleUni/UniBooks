@@ -1,7 +1,19 @@
 import { and, desc, eq, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import type { Env } from '../../env';
-import { createDb, orders, users, listings, books, reviews, conversations, regionVerifications, schools, userSchools } from '../../db';
+import {
+  createDb,
+  orders,
+  users,
+  listings,
+  books,
+  reviews,
+  conversations,
+  conversationListings,
+  regionVerifications,
+  schools,
+  userSchools,
+} from '../../db';
 import { displayName } from '../accounts/users';
 
 /**
@@ -82,9 +94,13 @@ function selection(viewerId: string, nowIso: string) {
     conversationId: sql<string | null>`(SELECT ${conversations.id} FROM ${conversations}
       WHERE ${conversations.buyerId} = ${orders.buyerId}
         AND (${conversations.listingRef} = ${orders.listingRef}
-             OR (${orders.listingId} IS NOT NULL AND ${conversations.listingId} = ${orders.listingId}))
+             OR (${orders.listingId} IS NOT NULL AND ${conversations.listingId} = ${orders.listingId})
+             OR EXISTS (SELECT 1 FROM ${conversationListings} WHERE ${conversationListings.conversationId} = ${conversations.id}
+                        AND (${conversationListings.listingRef} = ${orders.listingRef}
+                             OR (${orders.listingId} IS NOT NULL AND ${conversationListings.listingId} = ${orders.listingId}))))
         AND NOT ((${conversations.buyerId} = ${viewerId} AND ${conversations.buyerDeletedAt} IS NOT NULL)
               OR (${conversations.sellerId} = ${viewerId} AND ${conversations.sellerDeletedAt} IS NOT NULL))
+      ORDER BY ${conversations.updatedAt} DESC
       LIMIT 1)`,
   };
 }

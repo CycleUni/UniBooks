@@ -8,6 +8,7 @@ import type { AccountLinkKind, EmailMessage } from './types';
 import { emailLanguageFor, t } from '../services/accounts/i18n';
 import { pickTranslation, regionDetails } from '../services/accounts/regionData';
 import { displayName } from '../services/accounts/users';
+import { fetchListingsForConversations } from '../services/messaging/conversations';
 
 /**
  * EMAIL_QUEUE consumer. Every email is written in one language (the request's
@@ -212,12 +213,17 @@ async function chatNotification(
   if (!recipient.notify_new_message_email) return null;
 
   const senderName = oneLine(sender ? displayName(sender.first_name, sender.last_name) : '') || 'UniBooks';
-  const listingTitle = conv.book_title || msg.listing_title || '';
+  const convListings = await fetchListingsForConversations(env, [conv.id]);
+  const items = convListings.get(conv.id) ?? [];
+  const lang = await languageFor(env, recipient, conv.region_code);
+  let listingTitle = conv.book_title || msg.listing_title || '';
+  if (items.length > 1) {
+    listingTitle = t(lang, 'email.chatMessage.listingMany', { title: conv.book_title || items[0].title, count: items.length });
+  }
   const region = String(conv.region_code).toLowerCase();
   const link = `${frontend(env)}/${encodeURIComponent(region)}/messages?chat=${encodeURIComponent(conv.id)}`;
   const settingsLink = `${frontend(env)}/account/notifications`;
   const quoted = chatEmailPreview(msg.preview);
-  const lang = await languageFor(env, recipient, conv.region_code);
 
   const lines: Line[] = [t(lang, 'email.chatMessage.intro', { sender: senderName }), ''];
   if (listingTitle) lines.push(t(lang, 'email.chatMessage.listing', { title: listingTitle }));
