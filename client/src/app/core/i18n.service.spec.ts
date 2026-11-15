@@ -113,8 +113,12 @@ describe('I18nService initial language', () => {
     expect(startAt('/hk/search', 'zh-TW').lang()).toBe('zh-HK');
   });
 
-  it('falls back to the browser language where the path has no region', () => {
-    expect(startAt('/', 'en-US').lang()).toBe('en');
+  it('opens the bare origin in the default region language for an English browser, as a crawler has', () => {
+    expect(startAt('/', 'en-US').lang()).toBe('zh-TW');
+  });
+
+  it('keeps a Chinese browser\'s own variant where the path has no region', () => {
+    expect(startAt('/', 'zh-HK').lang()).toBe('zh-HK');
   });
 
   it('keeps a stored choice over the region', () => {
@@ -123,7 +127,7 @@ describe('I18nService initial language', () => {
   });
 
   it('stores the first-visit language, so a reload after the root redirect keeps it', () => {
-    startAt('/', 'en-US');
-    expect(localStorage.getItem('lang')).toBe('en');
+    startAt('/', 'zh-HK');
+    expect(localStorage.getItem('lang')).toBe('zh-HK');
   });
 });

@@ -79,7 +79,7 @@ describe('translation preload in theme-init.js', () => {
 
   it('ignores a chunk name that is not a plain file name', () => {
     meta.content = JSON.stringify({ ...CHUNKS, en: '//evil.example/x.js' });
-    vi.spyOn(navigator, 'language', 'get').mockReturnValue('en-US');
+    localStorage.setItem('lang', 'en');
     new Function(script)();
     expect(preloaded()).toEqual([]);
   });

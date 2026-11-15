@@ -1,5 +1,5 @@
 import { Injectable, Pipe, PipeTransform, inject, signal, effect } from '@angular/core';
-import { Lang, TRANSLATIONS, SUPPORTED_LANGS, REGION_TO_LANG } from './i18n/index';
+import { Lang, TRANSLATIONS, SUPPORTED_LANGS, REGION_TO_LANG, DEFAULT_REGION } from './i18n/index';
 import { importOrReload } from './chunk-recovery';
 
 const STORAGE_KEY = 'lang';
@@ -89,12 +89,20 @@ export class I18nService {
         return stored;
       }
     }
+    // A path with no region (the bare origin, before rootRedirectGuard
+    // forwards it) opens in a Chinese browser's own variant, and otherwise in
+    // the default region's language rather than English. Crawlers render
+    // with an English browser, and "/" is the URL most links name: going by
+    // the browser there had Google title the site's main result in English.
+    // An English reader is offered their language by ui-lang-suggestion, as
+    // on a region page.
+    const browser = langFromBrowserTag(typeof navigator !== 'undefined' ? navigator.language : '');
     const lang =
       langFromPath(typeof location !== 'undefined' ? location.pathname : '') ??
-      langFromBrowserTag(typeof navigator !== 'undefined' ? navigator.language : '');
+      (browser === 'en' ? REGION_TO_LANG[DEFAULT_REGION] : browser);
     // Kept, so the language a first visit opened in survives the next load.
-    // Without it a visitor who entered at the bare origin (browser language)
-    // and was redirected to /tw/ would reload into the region's language.
+    // Without it a visitor who entered at the bare origin in Hong Kong
+    // Chinese and was redirected to /tw/ would reload into the region's.
     // A failed write must not take the constructor down with it.
     try {
       localStorage.setItem(STORAGE_KEY, lang);

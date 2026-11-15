@@ -40,7 +40,7 @@
       var tag = (navigator.language || '').toLowerCase().replace(/_/g, '-');
       if (tag.indexOf('yue') === 0) lang = 'zh-HK';
       else if (tag.indexOf('zh') === 0) lang = tag.indexOf('hk') !== -1 || tag.indexOf('yue') !== -1 ? 'zh-HK' : 'zh-TW';
-      else lang = 'en';
+      else lang = 'zh-TW'; // the default region's, as initialLang() opens a path with no region
     }
     var file = chunks[lang];
     if (typeof file === 'string' && /^[\w-]+\.js$/.test(file)) {
