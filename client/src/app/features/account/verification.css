@@ -233,6 +233,11 @@
   min-height: 40px;
   width: 100%;
   max-width: 400px;
+  /* Same as the sign-in page (auth-form.component.css): Google's button iframe
+     is a light-scheme document, and inside a dark color-scheme page the
+     browser paints an opaque white backing behind it. With both sides 'light'
+     the backing stays transparent; the button draws its own dark variant. */
+  color-scheme: light;
 }
 
 .google-placeholder {
