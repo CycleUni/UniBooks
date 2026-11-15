@@ -1300,6 +1300,7 @@ export const zhTW: Record<string, string> = {
   'seo.description': 'UniBooks 是專為台灣大學生打造的二手書與校園物品交易平台。同校同學上架、面交自取，找課本、賣舊書更簡單。',
   'seo.homeTitle': 'UniBooks - 台灣大學生二手書交易平台',
   'seo.searchTitle': '搜尋：{q}',
+  'seo.categoryTitle': '{category}二手書',
   'seo.bookDescription': '《{title}》，{authors} 著。在 UniBooks 向同學購買二手書。',
   'seo.bookDescriptionNoAuthor': '《{title}》。在 UniBooks 向同學購買二手書。',
 

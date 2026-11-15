@@ -1300,6 +1300,7 @@ export const zhHK: Record<string, string> = {
   'seo.description': 'UniBooks 係專為香港大專生而設嘅二手書同校園物品買賣平台。同校同學上架、面交自取，搵課本、賣舊書都更簡單。',
   'seo.homeTitle': 'UniBooks - 香港大專生二手書買賣平台',
   'seo.searchTitle': '搜尋：{q}',
+  'seo.categoryTitle': '{category}二手書',
   'seo.bookDescription': '《{title}》，{authors} 著。在 UniBooks 向同學購買二手書。',
   'seo.bookDescriptionNoAuthor': '《{title}》。在 UniBooks 向同學購買二手書。',
 

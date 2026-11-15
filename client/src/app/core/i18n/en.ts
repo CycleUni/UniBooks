@@ -1304,6 +1304,7 @@ export const en: Record<string, string> = {
   'seo.description': 'UniBooks is a second-hand book and item trading platform designed for university students, making campus resource recycling simple.',
   'seo.homeTitle': 'UniBooks - Campus Marketplace',
   'seo.searchTitle': 'Search: {q}',
+  'seo.categoryTitle': 'Used {category} books',
   'seo.bookDescription': '{title} by {authors}. Buy it second-hand from students on UniBooks.',
   'seo.bookDescriptionNoAuthor': '{title}. Buy it second-hand from students on UniBooks.',
 

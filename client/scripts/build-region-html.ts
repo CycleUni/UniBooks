@@ -46,6 +46,15 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
  * server redirects a .html path to the bare one (html_handling
  * auto-trailing-slash), and does so for a rewrite's target too.
  */
+/**
+ * Pages whose query string makes them a different page (/search?category=…,
+ * ?q=…). Their one static file answers every query, so a canonical in it
+ * named the bare page on all of them, against the one SeoService then
+ * writes; Google took the HTML's word and reported the category pages as
+ * duplicates. Like the shell, the file names no canonical or hreflang.
+ */
+const QUERY_PAGES = ['/search'];
+
 const SHELL_PAGE = 'app-shell'; // server/src/services/frontend/bookMeta.ts REGION_SHELL
 const I18N_DIR = path.resolve(__dirname, '../src/app/core/i18n');
 
@@ -302,7 +311,7 @@ function buildHtml(
   // No hreflang: /tw/ and /hk/ do not name "/" back, so it would be ignored.
   const linkTags = !region
     ? [`<link rel="canonical" href="${escapeHtml(regionUrl(DEFAULT_REGION, ''))}">`]
-    : page === null
+    : page === null || QUERY_PAGES.includes(page)
       ? []
       : [`<link rel="canonical" href="${escapeHtml(ogUrl)}">`, ...alternateTags(page)];
 

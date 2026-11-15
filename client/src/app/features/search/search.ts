@@ -845,6 +845,8 @@ export class Search implements OnInit {
       next: data => {
         if (data.categories) {
           this.categories = data.categories;
+          // The category's name is only known now; the page was described without it.
+          if (this.category) this.describePage();
           this.cdr.markForCheck();
         }
       },
@@ -932,9 +934,14 @@ export class Search implements OnInit {
     const canonicalPath = this.router.serializeUrl(
       this.router.createUrlTree(this.regionLink.path(['/search']), { queryParams })
     );
+    // A category page is named after its category: titled "找書" like the
+    // bare search page, Google folded each one into /search as a duplicate.
+    const categoryTitle = this.categories.find(c => c.slug === this.category)?.title;
     this.seo.setPage(this.activeQuery
       ? { titleKey: 'seo.searchTitle', titleParams: { q: this.activeQuery }, canonicalPath }
-      : { titleKey: 'nav.search', canonicalPath });
+      : categoryTitle
+        ? { titleKey: 'seo.categoryTitle', titleParams: { category: categoryTitle }, canonicalPath }
+        : { titleKey: 'nav.search', canonicalPath });
   }
 
   /**
