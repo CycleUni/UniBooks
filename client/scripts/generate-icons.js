@@ -3,7 +3,9 @@
 // committed, so nothing here runs during a normal build.
 //
 //   logo-mark.svg -> manifest PNGs + apple-touch-icon.png (large sizes)
-//   favicon.svg   -> favicon.ico (16/32/48; simplified for tiny sizes)
+//   logo-mark.svg -> favicon-48x48.png / favicon-96x96.png and the .ico's 48
+//                    (full-bleed, for Google Search)
+//   favicon.svg   -> favicon.ico 16/32 (simplified for tiny sizes)
 //   logo-mark.svg + wordmark.svg -> og-image.png (1200x630 link-preview card)
 //
 // Rasters can't follow the theme, so they use the light variant: its brighter
@@ -23,7 +25,8 @@ const favicon = fs.readFileSync(path.join(iconsDir, 'favicon.svg'));
 // Home-screen and PWA icons are masked to the platform's own shape (iOS
 // rounds the corners, Android applies a maskable mask), so they are drawn
 // full-bleed: the tile's corner radius is dropped rather than baked in.
-const fullBleed = Buffer.from(logoMark.replace(/(<rect\b[^>]*?)\s+rx="[^"]*"/, '$1'));
+const dropRadius = svg => svg.replace(/(<rect\b[^>]*?)\s+rx="[^"]*"/, '$1');
+const fullBleed = Buffer.from(dropRadius(logoMark));
 
 // The SVGs use a 120-unit viewBox; render at the target size (with 8x
 // supersampling) instead of scaling a fixed bitmap.
@@ -109,11 +112,21 @@ async function main() {
   console.log('  apple-touch-icon.png');
   console.log('  apple-touch-icon-precomposed.png');
 
-  fs.writeFileSync(path.join(iconsDir, 'favicon-48x48.png'), await render(favicon, 48));
-  console.log('  icons/favicon-48x48.png');
+  // Google Search shows a site's icon inside its own circle, at a multiple
+  // of 48px. The rounded tile left white corners inside that circle, so the
+  // sizes Google takes are the full mark (logo-mark.svg, three books) drawn
+  // full-bleed; the tab sizes (16/32 in the .ico, and the SVG) keep the
+  // simplified two-book favicon on its rounded tile.
+  for (const size of [48, 96]) {
+    fs.writeFileSync(path.join(iconsDir, `favicon-${size}x${size}.png`), await render(fullBleed, size));
+    console.log(`  icons/favicon-${size}x${size}.png`);
+  }
 
   const icoImages = await Promise.all(
-    [16, 32, 48].map(async size => ({ size, data: await render(favicon, size) })),
+    [16, 32, 48].map(async size => ({
+      size,
+      data: await render(size >= 48 ? fullBleed : favicon, size),
+    })),
   );
   fs.writeFileSync(path.join(publicDir, 'favicon.ico'), toIco(icoImages));
   console.log('  favicon.ico');
