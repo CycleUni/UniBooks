@@ -199,7 +199,7 @@ export const BOOK_REPORT_FIELDS_CONFIG: BookReportFieldConfig[] = [
     }
     .inline-msg.error {
       color: var(--danger);
-      background: var(--danger-bg, #fee2e2);
+      background: var(--danger-light);
       padding: 8px 12px;
       border-radius: 4px;
       margin-bottom: 16px;

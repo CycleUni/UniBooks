@@ -117,7 +117,7 @@ import { RegionService } from '../../core/region.service';
 
                       <!-- Duplicate student number warning -->
                       <div class="alert-box danger mb-3" *ngIf="hasDuplicateApproved()">
-                        <strong>⚠️ {{ 'admin.duplicateStudentNumberWarning' | t }}</strong>
+                        <strong>{{ 'admin.duplicateStudentNumberWarning' | t }}</strong>
                       </div>
 
                       <!-- Other accounts using this student number -->
@@ -187,7 +187,7 @@ import { RegionService } from '../../core/region.service';
                         <p class="photo-hint">{{ 'admin.enlargeImage' | t }}</p>
                       </div>
                       <div *ngIf="!loadingImage && !currentImageUrl && !req.has_image" class="photo-deleted">
-                        <p class="text-muted">🔒 {{ 'admin.imageDeleted' | t }}</p>
+                        <p class="text-muted">{{ 'admin.imageDeleted' | t }}</p>
                       </div>
                     </div>
                   </div>
@@ -321,7 +321,7 @@ import { RegionService } from '../../core/region.service';
       padding: 1px 6px;
       border-radius: 4px;
       font-size: 11px;
-      background: var(--surface);
+      background: var(--surface-card);
       border: 1px solid var(--line);
     }
     .status-chip.ok {
@@ -362,7 +362,7 @@ import { RegionService } from '../../core/region.service';
     }
     .photo-deleted {
       padding: 24px;
-      background: var(--surface);
+      background: var(--surface-card);
       border: 1px dashed var(--line);
       border-radius: 8px;
       text-align: center;

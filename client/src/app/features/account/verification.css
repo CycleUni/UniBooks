@@ -16,7 +16,7 @@
   box-sizing: border-box;
   background: var(--surface-raised);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-panel);
   padding: var(--space-4);
   width: 100%;
   max-width: 100%;
@@ -99,71 +99,49 @@
   margin-bottom: var(--space-1);
 }
 
+.success-label {
+  color: var(--success);
+}
+
 .email-assisted-row {
   display: flex;
+  align-items: flex-start;
   gap: var(--space-2);
   width: 100%;
-  max-width: 100%;
 }
 
-.local-part-input {
+/* ui-input and ui-dropdown draw the fields; only the row's layout lives here. */
+.local-part-field {
   flex: 1;
   min-width: 0;
-  box-sizing: border-box;
-  height: var(--control-height, 40px);
-  padding: 0 var(--space-3);
-  font-size: var(--text-sm);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-base);
-  background: var(--surface-card);
-  color: var(--ink);
-}
-
-.local-part-input:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-.local-part-input.full-width {
-  width: 100%;
-}
-
-.local-part-input.uppercase {
-  text-transform: uppercase;
 }
 
 .domain-select-wrapper {
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  min-width: 200px;
 }
 
-.domain-select {
-  height: var(--control-height, 40px);
-  padding: 0 var(--space-3);
-  font-size: var(--text-sm);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-base);
-  background: var(--surface-card);
-  color: var(--ink);
-}
-
+/* A single domain reads as the fixed end of the address, in the same frame as the field. */
 .domain-fixed {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  padding: 0 var(--space-3);
-  font-size: var(--text-sm);
-  color: var(--muted);
-  background: var(--surface-inset);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-base);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
+  color: var(--ink-soft);
+  background: var(--paper-warm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
   white-space: nowrap;
 }
 
 .google-badge {
   display: inline-block;
   font-size: var(--text-xs);
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  padding: 2px 8px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
 }
 
@@ -171,54 +149,128 @@
   background: none;
   border: none;
   padding: 0;
-  color: var(--primary);
+  color: var(--accent);
   font-size: var(--text-xs);
+  font-family: inherit;
   cursor: pointer;
   text-decoration: underline;
 }
 
 .link-btn:hover {
-  text-decoration: none;
+  color: var(--accent-ink);
+}
+
+.button-row {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.locked-school-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.locked-hint {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--muted);
 }
 
 .alert-box {
   box-sizing: border-box;
   padding: var(--space-3);
-  border-radius: var(--radius-base);
+  border: 1px solid transparent;
+  border-radius: var(--radius-panel);
   font-size: var(--text-sm);
   line-height: 1.5;
   width: 100%;
 }
 
 .alert-box.warning {
-  background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 30%, transparent);
-  color: var(--ink);
+  background: var(--warn-bg);
+  border-color: color-mix(in srgb, var(--warn-ink) 25%, transparent);
+  color: var(--warn-ink);
 }
 
 .alert-box.info {
-  background: color-mix(in srgb, var(--info, #3b82f6) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--info, #3b82f6) 30%, transparent);
+  background: var(--info-bg);
+  border-color: var(--info-border);
   color: var(--ink);
 }
 
 .alert-box.success {
-  background: color-mix(in srgb, var(--success, #10b981) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--success, #10b981) 30%, transparent);
+  background: var(--success-light);
+  border-color: color-mix(in srgb, var(--success) 25%, transparent);
   color: var(--ink);
+}
+
+.alert-line {
+  margin: var(--space-1) 0 0 0;
+}
+
+.alert-meta {
+  margin: var(--space-1) 0 0 0;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.pending-email {
+  font-weight: 600;
+  margin: var(--space-1) 0;
+}
+
+.invite-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.close-invite-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  margin: calc(var(--space-2) * -1);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.close-invite-btn:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.privacy-note {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.photo-preview-box {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
 }
 
 .inline-msg {
   font-size: var(--text-sm);
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-base);
-  background: var(--surface-inset);
+  border-radius: var(--radius-control);
+  background: var(--paper-warm);
   color: var(--ink);
 }
 
 .inline-msg.error {
   color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  background: var(--danger-light);
 }
 
 .google-wrap {
@@ -245,7 +297,7 @@
   inset: 0;
   max-width: 400px;
   height: 40px;
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   background-color: var(--line-strong);
   animation: google-pulse 1.5s infinite ease-in-out;
 }
@@ -266,15 +318,17 @@
   inset: 0;
   max-width: 400px;
   height: 40px;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: var(--radius-control, 6px);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  color: #fff;
   font-size: var(--text-sm);
-  font-weight: 500;
+  color: var(--ink);
+  /* Opaque and outlined like the button, as on the sign-in page. */
+  background-color: var(--surface-card);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  pointer-events: none;
 }
 
 .google-veil.blocking {
@@ -284,25 +338,32 @@
 .student-id-thumb {
   max-height: 140px;
   max-width: 100%;
-  border-radius: var(--radius-base);
+  border-radius: var(--radius-control);
   border: 1px solid var(--line);
   display: block;
 }
 
 @media (max-width: 480px) {
-  /* Stacked, the row's main axis is vertical: `flex: 1` would squash the input's height. */
-  .local-part-input {
+  .email-assisted-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .local-part-field {
     flex: none;
     width: 100%;
   }
 
-  .email-assisted-row {
-    flex-direction: column;
-  }
   .domain-select-wrapper {
+    min-width: 0;
     width: 100%;
   }
-  .domain-select {
-    width: 100%;
+}
+
+/* Same touch sizing as ui-input, so the fixed domain lines up with the field beside it. */
+@media (pointer: coarse) {
+  .domain-fixed {
+    min-height: var(--tap-min);
+    font-size: var(--text-md);
   }
 }

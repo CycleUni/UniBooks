@@ -222,7 +222,7 @@ import { RegionService } from '../../core/region.service';
       display: inline-block;
       padding: 2px 6px;
       font-size: var(--text-xs);
-      background: var(--surface-sunken);
+      background: var(--paper-warm);
       border-radius: 4px;
       border: 1px solid var(--line);
     }
@@ -235,7 +235,7 @@ import { RegionService } from '../../core/region.service';
       cursor: pointer;
     }
     .detail-row td {
-      background: var(--surface-sunken);
+      background: var(--paper-warm);
       padding: 16px;
     }
     .detail-content {
@@ -259,7 +259,7 @@ import { RegionService } from '../../core/region.service';
       border-bottom: 1px solid var(--line);
     }
     .comparison-table th {
-      background: var(--surface-sunken);
+      background: var(--paper-warm);
       font-weight: 600;
     }
     .suggested-val-cell.highlight {

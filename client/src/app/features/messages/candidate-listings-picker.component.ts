@@ -128,12 +128,12 @@ export interface CandidateListing {
       align-items: center;
       gap: 12px;
       padding: 10px 16px;
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-control);
       transition: background var(--motion-fast);
     }
 
     .candidate-row:hover {
-      background: var(--bg-hover, var(--line));
+      background: var(--paper-warm);
     }
 
     .candidate-thumb {
@@ -141,7 +141,7 @@ export interface CandidateListing {
       height: 60px;
       object-fit: cover;
       border-radius: var(--radius-xs);
-      background: var(--bg-surface);
+      background: var(--surface-card);
       flex-shrink: 0;
     }
 
@@ -176,7 +176,7 @@ export interface CandidateListing {
 
     .candidate-price {
       font-weight: 600;
-      color: var(--brand, var(--ink));
+      color: var(--accent);
     }
 
     .condition-badge {

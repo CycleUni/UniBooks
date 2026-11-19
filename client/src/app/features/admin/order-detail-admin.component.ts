@@ -67,7 +67,7 @@ import { PricePipe } from '../../shared/pipes/price.pipe';
     .field label { font-size: var(--text-xs); color: var(--muted); }
     .field span { font-size: var(--text-base); color: var(--ink); }
     .items-field { grid-column: 1 / -1; }
-    .admin-order-items { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--line); border-radius: 6px; }
+    .admin-order-items { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding: 8px 12px; background: var(--surface-card); border: 1px solid var(--line); border-radius: 6px; }
     .admin-order-item { display: flex; justify-content: space-between; align-items: center; font-size: var(--text-sm); }
   `]
 })

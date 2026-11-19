@@ -8,6 +8,7 @@ import {
   ElementRef,
   ViewChild,
   effect,
+  untracked,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -34,6 +35,7 @@ import {
   CityOption,
   SchoolStateService,
 } from '../../core/services/school-state.service';
+import { ThemeService } from '../../core/services/theme.service';
 import { GoogleAuthService } from '../../core/services/google-auth.service';
 import {
   domainMatchesSuffix,
@@ -82,6 +84,7 @@ export class VerificationComponent implements OnInit, AfterViewInit, OnDestroy {
   private metadataService = inject(MetadataService);
   private schoolStateService = inject(SchoolStateService);
   private googleAuth = inject(GoogleAuthService);
+  private theme = inject(ThemeService);
 
   private readonly verifyPendingEmailStorageKeyLegacy =
     'unibooks.account.eduVerification.pendingEmail';
@@ -111,6 +114,11 @@ export class VerificationComponent implements OnInit, AfterViewInit, OnDestroy {
   selectedSchoolOption: SchoolOption | null = null;
   selectedVerifyDomain = '';
   schoolDomainChoices: string[] = [];
+
+  /** The domain choices as the site's dropdown takes them. */
+  get domainDropdownOptions(): DropdownOption[] {
+    return this.schoolDomainChoices.map((d) => ({ value: d, label: `@${d}` }));
+  }
   eduLocalPart = '';
   useManualEmail = false;
 
@@ -303,6 +311,21 @@ export class VerificationComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   constructor() {
+    // Redraw Google's button when the theme or the language changes, as the
+    // sign-in page does: the button picks its light or dark variant when drawn.
+    let googleDrawn = false;
+    effect(() => {
+      this.theme.resolved();
+      this.i18n.lang();
+      if (!googleDrawn) {
+        googleDrawn = true;
+        return;
+      }
+      untracked(() => {
+        if (this.googleTeardown) this.setupGoogleButton();
+      });
+    });
+
     effect(() => {
       this.i18n.lang();
       if (this.availableSchools.length > 0) {

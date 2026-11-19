@@ -418,6 +418,7 @@ export const en: Record<string, string> = {
   'acct.errNoEduEmailToRenew': 'No campus email is linked. Please enter the school email to verify.',
   'acct.verifySelectSchool': 'Select your school',
   'acct.eduEmailLocalPlaceholder': 'Student ID or username',
+  'acct.emailDomainLabel': 'Email domain',
   'acct.eduEmailFullPlaceholder': 'Your full school email address',
   'acct.errEduEmailFull': 'Enter your full school email address, including the part after @.',
   'acct.useOtherAddress': 'Enter full address directly',

@@ -124,7 +124,7 @@ export interface ChatListingItem {
       justify-content: space-between;
       gap: 12px;
       padding: 8px 16px;
-      background: var(--bg-surface);
+      background: var(--surface-card);
       border-bottom: 1px solid var(--line);
       min-width: 0;
     }
@@ -154,9 +154,9 @@ export interface ChatListingItem {
       position: relative;
       display: flex;
       align-items: center;
-      background: var(--bg);
+      background: var(--paper);
       border: 1px solid var(--line-strong);
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-control);
       padding: 4px 8px;
       flex-shrink: 0;
       max-width: 240px;
@@ -201,7 +201,7 @@ export interface ChatListingItem {
       object-fit: cover;
       border-radius: var(--radius-xs);
       flex-shrink: 0;
-      background: var(--bg-surface);
+      background: var(--surface-card);
     }
 
     .placeholder-thumb {
@@ -233,12 +233,12 @@ export interface ChatListingItem {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: var(--text-2xs, 11px);
+      font-size: var(--text-xs);
     }
 
     .chip-price {
       font-weight: 600;
-      color: var(--brand, var(--ink));
+      color: var(--accent);
     }
 
     .chip-remove-btn {
@@ -270,9 +270,9 @@ export interface ChatListingItem {
       align-items: center;
       gap: 6px;
       padding: 6px 12px;
-      background: var(--bg-surface);
+      background: var(--surface-card);
       border: 1px dashed var(--line-strong);
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-control);
       color: var(--ink);
       font-size: var(--text-xs);
       font-weight: 500;
@@ -285,7 +285,7 @@ export interface ChatListingItem {
 
     .add-book-chip:hover {
       border-color: var(--ink);
-      background: var(--bg);
+      background: var(--paper);
     }
 
     .add-icon {
@@ -303,7 +303,7 @@ export interface ChatListingItem {
 
     .badge.danger {
       color: var(--danger);
-      font-size: var(--text-2xs, 10px);
+      font-size: var(--text-xs);
     }
   `],
 })

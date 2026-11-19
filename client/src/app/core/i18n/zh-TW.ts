@@ -413,6 +413,7 @@ export const zhTW: Record<string, string> = {
   'acct.errNoEduEmailToRenew': '目前沒有綁定的校園信箱，請輸入要驗證的學校信箱。',
   'acct.verifySelectSchool': '選擇你的學校',
   'acct.eduEmailLocalPlaceholder': '學號或帳號',
+  'acct.emailDomainLabel': '信箱網域',
   'acct.eduEmailFullPlaceholder': '完整的學校信箱地址',
   'acct.errEduEmailFull': '請輸入完整的學校信箱地址（包含 @ 之後的部分）。',
   'acct.useOtherAddress': '改用完整信箱地址',

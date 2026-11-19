@@ -170,7 +170,7 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
       background: var(--surface-raised);
       border: 1px solid var(--line);
       border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-modal);
+      box-shadow: var(--shadow-card-lg);
       overflow-y: auto;
     }
     .welcome-heading {
@@ -192,7 +192,7 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
       max-height: 240px;
       overflow-y: auto;
       border: 1px solid var(--line);
-      border-radius: var(--radius-base);
+      border-radius: var(--radius-control);
       margin-bottom: var(--space-3);
     }
     .school-option {
@@ -214,17 +214,17 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
       border-bottom: none;
     }
     .school-option:hover {
-      background: var(--surface-hover);
+      background: var(--paper-warm);
     }
     .school-option.selected {
-      background: color-mix(in srgb, var(--primary) 10%, transparent);
-      color: var(--primary);
+      background: var(--accent-soft);
+      color: var(--accent);
       font-weight: 500;
     }
     .school-code {
       font-size: var(--text-xs);
       color: var(--muted);
-      background: var(--surface-inset);
+      background: var(--paper-warm);
       padding: 2px 6px;
       border-radius: var(--radius-sm);
     }
@@ -242,7 +242,7 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
       background: none;
       border: none;
       padding: 0;
-      color: var(--primary);
+      color: var(--accent);
       font-size: var(--text-xs);
       cursor: pointer;
       text-decoration: underline;
@@ -250,8 +250,8 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
     .embedded-request-form {
       margin-bottom: var(--space-4);
       padding: var(--space-3);
-      background: var(--surface-inset);
-      border-radius: var(--radius-base);
+      background: var(--paper-warm);
+      border-radius: var(--radius-control);
     }
     .dialog-actions {
       display: flex;
