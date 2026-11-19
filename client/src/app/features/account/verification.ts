@@ -5,7 +5,6 @@ import {
   AfterViewInit,
   inject,
   ChangeDetectorRef,
-  ElementRef,
   ViewChild,
   effect,
   untracked,
@@ -23,6 +22,7 @@ import { UiSuccessCheck } from '../../shared/ui/success-check.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { SchoolRequestFormComponent } from './school-request-form.component';
 import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
+import { UiGoogleButtonFrame } from '../../shared/ui/google-button-frame.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { AuthStore } from '../../core/auth.store';
 import { AccountService } from '../../core/services/account.service';
@@ -65,12 +65,13 @@ const SCHOOL_NOT_SUPPORTED = 'acct.errSchoolNotSupported';
     SchoolRequestFormComponent,
     UiVerifiedBadge,
     UiErrorState,
+    UiGoogleButtonFrame,
   ],
   templateUrl: './verification.html',
   styleUrls: ['./verification.css'],
 })
 export class VerificationComponent implements OnInit, AfterViewInit, OnDestroy {
-  @ViewChild('googleBtnRef', { static: false }) googleBtnRef?: ElementRef<HTMLElement>;
+  @ViewChild('googleFrame', { static: false }) googleFrame?: UiGoogleButtonFrame;
 
   private authStore = inject(AuthStore);
   private accountService = inject(AccountService);
@@ -897,10 +898,10 @@ export class VerificationComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    const container = this.googleBtnRef?.nativeElement;
+    const container = this.googleFrame?.host.nativeElement;
     if (!container) {
       setTimeout(() => {
-        if (this.googleBtnRef?.nativeElement) {
+        if (this.googleFrame?.host.nativeElement) {
           this.setupGoogleButton();
         }
       }, 0);

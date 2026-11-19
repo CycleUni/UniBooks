@@ -8,6 +8,7 @@ import { Subscription } from 'rxjs';
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { RegionLinkService } from '../../core/region-link.service';
 import { UiButton } from '../../shared/ui/button.component';
+import { UiGoogleButtonFrame } from '../../shared/ui/google-button-frame.component';
 import { UiInput } from '../../shared/ui/input.component';
 import { AuthStore } from '../../core/auth.store';
 import { GoogleAuthService } from '../../core/services/google-auth.service';
@@ -53,7 +54,7 @@ export const RESEND_COOLDOWN_SECONDS = 180;
 @Component({
   selector: 'app-auth-form',
   standalone: true,
-  imports: [RegionLinkDirective, CommonModule, FormsModule, UiButton, UiInput, TPipe],
+  imports: [RegionLinkDirective, CommonModule, FormsModule, UiButton, UiInput, UiGoogleButtonFrame, TPipe],
   templateUrl: './auth-form.component.html',
   styleUrls: ['./auth-form.component.css']
 })

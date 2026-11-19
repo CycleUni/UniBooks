@@ -156,18 +156,16 @@
         <h3 class="card-title">{{ 'acct.verifyWithSchoolGoogle' | t }}</h3>
         <p class="card-subtitle mb-3">{{ 'acct.verifyGoogleNoChangeHint' | t }}</p>
 
-        <div class="google-wrap">
-          <div *ngIf="googleFailed() || googleBlocked" class="google-failed">
-            {{ 'acct.verifyGoogleUnavailable' | t }}
-          </div>
-          <ng-container *ngIf="!googleFailed() && !googleBlocked">
-            <div *ngIf="!googleReady" class="google-placeholder" aria-hidden="true"></div>
-            <div #googleBtnRef class="google-btn"></div>
-            <div *ngIf="isVerifyingGoogle" class="google-veil blocking">
-              <span>{{ 'acct.verifying' | t }}</span>
-            </div>
-          </ng-container>
-        </div>
+        <ui-google-button-frame
+          #googleFrame
+          align="start"
+          [ready]="googleReady"
+          [failed]="googleFailed() || googleBlocked"
+          [busy]="isVerifyingGoogle"
+          [blocking]="true"
+          [busyLabel]="'acct.verifying' | t"
+          [failedLabel]="'acct.verifyGoogleUnavailable' | t"
+        ></ui-google-button-frame>
 
         <div *ngIf="googleError" class="inline-msg error mt-3" data-testid="google-error-msg">
           {{ googleError }}

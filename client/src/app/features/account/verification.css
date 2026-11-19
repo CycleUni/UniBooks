@@ -273,68 +273,6 @@
   background: var(--danger-light);
 }
 
-.google-wrap {
-  position: relative;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-}
-
-.google-btn {
-  min-height: 40px;
-  width: 100%;
-  max-width: 400px;
-  /* Same as the sign-in page (auth-form.component.css): Google's button iframe
-     is a light-scheme document, and inside a dark color-scheme page the
-     browser paints an opaque white backing behind it. With both sides 'light'
-     the backing stays transparent; the button draws its own dark variant. */
-  color-scheme: light;
-}
-
-.google-placeholder {
-  position: absolute;
-  inset: 0;
-  max-width: 400px;
-  height: 40px;
-  border-radius: var(--radius-control);
-  background-color: var(--line-strong);
-  animation: google-pulse 1.5s infinite ease-in-out;
-}
-
-@keyframes google-pulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 0.25; }
-}
-
-.google-failed {
-  font-size: var(--text-sm);
-  color: var(--muted);
-  margin: 0;
-}
-
-.google-veil {
-  position: absolute;
-  inset: 0;
-  max-width: 400px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--ink);
-  /* Opaque and outlined like the button, as on the sign-in page. */
-  background-color: var(--surface-card);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
-  pointer-events: none;
-}
-
-.google-veil.blocking {
-  pointer-events: auto;
-}
-
 .student-id-thumb {
   max-height: 140px;
   max-width: 100%;

@@ -356,7 +356,7 @@ describe('VerificationComponent', () => {
     beforeEach(() => {
       component.selectedSchoolOption = chihleeSchool as any;
       component.selectedSchoolCode = 'CHIHLEE';
-      component.googleBtnRef = { nativeElement: document.createElement('div') };
+      component.googleFrame = { host: { nativeElement: document.createElement('div') } } as any;
       (component as any).accountService = {
         getGoogleVerifyOptions: vi.fn().mockReturnValue(of({ nonce: 'test-nonce-123' })),
         verifyWithGoogle: vi.fn().mockReturnValue(of({ code: 'acct.verifySuccess' })),
@@ -370,7 +370,7 @@ describe('VerificationComponent', () => {
 
       expect((component as any).accountService.getGoogleVerifyOptions).toHaveBeenCalled();
       expect(googleAuthMock.renderCampusVerifyButton).toHaveBeenCalledWith(
-        component.googleBtnRef?.nativeElement,
+        component.googleFrame?.host.nativeElement,
         expect.objectContaining({
           nonce: 'test-nonce-123',
           hd: 'gm.chihlee.edu.tw',
@@ -389,7 +389,7 @@ describe('VerificationComponent', () => {
       await component.setupGoogleButton();
 
       expect(googleAuthMock.renderCampusVerifyButton).toHaveBeenCalledWith(
-        component.googleBtnRef?.nativeElement,
+        component.googleFrame?.host.nativeElement,
         expect.objectContaining({
           nonce: 'test-nonce-123',
           hd: undefined,
