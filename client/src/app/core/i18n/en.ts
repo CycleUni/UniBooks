@@ -1624,7 +1624,7 @@ export const en: Record<string, string> = {
 
   // Error codes the server can return.
   'common.errValidation': 'Some fields are not valid. Check them and try again.',
-  'acct.errVerificationRequiredForSchool': '{school} requires campus email verification before trading',
+  'acct.errVerificationRequiredForSchool': '{school} requires campus email verification before trading.',
   'acct.errSchoolLockedByVerification': 'Verified school cannot be changed',
   'acct.errNameTooLong': 'That name is too long. Shorten it and try again.',
   'acct.errGoogleEmailLocked': "This account signs in with Google, so its email can't be changed here.",
@@ -1665,7 +1665,7 @@ export const en: Record<string, string> = {
   'acct.resubmit': 'Resubmit',
   'acct.studentIdPendingNotice': 'Your student ID is under review. Please check back later.',
   'acct.studentIdPhoto': 'Student ID photo',
-  'acct.studentIdPrivacyNote': 'Photos are used for staff review only and deleted once decided',
+  'acct.studentIdPrivacyNote': 'Photos are used for staff review only and deleted once decided.',
   'acct.studentIdRejectedNotice': 'Your student ID verification was not approved (reason: {reason})',
   'acct.studentIdUploadPrompt': 'Take photo or upload student ID card',
   'acct.studentNumber': 'Student number',

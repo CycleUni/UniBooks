@@ -125,6 +125,11 @@ export class SettingsComponent implements OnInit {
     return this.authStore.mustVerifyIn(this.regionService.region());
   }
 
+  /** The school that asks for verification, for the summary line. */
+  get mustVerifySchoolName(): string {
+    return this.authStore.schoolForRegion(this.regionService.region());
+  }
+
   get emailChanged(): boolean {
     return this.email.trim().toLowerCase() !== this.savedEmail.toLowerCase();
   }

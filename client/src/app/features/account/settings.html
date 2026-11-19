@@ -23,7 +23,7 @@
               </span>
             </ng-container>
             <ng-template #unverifiedSummary>
-              <span *ngIf="mustVerify" class="warning-text">{{ 'acct.errVerificationRequiredForSchool' | t }}</span>
+              <span *ngIf="mustVerify" class="warning-text">{{ 'acct.errVerificationRequiredForSchool' | t: { school: mustVerifySchoolName } }}</span>
               <span *ngIf="!mustVerify" class="text-muted">{{ 'acct.navUnverified' | t }}</span>
             </ng-template>
           </div>

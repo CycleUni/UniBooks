@@ -67,6 +67,12 @@ describe('SettingsComponent', () => {
       (component as any).authStore.mustVerifyIn = vi.fn().mockReturnValue(true);
       expect(component.mustVerify).toBe(true);
     });
+
+    it('names the school that asks for verification', () => {
+      (component as any).authStore.schoolForRegion = vi.fn().mockReturnValue('Chihlee University of Technology');
+      expect(component.mustVerifySchoolName).toBe('Chihlee University of Technology');
+      expect((component as any).authStore.schoolForRegion).toHaveBeenCalledWith('tw');
+    });
   });
 
   describe('pwdMessage', () => {
