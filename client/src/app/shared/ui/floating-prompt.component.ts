@@ -21,16 +21,34 @@ import { UiButton } from './button.component';
 @Injectable({ providedIn: 'root' })
 export class FloatingPromptSlot {
   private readonly waiting = signal<{ id: number; priority: number }[]>([]);
+  private readonly pauses = signal(0);
   private nextId = 0;
 
-  /** The prompt showing now: the highest priority, the earliest among equals. */
+  /**
+   * The prompt showing now: the highest priority, the earliest among equals;
+   * none while a dialog has paused the slot.
+   */
   readonly holder = computed(() => {
+    if (this.pauses() > 0) return null;
     let best: { id: number; priority: number } | null = null;
     for (const entry of this.waiting()) {
       if (!best || entry.priority > best.priority) best = entry;
     }
     return best?.id ?? null;
   });
+
+  /**
+   * A dialog that asks the same thing a prompt would (the welcome dialog's
+   * verification step) keeps every prompt waiting until it closes, so the
+   * question is not asked twice at once.
+   */
+  pause(): void {
+    this.pauses.update((n) => n + 1);
+  }
+
+  resume(): void {
+    this.pauses.update((n) => Math.max(0, n - 1));
+  }
 
   claim(priority: number): number {
     const id = ++this.nextId;

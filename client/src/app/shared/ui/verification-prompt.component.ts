@@ -1,9 +1,38 @@
-import { Component, Input, Output, EventEmitter, booleanAttribute, inject } from '@angular/core';
+import { Component, Injectable, Input, Output, EventEmitter, booleanAttribute, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { I18nService, TPipe } from '../../core/i18n.service';
 import { RegionService } from '../../core/region.service';
 import { AuthStore } from '../../core/auth.store';
 import { UiFloatingPrompt } from './floating-prompt.component';
+
+/**
+ * Set for the session when the member answers "verify later" in the welcome
+ * dialog: every verification card a page shows on arrival then stays quiet,
+ * rather than asking again the moment the dialog closes. A card shown because
+ * the member just tried to trade (`requested`) still shows.
+ */
+const VERIFY_LATER_KEY = 'unibooks.verification_prompt.later';
+
+@Injectable({ providedIn: 'root' })
+export class VerifyLaterState {
+  /** A signal, so a card already on the page hides the moment it is set. */
+  readonly later = signal(VerifyLaterState.read());
+
+  mark(): void {
+    this.later.set(true);
+    try {
+      window.sessionStorage?.setItem(VERIFY_LATER_KEY, 'true');
+    } catch {}
+  }
+
+  private static read(): boolean {
+    try {
+      return typeof window !== 'undefined' && window.sessionStorage?.getItem(VERIFY_LATER_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
+}
 
 /**
  * Tells a member whose school requires campus verification that trading
@@ -34,6 +63,7 @@ export class UiVerificationPrompt {
   private router = inject(Router);
   private authStore = inject(AuthStore);
   private i18n = inject(I18nService);
+  private verifyLater = inject(VerifyLaterState);
 
   @Input() storageKey = 'unibooks.verification_prompt.dismissed';
   /**
@@ -78,6 +108,7 @@ export class UiVerificationPrompt {
   }
 
   get isDismissed(): boolean {
+    if (this.verifyLater.later()) return true;
     if (typeof window === 'undefined' || !window.sessionStorage) return false;
     try {
       return window.sessionStorage.getItem(this.storageKey) === 'true';

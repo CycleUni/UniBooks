@@ -6,6 +6,25 @@ import { UiSuccessCheck } from './success-check.component';
 
 export type MeetupMessageType = 'REQUEST' | 'ACCEPT' | 'UPDATE' | 'DECLINE' | 'CANCEL' | 'COMPLETE' | 'NONE';
 
+const CIRCLE = 'M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z';
+/** Line icons in place of emoji, which render differently on every platform. */
+const MEETUP_ICONS: Record<string, readonly string[]> = {
+  // calendar
+  REQUEST: ['M8 2v4', 'M16 2v4', 'M3 10h18', 'M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z'],
+  // map pin
+  UPDATE: ['M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z', 'M12 7a3 3 0 1 0 0 6a3 3 0 1 0 0-6z'],
+  // circled x
+  DECLINE: [CIRCLE, 'm15 9-6 6', 'm9 9 6 6'],
+  // ban
+  CANCEL: [CIRCLE, 'm4.9 4.9 14.2 14.2'],
+  // package
+  COMPLETE: [
+    'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z',
+    'M3.27 6.96 12 12.01l8.73-5.05',
+    'M12 22.08V12',
+  ],
+};
+
 @Component({
   selector: 'ui-meetup-card',
   standalone: true,
@@ -15,7 +34,11 @@ export type MeetupMessageType = 'REQUEST' | 'ACCEPT' | 'UPDATE' | 'DECLINE' | 'C
       <div class="meetup-card-header">
         <span class="meetup-icon">
           <ui-success-check *ngIf="cardType === 'ACCEPT'; else glyph" [size]="20"></ui-success-check>
-          <ng-template #glyph>{{ icon }}</ng-template>
+          <ng-template #glyph>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path *ngFor="let d of iconPaths" [attr.d]="d" />
+            </svg>
+          </ng-template>
         </span>
         <span class="meetup-title">{{ headerTitleKey | t }}</span>
         <span class="meetup-status-badge" *ngIf="statusBadgeKey">{{ statusBadgeKey | t }}</span>
@@ -124,8 +147,15 @@ export type MeetupMessageType = 'REQUEST' | 'ACCEPT' | 'UPDATE' | 'DECLINE' | 'C
       margin-bottom: 8px;
     }
     .meetup-icon {
-      font-size: var(--text-lg);
-      line-height: 1;
+      display: inline-flex;
+      flex-shrink: 0;
+      color: var(--accent);
+    }
+    .card-decline .meetup-icon {
+      color: var(--danger);
+    }
+    .card-cancel .meetup-icon {
+      color: var(--muted);
     }
     .meetup-title {
       font-weight: 700;
@@ -234,16 +264,9 @@ export class UiMeetupCard {
     }
   }
 
-  get icon(): string {
-    switch (this.cardType) {
-      case 'REQUEST': return '🤝';
-      case 'ACCEPT': return ''; // drawn as <ui-success-check> in the template
-      case 'UPDATE': return '📍';
-      case 'DECLINE': return '❌';
-      case 'CANCEL': return '🚫';
-      case 'COMPLETE': return '📦';
-      default: return '🤝';
-    }
+  /** Outline icon paths (24px grid) per card; ACCEPT draws <ui-success-check> instead. */
+  get iconPaths(): readonly string[] {
+    return MEETUP_ICONS[this.cardType] ?? MEETUP_ICONS['REQUEST'];
   }
 
   get headerTitleKey(): string {

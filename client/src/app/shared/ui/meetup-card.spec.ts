@@ -23,11 +23,19 @@ describe('UiMeetupCard cardType', () => {
     component.body = '[SYSTEM:order.notify.delivered]';
     expect(component.cardType).toBe('COMPLETE');
     expect(component.typeClass).toBe('card-complete');
-    expect(component.icon).toBe('📦');
+    expect(component.iconPaths).toContain('M12 22.08V12');
     expect(component.headerTitleKey).toBe('msg.meetupCompleteTitle');
     expect(component.bodyTextKey).toBe('msg.meetupCompleteBody');
     expect(component.statusBadgeKey).toBe('msg.statusCompleted');
     expect(component.showActions).toBe(false);
+  });
+
+  it('draws line icons, never emoji', () => {
+    for (const body of ['[SYSTEM:order.notify.delivered]', '[SYSTEM:order.notify.cancelled_by_buyer]', '[SYSTEM:order.notify.unknown_key]']) {
+      component.body = body;
+      expect(component.iconPaths.length).toBeGreaterThan(0);
+      for (const d of component.iconPaths) expect(d).toMatch(/^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]+$/);
+    }
   });
 
   it('falls back to REQUEST styling for unrecognized message bodies', () => {

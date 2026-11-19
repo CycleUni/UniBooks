@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { UiVerificationPrompt } from './verification-prompt.component';
+import { UiVerificationPrompt, VerifyLaterState } from './verification-prompt.component';
 import { provideRouter, Router } from '@angular/router';
 import { I18nService } from '../../core/i18n.service';
 import { RegionService } from '../../core/region.service';
@@ -89,6 +89,18 @@ describe('UiVerificationPrompt', () => {
 
   it('shows again when an action asks for it, even after a dismissal', () => {
     dismissButton().click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="verification-prompt"]')).toBeNull();
+
+    fixture.componentRef.setInput('requested', true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="verification-prompt"]')).toBeTruthy();
+  });
+
+  it('stays quiet on arrival after "verify later" in the welcome dialog, but shows when an action asks', () => {
+    expect(component.isDismissed).toBe(false);
+    TestBed.inject(VerifyLaterState).mark();
+    expect(component.isDismissed).toBe(true);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="verification-prompt"]')).toBeNull();
 

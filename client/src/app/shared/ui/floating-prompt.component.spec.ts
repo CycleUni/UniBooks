@@ -1,6 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { UiFloatingPrompt } from './floating-prompt.component';
+import { FloatingPromptSlot, UiFloatingPrompt } from './floating-prompt.component';
 
 @Component({
   standalone: true,
@@ -53,6 +53,17 @@ describe('UiFloatingPrompt', () => {
     fixture.componentInstance.showLang.set(false);
     fixture.detectChanges();
     expect(shown()).toEqual(['push']);
+  });
+
+  it('shows none while a dialog has paused the slot, and resumes after', () => {
+    const { fixture, shown } = render();
+    const slot = TestBed.inject(FloatingPromptSlot);
+    slot.pause();
+    fixture.detectChanges();
+    expect(shown()).toEqual([]);
+    slot.resume();
+    fixture.detectChanges();
+    expect(shown()).toEqual(['lang']);
   });
 
   it('draws the question and both answers, and reports the one chosen', () => {

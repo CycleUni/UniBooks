@@ -57,9 +57,9 @@ import { UiVerifiedBadge } from '../../shared/ui/verified-badge.component';
             </span>
           </div>
           <div class="seller-stats mt-2"  style="font-size: var(--text-base); color: var(--ink); display: flex; gap: 16px;">
-            <span *ngIf="seller.review_count > 0">⭐️ {{ seller.average_rating }} ({{ seller.review_count }})</span>
+            <span *ngIf="seller.review_count > 0"><span aria-hidden="true" style="color: var(--accent);">★</span> {{ seller.average_rating }} ({{ seller.review_count }})</span>
             <span *ngIf="seller.review_count === 0" class="muted">{{ 'seller.noReviews' | t }}</span>
-            <span *ngIf="seller.no_show_count > 0" style="color: var(--flag); font-weight: 500;">⚠️ {{ 'seller.noShowCount' | t:{n: seller.no_show_count} }}</span>
+            <span *ngIf="seller.no_show_count > 0" style="color: var(--flag); font-weight: 500;">{{ 'seller.noShowCount' | t:{n: seller.no_show_count} }}</span>
           </div>
         </div>
       </div>

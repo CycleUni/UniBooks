@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, OnInit, inject, effect, untracked } from '@angular/core';
+import { Component, ChangeDetectorRef, OnDestroy, OnInit, inject, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, NavigationEnd } from '@angular/router';
@@ -13,6 +13,8 @@ import { keywordsMatch, schoolKeywords } from '../../core/school-search';
 import { UiButton } from './button.component';
 import { UiInput } from './input.component';
 import { UiBottomSheet } from './bottom-sheet.component';
+import { FloatingPromptSlot } from './floating-prompt.component';
+import { VerifyLaterState } from './verification-prompt.component';
 import { UiFocusTrapDirective } from './focus-trap.directive';
 import { SchoolRequestFormComponent } from '../../features/account/school-request-form.component';
 
@@ -32,7 +34,7 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
   template: `
     @if (isOpen) {
       @if (isPhone()) {
-        <ui-bottom-sheet [title]="sheetTitle" (closed)="onSkip()">
+        <ui-bottom-sheet class="welcome-sheet" [title]="sheetTitle" (closed)="onSkip()">
           <ng-container *ngTemplateOutlet="contentTpl"></ng-container>
         </ui-bottom-sheet>
       } @else {
@@ -244,6 +246,11 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
       margin-bottom: var(--space-3);
       text-align: right;
     }
+    /* The sheet body is padded 8px for edge-to-edge option lists; this
+       content is prose and fields, so it takes the page's 16px gutter. */
+    .welcome-sheet .welcome-body {
+      padding: 0 var(--space-2);
+    }
     .link-btn {
       background: none;
       border: none;
@@ -279,7 +286,7 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
     }
   `],
 })
-export class UiWelcomeDialog implements OnInit {
+export class UiWelcomeDialog implements OnInit, OnDestroy {
   protected readonly isPhone = injectIsPhone();
   private authStore = inject(AuthStore);
   private regionService = inject(RegionService);
@@ -288,8 +295,20 @@ export class UiWelcomeDialog implements OnInit {
   private router = inject(Router);
   private i18n = inject(I18nService);
   private cdr = inject(ChangeDetectorRef);
+  private promptSlot = inject(FloatingPromptSlot);
+  private verifyLater = inject(VerifyLaterState);
 
-  isOpen = false;
+  private open = false;
+  /** While open, floating prompts wait: the verification notice would repeat step 2. */
+  get isOpen(): boolean {
+    return this.open;
+  }
+  set isOpen(value: boolean) {
+    if (value === this.open) return;
+    this.open = value;
+    if (value) this.promptSlot.pause();
+    else this.promptSlot.resume();
+  }
   /** Set while the first step's answer is saved and the step after it is shown. */
   private answering = false;
   step: 'school' | 'verify' = 'school';
@@ -416,7 +435,7 @@ export class UiWelcomeDialog implements OnInit {
     // On the second step the school is already saved: dismissing the sheet
     // (backdrop, drag, Escape) only closes it, it must not clear the choice.
     if (this.step === 'verify') {
-      this.close();
+      this.finishAndClose();
       return;
     }
     this.isSubmitting = true;
@@ -473,8 +492,14 @@ export class UiWelcomeDialog implements OnInit {
     void this.router.navigate(['/', this.regionService.region(), 'account', 'verification']);
   }
 
+  /** "Verify later": the arrival cards need not ask again this session. */
   finishAndClose(): void {
+    this.verifyLater.mark();
     this.close();
+  }
+
+  ngOnDestroy(): void {
+    this.isOpen = false;
   }
 
   private close(): void {

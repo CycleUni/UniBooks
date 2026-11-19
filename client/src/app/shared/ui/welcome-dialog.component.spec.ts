@@ -12,6 +12,8 @@ import { AccountService } from '../../core/services/account.service';
 import { GoogleAuthService } from '../../core/services/google-auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { I18nService } from '../../core/i18n.service';
+import { FloatingPromptSlot } from './floating-prompt.component';
+import { VerifyLaterState } from './verification-prompt.component';
 
 describe('UiWelcomeDialog', () => {
   let component: UiWelcomeDialog;
@@ -192,5 +194,31 @@ describe('UiWelcomeDialog', () => {
 
     expect(mockAuth.setDeclaredSchool).not.toHaveBeenCalled();
     expect(component.isOpen).toBe(false);
+  });
+
+  it('keeps floating prompts waiting while open, so the verification notice is not shown twice', () => {
+    const slot = TestBed.inject(FloatingPromptSlot);
+    const id = slot.claim(2);
+    fixture.detectChanges();
+    expect(component.isOpen).toBe(true);
+    expect(slot.holder()).toBeNull();
+
+    component.selectSchool(mockSchools[1]);
+    component.confirmSchoolChoice();
+    expect(slot.holder()).toBeNull();
+
+    component.finishAndClose();
+    expect(slot.holder()).toBe(id);
+  });
+
+  it('answering "verify later" quiets the arrival verification cards for the session', () => {
+    sessionStorage.clear();
+    fixture.detectChanges();
+    component.selectSchool(mockSchools[1]);
+    component.confirmSchoolChoice();
+    component.onSkip();
+    expect(TestBed.inject(VerifyLaterState).later()).toBe(true);
+    expect(sessionStorage.getItem('unibooks.verification_prompt.later')).toBe('true');
+    sessionStorage.clear();
   });
 });
