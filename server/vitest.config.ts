@@ -55,5 +55,12 @@ export default defineConfig({
   test: {
     include: ['test/**/*.spec.ts'],
     setupFiles: ['./test/apply-migrations.ts'],
+    // These are integration tests through Miniflare (D1, R2, queues, Durable
+    // Objects), not unit tests. The first files run while the other workers
+    // still compile and start Miniflare; on a busy CI runner that wave can
+    // slow several-fold, and a test that takes ~350 ms there took 5-8 s and
+    // failed the 5 s default. Locally they take tens of milliseconds, so a
+    // real hang still fails, just later.
+    testTimeout: 30_000,
   },
 });
