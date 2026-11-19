@@ -127,7 +127,7 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
                 {{ 'welcome.mandatoryNoticeDesc' | t: { school: selectedSchoolName } }}
               </p>
 
-              <div class="dialog-actions mt-4" style="display: flex; gap: 8px; justify-content: flex-end;">
+              <div class="dialog-actions verify-actions mt-4">
                 <ui-button
                   variant="ghost"
                   (onClick)="finishAndClose()"
@@ -148,6 +148,12 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
     }
   `,
   styles: [`
+    .verify-actions {
+      display: flex;
+      gap: var(--space-2);
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
     .welcome-overlay {
       position: fixed;
       inset: 0;
@@ -284,6 +290,8 @@ export class UiWelcomeDialog implements OnInit {
   private cdr = inject(ChangeDetectorRef);
 
   isOpen = false;
+  /** Set while the first step's answer is saved and the step after it is shown. */
+  private answering = false;
   step: 'school' | 'verify' = 'school';
   schools: SchoolOption[] = [];
   filteredSchools: SchoolOption[] = [];
@@ -348,6 +356,10 @@ export class UiWelcomeDialog implements OnInit {
     }
 
     if (user.school_prompted || user.school_prompted_at) {
+      // Answering the first step marks the account as prompted, and the
+      // refreshed profile arrives here: the second step must not vanish under
+      // the user. It closes when they leave it.
+      if (this.answering && this.isOpen) return;
       this.isOpen = false;
       this.cdr.markForCheck();
       return;
@@ -401,6 +413,12 @@ export class UiWelcomeDialog implements OnInit {
 
   onSkip(): void {
     if (this.isSubmitting) return;
+    // On the second step the school is already saved: dismissing the sheet
+    // (backdrop, drag, Escape) only closes it, it must not clear the choice.
+    if (this.step === 'verify') {
+      this.close();
+      return;
+    }
     this.isSubmitting = true;
     const region = this.regionService.region();
     this.authStore.setDeclaredSchool(region, null, true).subscribe({
@@ -420,6 +438,7 @@ export class UiWelcomeDialog implements OnInit {
   confirmSchoolChoice(): void {
     if (!this.selectedSchool || this.isSubmitting) return;
     this.isSubmitting = true;
+    this.answering = true;
     this.errorMsg = '';
     const region = this.regionService.region();
     const schoolCode = this.selectedSchool.code;
@@ -436,12 +455,13 @@ export class UiWelcomeDialog implements OnInit {
         if (isMandatory) {
           this.step = 'verify';
         } else {
-          this.isOpen = false;
+          this.close();
         }
         this.cdr.markForCheck();
       },
       error: () => {
         this.isSubmitting = false;
+        this.answering = false;
         this.errorMsg = this.i18n.t('acct.verifyFailed');
         this.cdr.markForCheck();
       },
@@ -449,12 +469,17 @@ export class UiWelcomeDialog implements OnInit {
   }
 
   goToVerification(): void {
-    this.isOpen = false;
+    this.close();
     void this.router.navigate(['/', this.regionService.region(), 'account', 'verification']);
   }
 
   finishAndClose(): void {
+    this.close();
+  }
+
+  private close(): void {
     this.isOpen = false;
+    this.answering = false;
     this.cdr.markForCheck();
   }
 }

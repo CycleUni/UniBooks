@@ -167,4 +167,30 @@ describe('UiWelcomeDialog', () => {
     component.finishAndClose();
     expect(component.isOpen).toBe(false);
   });
+
+  it('stays on the second step when the saved answer marks the account as prompted', () => {
+    fixture.detectChanges();
+    component.selectSchool(mockSchools[1]);
+    component.confirmSchoolChoice();
+    expect(component.step).toBe('verify');
+
+    // The refreshed profile arrives: the account is now prompted.
+    userSignal.set({ id: 'u1', email: 'test@example.com', school_prompted: true, school_prompted_at: '2026-01-01T00:00:00Z' });
+    fixture.detectChanges();
+
+    expect(component.isOpen).toBe(true);
+    expect(component.step).toBe('verify');
+  });
+
+  it('dismissing the second step closes it without clearing the chosen school', () => {
+    fixture.detectChanges();
+    component.selectSchool(mockSchools[1]);
+    component.confirmSchoolChoice();
+    mockAuth.setDeclaredSchool.mockClear();
+
+    component.onSkip();
+
+    expect(mockAuth.setDeclaredSchool).not.toHaveBeenCalled();
+    expect(component.isOpen).toBe(false);
+  });
 });

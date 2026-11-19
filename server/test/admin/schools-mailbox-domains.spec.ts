@@ -324,4 +324,18 @@ describe('school mailbox domains: public metadata payload', () => {
       expect(custom.google_domains).toEqual(['gm.chihlee-test.edu.tw']);
     }
   });
+
+  it('tells the app which schools require verification in /core/metadata', async () => {
+    // Through the admin API, which is how the flag changes and what refreshes the cached list.
+    const created = await callAdmin('/api/v1/admin/schools', {
+      token: root.token,
+      body: { name: 'Strict Uni', email_domain: 'strict-uni.edu.tw', region: 'TW', requires_verification: true },
+    });
+    expect(created.status).toBe(201);
+    const res = await callWorker('/api/v1/core/metadata?region=TW&lang=zh-TW&shape=4');
+    const body = (await res.json()) as any;
+    const strict = body.schools.find((s: any) => s.email_domain === 'strict-uni.edu.tw');
+    expect(strict?.requires_verification).toBe(true);
+    for (const s of body.schools) expect(typeof s.requires_verification).toBe('boolean');
+  });
 });

@@ -15,7 +15,7 @@ import { CacheVersionService } from '../cache-version.interceptor';
  * response for up to a day (stale-while-revalidate), so without a new URL a
  * new build would read the old payload, without the field, until then.
  */
-const METADATA_SHAPE = 3;
+const METADATA_SHAPE = 4;
 
 export interface PublicAd {
   id: number;

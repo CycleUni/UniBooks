@@ -107,7 +107,7 @@ function allNames(row: Row): string[] {
  * new URL that no browser or edge copy answers, and the new KV key leaves
  * the copies built by the old code behind.
  */
-const METADATA_SHAPE = 3;
+const METADATA_SHAPE = 4;
 
 /**
  * Viewer-independent once the URL names the region (the app always sends it):
@@ -150,6 +150,7 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string) {
         googleDomains: schools.googleDomains,
         cityCode: cities.code,
         allowsStudentIdVerification: schools.allowsStudentIdVerification,
+        requiresVerification: schools.requiresVerification,
       })
       .from(schools)
       .leftJoin(cities, eq(cities.id, schools.cityId))
@@ -181,6 +182,8 @@ async function buildMetadata(c: Context<AppEnv>, region: Region, lang: string) {
       accepted_domains: acceptedDomains,
       city: s.cityCode ?? null,
       allows_student_id_verification: s.allowsStudentIdVerification === 1,
+      // The welcome dialog shows its "verify first" step from this.
+      requires_verification: s.requiresVerification === 1,
     };
   });
   const cityList = cityRows.map((ci) => ({ code: ci.code, name: ci.name, display_name: localizedName(ci, lang) }));
