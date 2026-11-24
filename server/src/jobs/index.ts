@@ -224,21 +224,51 @@ export async function runWaitlistNotify(env: Env) {
   return result;
 }
 
-/** Course requests read per run: bounds the work like MAX_NOTIFY_USERS_PER_RUN does for books. */
-const MAX_COURSE_WANTS_PER_RUN = 500;
+/** Requests read per run once the courses with something new are known. */
+const MAX_COURSE_WANTS_PER_RUN = 5000;
 /** New listings read per run when matching them to course requests. */
-const MAX_COURSE_LISTINGS_PER_RUN = 2000;
+const MAX_COURSE_LISTINGS_PER_RUN = 5000;
 
 /**
  * "I am taking this course": tell each student who asked when a book for the
  * course is listed at their school. Same cadence, queues and one-notice-per-user
  * shape as the book waitlist; a course matches by lib/course.ts' key, which SQL
- * cannot compute, so the matching happens here over the new listings.
+ * cannot compute, so the matching happens here.
+ *
+ * It starts from what is new, not from the requests. Requests are never deleted
+ * once told about, so a job that read "the first N requests" would stop seeing
+ * the newest ones as soon as N were on file. What is new is bounded by how much
+ * was listed since, however many requests there are.
  */
 export async function runCourseWaitNotify(env: Env) {
   const db = createDb(env.DB);
   const now = new Date().toISOString();
+  const none = { notified_users: 0, notified_course_wants: 0 };
 
+  // 1. The oldest moment any request still waits from: nothing listed before it matters.
+  const waiting = await env.DB.prepare(`SELECT min(max(created_at, coalesce(notified_at, created_at))) AS oldest FROM course_wants`).first<{
+    oldest: string | null;
+  }>();
+  if (!waiting?.oldest) return none;
+
+  // 2. The courses (school + spelling) listed since then. Few, whatever the number of listings.
+  const { results: spelled } = await env.DB.prepare(
+    `SELECT DISTINCT school_id AS schoolId, course_name AS name FROM listings
+      WHERE status = 'active' AND course_name <> '' AND school_id IS NOT NULL AND created_at > ?
+        AND region_code IN (SELECT DISTINCT region_code FROM course_wants)`,
+  )
+    .bind(waiting.oldest)
+    .all<{ schoolId: number; name: string }>();
+  const newPairs = new Map<string, string[]>();
+  for (const sp of spelled) {
+    const pair = `${sp.schoolId}:${courseKey(sp.name)}`;
+    const names = newPairs.get(pair);
+    if (names) names.push(sp.name);
+    else newPairs.set(pair, [sp.name]);
+  }
+  if (!newPairs.size) return none;
+
+  // 3. Only the requests for those courses.
   const wants = await db
     .select({
       id: courseWants.id,
@@ -252,12 +282,22 @@ export async function runCourseWaitNotify(env: Env) {
     })
     .from(courseWants)
     .innerJoin(users, eq(users.id, courseWants.userId))
-    .where(and(eq(users.isActive, 1), eq(users.isBanned, 0), isNull(users.deletedAt), sql`${users.email} <> ''`))
+    .where(
+      and(
+        eq(users.isActive, 1),
+        eq(users.isBanned, 0),
+        isNull(users.deletedAt),
+        sql`${users.email} <> ''`,
+        sql`(${courseWants.schoolId} || ':' || ${courseWants.courseKey}) IN (SELECT value FROM json_each(${JSON.stringify([...newPairs.keys()])}))`,
+      ),
+    )
     .orderBy(asc(courseWants.createdAt))
     .limit(MAX_COURSE_WANTS_PER_RUN);
-  if (!wants.length) return { notified_users: 0, notified_course_wants: 0 };
+  if (!wants.length) return none;
 
+  // 4. The listings those requests are about, newer than the oldest of them.
   const oldest = wants.reduce((m, w) => (w.since < m ? w.since : m), wants[0].since);
+  const wantedNames = [...new Set(wants.flatMap((w) => newPairs.get(`${w.schoolId}:${w.key}`) ?? []))];
   const schoolIds = [...new Set(wants.map((w) => w.schoolId))];
   const fresh = await db
     .select({
@@ -273,9 +313,9 @@ export async function runCourseWaitNotify(env: Env) {
     .where(
       and(
         eq(listings.status, 'active'),
-        ne(listings.courseName, ''),
         gt(listings.createdAt, oldest),
         sql`${listings.schoolId} IN (SELECT value FROM json_each(${JSON.stringify(schoolIds)}))`,
+        sql`${listings.courseName} IN (SELECT value FROM json_each(${JSON.stringify(wantedNames)}))`,
       ),
     )
     .orderBy(asc(listings.createdAt))

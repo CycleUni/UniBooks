@@ -221,6 +221,39 @@ describe('courses', () => {
       const second = await run();
       expect(second.sent.filter((m) => m.user_id === student.id)).toEqual([]);
     });
+
+    it('still tells the newest request when hundreds of older ones sit before it, whether or not they were told', async () => {
+      const crowd = await makeUser('crowd');
+      // 510 requests from long ago, none of them matching anything listed.
+      await env.DB.prepare(
+        `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 510)
+         INSERT INTO course_wants (id, region_code, user_id, school_id, course_key, course_name, created_at)
+         SELECT 'crowd-' || i, 'TW', ?, ?, 'crowd' || i, 'Crowd ' || i, ? FROM n`,
+      )
+        .bind(crowd.id, CHIHLEE, ago(3_600_000))
+        .run();
+      const newest = await makeUser('newest');
+      await db.insert(courseWants).values({
+        id: crypto.randomUUID(),
+        regionCode: 'TW',
+        userId: newest.id,
+        schoolId: CHIHLEE,
+        courseKey: courseKey('作業研究'),
+        courseName: '作業研究',
+        createdAt: ago(60_000),
+      });
+      await addListing(seller.id, CHIHLEE, 'Operations Research', '作業研究');
+
+      const { sent } = await run();
+      expect(
+        sent
+          .filter((m) => m.user_id === newest.id)
+          .map((m) => m.type)
+          .sort(),
+      ).toEqual(['waitlist_match', 'waitlist_notification']);
+      // And the crowd, which has nothing new, hears nothing.
+      expect(sent.filter((m) => m.user_id === crowd.id)).toEqual([]);
+    });
   });
 });
 

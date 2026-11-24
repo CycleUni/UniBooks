@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { buildEmail, chatEmailPreview, maskEmail } from '../../src/queues/email';
+import { renderPush } from '../../src/queues/push';
 import { formatMeetupTime } from '../../src/lib/time';
 import { siteOrigin } from '../../src/lib/origin';
 import { passwordProblems } from '../../src/services/accounts/passwords';
@@ -149,6 +150,50 @@ describe('emails', () => {
     expect(mail?.text).toContain(`- C: ${BASE}/hk`);
     expect(mail?.text).toContain(BASE + '/account/subscriptions');
     expect(mail?.html).toContain('A &amp; B');
+  });
+
+  it('course waitlist: says which course, names each new book, and links to the requests page', async () => {
+    const id = await createUser('course-wait@example.com');
+    await env.DB.prepare("UPDATE users SET email_language = 'zh-TW' WHERE id = ?").bind(id).run();
+    const mail = await buildEmail(
+      {
+        type: 'waitlist_notification',
+        user_id: id,
+        email: 'course-wait@example.com',
+        book_title: '經濟學原理',
+        listing_count: 2,
+        region: 'TW',
+        course_name: '經濟學 (一)、會計學',
+        books: [
+          { id: 'b-uuid-1', title: '經濟學原理', isbn13: null, region: 'TW' },
+          { id: 'b-uuid-2', title: '會計學 <script>', isbn13: null, region: 'TW' },
+        ],
+      },
+      env,
+    );
+    // The subject and the opening line are the course's, not the book waitlist's.
+    expect(mail?.subject).toContain('課程');
+    expect(mail?.text).toContain('經濟學 (一)、會計學');
+    expect(mail?.text).not.toContain('求書清單');
+    expect(mail?.text).toContain(BASE + '/tw/book?id=b-uuid-1');
+    expect(mail?.text).toContain(BASE + '/tw/book?id=b-uuid-2');
+    // Where to stop them, worded for a course.
+    expect(mail?.text).toContain('課程');
+    expect(mail?.text).toContain(BASE + '/account/subscriptions');
+    expect(mail?.html).toContain('&lt;script&gt;');
+    expect(mail?.html).not.toContain('<script>');
+  });
+
+  it('course waitlist push: names the course, not a book', async () => {
+    const id = await createUser('course-push@example.com');
+    await env.DB.prepare("UPDATE users SET email_language = 'zh-TW' WHERE id = ?").bind(id).run();
+    const push = await renderPush(
+      { type: 'waitlist_match', user_id: id, book_title: '經濟學原理', listing_count: 1, region: 'TW', course_name: '經濟學 (一)' },
+      env,
+    );
+    expect(push?.title).toContain('課程');
+    expect(push?.body).toContain('經濟學 (一)');
+    expect(push?.body).not.toContain('《經濟學原理》');
   });
 
   it('a banned user is not emailed notifications', async () => {
