@@ -12,6 +12,7 @@ import {
   categories,
   chatReports,
   conversations,
+  courseWants,
   createDb,
   listings,
   orders,
@@ -29,6 +30,7 @@ import {
 } from '../../db';
 import { apiError, pagination } from '../../lib/http';
 import { parseJsonObject } from '../../lib/json';
+import { courseKey } from '../../lib/course';
 import { liveVerification } from '../../lib/region';
 import { localized, resolveLanguage } from '../../services/admin/i18n';
 import { notFound, scopeOf, uuidId } from '../../services/admin/scope';
@@ -855,6 +857,88 @@ statsRoutes.get('/stats/books/requests', async (c) => {
     ...s,
   }));
   return c.json({ ...page.wrap(results, rows.length), summary });
+});
+
+// ---------------------------------------------------------------------------
+// Course demand: "I am taking this course" requests against what is for sale
+// ---------------------------------------------------------------------------
+
+statsRoutes.get('/stats/courses/demand', async (c) => {
+  const db = createDb(c.env.DB);
+  const region = await resolveStatsRegion(c, db);
+  const lang = await resolveLanguage(c);
+  const q = courseKey((c.req.query('q') ?? '').trim());
+  const page = pagination(c.req.url, { allowPageSize: true, maxPageSize: 100 });
+
+  // Requests are few (40 per account at most), so they are grouped here by course key.
+  const wants = await db
+    .select({
+      schoolId: courseWants.schoolId,
+      key: courseWants.courseKey,
+      name: courseWants.courseName,
+      userId: courseWants.userId,
+      schoolCode: schools.code,
+      schoolName: schools.name,
+      schoolTranslations: schools.translations,
+    })
+    .from(courseWants)
+    .innerJoin(schools, eq(schools.id, courseWants.schoolId))
+    .where(eq(courseWants.regionCode, region.code));
+  const supply = await db
+    .select({ schoolId: listings.schoolId, name: listings.courseName, n: count() })
+    .from(listings)
+    .where(
+      and(
+        eq(listings.regionCode, region.code),
+        eq(listings.status, 'active'),
+        sql`${listings.courseName} <> ''`,
+        isNotNull(listings.schoolId),
+      ),
+    )
+    .groupBy(listings.schoolId, listings.courseName);
+  const onSale = new Map<string, number>();
+  for (const l of supply) {
+    const k = `${l.schoolId}:${courseKey(l.name)}`;
+    onSale.set(k, (onSale.get(k) ?? 0) + l.n);
+  }
+
+  interface Row {
+    school_code: string;
+    school: string;
+    course: string;
+    key: string;
+    request_count: number;
+    active_listings: number;
+  }
+  const byCourse = new Map<string, Row & { users: Set<string> }>();
+  for (const w of wants) {
+    const k = `${w.schoolId}:${w.key}`;
+    const row = byCourse.get(k) ?? {
+      school_code: w.schoolCode,
+      school: lang ? localized(w.schoolTranslations, lang, 'name', w.schoolName) : w.schoolName,
+      course: w.name,
+      key: w.key,
+      request_count: 0,
+      active_listings: onSale.get(k) ?? 0,
+      users: new Set<string>(),
+    };
+    row.request_count += 1;
+    row.users.add(w.userId);
+    byCourse.set(k, row);
+  }
+  const all = [...byCourse.values()];
+  const summary = {
+    requests: wants.length,
+    students: new Set(wants.map((w) => w.userId)).size,
+    courses: all.length,
+    // Courses somebody is waiting for and nobody has for sale: the supply gap.
+    unmet_courses: all.filter((r) => r.active_listings === 0).length,
+  };
+  const rows = all
+    .filter((r) => !q || r.key.includes(q))
+    .sort((a, b) => b.request_count - a.request_count || a.active_listings - b.active_listings || a.course.localeCompare(b.course))
+    .map(({ users: _users, ...r }) => r);
+  return c.json({ ...page.wrap(rows.slice(page.offset, page.offset + page.limit), rows.length), summary });
 });
 
 // ---------------------------------------------------------------------------

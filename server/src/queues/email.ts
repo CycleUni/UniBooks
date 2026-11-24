@@ -246,7 +246,8 @@ async function waitlist(env: Env, msg: Extract<EmailMessage, { type: 'waitlist_n
   const books = msg.books?.length ? msg.books : [{ id: msg.book_id, title: msg.book_title, isbn13: null, region: msg.region }];
   const lang = await languageFor(env, user, books[0]?.region || msg.region);
   const base = frontend(env);
-  const lines: Line[] = [t(lang, 'email.waitlist.intro'), ''];
+  const forCourse = !!msg.course_name;
+  const lines: Line[] = [forCourse ? t(lang, 'email.courseWait.intro', { course: msg.course_name! }) : t(lang, 'email.waitlist.intro'), ''];
   for (const book of books) {
     const region = encodeURIComponent(String(book.region || msg.region || env.DEFAULT_REGION || 'tw').toLowerCase());
     const url = book.id
@@ -257,8 +258,15 @@ async function waitlist(env: Env, msg: Extract<EmailMessage, { type: 'waitlist_n
     lines.push({ text: `- ${book.title}: ${url}`, link: url });
   }
   const requestPage = `${base}/account/subscriptions`;
-  lines.push('', t(lang, 'email.waitlist.logIn'), '', t(lang, 'email.waitlist.stop'), { link: requestPage });
-  return render(user.email, displayName(user.first_name, user.last_name), t(lang, 'email.waitlist.subject'), lines);
+  lines.push('', t(lang, 'email.waitlist.logIn'), '', t(lang, forCourse ? 'email.courseWait.stop' : 'email.waitlist.stop'), {
+    link: requestPage,
+  });
+  return render(
+    user.email,
+    displayName(user.first_name, user.last_name),
+    t(lang, forCourse ? 'email.courseWait.subject' : 'email.waitlist.subject'),
+    lines,
+  );
 }
 
 async function meetupReminder(env: Env, msg: Extract<EmailMessage, { type: 'meetup_reminder' }>): Promise<RenderedEmail | null> {

@@ -145,7 +145,8 @@
         <div *ngIf="step === 2" class="step-content">
           <ui-condition-picker [label]="'common.condition' | t" [(value)]="condition" (valueChange)="onFormChange()" [options]="conditionOptions"></ui-condition-picker>
           <ui-dropdown [label]="'sell.categoryLabel' | t" [(ngModel)]="category" (ngModelChange)="onFormChange()" [options]="categoryOptions"></ui-dropdown>
-          <ui-input [label]="'sell.courseLabel' | t" [placeholder]="'sell.coursePlaceholder' | t" [(ngModel)]="course" (ngModelChange)="onFormChange()" [maxlength]="LIMITS.courseName"></ui-input>
+          <ui-dropdown [label]="'sell.courseLabel' | t" [placeholder]="'sell.coursePlaceholder' | t" [options]="courseDropdownOptions" [allowCustom]="true" [(ngModel)]="course" (ngModelChange)="onFormChange()"></ui-dropdown>
+          <p class="course-demand" *ngIf="courseDemand > 0">{{ 'sell.courseDemand' | t:{n: courseDemand} }}</p>
           <ui-input [label]="'sell.professorLabel' | t" [placeholder]="'sell.professorPlaceholder' | t" [(ngModel)]="professor" (ngModelChange)="onFormChange()" [maxlength]="LIMITS.professorName"></ui-input>
           <ui-input [label]="'sell.privateNoteLabel' | t" [placeholder]="'sell.privateNotePlaceholder' | t" [(ngModel)]="privateNote" (ngModelChange)="onFormChange()" [maxlength]="LIMITS.listingPrivateNote"></ui-input>
           <ui-textarea [label]="'sell.descriptionLabel' | t" [placeholder]="'sell.descriptionPlaceholder' | t" [rows]="4" [(ngModel)]="description" (ngModelChange)="onFormChange()" [maxlength]="LIMITS.listingDescription" [showCounter]="true"></ui-textarea>

@@ -3,10 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
+import { NavigationStart } from '@angular/router';
 import { TPipe, I18nService } from '../../core/i18n.service';
 import { RegionService } from '../../core/region.service';
 import { AuthStore } from '../../core/auth.store';
 import { SchoolOption, SchoolStateService } from '../../core/services/school-state.service';
+import { SchoolPickerService } from '../../core/services/school-picker.service';
 import { MetadataService } from '../../core/services/metadata.service';
 import { injectIsPhone } from '../../core/viewport';
 import { keywordsMatch, schoolKeywords } from '../../core/school-search';
@@ -297,6 +299,7 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
   private cdr = inject(ChangeDetectorRef);
   private promptSlot = inject(FloatingPromptSlot);
   private verifyLater = inject(VerifyLaterState);
+  private schoolPicker = inject(SchoolPickerService);
 
   private open = false;
   /** While open, floating prompts wait: the verification notice would repeat step 2. */
@@ -309,6 +312,12 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
     if (value) this.promptSlot.pause();
     else this.promptSlot.resume();
   }
+  /**
+   * Opened by a page that needs a school (SchoolPickerService), not as the account's welcome:
+   * choosing only sets the school being browsed, as the header's switcher does. It works signed
+   * out, saves nothing to the account and has no verification step.
+   */
+  browsing = false;
   /** Set while the first step's answer is saved and the step after it is shown. */
   private answering = false;
   step: 'school' | 'verify' = 'school';
@@ -321,9 +330,8 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
   errorMsg = '';
 
   get sheetTitle(): string {
-    return this.step === 'school'
-      ? this.i18n.t('welcome.title')
-      : this.i18n.t('welcome.mandatoryNoticeTitle');
+    if (this.step !== 'school') return this.i18n.t('welcome.mandatoryNoticeTitle');
+    return this.browsing ? this.i18n.t('welcome.pickTitle') : this.i18n.t('welcome.title');
   }
 
   get selectedSchoolName(): string {
@@ -345,6 +353,32 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
       .subscribe(() => {
         this.checkEligibility();
       });
+    // A page asked for it; a later navigation takes the visitor elsewhere, so it goes away.
+    this.router.events
+      .pipe(filter((e) => e instanceof NavigationStart))
+      .subscribe(() => {
+        if (this.browsing) this.closeBrowsing();
+      });
+    this.schoolPicker.requests$.subscribe(() => this.openForBrowsing());
+  }
+
+  private openForBrowsing(): void {
+    // The account's own welcome has the same list on screen: it already does this job.
+    if (this.isOpen) return;
+    this.browsing = true;
+    this.step = 'school';
+    this.selectedSchool = null;
+    this.searchQuery = '';
+    if (this.schools.length === 0) this.loadSchools();
+    this.onSearchChange();
+    this.isOpen = true;
+    this.cdr.markForCheck();
+  }
+
+  private closeBrowsing(): void {
+    this.browsing = false;
+    this.isOpen = false;
+    this.cdr.markForCheck();
   }
 
   private isExcludedRoute(url: string): boolean {
@@ -355,6 +389,9 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
   }
 
   private checkEligibility(): void {
+    // Opened by a page: the account's rules about the welcome do not apply to it.
+    if (this.browsing) return;
+
     if (!this.authStore.isAuthenticated()) {
       this.isOpen = false;
       this.cdr.markForCheck();
@@ -432,6 +469,10 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
 
   onSkip(): void {
     if (this.isSubmitting) return;
+    if (this.browsing) {
+      this.closeBrowsing();
+      return;
+    }
     // On the second step the school is already saved: dismissing the sheet
     // (backdrop, drag, Escape) only closes it, it must not clear the choice.
     if (this.step === 'verify') {
@@ -456,6 +497,11 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
 
   confirmSchoolChoice(): void {
     if (!this.selectedSchool || this.isSubmitting) return;
+    if (this.browsing) {
+      this.schoolStateService.setManualSchool(this.selectedSchool.code);
+      this.closeBrowsing();
+      return;
+    }
     this.isSubmitting = true;
     this.answering = true;
     this.errorMsg = '';

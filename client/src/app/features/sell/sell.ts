@@ -6,7 +6,7 @@ import { UiInput } from '../../shared/ui/input.component';
 import { UiTextarea } from '../../shared/ui/textarea.component';
 import { PricePipe } from '../../shared/pipes/price.pipe';
 import { UiButton } from '../../shared/ui/button.component';
-import { UiDropdown } from '../../shared/ui/dropdown.component';
+import { UiDropdown, DropdownOption } from '../../shared/ui/dropdown.component';
 import { UiConditionPicker } from '../../shared/ui/condition-picker.component';
 import { UiBookCover } from '../../shared/ui/book-cover.component';
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
@@ -17,6 +17,10 @@ import { RegionService } from '../../core/region.service';
 import { BookService } from '../../core/services/book.service';
 import { ListingService } from '../../core/services/listing.service';
 import { MetadataService } from '../../core/services/metadata.service';
+import { CourseService } from '../../core/services/course.service';
+import { SchoolStateService } from '../../core/services/school-state.service';
+import { courseKey } from '../../core/course-key';
+import type { CourseDto } from '../../../../../server/src/api-types';
 import { onLanguageChange } from '../../core/on-language-change';
 import { AuthStore } from '../../core/auth.store';
 import { I18nService, TPipe } from '../../core/i18n.service';
@@ -32,7 +36,7 @@ import { RegionLinkService } from '../../core/region-link.service';
 import { RegionLinkDirective } from '../../core/region-link.directive';
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
 import { LIMITS } from '../../core/limits';
-import { Subscription, catchError, concatMap, defaultIfEmpty, from, map, of, take } from 'rxjs';
+import { Subscription, catchError, concatMap, defaultIfEmpty, from, map, of, switchMap, take } from 'rxjs';
 
 
 /**
@@ -208,6 +212,8 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
   private bookService = inject(BookService);
   private listingService = inject(ListingService);
   private metadataService = inject(MetadataService);
+  private courseService = inject(CourseService);
+  private schoolState = inject(SchoolStateService);
   private router = inject(Router);
   private regionLink = inject(RegionLinkService);
   private cdr = inject(ChangeDetectorRef);
@@ -354,6 +360,40 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
     return this.brokenPhotos.includes(url);
   }
 
+  /** Courses already listed or requested at the selected school: suggestions for the course field. */
+  courseOptions: CourseDto[] = [];
+
+  /** The course field's choices: no course, then the school's courses. Anything else can be typed. */
+  get courseDropdownOptions(): DropdownOption[] {
+    return [{ label: this.i18n.t('sell.courseNone'), value: '' }, ...this.courseOptions.map((c) => ({ label: c.name, value: c.name }))];
+  }
+
+  /** Students waiting for a book for the course typed so far, when it is a known course. */
+  get courseDemand(): number {
+    const key = courseKey(this.course);
+    if (!key) return 0;
+    return this.courseOptions.find((c) => c.key === key)?.wantCount ?? 0;
+  }
+
+  private courseSubscription: Subscription | null = null;
+
+  private loadCourseOptions() {
+    this.courseSubscription?.unsubscribe();
+    // The school the header has selected (a verified student's own, by default).
+    // Suggestions only: a failed request leaves the field a plain text box.
+    // Follows the header's choice: picking another school while this page is open renews the list.
+    this.courseSubscription = this.schoolState.resolvedSchool$
+      .pipe(
+        switchMap((school) =>
+          school ? this.courseService.list(school).pipe(catchError(() => of([] as CourseDto[]))) : of([] as CourseDto[]),
+        ),
+      )
+      .subscribe((rows) => {
+        this.courseOptions = rows;
+        this.cdr.markForCheck();
+      });
+  }
+
   ngOnInit() {
     // A draft names its owner, so it waits for the signed-in user: on a cold
     // load the profile is still on its way here, and arrives below.
@@ -366,6 +406,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
     // With retry: this list has no error state, so one failed request used to
     // leave the category dropdown empty for the rest of the visit.
     this.loadCategories();
+    this.loadCourseOptions();
 
     if (this.isLoggedIn) {
       this.accountService.getMyProfile().subscribe({
@@ -417,6 +458,7 @@ export class Sell implements OnInit, OnDestroy, HasUnsavedChanges {
     // Also ends its retry schedule, if categories were still being retried.
     this.metadataSubscription?.unsubscribe();
     this.otherCopiesSubscription?.unsubscribe();
+    this.courseSubscription?.unsubscribe();
     if (typeof window !== 'undefined') {
       // Must come off the window, or every later page in the session keeps
       // asking to confirm reloads on behalf of a component that is long gone.

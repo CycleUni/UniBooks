@@ -124,6 +124,21 @@ export interface AdminBookRequests {
   results: AdminBookRequestRow[];
 }
 
+export interface CourseDemandRow {
+  school_code: string;
+  school: string;
+  course: string;
+  key: string;
+  request_count: number;
+  active_listings: number;
+}
+
+export interface AdminCourseDemand {
+  count: number;
+  summary: { requests: number; students: number; courses: number; unmet_courses: number };
+  results: CourseDemandRow[];
+}
+
 export type BreakdownDimension = 'school' | 'category' | 'course' | 'professor';
 export type BreakdownSort = 'completed' | 'gmv' | 'orders' | 'new_listings' | 'active_listings';
 
@@ -287,6 +302,10 @@ export class AdminStatsService {
     return this.http.get<AdminBookRequests>('/admin/stats/books/requests', {
       params: params({ ...rest, unlisted: unlisted ? 1 : undefined }),
     });
+  }
+
+  getCourseDemand(opts: { region: string; q?: string; page?: number; page_size?: number }): Observable<AdminCourseDemand> {
+    return this.http.get<AdminCourseDemand>('/admin/stats/courses/demand', { params: params(opts) });
   }
 
   getBreakdown(opts: {

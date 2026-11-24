@@ -69,6 +69,10 @@ export interface DropdownRow {
             (click)="$event.stopPropagation()"
           />
           <ul class="dropdown-list" [class.in-sheet]="sheet" role="listbox">
+            <!-- allowCustom: what was typed, when no option is exactly that. -->
+            <li *ngIf="customCandidate as typed" class="dropdown-custom" role="option" aria-selected="false" (click)="selectCustom(typed)">
+              <span>{{ 'common.useTyped' | t:{text: typed} }}</span>
+            </li>
             <ng-container *ngFor="let row of optionRows">
               <li *ngIf="row.heading" class="dropdown-group" role="presentation">{{ row.heading }}</li>
               <li
@@ -83,7 +87,7 @@ export interface DropdownRow {
                 </svg>
               </li>
             </ng-container>
-            <li *ngIf="filteredOptions.length === 0" class="dropdown-empty">{{ 'common.noMatches' | t }}</li>
+            <li *ngIf="filteredOptions.length === 0 && !customCandidate" class="dropdown-empty">{{ 'common.noMatches' | t }}</li>
           </ul>
         </ng-template>
 
@@ -313,6 +317,9 @@ export interface DropdownRow {
     .dropdown-list li.dropdown-group:hover {
       background-color: transparent;
     }
+    .dropdown-list li.dropdown-custom {
+      color: var(--accent);
+    }
     .dropdown-empty:hover {
       background-color: transparent;
     }
@@ -348,6 +355,11 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
   /** Move the currently selected option to the top of the list so it is easy
       to find in a long list. Opt-in: short lists read better in a fixed order. */
   @Input() pinSelected: boolean = false;
+
+  /** A free-text field with suggestions: text typed in the search box that no
+      option matches exactly is offered as a choice of its own, and a value that
+      is not an option is shown as it is. Implies `searchable`. */
+  @Input() allowCustom: boolean = false;
 
   @ViewChild('trigger') triggerRef!: ElementRef<HTMLButtonElement>;
   @ViewChild('panelTemplate', { read: TemplateRef }) panelTemplateRef!: TemplateRef<any>;
@@ -388,7 +400,18 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
   }
 
   get selectedLabel(): string {
-    return this.options.find(o => o.value === this.value)?.label || '';
+    const label = this.options.find(o => o.value === this.value)?.label;
+    if (label) return label;
+    return this.allowCustom ? this.value : '';
+  }
+
+  /** The typed text to offer as a choice, or null (see allowCustom). */
+  get customCandidate(): string | null {
+    if (!this.allowCustom || !this.searchable) return null;
+    const typed = this.searchQuery.trim();
+    if (!typed) return null;
+    const folded = foldText(typed);
+    return this.options.some(o => foldText(o.label) === folded) ? null : typed;
   }
 
   get filteredOptions(): DropdownOption[] {
@@ -582,6 +605,10 @@ export class UiDropdown implements ControlValueAccessor, AfterViewInit, OnDestro
       width: `${panelWidth}px`,
     };
     this.bodyPanelRef?.detectChanges();
+  }
+
+  selectCustom(text: string) {
+    this.selectOption({ value: text, label: text });
   }
 
   selectOption(opt: DropdownOption) {

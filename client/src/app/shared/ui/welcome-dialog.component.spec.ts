@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { provideRouter, Router } from '@angular/router';
-import { of } from 'rxjs';
+import { NavigationEnd, NavigationStart, provideRouter, Router, RouterEvent } from '@angular/router';
+import { of, Subject } from 'rxjs';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { UiWelcomeDialog } from './welcome-dialog.component';
 import { AuthStore } from '../../core/auth.store';
@@ -14,6 +14,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { I18nService } from '../../core/i18n.service';
 import { FloatingPromptSlot } from './floating-prompt.component';
 import { VerifyLaterState } from './verification-prompt.component';
+import { SchoolPickerService } from '../../core/services/school-picker.service';
 
 describe('UiWelcomeDialog', () => {
   let component: UiWelcomeDialog;
@@ -220,5 +221,70 @@ describe('UiWelcomeDialog', () => {
     expect(TestBed.inject(VerifyLaterState).later()).toBe(true);
     expect(sessionStorage.getItem('unibooks.verification_prompt.later')).toBe('true');
     sessionStorage.clear();
+  });
+
+  describe('when a page asks for the school picker', () => {
+    beforeEach(() => {
+      // A signed-out visitor: the account's welcome has nothing to say to them.
+      isAuthedSignal.set(false);
+      userSignal.set(null);
+      fixture = TestBed.createComponent(UiWelcomeDialog);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+    });
+
+    it('opens, even signed out, with the picker title', () => {
+      expect(component.isOpen).toBe(false);
+      TestBed.inject(SchoolPickerService).open();
+      expect(component.isOpen).toBe(true);
+      expect(component.browsing).toBe(true);
+      expect(component.sheetTitle).toBe('welcome.pickTitle');
+      expect(component.schools.length).toBe(2);
+    });
+
+    it('only sets the school being browsed: nothing is saved to the account, and there is no verify step', () => {
+      TestBed.inject(SchoolPickerService).open();
+      component.selectSchool(mockSchools[1]);
+      component.confirmSchoolChoice();
+
+      expect(mockSchoolState.setManualSchool).toHaveBeenCalledWith('MANDATORY');
+      expect(mockAuth.setDeclaredSchool).not.toHaveBeenCalled();
+      expect(component.step).toBe('school');
+      expect(component.isOpen).toBe(false);
+      expect(component.browsing).toBe(false);
+    });
+
+    it('closes on skip without touching the account', () => {
+      TestBed.inject(SchoolPickerService).open();
+      component.onSkip();
+      expect(mockAuth.setDeclaredSchool).not.toHaveBeenCalled();
+      expect(component.isOpen).toBe(false);
+    });
+
+    it('goes away when the visitor navigates elsewhere, and is not closed by the arrival of its own page', () => {
+      const events = router.events as unknown as Subject<RouterEvent>;
+      // The page asks while it is being activated: after its navigation started, before it ends.
+      events.next(new NavigationStart(1, '/tw/course'));
+      TestBed.inject(SchoolPickerService).open();
+      events.next(new NavigationEnd(1, '/tw/course', '/tw/course'));
+      expect(component.isOpen).toBe(true);
+      // A later navigation is the visitor moving on.
+      events.next(new NavigationStart(2, '/tw/search'));
+      expect(component.isOpen).toBe(false);
+      expect(component.browsing).toBe(false);
+    });
+
+    it('does not open over the account welcome, which is the same list', () => {
+      isAuthedSignal.set(true);
+      userSignal.set({ id: 'u1', email: 'test@example.com', school_prompted: false, school_prompted_at: null });
+      fixture = TestBed.createComponent(UiWelcomeDialog);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      expect(component.isOpen).toBe(true);
+
+      TestBed.inject(SchoolPickerService).open();
+      expect(component.browsing).toBe(false);
+      expect(component.sheetTitle).toBe('welcome.title');
+    });
   });
 });

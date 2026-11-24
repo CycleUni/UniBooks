@@ -832,6 +832,37 @@ export const subscriptions = sqliteTable(
   ],
 );
 
+/**
+ * "I am taking this course": the student wants to hear when a book for it is
+ * listed at their school, whichever book that turns out to be. `course_key` is
+ * lib/course.ts' normalised name; `course_name` is the spelling shown.
+ */
+export const courseWants = sqliteTable(
+  'course_wants',
+  {
+    id: text('id').primaryKey(),
+    regionCode: text('region_code')
+      .notNull()
+      .references(() => regions.code),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    schoolId: integer('school_id')
+      .notNull()
+      .references(() => schools.id, { onDelete: 'cascade' }),
+    courseKey: text('course_key').notNull(),
+    courseName: text('course_name').notNull(),
+    notifiedAt: text('notified_at'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    unique('course_wants_user_school_course_unique').on(table.userId, table.schoolId, table.courseKey),
+    index('course_wants_school_course_idx').on(table.schoolId, table.courseKey),
+  ],
+);
+
+export type CourseWant = InferSelectModel<typeof courseWants>;
+
 export type Subscription = InferSelectModel<typeof subscriptions>;
 export type InsertSubscription = InferInsertModel<typeof subscriptions>;
 export type NewSubscription = InsertSubscription;

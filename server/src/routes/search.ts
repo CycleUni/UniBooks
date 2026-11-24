@@ -27,6 +27,7 @@ import { CONDITIONS } from '../services/listings/validate';
 import { pagination } from '../lib/http';
 import { andAll, EMPTY, frag, join, type Frag } from '../lib/sql-frag';
 import { textMatch } from '../services/search/text-match';
+import { courseSpellings, mergeSpellings } from '../services/listings/courses';
 
 export const searchRoutes = new Hono<AppEnv>();
 
@@ -154,7 +155,10 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
   const categoryIds = category ? categoryIdsForSlug(await cats(), category) : null;
   const catFrag = (alias = 'l') =>
     categoryIds ? frag(`${alias}.category_id IN (SELECT value FROM json_each(?))`, jsonList(categoryIds)) : EMPTY;
-  const courseFrag = (alias = 'l') => (course ? frag(`${alias}.course_name = ?`, course) : EMPTY);
+  // The course filter names one spelling (a facet value); every spelling of that course counts.
+  const courseNames = course ? await courseSpellings(env, region.code, null, course) : [];
+  const courseFrag = (alias = 'l') =>
+    course ? frag(`${alias}.course_name IN (SELECT value FROM json_each(?))`, jsonList(courseNames)) : EMPTY;
   const condFrag = (alias = 'l') =>
     allowedConditions !== null ? frag(`${alias}.condition IN (SELECT value FROM json_each(?))`, jsonList(allowedConditions)) : EMPTY;
   const schoolFrag = (alias = 'l') => (schoolId !== null ? frag(`${alias}.school_id = ?`, schoolId) : EMPTY);
@@ -532,11 +536,18 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
     value: cat.slug,
     count: catCounts.get(cat.slug) ?? 0,
   }));
-  const courseCounts = new Map(rowsAt<{ course_name: string; n: number }>(courseAt).map((r) => [r.course_name, Number(r.n)]));
-  const courseFacets = rowsAt<{ course_name: string }>(topAt).map((r) => ({
-    value: r.course_name,
-    count: courseCounts.get(r.course_name) ?? 0,
-  }));
+  // One facet per course, however its spellings differ: counts of those spellings add up.
+  const courseCounts = new Map(
+    mergeSpellings(rowsAt<{ course_name: string; n: number }>(courseAt).map((r) => ({ name: r.course_name, n: Number(r.n) }))).map((m) => [
+      m.key,
+      m.n,
+    ]),
+  );
+  const courseFacets = mergeSpellings(
+    rowsAt<{ course_name: string; n: number }>(topAt).map((r) => ({ name: r.course_name, n: Number(r.n) })),
+  )
+    .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name))
+    .map((m) => ({ value: m.name, count: courseCounts.get(m.key) ?? 0 }));
   const condCounts = new Map(rowsAt<{ condition: string; n: number }>(condAt).map((r) => [r.condition, Number(r.n)]));
   const conditionFacets = CONDITIONS.map((value) => ({ value, count: condCounts.get(value) ?? 0 }));
 
@@ -579,15 +590,19 @@ searchRoutes.get('/courses', (c) =>
         parts.push(frag('l.category_id IN (SELECT value FROM json_each(?))', jsonList(categoryIds ?? [])));
       }
       const w = join(parts);
+      // Spellings are merged below, so the top 20 courses are taken after that, not by this query.
       const rows = await all<{ course_name: string; n: number }>(
         c.env,
         frag(
           `SELECT l.course_name, count(l.id) AS n FROM listings l WHERE ${w.sql}
-        GROUP BY l.course_name ORDER BY n DESC, l.course_name LIMIT 20`,
+        GROUP BY l.course_name ORDER BY n DESC, l.course_name LIMIT 200`,
           ...w.args,
         ),
       );
-      return rows.map((r) => ({ value: r.course_name, count: Number(r.n) }));
+      return mergeSpellings(rows.map((r) => ({ name: r.course_name, n: Number(r.n) })))
+        .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name))
+        .slice(0, 20)
+        .map((m) => ({ value: m.name, count: m.n }));
     })();
     await setSharedCache(c, { maxAge: 300 });
     return c.json(body);

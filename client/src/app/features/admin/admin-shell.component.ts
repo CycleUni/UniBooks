@@ -42,6 +42,7 @@ function onSuperuserRoute(router: Router): boolean {
                 <li><a regionLink="stats" routerLinkActive="active" [routerLinkActiveOptions]="exactPath">{{ 'admin.navStatsOverview' | t }}</a></li>
                 <li><a regionLink="stats/books" routerLinkActive="active">{{ 'admin.navStatsBooks' | t }}</a></li>
                 <li><a regionLink="stats/academics" routerLinkActive="active">{{ 'admin.navStatsAcademics' | t }}</a></li>
+                <li><a regionLink="stats/courses" routerLinkActive="active">{{ 'admin.navStatsCourses' | t }}</a></li>
                 <li><a regionLink="stats/growth" routerLinkActive="active">{{ 'admin.navStatsGrowth' | t }}</a></li>
               </ul>
             </li>

@@ -194,3 +194,34 @@ describe('UiSearchField', () => {
     expect(host.lastSearch).toBe('physics');
   });
 });
+
+describe('UiSearchField placeholder', () => {
+  @Component({
+    standalone: true,
+    imports: [UiSearchField, FormsModule],
+    template: `<ui-search-field [placeholder]="hint" [(ngModel)]="query"></ui-search-field>`,
+  })
+  class PlaceholderHost {
+    hint = '';
+    query = '';
+  }
+
+  function input(hint: string): HTMLInputElement {
+    TestBed.configureTestingModule({
+      imports: [PlaceholderHost],
+      providers: [{ provide: I18nService, useValue: { lang: () => 'en', t: (key: string) => key } }],
+    });
+    const fixture = TestBed.createComponent(PlaceholderHost);
+    fixture.componentInstance.hint = hint;
+    fixture.detectChanges();
+    return fixture.debugElement.query(By.css('input')).nativeElement;
+  }
+
+  it('asks for what the page says, when it says', () => {
+    expect(input('Search a course').placeholder).toBe('Search a course');
+  });
+
+  it('keeps the book search wording otherwise', () => {
+    expect(input('').placeholder).toBe('common.searchPlaceholder');
+  });
+});

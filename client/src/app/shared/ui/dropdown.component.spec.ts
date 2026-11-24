@@ -84,3 +84,64 @@ describe('UiDropdown groups', () => {
     expect(headings(dropdown)).toEqual(['Taipei City:NTU']);
   });
 });
+
+describe('UiDropdown allowCustom', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [UiDropdown],
+      providers: [{ provide: I18nService, useValue: { lang: () => 'en', t: (key: string) => key } }],
+    });
+  });
+
+  function create(allowCustom: boolean) {
+    const dropdown = TestBed.createComponent(UiDropdown).componentInstance;
+    dropdown.options = [{ value: 'Calculus', label: 'Calculus' }, { value: 'Statistics', label: 'Statistics' }];
+    dropdown.allowCustom = allowCustom;
+    return dropdown;
+  }
+
+  it('offers the typed text when no option is exactly that', () => {
+    const dropdown = create(true);
+    dropdown.searchQuery = '  Linear Algebra ';
+    expect(dropdown.customCandidate).toBe('Linear Algebra');
+  });
+
+  it('offers nothing when an option matches exactly, whatever its case', () => {
+    const dropdown = create(true);
+    dropdown.searchQuery = 'calculus';
+    expect(dropdown.customCandidate).toBeNull();
+  });
+
+  it('still offers the text when it only partly matches an option', () => {
+    const dropdown = create(true);
+    dropdown.searchQuery = 'Calc';
+    expect(dropdown.customCandidate).toBe('Calc');
+  });
+
+  it('offers nothing without allowCustom, or with an empty search', () => {
+    const plain = create(false);
+    plain.searchQuery = 'Linear Algebra';
+    expect(plain.customCandidate).toBeNull();
+    const custom = create(true);
+    custom.searchQuery = '   ';
+    expect(custom.customCandidate).toBeNull();
+  });
+
+  it('selects the typed text as the value and shows it', () => {
+    const dropdown = create(true);
+    const changes: string[] = [];
+    dropdown.registerOnChange((v: string) => changes.push(v));
+    dropdown.selectCustom('Linear Algebra');
+    expect(changes).toEqual(['Linear Algebra']);
+    expect(dropdown.selectedLabel).toBe('Linear Algebra');
+  });
+
+  it('shows a value that is not an option only with allowCustom', () => {
+    const custom = create(true);
+    custom.writeValue('Old course');
+    expect(custom.selectedLabel).toBe('Old course');
+    const plain = create(false);
+    plain.writeValue('Old course');
+    expect(plain.selectedLabel).toBe('');
+  });
+});

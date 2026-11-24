@@ -13,3 +13,45 @@ export interface SubscriptionDto {
   newListingsCount: number;
   created_at: string;
 }
+
+/** GET /api/v1/courses item: one course at a school (spellings merged). */
+export interface CourseDto {
+  key: string;
+  name: string;
+  /** Active listings. */
+  listingCount: number;
+  bookCount: number;
+  /** Students waiting for a book for this course. */
+  wantCount: number;
+  wanted: boolean;
+}
+
+export interface CourseBookDto {
+  id: string;
+  title: string;
+  authors: string;
+  isbn: string;
+  coverUrl: string;
+  /** Active listings now; 0 for a book only past students sold. */
+  activeCount: number;
+  minPrice: number | null;
+}
+
+/** GET /api/v1/courses/detail. */
+export interface CourseDetailDto {
+  key: string;
+  name: string;
+  wantCount: number;
+  wanted: boolean;
+  professors: string[];
+  books: CourseBookDto[];
+}
+
+/** GET/POST /api/v1/courses/wants item. */
+export interface CourseWantDto {
+  id: string;
+  name: string;
+  /** School code. */
+  school: string;
+  created_at: string;
+}

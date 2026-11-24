@@ -341,9 +341,10 @@ export async function renderPush(msg: PushMessage, env: Env): Promise<RenderedPu
       const others = Math.max(0, (msg.listing_count ?? 1) - 1);
       return {
         recipientId: msg.user_id,
-        title: pushT(lang, 'push.waitlist.title'),
-        body:
-          others > 0
+        title: pushT(lang, msg.course_name ? 'push.courseWait.title' : 'push.waitlist.title'),
+        body: msg.course_name
+          ? pushT(lang, 'push.courseWait.body', { course: msg.course_name })
+          : others > 0
             ? pushT(lang, 'push.waitlist.many', { title: msg.book_title, count: others })
             : pushT(lang, 'push.waitlist.one', { title: msg.book_title }),
         link: `${frontend}/account/subscriptions`,

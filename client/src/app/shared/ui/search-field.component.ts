@@ -60,7 +60,7 @@ import { TPipe } from '../../core/i18n.service';
         (compositionend)="onCompositionEnd()"
         (keydown)="onKeyDown($event)"
         (blur)="onBlur()"
-        [placeholder]="'common.searchPlaceholder' | t"
+        [placeholder]="placeholder || ('common.searchPlaceholder' | t)"
         [attr.aria-label]="'common.search' | t"
         enterkeyhint="search"
         inputmode="search"
@@ -240,6 +240,8 @@ import { TPipe } from '../../core/i18n.service';
 export class UiSearchField implements ControlValueAccessor {
   @ViewChild('inputEl') private inputElement?: ElementRef<HTMLInputElement>;
 
+  /** What the field asks for, when it is not the book search it was made for (a course list). */
+  @Input() placeholder = '';
   @Input() showScan = false;
   @Output() search = new EventEmitter<string>();
   @Output() scan = new EventEmitter<void>();

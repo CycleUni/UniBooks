@@ -19,6 +19,16 @@ const featureRoutes: Routes = [
     loadComponent: () => import('./features/search/search').then((m) => m.Search),
   },
   {
+    path: 'course',
+    data: { seo: { titleKey: 'course.title' } },
+    loadComponent: () => import('./features/course/course-list').then((m) => m.CourseListComponent),
+  },
+  {
+    path: 'course/detail',
+    data: { seo: { titleKey: 'course.title' } },
+    loadComponent: () => import('./features/course/course-detail').then((m) => m.CourseDetailComponent),
+  },
+  {
     path: 'book',
     data: { preload: true },
     loadComponent: () => import('./features/book/book').then((m) => m.Book),
@@ -101,6 +111,7 @@ const featureRoutes: Routes = [
       { path: 'stats/books', loadComponent: () => import('./features/admin/stats-books.component').then(m => m.AdminStatsBooksComponent) },
       { path: 'stats/books/:id', loadComponent: () => import('./features/admin/book-stats.component').then(m => m.AdminBookStatsComponent), canDeactivate: [unsavedChangesGuard] },
       { path: 'stats/growth', loadComponent: () => import('./features/admin/stats-growth.component').then(m => m.AdminStatsGrowthComponent) },
+      { path: 'stats/courses', loadComponent: () => import('./features/admin/stats-course-demand.component').then(m => m.AdminStatsCourseDemandComponent) },
       { path: 'stats/academics', loadComponent: () => import('./features/admin/stats-academics.component').then(m => m.AdminStatsAcademicsComponent) },
       { path: 'regions', canActivate: [superuserGuard], loadComponent: () => import('./features/admin/regions-list.component').then(m => m.AdminRegionsListComponent) },
       { path: 'regions/:id', canActivate: [superuserGuard], loadComponent: () => import('./features/admin/region-detail.component').then(m => m.AdminRegionDetailComponent) },

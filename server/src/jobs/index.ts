@@ -4,6 +4,8 @@ import type { Env } from '../env';
 import {
   createDb,
   subscriptions,
+  courseWants,
+  listings,
   books,
   users,
   orders,
@@ -21,6 +23,7 @@ import { purgeTokenStore } from '../services/accounts/tokens';
 import { purgeOneTimeTokens, purgePendingRegistrations } from '../services/accounts/oneTimeTokens';
 import { runCoverSweep, runCoverCleanup } from '../services/catalog/covers';
 import { deleteUnusedBooks } from '../services/catalog/unused';
+import { courseKey } from '../lib/course';
 import { sweepDeletedConversations } from '../services/messaging/conversations';
 
 export { runCoverSweep, runCoverCleanup };
@@ -64,6 +67,66 @@ async function runAlone<T>(env: Env, name: string, fn: () => Promise<T>): Promis
 async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** What a waitlist notice (book or course) says to one user; see sendWaitlistNotice. */
+interface WaitlistNotice {
+  /** For log lines. */
+  job: string;
+  userId: string;
+  email: string;
+  region: string;
+  /** Ids of the rows being told about, so the same rows are never sent twice. */
+  dedupeIds: string[];
+  /** Set when the notice is about a course request rather than a book request. */
+  courseName?: string;
+  books: { id: string; title: string; isbn13: string | null }[];
+}
+
+/**
+ * Queue the email and the push for one user's waitlist notice, once. True when the email was
+ * accepted by the queue, which is what decides that the user need not be retried; the push is
+ * best effort.
+ */
+async function sendWaitlistNotice(env: Env, n: WaitlistNotice): Promise<boolean> {
+  const first = n.books[0];
+  // These rows, told about once: a run whose notified_at write failed sends nothing new.
+  const dedupeKey = `${n.courseName ? 'course-wait' : 'waitlist'}:${await sha256Hex([...n.dedupeIds].sort().join(','))}`;
+  const email: EmailMessage = {
+    type: 'waitlist_notification',
+    dedupe_key: dedupeKey,
+    user_id: n.userId,
+    email: n.email,
+    book_title: first.title,
+    book_id: first.id,
+    listing_count: n.books.length,
+    region: n.region,
+    ...(n.courseName ? { course_name: n.courseName } : {}),
+    books: n.books.map((b) => ({ id: b.id, title: b.title, isbn13: b.isbn13, region: n.region })),
+  };
+  try {
+    await env.EMAIL_QUEUE.send(email);
+  } catch (e) {
+    console.error(`[${n.job}] enqueue failed for user ${n.userId}`, e);
+    return false;
+  }
+  // Best effort, after the email that decides whether this user is retried.
+  try {
+    const push: PushMessage = {
+      type: 'waitlist_match',
+      dedupe_key: dedupeKey,
+      user_id: n.userId,
+      book_title: first.title,
+      listing_count: n.books.length,
+      book_isbn: first.isbn13,
+      region: n.region,
+      ...(n.courseName ? { course_name: n.courseName } : {}),
+    };
+    await env.PUSH_QUEUE.send(push);
+  } catch (e) {
+    console.error(`[${n.job}] push enqueue failed for user ${n.userId}`, e);
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,45 +195,15 @@ export async function runWaitlistNotify(env: Env) {
   let notifiedSubscriptions = 0;
   for (const subs of batch) {
     const first = subs[0];
-    // These subscriptions, told about once: a run whose notified_at write failed sends nothing new.
-    const dedupeKey = `waitlist:${await sha256Hex(
-      subs
-        .map((s) => s.id)
-        .sort()
-        .join(','),
-    )}`;
-    const email: EmailMessage = {
-      type: 'waitlist_notification',
-      dedupe_key: dedupeKey,
-      user_id: first.userId,
+    const sent = await sendWaitlistNotice(env, {
+      job: 'WaitlistNotify',
+      userId: first.userId,
       email: first.email,
-      book_title: first.title,
-      book_id: first.bookId,
-      listing_count: subs.length,
       region: first.regionCode,
-      books: subs.map((s) => ({ id: s.bookId, title: s.title, isbn13: s.isbn13, region: s.regionCode })),
-    };
-    try {
-      await env.EMAIL_QUEUE.send(email);
-    } catch (e) {
-      console.error(`[WaitlistNotify] enqueue failed for user ${first.userId}`, e);
-      continue;
-    }
-    // Best effort, after the email that decides whether this user is retried.
-    try {
-      const push: PushMessage = {
-        type: 'waitlist_match',
-        dedupe_key: dedupeKey,
-        user_id: first.userId,
-        book_title: first.title,
-        listing_count: subs.length,
-        book_isbn: first.isbn13,
-        region: first.regionCode,
-      };
-      await env.PUSH_QUEUE.send(push);
-    } catch (e) {
-      console.error(`[WaitlistNotify] push enqueue failed for user ${first.userId}`, e);
-    }
+      dedupeIds: subs.map((s) => s.id),
+      books: subs.map((s) => ({ id: s.bookId, title: s.title, isbn13: s.isbn13 })),
+    });
+    if (!sent) continue;
     // One bound JSON array, not one parameter per id: D1 caps a statement at
     // 100 bound parameters, and a failure here must not abort the whole run.
     try {
@@ -188,6 +221,110 @@ export async function runWaitlistNotify(env: Env) {
 
   const result = { notified_users: notifiedUsers, notified_subscriptions: notifiedSubscriptions, more_remain: moreRemain };
   console.log('[WaitlistNotify]', JSON.stringify(result));
+  return result;
+}
+
+/** Course requests read per run: bounds the work like MAX_NOTIFY_USERS_PER_RUN does for books. */
+const MAX_COURSE_WANTS_PER_RUN = 500;
+/** New listings read per run when matching them to course requests. */
+const MAX_COURSE_LISTINGS_PER_RUN = 2000;
+
+/**
+ * "I am taking this course": tell each student who asked when a book for the
+ * course is listed at their school. Same cadence, queues and one-notice-per-user
+ * shape as the book waitlist; a course matches by lib/course.ts' key, which SQL
+ * cannot compute, so the matching happens here over the new listings.
+ */
+export async function runCourseWaitNotify(env: Env) {
+  const db = createDb(env.DB);
+  const now = new Date().toISOString();
+
+  const wants = await db
+    .select({
+      id: courseWants.id,
+      userId: courseWants.userId,
+      schoolId: courseWants.schoolId,
+      regionCode: courseWants.regionCode,
+      key: courseWants.courseKey,
+      name: courseWants.courseName,
+      since: sql<string>`MAX(${courseWants.createdAt}, COALESCE(${courseWants.notifiedAt}, ${courseWants.createdAt}))`,
+      email: users.email,
+    })
+    .from(courseWants)
+    .innerJoin(users, eq(users.id, courseWants.userId))
+    .where(and(eq(users.isActive, 1), eq(users.isBanned, 0), isNull(users.deletedAt), sql`${users.email} <> ''`))
+    .orderBy(asc(courseWants.createdAt))
+    .limit(MAX_COURSE_WANTS_PER_RUN);
+  if (!wants.length) return { notified_users: 0, notified_course_wants: 0 };
+
+  const oldest = wants.reduce((m, w) => (w.since < m ? w.since : m), wants[0].since);
+  const schoolIds = [...new Set(wants.map((w) => w.schoolId))];
+  const fresh = await db
+    .select({
+      schoolId: listings.schoolId,
+      courseName: listings.courseName,
+      createdAt: listings.createdAt,
+      bookId: books.id,
+      title: books.title,
+      isbn13: books.isbn13,
+    })
+    .from(listings)
+    .innerJoin(books, eq(books.id, listings.bookId))
+    .where(
+      and(
+        eq(listings.status, 'active'),
+        ne(listings.courseName, ''),
+        gt(listings.createdAt, oldest),
+        sql`${listings.schoolId} IN (SELECT value FROM json_each(${JSON.stringify(schoolIds)}))`,
+      ),
+    )
+    .orderBy(asc(listings.createdAt))
+    .limit(MAX_COURSE_LISTINGS_PER_RUN);
+  const listed = fresh.map((l) => ({ ...l, key: courseKey(l.courseName) }));
+
+  type Due = { want: (typeof wants)[number]; books: Map<string, { id: string; title: string; isbn13: string | null }> };
+  const byUser = new Map<string, Due[]>();
+  for (const want of wants) {
+    const hits = listed.filter((l) => l.schoolId === want.schoolId && l.key === want.key && l.createdAt > want.since);
+    if (!hits.length) continue;
+    const due: Due = { want, books: new Map(hits.map((h) => [h.bookId, { id: h.bookId, title: h.title, isbn13: h.isbn13 }])) };
+    const list = byUser.get(want.userId);
+    if (list) list.push(due);
+    else byUser.set(want.userId, [due]);
+  }
+
+  let notifiedUsers = 0;
+  let notifiedWants = 0;
+  for (const dues of [...byUser.values()].slice(0, MAX_NOTIFY_USERS_PER_RUN)) {
+    const first = dues[0].want;
+    const bookList = new Map<string, { id: string; title: string; isbn13: string | null }>();
+    for (const d of dues) for (const [id, b] of d.books) bookList.set(id, b);
+    const sent = await sendWaitlistNotice(env, {
+      job: 'CourseWaitNotify',
+      userId: first.userId,
+      email: first.email,
+      region: first.regionCode,
+      // The request and the moment it was last told about: told again only for listings newer than that.
+      dedupeIds: dues.map((d) => `${d.want.id}@${d.want.since}`),
+      courseName: dues.map((d) => d.want.name).join('、'),
+      books: [...bookList.values()],
+    });
+    if (!sent) continue;
+    try {
+      await db
+        .update(courseWants)
+        .set({ notifiedAt: now })
+        .where(sql`${courseWants.id} IN (SELECT value FROM json_each(${JSON.stringify(dues.map((d) => d.want.id))}))`);
+    } catch (e) {
+      console.error(`[CourseWaitNotify] could not mark user ${first.userId} notified`, e);
+      continue;
+    }
+    notifiedUsers++;
+    notifiedWants += dues.length;
+  }
+
+  const result = { notified_users: notifiedUsers, notified_course_wants: notifiedWants };
+  console.log('[CourseWaitNotify]', JSON.stringify(result));
   return result;
 }
 
@@ -553,6 +690,7 @@ export async function handleScheduled(controller: Pick<ScheduledController, 'cro
     switch (controller.cron) {
       case '0 */6 * * *':
         await runAlone(env, 'WaitlistNotify', () => runWaitlistNotify(env));
+        await runAlone(env, 'CourseWaitNotify', () => runCourseWaitNotify(env));
         await runAlone(env, 'CoverSweep', () => runCoverSweep(env));
         break;
       case '*/30 * * * *':

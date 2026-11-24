@@ -29,6 +29,8 @@ const CATALOG: Record<PushLang, Record<string, string>> = {
     'push.waitlist.title': 'New listings for your book requests',
     'push.waitlist.one': '{title} is now listed.',
     'push.waitlist.many': '{title} and {count} more of your requested books are now listed.',
+    'push.courseWait.title': 'New books for your course',
+    'push.courseWait.body': 'Books for {course} are now listed.',
   },
   'zh-TW': {
     'push.chatMessage.title': '{sender} 傳送了新訊息給您',
@@ -52,6 +54,8 @@ const CATALOG: Record<PushLang, Record<string, string>> = {
     'push.waitlist.title': '您登記的書有新上架',
     'push.waitlist.one': '《{title}》已有人上架。',
     'push.waitlist.many': '《{title}》等 {count} 本您登記的書已有人上架。',
+    'push.courseWait.title': '您登記的課程有新書上架',
+    'push.courseWait.body': '{course} 已有人上架書籍。',
   },
   'zh-HK': {
     'push.chatMessage.title': '{sender} 向你傳送了新訊息',
@@ -75,6 +79,8 @@ const CATALOG: Record<PushLang, Record<string, string>> = {
     'push.waitlist.title': '你登記嘅書有新上架',
     'push.waitlist.one': '《{title}》已經有人上架。',
     'push.waitlist.many': '《{title}》等 {count} 本你登記嘅書已經有人上架。',
+    'push.courseWait.title': '你登記嘅課程有新書上架',
+    'push.courseWait.body': '{course} 已經有人上架書籍。',
   },
 };
 

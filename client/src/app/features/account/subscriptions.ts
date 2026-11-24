@@ -1,6 +1,6 @@
 import { Component, inject, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiEmpty } from '../../shared/ui/empty.component';
 import { UiBookTile } from '../../shared/ui/book-tile.component';
@@ -8,17 +8,18 @@ import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { TPipe, I18nService } from '../../core/i18n.service';
 import { AccountService } from '../../core/services/account.service';
+import { CourseService } from '../../core/services/course.service';
 import { RegionLinkService } from '../../core/region-link.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { bookQueryParams } from '../../core/book-preview';
-import type { SubscriptionDto } from '../../../../../server/src/api-types';
+import type { CourseWantDto, SubscriptionDto } from '../../../../../server/src/api-types';
 
 
 @Component({
   selector: 'app-account-subscriptions',
   standalone: true,
-  imports: [CommonModule, UiButton, UiEmpty, UiBookTile, UiSkeleton, UiErrorState, TPipe],
+  imports: [CommonModule, RouterLink, UiButton, UiEmpty, UiBookTile, UiSkeleton, UiErrorState, TPipe],
   template: `
     <div class="section-head-row">
       <h2 class="section-heading">{{ 'acct.tabSubs' | t }}</h2>
@@ -58,7 +59,18 @@ import type { SubscriptionDto } from '../../../../../server/src/api-types';
       </ui-book-tile>
     </div>
 
-    <ui-empty *ngIf="!loading && !loadFailed && mySubscriptions.length === 0" [message]="'acct.noSubs' | t"></ui-empty>
+    <ui-empty *ngIf="!loading && !loadFailed && mySubscriptions.length === 0 && myCourses.length === 0" [message]="'acct.noSubs' | t"></ui-empty>
+
+    <!-- Courses the student asked to hear about; the section appears with the first request. -->
+    <ng-container *ngIf="myCourses.length > 0">
+      <h2 class="section-heading course-heading">{{ 'acct.myCourses' | t }}</h2>
+      <ul class="course-requests">
+        <li *ngFor="let w of myCourses">
+          <a class="course-link" [routerLink]="regionLink.path(['/course/detail'])" [queryParams]="{school: w.school, name: w.name}">{{ w.name }}</a>
+          <ui-button variant="ghost" (onClick)="cancelCourse(w)">{{ 'acct.cancelCourse' | t }}</ui-button>
+        </li>
+      </ul>
+    </ng-container>
   `,
   styles: [`
     /* .discover-grid is declared once, globally. A copy here would win on
@@ -76,6 +88,11 @@ import type { SubscriptionDto } from '../../../../../server/src/api-types';
       color: var(--muted);
     }
     .sub-status.available { color: var(--flag); font-weight: 500; }
+    .course-heading { margin-top: var(--space-5); }
+    .course-requests { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+    .course-requests li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .course-link { color: var(--ink); font-weight: 500; text-decoration: none; }
+    .course-link:hover { color: var(--accent); }
   `]
 })
 export class SubscriptionsComponent implements OnInit {
@@ -86,13 +103,38 @@ export class SubscriptionsComponent implements OnInit {
   private accountService = inject(AccountService);
   private cdr = inject(ChangeDetectorRef);
   private router = inject(Router);
-  private regionLink = inject(RegionLinkService);
+  readonly regionLink = inject(RegionLinkService);
+  private courseService = inject(CourseService);
+  myCourses: CourseWantDto[] = [];
   readonly i18n = inject(I18nService);
 
   private toast = inject(ToastService);
   private confirms = inject(ConfirmService);
   ngOnInit() {
     this.loadSubscriptions();
+    this.loadCourses();
+  }
+
+  private loadCourses() {
+    // A secondary list: a failed request just leaves it out.
+    this.courseService.myWants().subscribe({
+      next: (rows) => {
+        this.myCourses = rows;
+        this.cdr.markForCheck();
+      },
+      error: () => {},
+    });
+  }
+
+  async cancelCourse(want: CourseWantDto) {
+    if (!(await this.confirms.askDanger(this.i18n.t('acct.confirmCancelCourse')))) return;
+    this.courseService.unwant(want.id).pipe(this.toast.working(this.i18n.t('common.cancelling'))).subscribe({
+      next: () => this.loadCourses(),
+      error: (err) => {
+        console.error('Failed to remove course request', err);
+        this.toast.error(this.i18n.t('acct.unsubscribeFailed'));
+      }
+    });
   }
 
   /**

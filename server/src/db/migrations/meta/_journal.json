@@ -57,6 +57,13 @@
       "when": 1794618244468,
       "tag": "0007_naive_solo",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1795528634875,
+      "tag": "0008_course_wants",
+      "breakpoints": true
     }
   ]
 }
