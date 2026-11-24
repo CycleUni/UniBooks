@@ -1748,4 +1748,6 @@ export const zhTW: Record<string, string> = {
   'course.chooseSchool': '選擇學校',
   'welcome.requestTitle': '申請新增學校',
   'welcome.backToList': '返回選學校',
+  'course.unwantedToast': '已取消登記。',
+  'course.unwantFailed': '取消登記失敗，請再試一次。',
 };

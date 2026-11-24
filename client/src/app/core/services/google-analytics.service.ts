@@ -294,6 +294,14 @@ export class GoogleAnalyticsService {
     });
   }
 
+  /** A course request ("I have this course") registered, with the school it is at. */
+  public trackRequestCourse(school: string, courseName: string): void {
+    this.trackEvent('request_course', {
+      item_name: courseName,
+      school
+    });
+  }
+
   /**
    * Track buyer contacting seller
    */

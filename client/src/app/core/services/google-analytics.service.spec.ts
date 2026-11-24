@@ -105,6 +105,11 @@ describe('GoogleAnalyticsService', () => {
     expect(() => TestBed.inject(GoogleAnalyticsService).trackRequestBook(1, 'book')).not.toThrow();
   });
 
+  it('does nothing for a course request when gtag is not loaded', () => {
+    delete (window as any).gtag;
+    expect(() => TestBed.inject(GoogleAnalyticsService).trackRequestCourse('NTU', 'Calculus')).not.toThrow();
+  });
+
   describe('the gtag script', () => {
     const ownTag = () => document.querySelector('script[src^="/metrics/gtag/js"]');
     // Past whenPageSettled however the test app reports stable: its cap, then

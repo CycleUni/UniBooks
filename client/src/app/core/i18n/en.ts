@@ -1752,4 +1752,6 @@ export const en: Record<string, string> = {
   'course.chooseSchool': 'Choose a school',
   'welcome.requestTitle': 'Request a new school',
   'welcome.backToList': 'Back to schools',
+  'course.unwantedToast': 'Request cancelled.',
+  'course.unwantFailed': 'Could not cancel your request. Please try again.',
 };

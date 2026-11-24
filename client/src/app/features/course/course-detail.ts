@@ -15,6 +15,8 @@ import { CourseService } from '../../core/services/course.service';
 import { SchoolStateService } from '../../core/services/school-state.service';
 import { ToastService } from '../../core/services/toast.service';
 import { bookQueryParams } from '../../core/book-preview';
+import { parseApiError } from '../../core/api-error.util';
+import { GoogleAnalyticsService } from '../../core/services/google-analytics.service';
 import { SchoolPickerService } from '../../core/services/school-picker.service';
 import { courseScope } from './course-school';
 import { COURSE_PAGE_STYLES } from './course-styles';
@@ -113,6 +115,7 @@ export class CourseDetailComponent {
   private regionLink = inject(RegionLinkService);
   private schoolPicker = inject(SchoolPickerService);
   private toast = inject(ToastService);
+  private ga = inject(GoogleAnalyticsService);
   readonly i18n = inject(I18nService);
 
   /** The school (or its absence) has been settled; before that there is nothing to show. */
@@ -194,19 +197,21 @@ export class CourseDetailComponent {
       this.busy = false;
       this.cdr.markForCheck();
     };
-    const failed = () => {
-      this.toast.error(this.i18n.t('course.wantFailed'));
+    // The server's own words when it has them, as the book request does; else a sentence for the act.
+    const failed = (err: unknown, fallbackKey: string) => {
+      this.toast.error(parseApiError(err, this.i18n, fallbackKey));
       settle();
     };
     if (!d.wanted) {
       this.courseService.want(this.school, d.name).subscribe({
         next: () => {
+          this.ga.trackRequestCourse(this.school, d.name);
           d.wanted = true;
           d.wantCount += 1;
           this.toast.success(this.i18n.t('course.wantedToast'));
           settle();
         },
-        error: failed,
+        error: (err) => failed(err, 'course.wantFailed'),
       });
       return;
     }
@@ -223,12 +228,13 @@ export class CourseDetailComponent {
           next: () => {
             d.wanted = false;
             d.wantCount = Math.max(0, d.wantCount - 1);
+            this.toast.success(this.i18n.t('course.unwantedToast'));
             settle();
           },
-          error: failed,
+          error: (err) => failed(err, 'course.unwantFailed'),
         });
       },
-      error: failed,
+      error: (err) => failed(err, 'course.unwantFailed'),
     });
   }
 }
