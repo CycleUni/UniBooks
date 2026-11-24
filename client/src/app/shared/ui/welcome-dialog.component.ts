@@ -93,17 +93,11 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
               <button
                 type="button"
                 class="link-btn"
-                (click)="toggleSchoolRequest()"
+                (click)="openRequest()"
               >
                 {{ 'welcome.schoolNotListed' | t }}
               </button>
             </div>
-
-            @if (showSchoolRequest) {
-              <div class="embedded-request-form">
-                <app-school-request-form></app-school-request-form>
-              </div>
-            }
 
             @if (errorMsg) {
               <p class="inline-msg error" role="alert">{{ errorMsg }}</p>
@@ -124,6 +118,12 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
               >
                 {{ isSubmitting ? ('common.saving' | t) : ('welcome.confirmSchool' | t) }}
               </ui-button>
+            </div>
+          } @else if (step === 'request') {
+            <!-- Its own screen, not a form unfolding under the list: nothing jumps, and the buttons stay put. -->
+            <app-school-request-form [embedded]="true"></app-school-request-form>
+            <div class="dialog-actions">
+              <ui-button variant="ghost" (onClick)="backToList()">{{ 'welcome.backToList' | t }}</ui-button>
             </div>
           } @else if (step === 'verify') {
             <div class="verify-step">
@@ -262,12 +262,6 @@ import { SchoolRequestFormComponent } from '../../features/account/school-reques
       cursor: pointer;
       text-decoration: underline;
     }
-    .embedded-request-form {
-      margin-bottom: var(--space-4);
-      padding: var(--space-3);
-      background: var(--paper-warm);
-      border-radius: var(--radius-control);
-    }
     .dialog-actions {
       display: flex;
       justify-content: flex-end;
@@ -320,16 +314,16 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
   browsing = false;
   /** Set while the first step's answer is saved and the step after it is shown. */
   private answering = false;
-  step: 'school' | 'verify' = 'school';
+  step: 'school' | 'request' | 'verify' = 'school';
   schools: SchoolOption[] = [];
   filteredSchools: SchoolOption[] = [];
   selectedSchool: SchoolOption | null = null;
   searchQuery = '';
-  showSchoolRequest = false;
   isSubmitting = false;
   errorMsg = '';
 
   get sheetTitle(): string {
+    if (this.step === 'request') return this.i18n.t('welcome.requestTitle');
     if (this.step !== 'school') return this.i18n.t('welcome.mandatoryNoticeTitle');
     return this.browsing ? this.i18n.t('welcome.pickTitle') : this.i18n.t('welcome.title');
   }
@@ -456,8 +450,14 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  toggleSchoolRequest(): void {
-    this.showSchoolRequest = !this.showSchoolRequest;
+  /** "My school is not listed": the request form takes the dialog's place until the visitor goes back. */
+  openRequest(): void {
+    this.step = 'request';
+    this.cdr.markForCheck();
+  }
+
+  backToList(): void {
+    this.step = 'school';
     this.cdr.markForCheck();
   }
 
@@ -469,6 +469,11 @@ export class UiWelcomeDialog implements OnInit, OnDestroy {
 
   onSkip(): void {
     if (this.isSubmitting) return;
+    // Escape or the backdrop on the request screen is "back", not "not now".
+    if (this.step === 'request') {
+      this.backToList();
+      return;
+    }
     if (this.browsing) {
       this.closeBrowsing();
       return;

@@ -126,4 +126,36 @@ describe('SchoolRequestFormComponent', () => {
     fillAndSubmit('Example University', 'https://example.edu.tw');
     expect(component.errorMessage).toBe('acct.schoolRequestFailed');
   });
+
+  describe('embedded in a screen of its own', () => {
+    beforeEach(() => {
+      fixture = TestBed.createComponent(SchoolRequestFormComponent);
+      component = fixture.componentInstance;
+      component.embedded = true;
+      fixture.detectChanges();
+    });
+
+    it('is open at once, with no link to open it and no cancel of its own', () => {
+      expect(component.open).toBe(true);
+      expect(el().querySelector('.link-btn')).toBeNull();
+      expect(el().querySelector('form')).not.toBeNull();
+      // Only the submit button: going back is the screen's job.
+      expect(el().querySelectorAll('ui-button').length).toBe(1);
+    });
+
+    it('drops the card around the form, the screen being the card', () => {
+      expect(el().querySelector('form')!.classList.contains('flat')).toBe(true);
+    });
+
+    it('puts the cursor in the school name', async () => {
+      // Focus only lands on an element that is in the document.
+      fixture = TestBed.createComponent(SchoolRequestFormComponent);
+      fixture.componentInstance.embedded = true;
+      document.body.appendChild(fixture.nativeElement);
+      fixture.detectChanges();
+      await new Promise((r) => setTimeout(r));
+      expect(document.activeElement).toBe(fixture.nativeElement.querySelector('input'));
+      fixture.nativeElement.remove();
+    });
+  });
 });

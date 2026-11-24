@@ -223,6 +223,37 @@ describe('UiWelcomeDialog', () => {
     sessionStorage.clear();
   });
 
+  describe('the request for a school that is not listed', () => {
+    it('is a screen of its own, with its own title, and back returns to the list', () => {
+      fixture.detectChanges();
+      component.openRequest();
+      expect(component.step).toBe('request');
+      expect(component.sheetTitle).toBe('welcome.requestTitle');
+      component.backToList();
+      expect(component.step).toBe('school');
+      expect(component.sheetTitle).toBe('welcome.title');
+    });
+
+    it('treats Escape or the backdrop as back, not as skipping the welcome', () => {
+      fixture.detectChanges();
+      component.openRequest();
+      component.onSkip();
+      expect(component.step).toBe('school');
+      expect(component.isOpen).toBe(true);
+      expect(mockAuth.setDeclaredSchool).not.toHaveBeenCalled();
+    });
+
+    it('is reached from the list by one link, which shows the form inside the dialog', () => {
+      fixture.detectChanges();
+      (fixture.nativeElement.ownerDocument.querySelector('.request-link-row .link-btn') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(component.step).toBe('request');
+      const form = document.querySelector('app-school-request-form');
+      expect(form).not.toBeNull();
+      expect(form!.querySelector('form')).not.toBeNull();
+    });
+  });
+
   describe('when a page asks for the school picker', () => {
     beforeEach(() => {
       // A signed-out visitor: the account's welcome has nothing to say to them.

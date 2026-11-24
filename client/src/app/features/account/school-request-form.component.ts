@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, Input, inject } from '@angular/core';
+import { Component, ChangeDetectorRef, ElementRef, Input, OnInit, AfterViewInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { UiButton } from '../../shared/ui/button.component';
@@ -15,6 +15,10 @@ import { LIMITS } from '../../core/limits';
  *
  * Collapsed to a single link until asked for, because it sits under an
  * error the user did not expect and should not bury it under a form.
+ *
+ * `embedded`: the form is the whole content of a screen that already asked for
+ * it (the welcome dialog's own step), so it opens at once, drops its card
+ * chrome and its link and cancel, and puts the cursor in the first field.
  */
 @Component({
   selector: 'app-school-request-form',
@@ -26,14 +30,14 @@ import { LIMITS } from '../../core/limits';
 
       <ng-container *ngIf="!submitted">
         <button
-          *ngIf="!open"
+          *ngIf="!open && !embedded"
           type="button"
           class="link-btn"
           (click)="toggle()"
           [attr.aria-expanded]="open"
         >{{ 'acct.schoolRequestToggle' | t }}</button>
 
-        <form *ngIf="open" class="school-request-form" (ngSubmit)="submit()" novalidate>
+        <form *ngIf="open" class="school-request-form" [class.flat]="embedded" (ngSubmit)="submit()" novalidate>
           <p class="desc">{{ 'acct.schoolRequestIntro' | t }}</p>
           <ui-input
             name="school_name"
@@ -60,7 +64,7 @@ import { LIMITS } from '../../core/limits';
             <ui-button type="submit" [disabled]="sending">
               {{ (sending ? 'acct.sending' : 'acct.schoolRequestSubmit') | t }}
             </ui-button>
-            <ui-button variant="ghost" (onClick)="toggle()" [disabled]="sending">{{ 'common.cancel' | t }}</ui-button>
+            <ui-button *ngIf="!embedded" variant="ghost" (onClick)="toggle()" [disabled]="sending">{{ 'common.cancel' | t }}</ui-button>
           </div>
           <p *ngIf="errorMessage" class="inline-msg error" role="alert">{{ errorMessage }}</p>
         </form>
@@ -88,7 +92,14 @@ import { LIMITS } from '../../core/limits';
       padding: 16px;
       background-color: var(--paper-warm);
       border: 1px solid var(--line);
-      border-radius: 4px;
+      border-radius: var(--radius-panel);
+    }
+    /* Embedded: the screen around it is the card. */
+    .school-request-form.flat {
+      margin-top: 0;
+      padding: 0;
+      background: none;
+      border: 0;
     }
     .desc {
       margin: 0 0 12px;
@@ -101,16 +112,20 @@ import { LIMITS } from '../../core/limits';
     }
   `]
 })
-export class SchoolRequestFormComponent {
+export class SchoolRequestFormComponent implements OnInit, AfterViewInit {
   readonly LIMITS = LIMITS;
 
   /** The campus address the user just tried, sent along so staff can read
    *  the school's mail domain off it. */
   @Input() eduEmail = '';
 
+  /** See the class comment. */
+  @Input() embedded = false;
+
   private accountService = inject(AccountService);
   private i18n = inject(I18nService);
   private cdr = inject(ChangeDetectorRef);
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   open = false;
   sending = false;
@@ -120,6 +135,16 @@ export class SchoolRequestFormComponent {
   nameError = '';
   websiteError = '';
   errorMessage = '';
+
+  ngOnInit() {
+    if (this.embedded) this.open = true;
+  }
+
+  ngAfterViewInit() {
+    // Opened for the visitor: the name is the first thing to type. After the open animation's frame,
+    // so a dialog that is still moving into place does not scroll the page to reach it.
+    if (this.embedded) setTimeout(() => this.host.nativeElement.querySelector('input')?.focus({ preventScroll: true }));
+  }
 
   toggle() {
     this.open = !this.open;
