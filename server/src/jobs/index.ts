@@ -15,6 +15,7 @@ import {
   emailSent,
   pushSent,
   studentIdVerifications,
+  organizationMembers,
 } from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
 import { notExpired } from '../lib/requestExpiry';
@@ -27,6 +28,7 @@ import { runCoverSweep, runCoverCleanup } from '../services/catalog/covers';
 import { deleteUnusedBooks } from '../services/catalog/unused';
 import { courseKey } from '../lib/course';
 import { sweepDeletedConversations } from '../services/messaging/conversations';
+import { today } from '../services/orgs/roster';
 
 export { runCoverSweep, runCoverCleanup };
 
@@ -718,6 +720,12 @@ export async function purgeExpiredRequests(env: Env): Promise<number> {
   return subs.length + courses.length;
 }
 
+/** Delete roster members whose membership has ended (valid_until before today). */
+export async function purgeLapsedMembers(env: Env): Promise<number> {
+  const res = await createDb(env.DB).delete(organizationMembers).where(lt(organizationMembers.validUntil, today())).run();
+  return res.meta.changes ?? 0;
+}
+
 export async function runCleanup(env: Env) {
   const [{ total }] = await createDb(env.DB)
     .select({ total: sql<number>`count(*)` })
@@ -731,6 +739,7 @@ export async function runCleanup(env: Env) {
   const conversationsRemoved = await sweepDeletedConversations(env);
   const studentIdExpired = await purgeExpiredStudentIdVerifications(env);
   const requestsExpired = await purgeExpiredRequests(env);
+  const membersLapsed = await purgeLapsedMembers(env);
   // Redelivery only happens within the queue's retry window, so a day is plenty.
   // A day covers a redelivery and the next run of every job that enqueues with a dedupe key (6 h at most).
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -750,6 +759,7 @@ export async function runCleanup(env: Env) {
     conversations_removed: conversationsRemoved,
     student_id_verifications_expired: studentIdExpired,
     expired_requests_purged: requestsExpired,
+    lapsed_members_purged: membersLapsed,
     email_sent_purged: sentPurged.meta.changes ?? 0,
     push_sent_purged: pushSentPurged.meta.changes ?? 0,
   };

@@ -17,10 +17,12 @@ import {
   userSchools,
   users,
   type User,
+  organizationAdmins,
 } from '../../db';
 import { activeRegions, getRegion, liveVerification } from '../../lib/region';
 import { resolveLanguage } from './i18n';
 import { localizedName, type Row } from './regionData';
+import { organizationsAdministeredBy } from '../orgs/organizations';
 import { cancelEmailChangeStatement } from './oneTimeTokens';
 import { revokeAllTokensForUser } from './tokens';
 import { newHexId } from '../../lib/uuid';
@@ -192,15 +194,17 @@ export async function managedRegionsOf(env: Env, userId: string): Promise<string
 /** The signed-in user's own view of their account. */
 export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Record<string, unknown>> {
   const isStaff = isStaffRole(user.role);
-  const [region, lang, verifications, declared, lapsed, reputation, managedRegions, active] = await Promise.all([
+  const langP = resolveLanguage(c);
+  const [region, lang, verifications, declared, lapsed, reputation, managedRegions, active, organizations] = await Promise.all([
     getRegion(c),
-    resolveLanguage(c),
+    langP,
     verificationsOf(c.env, user.id),
     declaredSchoolsOf(c.env, user.id),
     lapsedVerificationsOf(c.env, user.id),
     reputationOf(c.env, user.id),
     isStaff ? managedRegionsOf(c.env, user.id) : Promise.resolve([]),
     activeRegions(c.env),
+    langP.then((l) => organizationsAdministeredBy(c.env, user.id, l)),
   ]);
   const regions = verifications.map((v) => v.region_code.toUpperCase());
 
@@ -307,6 +311,8 @@ export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Rec
     last_seen_sold_orders_at: user.lastSeenSoldOrdersAt ?? null,
     role: user.role,
     managed_regions: managedRegions,
+    // The organizations this account runs (book drives, rosters).
+    organizations,
     regions,
     verifications: verifications.map((v) => ({
       region: v.region_code.toUpperCase(),
@@ -397,6 +403,8 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
     .update(studentIdVerifications)
     .set({ status: 'cancelled', imageKey: null, updatedAt: now })
     .where(and(eq(studentIdVerifications.userId, userId), eq(studentIdVerifications.status, 'pending')));
+  // A kept, anonymized account no longer runs any organization.
+  await db.delete(organizationAdmins).where(eq(organizationAdmins.userId, userId));
 
   // Reviews hang off orders, and messages off conversations, so these four cover every record kept for the other party.
   const retained = await env.DB.prepare(

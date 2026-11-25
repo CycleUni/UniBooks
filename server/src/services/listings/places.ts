@@ -104,6 +104,29 @@ function matchKey(s: string): string {
   return s.toLowerCase().replace(/\s+/g, '').replace(/台/g, '臺').replace(/學系/g, '系');
 }
 
+/** matchKey without a trailing 系, so 資管, 資管系 and 資訊管理學系's short name meet. */
+function departmentKey(s: string): string {
+  const k = matchKey(s);
+  return k.length > 1 && k.endsWith('系') ? k.slice(0, -1) : k;
+}
+
+/**
+ * The canonical name of the one department among `regionCats` that `text`
+ * names exactly, by any of its spellings in any language (台/臺, 學系/系 and a
+ * trailing 系 aside); null when none does, or more than one.
+ */
+export function canonicalDepartment(regionCats: Array<{ row: Row }>, text: string): string | null {
+  const needle = departmentKey(text);
+  if (!needle) return null;
+  const hits = new Set<string>();
+  for (const c of regionCats) {
+    for (const d of parseDepartments(c.row.departments)) {
+      if (departmentSpellings(d).some((x) => departmentKey(x) === needle)) hits.add(d.name);
+    }
+  }
+  return hits.size === 1 ? [...hits][0] : null;
+}
+
 /**
  * Category ids whose title, any translated title, or any department name or
  * short name in any language contains `q`. A trailing 系 is dropped from `q` first, so 資管系

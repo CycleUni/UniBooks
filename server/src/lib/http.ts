@@ -62,9 +62,15 @@ export function describeIssues(error: z.ZodError, fallbackCode = 'common.errVali
  */
 export const MAX_JSON_BODY_BYTES = 64 * 1024;
 
-/** Read a JSON body; an absent or malformed body is an empty object, an oversized one a 413. */
-export async function readJson(req: { raw: Pick<Request, 'headers' | 'body'> }): Promise<Record<string, unknown>> {
-  const bytes = await readCapped(req.raw, MAX_JSON_BODY_BYTES);
+/**
+ * Read a JSON body; an absent or malformed body is an empty object, an oversized one a 413.
+ * A route that takes a bulk upload (a roster import) may allow more than the default.
+ */
+export async function readJson(
+  req: { raw: Pick<Request, 'headers' | 'body'> },
+  maxBytes = MAX_JSON_BODY_BYTES,
+): Promise<Record<string, unknown>> {
+  const bytes = await readCapped(req.raw, maxBytes);
   if (bytes === null) apiError(413, 'common.errValidation');
   let body: unknown;
   try {

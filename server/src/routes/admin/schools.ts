@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, inArray, ne, or, sql, type SQL } from 'drizz
 import { z } from 'zod';
 import type { AppEnv } from '../../env';
 import { invalidates } from '../../lib/cache';
-import { cities, createDb, regionVerifications, schoolRequests, schools, users, type Database, type School } from '../../db';
+import { cities, createDb, organizations, regionVerifications, schoolRequests, schools, users, type Database, type School } from '../../db';
 import { apiError, fieldErrors, describeIssues, pagination, readJson, validate } from '../../lib/http';
 import { LIMITS } from '../../lib/limits';
 import { parseJsonObject, parseJsonArray } from '../../lib/json';
@@ -824,6 +824,9 @@ schoolRoutes.delete('/schools/:id', invalidates('ref'), async (c) => {
   // lose their school. Admins reassign or remove the accounts first.
   if (instance.userCount) apiError(400, 'admin.errDeleteFailed', { count: instance.userCount });
   const db = createDb(c.env.DB);
+  // Nor one with student organizations: their rosters and drives belong to it.
+  const [org] = await db.select({ id: organizations.id }).from(organizations).where(eq(organizations.schoolId, instance.id)).limit(1);
+  if (org) apiError(400, 'admin.errSchoolHasOrganizations');
   await db.batch([
     db.delete(schools).where(eq(schools.id, instance.id)),
     auditInsert(

@@ -20,6 +20,7 @@ import { chatRoutes } from './routes/chat';
 import { orderRoutes } from './routes/orders';
 import { adminRoutes } from './routes/admin';
 import { promotionRoutes } from './routes/promotions';
+import { orgRoutes } from './routes/orgs';
 import { frontendRoutes } from './routes/frontend';
 import { handleScheduled } from './jobs/index';
 import { handleEmailQueue } from './queues/email';
@@ -66,6 +67,7 @@ app.route('/api/v1/moderation', moderationRoutes);
 app.route('/api/v1/orders', orderRoutes);
 app.route('/api/v1/admin', adminRoutes);
 app.route('/api/v1/promotions', promotionRoutes);
+app.route('/api/v1/orgs', orgRoutes);
 app.route('/api/v1', sitemapRoutes); // /api/v1/sitemap.xml, /api/v1/sitemap/<kind>-<region>-<page>.xml
 
 // Chat: hub + room WebSockets and room REST (see routes/chat.ts).

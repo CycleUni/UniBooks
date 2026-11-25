@@ -13,6 +13,7 @@ import { bookRoutes } from './books';
 import { statsRoutes } from './stats';
 import { systemRoutes } from './system';
 import { studentIdVerificationRoutes } from './studentIdVerifications';
+import { organizationRoutes } from './organizations';
 
 /**
  * /api/v1/admin/*. Every endpoint needs a staff
@@ -36,3 +37,4 @@ adminRoutes.route('/', chatReportRoutes);
 adminRoutes.route('/', adRoutes);
 adminRoutes.route('/', systemRoutes);
 adminRoutes.route('/', studentIdVerificationRoutes);
+adminRoutes.route('/', organizationRoutes);

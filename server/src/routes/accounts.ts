@@ -70,6 +70,7 @@ import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
 import { isUniqueViolation } from '../lib/db';
 import { issueMemberToken, verifyMemberToken } from '../lib/member-token';
+import { normalizeStudentNumber } from '../lib/studentNumber';
 
 /**
  * /api/v1/auth/*
@@ -674,10 +675,8 @@ accountRoutes.post('/verify/student-id', authMiddleware(), rateLimit('student-id
     apiError(400, 'acct.errStudentIdVerificationNotAllowed');
   }
 
-  const studentNumber = typeof body.student_number === 'string' ? body.student_number.trim().toUpperCase() : '';
-  if (!/^[A-Z0-9-]{4,20}$/.test(studentNumber)) {
-    apiError(400, 'acct.errInvalidStudentNumber');
-  }
+  const studentNumber = normalizeStudentNumber(body.student_number);
+  if (!studentNumber) apiError(400, 'acct.errInvalidStudentNumber');
 
   // Eligibility: live verification
   const [liveVerif] = await db

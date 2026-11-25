@@ -1003,3 +1003,78 @@ export const bookReports = sqliteTable(
 export type BookReport = InferSelectModel<typeof bookReports>;
 export type InsertBookReport = InferInsertModel<typeof bookReports>;
 export type NewBookReport = InsertBookReport;
+
+// ============================================================================
+// 27. Organizations (student unions and the like; book drives, docs/plans/2026-11-25-book-drive.md)
+// ============================================================================
+/**
+ * A student organization of one school, e.g. 致理科技大學 學生會: shown as
+ * "<localized school name> <name>". Created by staff of the school's region.
+ */
+export const organizations = sqliteTable(
+  'organizations',
+  {
+    id: text('id').primaryKey(),
+    regionCode: text('region_code')
+      .notNull()
+      .references(() => regions.code),
+    schoolId: integer('school_id')
+      .notNull()
+      .references(() => schools.id),
+    name: text('name').notNull(),
+    isActive: integer('is_active').notNull().default(1),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    unique('organizations_school_name_unique').on(table.schoolId, table.name),
+    index('organizations_region_idx').on(table.regionCode),
+  ],
+);
+
+export type Organization = InferSelectModel<typeof organizations>;
+
+/** The accounts that run an organization: its roster, its drives and who staffs them. */
+export const organizationAdmins = sqliteTable(
+  'organization_admins',
+  {
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    addedById: text('added_by_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.organizationId, table.userId] }), index('organization_admins_user_idx').on(table.userId)],
+);
+
+/**
+ * An organization's member roster, imported by its admins. A member counts
+ * through `valid_until` (YYYY-MM-DD, inclusive); the nightly cleanup deletes
+ * lapsed rows. `student_number` is lib/studentNumber.ts' normal form.
+ */
+export const organizationMembers = sqliteTable(
+  'organization_members',
+  {
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    studentNumber: text('student_number').notNull(),
+    name: text('name').notNull().default(''),
+    /** The department's canonical name when the region's list knows it, else the text as given. */
+    department: text('department').notNull().default(''),
+    /** 1-7; null = not given. */
+    grade: integer('grade'),
+    validUntil: text('valid_until').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.organizationId, table.studentNumber] }),
+    index('organization_members_valid_until_idx').on(table.validUntil),
+  ],
+);
+
+export type OrganizationMember = InferSelectModel<typeof organizationMembers>;

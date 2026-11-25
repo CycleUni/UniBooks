@@ -71,6 +71,13 @@
       "when": 1795570961944,
       "tag": "0009_request_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1795590735515,
+      "tag": "0010_organizations",
+      "breakpoints": true
     }
   ]
 }
