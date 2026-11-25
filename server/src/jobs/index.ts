@@ -252,8 +252,10 @@ export async function runCourseWaitNotify(env: Env) {
   const none = { notified_users: 0, notified_course_wants: 0 };
 
   // 1. The oldest moment any request still waits from: nothing listed before it matters.
-  const waiting = await env.DB.prepare(`SELECT min(max(created_at, coalesce(notified_at, created_at))) AS oldest FROM course_wants
-      WHERE expires_at IS NULL OR expires_at > ?`)
+  const waiting = await env.DB.prepare(
+    `SELECT min(max(created_at, coalesce(notified_at, created_at))) AS oldest FROM course_wants
+      WHERE expires_at IS NULL OR expires_at > ?`,
+  )
     .bind(now)
     .first<{ oldest: string | null }>();
   if (!waiting?.oldest) return none;
@@ -703,8 +705,14 @@ export async function purgeExpiredRequests(env: Env): Promise<number> {
   const db = createDb(env.DB);
   const now = new Date().toISOString();
   const [subs, courses] = await db.batch([
-    db.delete(subscriptions).where(sql`${subscriptions.expiresAt} IS NOT NULL AND ${subscriptions.expiresAt} <= ${now}`).returning({ bookId: subscriptions.bookId }),
-    db.delete(courseWants).where(sql`${courseWants.expiresAt} IS NOT NULL AND ${courseWants.expiresAt} <= ${now}`).returning({ id: courseWants.id }),
+    db
+      .delete(subscriptions)
+      .where(sql`${subscriptions.expiresAt} IS NOT NULL AND ${subscriptions.expiresAt} <= ${now}`)
+      .returning({ bookId: subscriptions.bookId }),
+    db
+      .delete(courseWants)
+      .where(sql`${courseWants.expiresAt} IS NOT NULL AND ${courseWants.expiresAt} <= ${now}`)
+      .returning({ id: courseWants.id }),
   ]);
   if (subs.length) await deleteUnusedBooks(env, [...new Set(subs.map((s) => s.bookId))]);
   return subs.length + courses.length;

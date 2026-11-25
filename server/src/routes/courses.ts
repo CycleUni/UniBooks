@@ -145,8 +145,15 @@ courseRoutes.get('/detail', optionalAuthMiddleware(), async (c) => {
       ? db
           .select({ id: courseWants.id })
           .from(courseWants)
-          
-          .where(and(eq(courseWants.userId, userId), eq(courseWants.schoolId, schoolId), eq(courseWants.courseKey, key), notExpired(courseWants.expiresAt)))
+
+          .where(
+            and(
+              eq(courseWants.userId, userId),
+              eq(courseWants.schoolId, schoolId),
+              eq(courseWants.courseKey, key),
+              notExpired(courseWants.expiresAt),
+            ),
+          )
           .limit(1)
       : Promise.resolve([]),
     db
@@ -241,7 +248,13 @@ courseRoutes.get('/wants', async (c) => {
     .innerJoin(schools, eq(schools.id, courseWants.schoolId))
     .where(and(eq(courseWants.userId, c.get('userId')!), eq(courseWants.regionCode, region.code), notExpired(courseWants.expiresAt)))
     .orderBy(desc(courseWants.createdAt));
-  const out: CourseWantDto[] = rows.map((r) => ({ id: r.id, name: r.name, school: r.schoolCode, created_at: r.createdAt, expires_at: r.expiresAt }));
+  const out: CourseWantDto[] = rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    school: r.schoolCode,
+    created_at: r.createdAt,
+    expires_at: r.expiresAt,
+  }));
   return c.json(out);
 });
 
@@ -312,6 +325,12 @@ courseRoutes.patch('/wants/:id', async (c) => {
     });
   if (!row) apiError(404, 'not_found');
   const [school] = await createDb(c.env.DB).select({ code: schools.code }).from(schools).where(eq(schools.id, row.schoolId)).limit(1);
-  const out: CourseWantDto = { id: row.id, name: row.name, school: school?.code ?? '', created_at: row.createdAt, expires_at: row.expiresAt };
+  const out: CourseWantDto = {
+    id: row.id,
+    name: row.name,
+    school: school?.code ?? '',
+    created_at: row.createdAt,
+    expires_at: row.expiresAt,
+  };
   return c.json(out);
 });

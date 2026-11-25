@@ -326,7 +326,15 @@ describe('request expiry (book and course requests)', () => {
     await db.insert(languages).values({ code: 'zh-TW', name: 'Chinese (Taiwan)' }).onConflictDoNothing();
     await db
       .insert(regions)
-      .values({ code: 'TW', name: 'Taiwan', defaultCurrency: 'TWD', defaultLanguage: 'zh-TW', timezone: 'Asia/Taipei', languages: '["zh-TW"]', createdAt: now() })
+      .values({
+        code: 'TW',
+        name: 'Taiwan',
+        defaultCurrency: 'TWD',
+        defaultLanguage: 'zh-TW',
+        timezone: 'Asia/Taipei',
+        languages: '["zh-TW"]',
+        createdAt: now(),
+      })
       .onConflictDoNothing();
     await db
       .insert(schools)
@@ -351,20 +359,33 @@ describe('request expiry (book and course requests)', () => {
   it('changing the duration restarts the half year, or removes the end', async () => {
     const student = await makeUser('student-patch');
     const want = (await (await postCourse(student.token, '經濟學', 'unlimited')).json()) as { id: string };
-    const back = await call(`/wants/${want.id}`, { method: 'PATCH', token: student.token, body: JSON.stringify({ duration: 'half_year' }) });
+    const back = await call(`/wants/${want.id}`, {
+      method: 'PATCH',
+      token: student.token,
+      body: JSON.stringify({ duration: 'half_year' }),
+    });
     expect(back.status).toBe(200);
     expect(((await back.json()) as { expires_at: string | null }).expires_at).toBeTruthy();
-    const open = await call(`/wants/${want.id}`, { method: 'PATCH', token: student.token, body: JSON.stringify({ duration: 'unlimited' }) });
+    const open = await call(`/wants/${want.id}`, {
+      method: 'PATCH',
+      token: student.token,
+      body: JSON.stringify({ duration: 'unlimited' }),
+    });
     expect(((await open.json()) as { expires_at: string | null }).expires_at).toBeNull();
     // Someone else's request is not theirs to change.
     const other = await makeUser('student-other');
-    expect((await call(`/wants/${want.id}`, { method: 'PATCH', token: other.token, body: JSON.stringify({ duration: 'half_year' }) })).status).toBe(404);
+    expect(
+      (await call(`/wants/${want.id}`, { method: 'PATCH', token: other.token, body: JSON.stringify({ duration: 'half_year' }) })).status,
+    ).toBe(404);
   });
 
   it('an expired course request is gone from the lists and counts, and asking again starts over', async () => {
     const student = await makeUser('student-lapsed');
     const first = (await (await postCourse(student.token, '作業系統')).json()) as { id: string };
-    await db.update(courseWants).set({ expiresAt: ago(1000) }).where(eq(courseWants.id, first.id));
+    await db
+      .update(courseWants)
+      .set({ expiresAt: ago(1000) })
+      .where(eq(courseWants.id, first.id));
 
     expect(await (await call('/wants', { token: student.token })).json()).toEqual([]);
     const detail = await call(`/detail?school=CHIHLEE&name=${encodeURIComponent('作業系統')}`);
@@ -372,7 +393,10 @@ describe('request expiry (book and course requests)', () => {
 
     const again = await postCourse(student.token, '作業系統');
     expect(again.status).toBe(201);
-    const [row] = await db.select().from(courseWants).where(eq(courseWants.userId, (await db.select().from(courseWants).where(eq(courseWants.id, first.id)))[0].userId));
+    const [row] = await db
+      .select()
+      .from(courseWants)
+      .where(eq(courseWants.userId, (await db.select().from(courseWants).where(eq(courseWants.id, first.id)))[0].userId));
     expect(new Date(row.expiresAt!).getTime()).toBeGreaterThan(Date.now());
     expect(((await (await call('/wants', { token: student.token })).json()) as unknown[]).length).toBe(1);
   });
@@ -398,12 +422,32 @@ describe('request expiry (book and course requests)', () => {
     const student = await makeUser('student-clean');
     const keep = crypto.randomUUID();
     await db.insert(courseWants).values([
-      { id: crypto.randomUUID(), regionCode: 'TW', userId: student.id, schoolId: SCHOOL, courseKey: 'old', courseName: 'Old', createdAt: ago(7 * MONTH), expiresAt: ago(MONTH) },
-      { id: keep, regionCode: 'TW', userId: student.id, schoolId: SCHOOL, courseKey: 'forever', courseName: 'Forever', createdAt: ago(7 * MONTH), expiresAt: null },
+      {
+        id: crypto.randomUUID(),
+        regionCode: 'TW',
+        userId: student.id,
+        schoolId: SCHOOL,
+        courseKey: 'old',
+        courseName: 'Old',
+        createdAt: ago(7 * MONTH),
+        expiresAt: ago(MONTH),
+      },
+      {
+        id: keep,
+        regionCode: 'TW',
+        userId: student.id,
+        schoolId: SCHOOL,
+        courseKey: 'forever',
+        courseName: 'Forever',
+        createdAt: ago(7 * MONTH),
+        expiresAt: null,
+      },
     ]);
     const bookId = crypto.randomUUID();
     await db.insert(books).values({ id: bookId, regionCode: 'TW', isbn13: null, title: 'Wanted once', source: 'manual', createdAt: now() });
-    await db.insert(subscriptions).values({ id: crypto.randomUUID(), regionCode: 'TW', userId: student.id, bookId, createdAt: ago(7 * MONTH), expiresAt: ago(MONTH) });
+    await db
+      .insert(subscriptions)
+      .values({ id: crypto.randomUUID(), regionCode: 'TW', userId: student.id, bookId, createdAt: ago(7 * MONTH), expiresAt: ago(MONTH) });
 
     expect(await purgeExpiredRequests(env)).toBeGreaterThanOrEqual(2);
     const left = await db.select().from(courseWants).where(eq(courseWants.userId, student.id));
@@ -413,7 +457,11 @@ describe('request expiry (book and course requests)', () => {
 
   describe('book requests', () => {
     const subscribe = (token: string, bookId: string, duration?: string) =>
-      call('', { method: 'POST', token, body: JSON.stringify({ book_id: bookId, ...(duration ? { duration } : {}) }) }, '/api/v1/subscriptions');
+      call(
+        '',
+        { method: 'POST', token, body: JSON.stringify({ book_id: bookId, ...(duration ? { duration } : {}) }) },
+        '/api/v1/subscriptions',
+      );
 
     it('lasts half a year by default, can be made endless, and lapses out of the list', async () => {
       const student = await makeUser('book-student');
@@ -421,10 +469,17 @@ describe('request expiry (book and course requests)', () => {
       const made = (await (await subscribe(student.token, bookId)).json()) as { id: string; expires_at: string | null };
       expect(made.expires_at).toBeTruthy();
 
-      const patched = await call(`/${made.id}`, { method: 'PATCH', token: student.token, body: JSON.stringify({ duration: 'unlimited' }) }, '/api/v1/subscriptions');
+      const patched = await call(
+        `/${made.id}`,
+        { method: 'PATCH', token: student.token, body: JSON.stringify({ duration: 'unlimited' }) },
+        '/api/v1/subscriptions',
+      );
       expect(((await patched.json()) as { expires_at: string | null }).expires_at).toBeNull();
 
-      await db.update(subscriptions).set({ expiresAt: ago(1000) }).where(eq(subscriptions.id, made.id));
+      await db
+        .update(subscriptions)
+        .set({ expiresAt: ago(1000) })
+        .where(eq(subscriptions.id, made.id));
       expect(await (await call('', { token: student.token }, '/api/v1/subscriptions')).json()).toEqual([]);
       // Asking again after it lapsed is a fresh request, not a no-op on the dead row.
       expect((await subscribe(student.token, bookId)).status).toBe(201);

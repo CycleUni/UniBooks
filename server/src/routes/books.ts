@@ -142,7 +142,14 @@ bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
     const [sub] = await db
       .select({ id: subscriptions.id })
       .from(subscriptions)
-      .where(and(eq(subscriptions.regionCode, region.code), eq(subscriptions.userId, userId), eq(subscriptions.bookId, book.id), notExpired(subscriptions.expiresAt)))
+      .where(
+        and(
+          eq(subscriptions.regionCode, region.code),
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.bookId, book.id),
+          notExpired(subscriptions.expiresAt),
+        ),
+      )
       .limit(1);
     if (sub) {
       out.is_subscribed = true;

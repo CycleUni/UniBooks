@@ -61,7 +61,7 @@ subscriptionRoutes.get('/', async (c) => {
   const rows = await createDb(c.env.DB)
     .select()
     .from(subscriptions)
-    
+
     .where(and(eq(subscriptions.userId, c.get('userId')!), eq(subscriptions.regionCode, region.code), notExpired(subscriptions.expiresAt)))
     .orderBy(desc(subscriptions.createdAt));
   return c.json(await serialize(c.env, rows));
