@@ -13,13 +13,15 @@ import { RegionLinkService } from '../../core/region-link.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { bookQueryParams } from '../../core/book-preview';
+import { parseApiError } from '../../core/api-error.util';
+import { RequestExpiryComponent, RequestDuration } from './request-expiry.component';
 import type { CourseWantDto, SubscriptionDto } from '../../../../../server/src/api-types';
 
 
 @Component({
   selector: 'app-account-subscriptions',
   standalone: true,
-  imports: [CommonModule, RouterLink, UiButton, UiEmpty, UiBookTile, UiSkeleton, UiErrorState, TPipe],
+  imports: [CommonModule, RouterLink, UiButton, UiEmpty, UiBookTile, UiSkeleton, UiErrorState, TPipe, RequestExpiryComponent],
   template: `
     <div class="section-head-row">
       <h2 class="section-heading">{{ 'acct.tabSubs' | t }}</h2>
@@ -53,6 +55,7 @@ import type { CourseWantDto, SubscriptionDto } from '../../../../../server/src/a
             <ng-container *ngIf="sub.newListingsCount === 0">{{ 'acct.noOneListed' | t }}</ng-container>
             <ng-container *ngIf="sub.newListingsCount > 0">{{ 'acct.newListings' | t:{n: sub.newListingsCount} }}</ng-container>
           </span>
+          <app-request-expiry [expiresAt]="sub.expires_at" (durationChange)="setSubscriptionDuration(sub, $event)"></app-request-expiry>
           <ui-button *ngIf="sub.newListingsCount > 0" (onClick)="$event.stopPropagation(); viewBook(sub)">{{ 'acct.viewNow' | t }}</ui-button>
           <ui-button variant="ghost" *ngIf="sub.newListingsCount === 0" (onClick)="$event.stopPropagation(); cancelSubscription(sub.id)">{{ 'acct.cancelNotify' | t }}</ui-button>
         </div>
@@ -67,6 +70,7 @@ import type { CourseWantDto, SubscriptionDto } from '../../../../../server/src/a
       <ul class="course-requests">
         <li *ngFor="let w of myCourses">
           <a class="course-link" [routerLink]="regionLink.path(['/course/detail'])" [queryParams]="{school: w.school, name: w.name}">{{ w.name }}</a>
+          <app-request-expiry [expiresAt]="w.expires_at" (durationChange)="setCourseDuration(w, $event)"></app-request-expiry>
           <ui-button variant="ghost" (onClick)="cancelCourse(w)">{{ 'acct.cancelCourse' | t }}</ui-button>
         </li>
       </ul>
@@ -90,8 +94,8 @@ import type { CourseWantDto, SubscriptionDto } from '../../../../../server/src/a
     .sub-status.available { color: var(--flag); font-weight: 500; }
     .course-heading { margin-top: var(--space-5); }
     .course-requests { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-    .course-requests li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .course-link { color: var(--ink); font-weight: 500; text-decoration: none; }
+    .course-requests li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+    .course-link { flex: 1 1 8rem; color: var(--ink); font-weight: 500; text-decoration: none; }
     .course-link:hover { color: var(--accent); }
   `]
 })
@@ -123,6 +127,31 @@ export class SubscriptionsComponent implements OnInit {
         this.cdr.markForCheck();
       },
       error: () => {},
+    });
+  }
+
+  /** Replace one row with the server's answer; a new array, since the page is OnPush. */
+  private replace<T extends { id: string }>(rows: T[], row: T): T[] {
+    return rows.map((r) => (r.id === row.id ? row : r));
+  }
+
+  setSubscriptionDuration(sub: SubscriptionDto, duration: RequestDuration) {
+    this.accountService.setSubscriptionDuration(sub.id, duration).subscribe({
+      next: (row) => {
+        this.mySubscriptions = this.replace(this.mySubscriptions, { ...sub, expires_at: row.expires_at });
+        this.cdr.markForCheck();
+      },
+      error: (err) => this.toast.error(parseApiError(err, this.i18n, 'acct.expiryFailed')),
+    });
+  }
+
+  setCourseDuration(want: CourseWantDto, duration: RequestDuration) {
+    this.courseService.setDuration(want.id, duration).subscribe({
+      next: (row) => {
+        this.myCourses = this.replace(this.myCourses, row);
+        this.cdr.markForCheck();
+      },
+      error: (err) => this.toast.error(parseApiError(err, this.i18n, 'acct.expiryFailed')),
     });
   }
 

@@ -13,6 +13,7 @@ import { apiError, readJson } from '../lib/http';
 import { courseKey } from '../lib/course';
 import { LIMITS } from '../lib/limits';
 import { nowIso } from '../lib/time';
+import { expiryFor, notExpired, parseDuration } from '../lib/requestExpiry';
 import { UUID_RE } from '../lib/uuid';
 import { requireRegion } from '../lib/region';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
@@ -58,8 +59,11 @@ async function listingSpellings(db: D1Database, schoolId: number) {
 /** Who wants each course at a school: course key → count. */
 async function wantCounts(db: D1Database, schoolId: number) {
   const { results } = await db
-    .prepare(`SELECT course_key AS k, count(*) AS n FROM course_wants WHERE school_id = ? GROUP BY course_key`)
-    .bind(schoolId)
+    .prepare(
+      `SELECT course_key AS k, count(*) AS n FROM course_wants
+        WHERE school_id = ? AND (expires_at IS NULL OR expires_at > ?) GROUP BY course_key`,
+    )
+    .bind(schoolId, nowIso())
     .all<{ k: string; n: number }>();
   return new Map(results.map((r) => [r.k, Number(r.n)]));
 }
@@ -76,7 +80,7 @@ courseRoutes.get('/', optionalAuthMiddleware(), async (c) => {
       ? createDb(c.env.DB)
           .select({ k: courseWants.courseKey })
           .from(courseWants)
-          .where(and(eq(courseWants.userId, userId), eq(courseWants.schoolId, schoolId)))
+          .where(and(eq(courseWants.userId, userId), eq(courseWants.schoolId, schoolId), notExpired(courseWants.expiresAt)))
       : Promise.resolve([]),
   ]);
   const wanted = new Set(mine.map((r) => r.k));
@@ -97,9 +101,10 @@ courseRoutes.get('/', optionalAuthMiddleware(), async (c) => {
   // Courses nobody has listed yet but someone is waiting for.
   if (wants.size) {
     const { results } = await c.env.DB.prepare(
-      `SELECT course_key AS k, course_name AS name FROM course_wants WHERE school_id = ? GROUP BY course_key`,
+      `SELECT course_key AS k, course_name AS name FROM course_wants
+        WHERE school_id = ? AND (expires_at IS NULL OR expires_at > ?) GROUP BY course_key`,
     )
-      .bind(schoolId)
+      .bind(schoolId, nowIso())
       .all<{ k: string; name: string }>();
     for (const w of results) {
       if (byKey.has(w.k)) continue;
@@ -140,13 +145,14 @@ courseRoutes.get('/detail', optionalAuthMiddleware(), async (c) => {
       ? db
           .select({ id: courseWants.id })
           .from(courseWants)
-          .where(and(eq(courseWants.userId, userId), eq(courseWants.schoolId, schoolId), eq(courseWants.courseKey, key)))
+          
+          .where(and(eq(courseWants.userId, userId), eq(courseWants.schoolId, schoolId), eq(courseWants.courseKey, key), notExpired(courseWants.expiresAt)))
           .limit(1)
       : Promise.resolve([]),
     db
       .select({ name: courseWants.courseName })
       .from(courseWants)
-      .where(and(eq(courseWants.schoolId, schoolId), eq(courseWants.courseKey, key)))
+      .where(and(eq(courseWants.schoolId, schoolId), eq(courseWants.courseKey, key), notExpired(courseWants.expiresAt)))
       .limit(1),
   ]);
   const name = merged?.name ?? wantName[0]?.name ?? '';
@@ -229,12 +235,13 @@ courseRoutes.get('/wants', async (c) => {
       schoolId: courseWants.schoolId,
       schoolCode: schools.code,
       createdAt: courseWants.createdAt,
+      expiresAt: courseWants.expiresAt,
     })
     .from(courseWants)
     .innerJoin(schools, eq(schools.id, courseWants.schoolId))
-    .where(and(eq(courseWants.userId, c.get('userId')!), eq(courseWants.regionCode, region.code)))
+    .where(and(eq(courseWants.userId, c.get('userId')!), eq(courseWants.regionCode, region.code), notExpired(courseWants.expiresAt)))
     .orderBy(desc(courseWants.createdAt));
-  const out: CourseWantDto[] = rows.map((r) => ({ id: r.id, name: r.name, school: r.schoolCode, created_at: r.createdAt }));
+  const out: CourseWantDto[] = rows.map((r) => ({ id: r.id, name: r.name, school: r.schoolCode, created_at: r.createdAt, expires_at: r.expiresAt }));
   return c.json(out);
 });
 
@@ -252,21 +259,28 @@ courseRoutes.post('/wants', async (c) => {
   const [{ n }] = await db
     .select({ n: sql<number>`count(*)` })
     .from(courseWants)
-    .where(eq(courseWants.userId, userId));
+    .where(and(eq(courseWants.userId, userId), notExpired(courseWants.expiresAt)));
   if (n >= MAX_WANTS_PER_USER) apiError(400, 'common.errValidation');
 
   const id = crypto.randomUUID();
+  const createdAt = nowIso();
+  const expiresAt = expiryFor(parseDuration(body.duration));
+  // A request still in force is left as it is; one that lapsed (and is not yet cleaned up) starts over.
   const inserted = await db
     .insert(courseWants)
-    .values({ id, regionCode: region.code, userId, schoolId, courseKey: key, courseName: name, notifiedAt: null, createdAt: nowIso() })
-    .onConflictDoNothing()
+    .values({ id, regionCode: region.code, userId, schoolId, courseKey: key, courseName: name, notifiedAt: null, expiresAt, createdAt })
+    .onConflictDoUpdate({
+      target: [courseWants.userId, courseWants.schoolId, courseWants.courseKey],
+      set: { courseName: name, createdAt, notifiedAt: null, expiresAt },
+      setWhere: sql`${courseWants.expiresAt} IS NOT NULL AND ${courseWants.expiresAt} <= ${createdAt}`,
+    })
     .returning({ id: courseWants.id });
   const [row] = await db
     .select()
     .from(courseWants)
     .where(and(eq(courseWants.userId, userId), eq(courseWants.schoolId, schoolId), eq(courseWants.courseKey, key)))
     .limit(1);
-  const out: CourseWantDto = { id: row.id, name: row.courseName, school, created_at: row.createdAt };
+  const out: CourseWantDto = { id: row.id, name: row.courseName, school, created_at: row.createdAt, expires_at: row.expiresAt };
   return c.json(out, inserted.length ? 201 : 200);
 });
 
@@ -278,4 +292,26 @@ courseRoutes.delete('/wants/:id', async (c) => {
     .where(and(eq(courseWants.id, id.toLowerCase()), eq(courseWants.userId, c.get('userId')!)))
     .returning({ id: courseWants.id });
   return c.body(null, deleted.length ? 204 : 404);
+});
+
+/** Change how long a request lasts: from today for half a year, or without an end. */
+courseRoutes.patch('/wants/:id', async (c) => {
+  const id = c.req.param('id');
+  if (!UUID_RE.test(id)) return c.body(null, 404);
+  const body = await readJson(c.req);
+  const [row] = await createDb(c.env.DB)
+    .update(courseWants)
+    .set({ expiresAt: expiryFor(parseDuration(body.duration)) })
+    .where(and(eq(courseWants.id, id.toLowerCase()), eq(courseWants.userId, c.get('userId')!), notExpired(courseWants.expiresAt)))
+    .returning({
+      id: courseWants.id,
+      name: courseWants.courseName,
+      schoolId: courseWants.schoolId,
+      createdAt: courseWants.createdAt,
+      expiresAt: courseWants.expiresAt,
+    });
+  if (!row) apiError(404, 'not_found');
+  const [school] = await createDb(c.env.DB).select({ code: schools.code }).from(schools).where(eq(schools.id, row.schoolId)).limit(1);
+  const out: CourseWantDto = { id: row.id, name: row.name, school: school?.code ?? '', created_at: row.createdAt, expires_at: row.expiresAt };
+  return c.json(out);
 });

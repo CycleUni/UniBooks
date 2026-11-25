@@ -4,6 +4,7 @@
 import { Hono } from 'hono';
 import { and, desc, eq, max, min, sql } from 'drizzle-orm';
 import type { AppEnv, Env } from '../env';
+import { notExpired } from '../lib/requestExpiry';
 import { createDb, books, listings, subscriptions, type Book, type InsertBook } from '../db';
 import { apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { LIMITS } from '../lib/limits';
@@ -141,7 +142,7 @@ bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
     const [sub] = await db
       .select({ id: subscriptions.id })
       .from(subscriptions)
-      .where(and(eq(subscriptions.regionCode, region.code), eq(subscriptions.userId, userId), eq(subscriptions.bookId, book.id)))
+      .where(and(eq(subscriptions.regionCode, region.code), eq(subscriptions.userId, userId), eq(subscriptions.bookId, book.id), notExpired(subscriptions.expiresAt)))
       .limit(1);
     if (sub) {
       out.is_subscribed = true;

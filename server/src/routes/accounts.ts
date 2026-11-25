@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { clearSession, refreshTokenFrom, setSession, withClearedSession } from '../lib/session';
+import { notExpired } from '../lib/requestExpiry';
 import { HTTPException } from 'hono/http-exception';
 import { and, asc, desc, eq, isNull, like, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { AppEnv } from '../env';
@@ -1473,6 +1474,7 @@ async function mySubscriptions(c: C, userId: string, regionCode: string | null) 
       id: subscriptions.id,
       book_id: subscriptions.bookId,
       created_at: subscriptions.createdAt,
+      expires_at: subscriptions.expiresAt,
       title: books.title,
       isbn13: books.isbn13,
       cover_url: books.coverUrl,
@@ -1482,7 +1484,7 @@ async function mySubscriptions(c: C, userId: string, regionCode: string | null) 
     })
     .from(subscriptions)
     .innerJoin(books, eq(books.id, subscriptions.bookId))
-    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.regionCode, regionCode)))
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.regionCode, regionCode), notExpired(subscriptions.expiresAt)))
     .orderBy(desc(subscriptions.createdAt));
   const origin = new URL(c.req.url).origin;
   return results.map((s) => ({
@@ -1493,6 +1495,7 @@ async function mySubscriptions(c: C, userId: string, regionCode: string | null) 
     bookCoverUrl: coverUrlFor(c.env, origin, s),
     newListingsCount: Number(s.new_count),
     created_at: s.created_at,
+    expires_at: s.expires_at,
   }));
 }
 

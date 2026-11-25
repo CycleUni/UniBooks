@@ -17,6 +17,7 @@ import {
   studentIdVerifications,
 } from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
+import { notExpired } from '../lib/requestExpiry';
 import { orderLock } from '../services/orders/lock';
 import { AUTO_COMPLETE_AFTER_MS, lockKeyFor } from '../services/orders/transitions';
 import { deliverNotices } from '../services/orders/notify';
@@ -147,6 +148,7 @@ export async function runWaitlistNotify(env: Env) {
   const dueWhere = and(
     sql`EXISTS (SELECT 1 FROM listings l WHERE l.book_id = ${subscriptions.bookId} AND l.status = 'active'
       AND l.created_at > MAX(${subscriptions.createdAt}, COALESCE(${subscriptions.notifiedAt}, ${subscriptions.createdAt})))`,
+    notExpired(subscriptions.expiresAt, now),
     // Nobody to mail: left due, they would hold batch slots forever.
     eq(users.isActive, 1),
     eq(users.isBanned, 0),
@@ -250,18 +252,19 @@ export async function runCourseWaitNotify(env: Env) {
   const none = { notified_users: 0, notified_course_wants: 0 };
 
   // 1. The oldest moment any request still waits from: nothing listed before it matters.
-  const waiting = await env.DB.prepare(`SELECT min(max(created_at, coalesce(notified_at, created_at))) AS oldest FROM course_wants`).first<{
-    oldest: string | null;
-  }>();
+  const waiting = await env.DB.prepare(`SELECT min(max(created_at, coalesce(notified_at, created_at))) AS oldest FROM course_wants
+      WHERE expires_at IS NULL OR expires_at > ?`)
+    .bind(now)
+    .first<{ oldest: string | null }>();
   if (!waiting?.oldest) return none;
 
   // 2. The courses (school + spelling) listed since then. Few, whatever the number of listings.
   const { results: spelled } = await env.DB.prepare(
     `SELECT DISTINCT school_id AS schoolId, course_name AS name FROM listings
       WHERE status = 'active' AND course_name <> '' AND school_id IS NOT NULL AND created_at > ?
-        AND region_code IN (SELECT DISTINCT region_code FROM course_wants)`,
+        AND region_code IN (SELECT DISTINCT region_code FROM course_wants WHERE expires_at IS NULL OR expires_at > ?)`,
   )
-    .bind(waiting.oldest)
+    .bind(waiting.oldest, now)
     .all<{ schoolId: number; name: string }>();
   const newPairs = new Map<string, string[]>();
   for (const sp of spelled) {
@@ -290,6 +293,7 @@ export async function runCourseWaitNotify(env: Env) {
     .innerJoin(schools, eq(schools.id, courseWants.schoolId))
     .where(
       and(
+        notExpired(courseWants.expiresAt, now),
         eq(users.isActive, 1),
         eq(users.isBanned, 0),
         isNull(users.deletedAt),
@@ -691,6 +695,21 @@ export async function purgeExpiredStudentIdVerifications(env: Env): Promise<numb
 // Cleanup ('0 3 * * *')
 // ---------------------------------------------------------------------------
 
+/**
+ * Delete book and course requests past their end date. They stopped counting the moment they
+ * expired; this only frees the rows, and the books only a lapsed request kept in the catalogue.
+ */
+export async function purgeExpiredRequests(env: Env): Promise<number> {
+  const db = createDb(env.DB);
+  const now = new Date().toISOString();
+  const [subs, courses] = await db.batch([
+    db.delete(subscriptions).where(sql`${subscriptions.expiresAt} IS NOT NULL AND ${subscriptions.expiresAt} <= ${now}`).returning({ bookId: subscriptions.bookId }),
+    db.delete(courseWants).where(sql`${courseWants.expiresAt} IS NOT NULL AND ${courseWants.expiresAt} <= ${now}`).returning({ id: courseWants.id }),
+  ]);
+  if (subs.length) await deleteUnusedBooks(env, [...new Set(subs.map((s) => s.bookId))]);
+  return subs.length + courses.length;
+}
+
 export async function runCleanup(env: Env) {
   const [{ total }] = await createDb(env.DB)
     .select({ total: sql<number>`count(*)` })
@@ -703,6 +722,7 @@ export async function runCleanup(env: Env) {
   const pendingAccountsPurged = await purgePendingRegistrations(env);
   const conversationsRemoved = await sweepDeletedConversations(env);
   const studentIdExpired = await purgeExpiredStudentIdVerifications(env);
+  const requestsExpired = await purgeExpiredRequests(env);
   // Redelivery only happens within the queue's retry window, so a day is plenty.
   // A day covers a redelivery and the next run of every job that enqueues with a dedupe key (6 h at most).
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -721,6 +741,7 @@ export async function runCleanup(env: Env) {
     pending_accounts_purged: pendingAccountsPurged,
     conversations_removed: conversationsRemoved,
     student_id_verifications_expired: studentIdExpired,
+    expired_requests_purged: requestsExpired,
     email_sent_purged: sentPurged.meta.changes ?? 0,
     push_sent_purged: pushSentPurged.meta.changes ?? 0,
   };

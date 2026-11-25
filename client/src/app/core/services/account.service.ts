@@ -588,6 +588,11 @@ export class AccountService {
     return this.http.delete<void>(`/subscriptions/${subscriptionId}`);
   }
 
+  /** Change how long a book request lasts (half a year from today, or no end). */
+  setSubscriptionDuration(id: string, duration: 'half_year' | 'unlimited'): Observable<SubscriptionDto> {
+    return this.http.patch<SubscriptionDto>(`/subscriptions/${id}`, { duration });
+  }
+
   unsubscribeAll(): Observable<void> {
     return this.http.delete<void>('/subscriptions');
   }

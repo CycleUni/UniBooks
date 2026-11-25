@@ -1,6 +1,7 @@
 /**
  * /api/v1/search/
  */
+import { nowIso } from '../lib/time';
 import { Hono, type Context } from 'hono';
 import { publicEdgeCache, versionedEdgeCache } from '../lib/cache';
 import { validateBookIsbn } from '../services/catalog/isbn';
@@ -426,9 +427,10 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
       subscriptionsAt = read(
         frag(
           `SELECT id, book_id FROM subscriptions
-            WHERE region_code = ? AND user_id = ? AND book_id IN (${matched.sql} AND mb.isbn13 IS NOT NULL)`,
+            WHERE region_code = ? AND user_id = ? AND (expires_at IS NULL OR expires_at > ?) AND book_id IN (${matched.sql} AND mb.isbn13 IS NOT NULL)`,
           region.code,
           userId,
+          nowIso(),
           ...matched.args,
         ),
       );

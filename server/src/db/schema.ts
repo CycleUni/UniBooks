@@ -822,6 +822,8 @@ export const subscriptions = sqliteTable(
       .references(() => books.id, { onDelete: 'cascade' }),
     schoolId: integer('school_id').references(() => schools.id, { onDelete: 'set null' }),
     notifiedAt: text('notified_at'),
+    /** After this moment the request no longer counts and the nightly cleanup deletes it; null = never. */
+    expiresAt: text('expires_at'),
     createdAt: text('created_at').notNull(),
   },
   (table) => [
@@ -853,6 +855,8 @@ export const courseWants = sqliteTable(
     courseKey: text('course_key').notNull(),
     courseName: text('course_name').notNull(),
     notifiedAt: text('notified_at'),
+    /** After this moment the request no longer counts and the nightly cleanup deletes it; null = never. */
+    expiresAt: text('expires_at'),
     createdAt: text('created_at').notNull(),
   },
   (table) => [

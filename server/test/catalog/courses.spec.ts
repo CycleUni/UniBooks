@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { env, exports } from 'cloudflare:workers';
 import { eq } from 'drizzle-orm';
-import { createDb, currencies, languages, regions, schools, books, listings, courseWants } from '../../src/db';
+import { createDb, currencies, languages, regions, schools, books, listings, courseWants, subscriptions } from '../../src/db';
 import { courseKey } from '../../src/lib/course';
-import { runCourseWaitNotify } from '../../src/jobs/index';
+import { runCourseWaitNotify, runWaitlistNotify, purgeExpiredRequests } from '../../src/jobs/index';
 import { createUser } from '../accounts/helpers';
 import { tokenFor } from '../ads/helpers';
 import { mergeSpellings } from '../../src/services/listings/courses';
@@ -313,5 +313,137 @@ describe('the search page course filter', () => {
   it('still finds nothing for a course nobody lists', async () => {
     const body = (await (await search(`/books?school=FILTER&course=${encodeURIComponent('不存在的課')}`)).json()) as { results: unknown[] };
     expect(body.results).toEqual([]);
+  });
+});
+
+describe('request expiry (book and course requests)', () => {
+  const SCHOOL = 501;
+  const MONTH = 30 * 24 * 3_600_000;
+  let seller: { id: string; token: string };
+
+  beforeAll(async () => {
+    await db.insert(currencies).values({ code: 'TWD', symbol: 'NT$', decimalPlaces: 0 }).onConflictDoNothing();
+    await db.insert(languages).values({ code: 'zh-TW', name: 'Chinese (Taiwan)' }).onConflictDoNothing();
+    await db
+      .insert(regions)
+      .values({ code: 'TW', name: 'Taiwan', defaultCurrency: 'TWD', defaultLanguage: 'zh-TW', timezone: 'Asia/Taipei', languages: '["zh-TW"]', createdAt: now() })
+      .onConflictDoNothing();
+    await db
+      .insert(schools)
+      .values({ id: SCHOOL, regionCode: 'TW', code: 'CHIHLEE', name: 'Chihlee', emailDomain: 'chihlee.test', createdAt: now() })
+      .onConflictDoNothing();
+    seller = await makeUser('expiry-seller');
+  });
+
+  const postCourse = (token: string, name: string, duration?: string) =>
+    call('/wants', { method: 'POST', token, body: JSON.stringify({ school: 'CHIHLEE', name, ...(duration ? { duration } : {}) }) });
+
+  it('a course request lasts half a year unless the student chooses no end', async () => {
+    const student = await makeUser('student-expiry');
+    const half = (await (await postCourse(student.token, '統計學')).json()) as { expires_at: string | null };
+    const months = (new Date(half.expires_at!).getTime() - Date.now()) / MONTH;
+    expect(months).toBeGreaterThan(5.8);
+    expect(months).toBeLessThan(6.3);
+    const open = (await (await postCourse(student.token, '會計學', 'unlimited')).json()) as { expires_at: string | null };
+    expect(open.expires_at).toBeNull();
+  });
+
+  it('changing the duration restarts the half year, or removes the end', async () => {
+    const student = await makeUser('student-patch');
+    const want = (await (await postCourse(student.token, '經濟學', 'unlimited')).json()) as { id: string };
+    const back = await call(`/wants/${want.id}`, { method: 'PATCH', token: student.token, body: JSON.stringify({ duration: 'half_year' }) });
+    expect(back.status).toBe(200);
+    expect(((await back.json()) as { expires_at: string | null }).expires_at).toBeTruthy();
+    const open = await call(`/wants/${want.id}`, { method: 'PATCH', token: student.token, body: JSON.stringify({ duration: 'unlimited' }) });
+    expect(((await open.json()) as { expires_at: string | null }).expires_at).toBeNull();
+    // Someone else's request is not theirs to change.
+    const other = await makeUser('student-other');
+    expect((await call(`/wants/${want.id}`, { method: 'PATCH', token: other.token, body: JSON.stringify({ duration: 'half_year' }) })).status).toBe(404);
+  });
+
+  it('an expired course request is gone from the lists and counts, and asking again starts over', async () => {
+    const student = await makeUser('student-lapsed');
+    const first = (await (await postCourse(student.token, '作業系統')).json()) as { id: string };
+    await db.update(courseWants).set({ expiresAt: ago(1000) }).where(eq(courseWants.id, first.id));
+
+    expect(await (await call('/wants', { token: student.token })).json()).toEqual([]);
+    const detail = await call(`/detail?school=CHIHLEE&name=${encodeURIComponent('作業系統')}`);
+    expect(detail.status).toBe(404); // nobody waits and nothing is listed
+
+    const again = await postCourse(student.token, '作業系統');
+    expect(again.status).toBe(201);
+    const [row] = await db.select().from(courseWants).where(eq(courseWants.userId, (await db.select().from(courseWants).where(eq(courseWants.id, first.id)))[0].userId));
+    expect(new Date(row.expiresAt!).getTime()).toBeGreaterThan(Date.now());
+    expect(((await (await call('/wants', { token: student.token })).json()) as unknown[]).length).toBe(1);
+  });
+
+  it('the notifier does not tell a student whose course request lapsed', async () => {
+    const student = await makeUser('student-silent');
+    await db.insert(courseWants).values({
+      id: crypto.randomUUID(),
+      regionCode: 'TW',
+      userId: student.id,
+      schoolId: SCHOOL,
+      courseKey: courseKey('資料庫'),
+      courseName: '資料庫',
+      createdAt: ago(7 * MONTH),
+      expiresAt: ago(MONTH),
+    });
+    await addListing(seller.id, SCHOOL, 'Databases', '資料庫');
+    const result = await runCourseWaitNotify(env);
+    expect(result.notified_users).toBe(0);
+  });
+
+  it('the nightly cleanup deletes lapsed requests of both kinds and keeps the rest', async () => {
+    const student = await makeUser('student-clean');
+    const keep = crypto.randomUUID();
+    await db.insert(courseWants).values([
+      { id: crypto.randomUUID(), regionCode: 'TW', userId: student.id, schoolId: SCHOOL, courseKey: 'old', courseName: 'Old', createdAt: ago(7 * MONTH), expiresAt: ago(MONTH) },
+      { id: keep, regionCode: 'TW', userId: student.id, schoolId: SCHOOL, courseKey: 'forever', courseName: 'Forever', createdAt: ago(7 * MONTH), expiresAt: null },
+    ]);
+    const bookId = crypto.randomUUID();
+    await db.insert(books).values({ id: bookId, regionCode: 'TW', isbn13: null, title: 'Wanted once', source: 'manual', createdAt: now() });
+    await db.insert(subscriptions).values({ id: crypto.randomUUID(), regionCode: 'TW', userId: student.id, bookId, createdAt: ago(7 * MONTH), expiresAt: ago(MONTH) });
+
+    expect(await purgeExpiredRequests(env)).toBeGreaterThanOrEqual(2);
+    const left = await db.select().from(courseWants).where(eq(courseWants.userId, student.id));
+    expect(left.map((w) => w.id)).toEqual([keep]);
+    expect(await db.select().from(subscriptions).where(eq(subscriptions.userId, student.id))).toEqual([]);
+  });
+
+  describe('book requests', () => {
+    const subscribe = (token: string, bookId: string, duration?: string) =>
+      call('', { method: 'POST', token, body: JSON.stringify({ book_id: bookId, ...(duration ? { duration } : {}) }) }, '/api/v1/subscriptions');
+
+    it('lasts half a year by default, can be made endless, and lapses out of the list', async () => {
+      const student = await makeUser('book-student');
+      const bookId = await addListing(seller.id, SCHOOL, 'Some book', 'X', 'sold');
+      const made = (await (await subscribe(student.token, bookId)).json()) as { id: string; expires_at: string | null };
+      expect(made.expires_at).toBeTruthy();
+
+      const patched = await call(`/${made.id}`, { method: 'PATCH', token: student.token, body: JSON.stringify({ duration: 'unlimited' }) }, '/api/v1/subscriptions');
+      expect(((await patched.json()) as { expires_at: string | null }).expires_at).toBeNull();
+
+      await db.update(subscriptions).set({ expiresAt: ago(1000) }).where(eq(subscriptions.id, made.id));
+      expect(await (await call('', { token: student.token }, '/api/v1/subscriptions')).json()).toEqual([]);
+      // Asking again after it lapsed is a fresh request, not a no-op on the dead row.
+      expect((await subscribe(student.token, bookId)).status).toBe(201);
+      expect(((await (await call('', { token: student.token }, '/api/v1/subscriptions')).json()) as unknown[]).length).toBe(1);
+    });
+
+    it('the notifier skips a lapsed request', async () => {
+      const student = await makeUser('book-silent');
+      const bookId = await addListing(seller.id, SCHOOL, 'Fresh listing', 'Y');
+      await db.insert(subscriptions).values({
+        id: crypto.randomUUID(),
+        regionCode: 'TW',
+        userId: student.id,
+        bookId,
+        createdAt: ago(7 * MONTH),
+        expiresAt: ago(MONTH),
+      });
+      const result = await runWaitlistNotify(env);
+      expect(result.notified_subscriptions).toBe(0);
+    });
   });
 });

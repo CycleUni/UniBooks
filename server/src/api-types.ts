@@ -12,6 +12,8 @@ export interface SubscriptionDto {
   bookCoverUrl: string;
   newListingsCount: number;
   created_at: string;
+  /** When the request lapses (ISO); null = never. */
+  expires_at: string | null;
 }
 
 /** GET /api/v1/courses item: one course at a school (spellings merged). */
@@ -54,4 +56,6 @@ export interface CourseWantDto {
   /** School code. */
   school: string;
   created_at: string;
+  /** When the request lapses (ISO); null = never. */
+  expires_at: string | null;
 }

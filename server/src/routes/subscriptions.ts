@@ -17,6 +17,7 @@ import { getGoogleBooksByIsbn } from '../services/catalog/lookups';
 import { deleteUnusedBooks } from '../services/catalog/unused';
 import { UUID_RE } from '../lib/uuid';
 import { nowIso } from '../lib/time';
+import { expiryFor, notExpired, parseDuration } from '../lib/requestExpiry';
 import type { SubscriptionDto } from '../api-types';
 
 export const subscriptionRoutes = new Hono<AppEnv>();
@@ -50,6 +51,7 @@ async function serialize(env: Env, subs: Subscription[]): Promise<SubscriptionDt
       bookCoverUrl: book ? coverUrlFor(env, undefined, book) : '',
       newListingsCount: countMap.get(s.id) ?? 0,
       created_at: s.createdAt,
+      expires_at: s.expiresAt,
     };
   });
 }
@@ -59,7 +61,8 @@ subscriptionRoutes.get('/', async (c) => {
   const rows = await createDb(c.env.DB)
     .select()
     .from(subscriptions)
-    .where(and(eq(subscriptions.userId, c.get('userId')!), eq(subscriptions.regionCode, region.code)))
+    
+    .where(and(eq(subscriptions.userId, c.get('userId')!), eq(subscriptions.regionCode, region.code), notExpired(subscriptions.expiresAt)))
     .orderBy(desc(subscriptions.createdAt));
   return c.json(await serialize(c.env, rows));
 });
@@ -93,7 +96,7 @@ subscriptionRoutes.post('/', async (c) => {
   const [{ n }] = await db
     .select({ n: sql<number>`count(*)` })
     .from(subscriptions)
-    .where(eq(subscriptions.userId, userId));
+    .where(and(eq(subscriptions.userId, userId), notExpired(subscriptions.expiresAt)));
   if (n >= MAX_SUBSCRIPTIONS_PER_USER) apiError(400, 'common.errValidation');
 
   let book: Book | undefined;
@@ -151,9 +154,19 @@ subscriptionRoutes.post('/', async (c) => {
     bookId: book.id,
     schoolId: null,
     notifiedAt: null,
+    expiresAt: expiryFor(parseDuration(body.duration)),
     createdAt: nowIso(),
   };
-  const inserted = await db.insert(subscriptions).values(sub).onConflictDoNothing().returning({ id: subscriptions.id });
+  // A request still in force is left as it is; one that lapsed (and is not yet cleaned up) starts over.
+  const inserted = await db
+    .insert(subscriptions)
+    .values(sub)
+    .onConflictDoUpdate({
+      target: [subscriptions.userId, subscriptions.bookId],
+      set: { createdAt: sub.createdAt, notifiedAt: null, expiresAt: sub.expiresAt },
+      setWhere: sql`${subscriptions.expiresAt} IS NOT NULL AND ${subscriptions.expiresAt} <= ${sub.createdAt}`,
+    })
+    .returning({ id: subscriptions.id });
   const [row] = await db
     .select()
     .from(subscriptions)
@@ -178,4 +191,28 @@ subscriptionRoutes.delete('/:id', async (c) => {
     deleted.map((d) => d.bookId),
   );
   return c.body(null, deleted.length ? 204 : 404);
+});
+
+/** Change how long a request lasts: from today for half a year, or without an end. */
+subscriptionRoutes.patch('/:id', async (c) => {
+  const id = c.req.param('id');
+  if (!UUID_RE.test(id)) return c.body(null, 404);
+  const region = await requireRegion(c);
+  const body = await readJson(c.req);
+  const db = createDb(c.env.DB);
+  const [row] = await db
+    .update(subscriptions)
+    .set({ expiresAt: expiryFor(parseDuration(body.duration)) })
+    .where(
+      and(
+        eq(subscriptions.id, id.toLowerCase()),
+        eq(subscriptions.userId, c.get('userId')!),
+        eq(subscriptions.regionCode, region.code),
+        notExpired(subscriptions.expiresAt),
+      ),
+    )
+    .returning();
+  if (!row) apiError(404, 'not_found');
+  const [out] = await serialize(c.env, [row]);
+  return c.json(out);
 });

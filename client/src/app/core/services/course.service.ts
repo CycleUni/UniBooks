@@ -34,6 +34,11 @@ export class CourseService {
     return this.http.post<CourseWantDto>('/courses/wants', { school, name });
   }
 
+  /** Change how long a request lasts (half a year from today, or no end). */
+  setDuration(id: string, duration: 'half_year' | 'unlimited'): Observable<CourseWantDto> {
+    return this.http.patch<CourseWantDto>(`/courses/wants/${id}`, { duration });
+  }
+
   unwant(id: string): Observable<void> {
     return this.http.delete<void>(`/courses/wants/${id}`);
   }
