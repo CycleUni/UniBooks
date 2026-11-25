@@ -164,6 +164,10 @@ describe('emails', () => {
         listing_count: 2,
         region: 'TW',
         course_name: '經濟學 (一)、會計學',
+        courses: [
+          { name: '經濟學 (一)', school: 'ntu' },
+          { name: '會計學', school: 'ntu' },
+        ],
         books: [
           { id: 'b-uuid-1', title: '經濟學原理', isbn13: null, region: 'TW' },
           { id: 'b-uuid-2', title: '會計學 <script>', isbn13: null, region: 'TW' },
@@ -182,6 +186,15 @@ describe('emails', () => {
     expect(mail?.text).toContain(BASE + '/account/subscriptions');
     expect(mail?.html).toContain('&lt;script&gt;');
     expect(mail?.html).not.toContain('<script>');
+    // One link per course to the page listing all its books, in the course's school and the mail's region.
+    const course1 = `${BASE}/tw/course/detail?school=ntu&name=${encodeURIComponent('經濟學 (一)')}`;
+    expect(mail?.text).toContain(course1);
+    expect(mail?.text).toContain(`${BASE}/tw/course/detail?school=ntu&name=${encodeURIComponent('會計學')}`);
+    expect(mail?.html).toContain(`href="${course1.replace('&', '&amp;')}"`);
+    // Branded: the wordmark, and the course link as a button.
+    expect(mail?.html).toContain('>UniBooks</a>');
+    expect(mail?.html).toContain('查看「經濟學 (一)」的所有書');
+    expect(mail?.html).toContain('background:#1E5C46');
   });
 
   it('course waitlist push: names the course, not a book', async () => {

@@ -28,8 +28,15 @@ export interface RenderedEmail {
   html: string;
 }
 
-/** Plain-text lines; a line that is exactly a URL becomes a link in the HTML part. */
-type Line = string | { link: string } | { text: string; link: string };
+/**
+ * Plain-text lines; a line that is exactly a URL becomes a link in the HTML part.
+ * `label` is what the HTML part shows for a link whose plain-text line also carries the URL;
+ * `button` is a call to action: a filled button in the HTML part, "label: url" in the text.
+ */
+type Line = string | { link: string } | { text: string; link: string; label?: string } | { button: string; link: string };
+
+/** Brand colours (client/src/styles.css --accent, --accent-soft): inline styles cannot read CSS variables. */
+const BRAND = { accent: '#1E5C46', soft: '#E7F0EA', ink: '#1e293b', muted: '#64748b', ground: '#f4f6f4' };
 
 const SYSTEM_PREVIEW_PREFIX = '[SYSTEM:';
 const CHAT_EMAIL_PREVIEW_MAX_CHARS = 120;
@@ -49,18 +56,34 @@ function frontend(_env: Env): string {
 }
 
 function render(to: string, name: string, subject: string, lines: Line[]): RenderedEmail {
-  const text = lines.map((l) => (typeof l === 'string' ? l : 'text' in l ? l.text : l.link)).join('\n');
+  const text = lines
+    .map((l) => (typeof l === 'string' ? l : 'button' in l ? `${l.button}: ${l.link}` : 'text' in l ? l.text : l.link))
+    .join('\n');
   const htmlLines = lines.map((l) => {
-    if (typeof l === 'string') return l ? `<p style="margin:0 0 4px">${escapeHtml(l)}</p>` : '<br>';
+    if (typeof l === 'string') return l ? `<p style="margin:0 0 6px">${escapeHtml(l)}</p>` : '<div style="height:10px"></div>';
     const href = escapeHtml(l.link);
-    const label = 'text' in l ? escapeHtml(l.text) : href;
-    return `<p style="margin:0 0 4px"><a href="${href}" style="color:#2563eb;word-break:break-all">${label}</a></p>`;
+    if ('button' in l) {
+      return (
+        `<p style="margin:14px 0"><a href="${href}" style="display:inline-block;padding:12px 22px;border-radius:10px;` +
+        `background:${BRAND.accent};color:#ffffff;font-weight:600;text-decoration:none">${escapeHtml(l.button)}</a></p>`
+      );
+    }
+    const label = 'text' in l ? escapeHtml(l.label ?? l.text) : href;
+    return `<p style="margin:0 0 6px"><a href="${href}" style="color:${BRAND.accent};word-break:break-all">${label}</a></p>`;
   });
+  const site = escapeHtml(origin);
+  // Tables, not flex/grid: mail clients without modern CSS still show the layout. No image: logos are
+  // blocked by default in many clients, and the wordmark carries the brand without one.
   const html =
-    '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>' +
-    '<body style="margin:0;padding:24px;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1e293b">' +
-    htmlLines.join('') +
-    '</body></html>';
+    '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<meta name="color-scheme" content="light"></head>' +
+    `<body style="margin:0;padding:0;background:${BRAND.ground};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:${BRAND.ink}">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.ground}"><tr><td align="center" style="padding:24px 12px">` +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:14px;overflow:hidden">' +
+    `<tr><td style="background:${BRAND.accent};padding:18px 28px"><a href="${site}" style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:.3px;text-decoration:none">UniBooks</a></td></tr>` +
+    `<tr><td style="padding:26px 28px">${htmlLines.join('')}</td></tr>` +
+    `<tr><td style="background:${BRAND.soft};padding:14px 28px;font-size:12px;color:${BRAND.muted}"><a href="${site}" style="color:${BRAND.muted};text-decoration:none">${site.replace(/^https?:\/\//, '')}</a></td></tr>` +
+    '</table></td></tr></table></body></html>';
   return { to, name: oneLine(name), subject: oneLine(subject), text, html };
 }
 
@@ -255,7 +278,13 @@ async function waitlist(env: Env, msg: Extract<EmailMessage, { type: 'waitlist_n
       : book.isbn13
         ? `${base}/${region}/book?isbn=${encodeURIComponent(book.isbn13)}`
         : `${base}/${region}`;
-    lines.push({ text: `- ${book.title}: ${url}`, link: url });
+    lines.push({ text: `- ${book.title}: ${url}`, link: url, label: book.title });
+  }
+  // One button per course, to the page that lists every book for it.
+  const regionPath = encodeURIComponent(String(msg.region || env.DEFAULT_REGION || 'tw').toLowerCase());
+  for (const course of msg.courses ?? []) {
+    const url = `${base}/${regionPath}/course/detail?school=${encodeURIComponent(course.school)}&name=${encodeURIComponent(course.name)}`;
+    lines.push('', { button: t(lang, 'email.courseWait.viewCourse', { course: course.name }), link: url });
   }
   const requestPage = `${base}/account/subscriptions`;
   lines.push('', t(lang, 'email.waitlist.logIn'), '', t(lang, forCourse ? 'email.courseWait.stop' : 'email.waitlist.stop'), {

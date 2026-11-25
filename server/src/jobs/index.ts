@@ -5,6 +5,7 @@ import {
   createDb,
   subscriptions,
   courseWants,
+  schools,
   listings,
   books,
   users,
@@ -80,6 +81,8 @@ interface WaitlistNotice {
   dedupeIds: string[];
   /** Set when the notice is about a course request rather than a book request. */
   courseName?: string;
+  /** The courses behind courseName, with their school codes, for links to the course pages. */
+  courses?: { name: string; school: string }[];
   books: { id: string; title: string; isbn13: string | null }[];
 }
 
@@ -102,6 +105,7 @@ async function sendWaitlistNotice(env: Env, n: WaitlistNotice): Promise<boolean>
     listing_count: n.books.length,
     region: n.region,
     ...(n.courseName ? { course_name: n.courseName } : {}),
+    ...(n.courses ? { courses: n.courses } : {}),
     books: n.books.map((b) => ({ id: b.id, title: b.title, isbn13: b.isbn13, region: n.region })),
   };
   try {
@@ -277,11 +281,13 @@ export async function runCourseWaitNotify(env: Env) {
       regionCode: courseWants.regionCode,
       key: courseWants.courseKey,
       name: courseWants.courseName,
+      schoolCode: schools.code,
       since: sql<string>`MAX(${courseWants.createdAt}, COALESCE(${courseWants.notifiedAt}, ${courseWants.createdAt}))`,
       email: users.email,
     })
     .from(courseWants)
     .innerJoin(users, eq(users.id, courseWants.userId))
+    .innerJoin(schools, eq(schools.id, courseWants.schoolId))
     .where(
       and(
         eq(users.isActive, 1),
@@ -347,6 +353,7 @@ export async function runCourseWaitNotify(env: Env) {
       // The request and the moment it was last told about: told again only for listings newer than that.
       dedupeIds: dues.map((d) => `${d.want.id}@${d.want.since}`),
       courseName: dues.map((d) => d.want.name).join('、'),
+      courses: dues.map((d) => ({ name: d.want.name, school: d.want.schoolCode })),
       books: [...bookList.values()],
     });
     if (!sent) continue;

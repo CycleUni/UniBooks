@@ -62,6 +62,8 @@ export type EmailMessage =
       region: string;
       /** Set when the notice is about course requests ("I am taking …"), not book requests. */
       course_name?: string;
+      /** The courses behind course_name, each with its school's code, for a link to the course page. */
+      courses?: { name: string; school: string }[];
       /** Every due book for this user, for one email per user (the cron); book_title alone otherwise. */
       books?: { id?: string; title: string; isbn13?: string | null; region?: string }[];
     }
