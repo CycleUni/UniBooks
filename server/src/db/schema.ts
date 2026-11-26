@@ -1023,6 +1023,9 @@ export const organizations = sqliteTable(
       .references(() => schools.id),
     name: text('name').notNull(),
     isActive: integer('is_active').notNull().default(1),
+    // What staff open to the organization in the event system: its own draws, book drives.
+    drawsEnabled: integer('draws_enabled').notNull().default(0),
+    drivesEnabled: integer('drives_enabled').notNull().default(1),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },

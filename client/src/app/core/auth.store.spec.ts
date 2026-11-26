@@ -4,7 +4,7 @@ import { RecentSearches } from './search-suggestions';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 import { sentry } from './sentry';
-import { AuthStore } from './auth.store';
+import { AuthStore, eventSystemPath } from './auth.store';
 import { RegionLinkService } from './region-link.service';
 import { RegionService } from './region.service';
 import { Meta, Title } from '@angular/platform-browser';
@@ -915,5 +915,31 @@ describe('AuthStore cookie session', () => {
     const includeReq = httpMock.expectOne('/auth/me?include=listings,subscriptions');
     expect(includeReq.request.params.get('include')).toBe('listings,subscriptions');
     includeReq.flush({ id: 1, email: 'user@example.com', myListingCounts: { all: 0 } });
+  });
+});
+
+describe('eventSystemPath', () => {
+  const base = { id: 'u1', email: 'a@b.test' };
+
+  it('sends staff to the event system home', () => {
+    expect(eventSystemPath({ ...base, role: 'staff' })).toBe('/event');
+    expect(eventSystemPath({ ...base, role: 'admin', staffed_drives: [{ id: 'd', region: 'TW' }] })).toBe('/event');
+  });
+
+  it("sends a drive's staff to that drive's region", () => {
+    expect(eventSystemPath({ ...base, role: 'user', staffed_drives: [{ id: 'd', region: 'HK' }] })).toBe('/event/hk/drives');
+  });
+
+  it("sends an organization's admins to book drives, or to draws when that is all it hosts", () => {
+    const drives = { id: 'o1', region: 'TW', features: { draws: false, drives: true } };
+    const draws = { id: 'o2', region: 'HK', features: { draws: true, drives: false } };
+    expect(eventSystemPath({ ...base, organizations: [draws, drives] })).toBe('/event/tw/drives');
+    expect(eventSystemPath({ ...base, organizations: [draws] })).toBe('/event/hk');
+  });
+
+  it('is null for anyone with nothing to run there', () => {
+    expect(eventSystemPath(null)).toBeNull();
+    expect(eventSystemPath({ ...base, role: 'user' })).toBeNull();
+    expect(eventSystemPath({ ...base, organizations: [{ id: 'o', region: 'TW', features: { draws: false, drives: false } }] })).toBeNull();
   });
 });

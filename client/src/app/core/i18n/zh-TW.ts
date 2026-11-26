@@ -1211,6 +1211,7 @@ export const zhTW: Record<string, string> = {
   'org.errName': '姓名最多 50 個字。',
   'org.errDepartment': '科系最多 50 個字。',
   'org.errGrade': '年級須為 1 到 7 的整數。',
+  'org.errDrivesOff': '這個組織目前沒有開放收書贈書。',
   'org.errValidUntil': '會員效期須為今天以後的日期（YYYY-MM-DD）。',
   'org.errDuplicateInFile': '這個學號在檔案中重複出現。',
   'org.warnDepartmentUnlisted': '科系不在清單中，將照輸入內容儲存。',

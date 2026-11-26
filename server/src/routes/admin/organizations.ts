@@ -2,8 +2,10 @@
  * /api/v1/admin/organizations: site staff create a school's organizations
  * (student unions) and name the accounts that run them. Region-scoped like
  * every admin view: staff see and change only their regions' organizations.
- *   ''                      GET (?region=, ?q=, ?page=), POST {school, name}
- *   <id>                    PATCH {name?, is_active?}
+ *   ''                      GET (?region=, ?q=, ?page=), POST {school, name, features?}
+ *   <id>                    PATCH {name?, is_active?, features?}
+ * `features` is what the organization may use in the event system:
+ * {draws?: boolean, drives?: boolean}; a new one gets book drives only.
  *   <id>/admins             POST {email}
  *   <id>/admins/<user id>   DELETE
  */
@@ -61,6 +63,25 @@ async function adminView(c: Context<AppEnv>, orgs: Organization[]) {
     admins: admins.filter((a) => a.orgId === o.id).map((a) => ({ id: a.id, email: a.email, display_name: displayName(a.first, a.last) })),
     member_count: countMap.get(o.id) ?? 0,
   }));
+}
+
+/** The features in a body, as columns: {draws?, drives?} booleans; absent ones are left as they are. */
+function featuresField(body: Record<string, unknown>): Partial<Pick<Organization, 'drawsEnabled' | 'drivesEnabled'>> {
+  if (!('features' in body)) return {};
+  const f = body.features;
+  const bad = (): never => fieldErrors({ features: ['common.errValidation'] });
+  if (!f || typeof f !== 'object' || Array.isArray(f)) bad();
+  const set: Partial<Pick<Organization, 'drawsEnabled' | 'drivesEnabled'>> = {};
+  for (const [key, column] of [
+    ['draws', 'drawsEnabled'],
+    ['drives', 'drivesEnabled'],
+  ] as const) {
+    const v = (f as Record<string, unknown>)[key];
+    if (v === undefined) continue;
+    if (typeof v !== 'boolean') bad();
+    set[column] = v ? 1 : 0;
+  }
+  return set;
 }
 
 function cleanName(v: unknown): string {
@@ -124,6 +145,9 @@ organizationRoutes.post('/organizations', async (c) => {
     schoolId: school.id,
     name,
     isActive: 1,
+    drawsEnabled: 0,
+    drivesEnabled: 1,
+    ...featuresField(body),
     createdAt: now,
     updatedAt: now,
   };
@@ -138,7 +162,7 @@ organizationRoutes.post('/organizations', async (c) => {
     {
       actorId: c.get('user')!.id,
       kind: 'admin.organization_created',
-      meta: { school_id: school.id, name },
+      meta: { school_id: school.id, name, draws: org.drawsEnabled, drives: org.drivesEnabled },
       targetType: 'organization',
       targetId: org.id,
     },
@@ -158,6 +182,7 @@ organizationRoutes.patch('/organizations/:id', async (c) => {
     if (typeof body.is_active !== 'boolean') fieldErrors({ is_active: ['common.errValidation'] });
     set.isActive = body.is_active ? 1 : 0;
   }
+  Object.assign(set, featuresField(body));
   if (Object.keys(set).length) {
     set.updatedAt = new Date().toISOString();
     try {

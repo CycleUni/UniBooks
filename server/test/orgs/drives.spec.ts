@@ -62,6 +62,40 @@ describe('book drives', () => {
     expect((await call(`/api/v1/drives/${drive.id}/staff`, { token: helper.token })).status).toBe(403);
   });
 
+  it('opens book drives and draws to an organization as staff choose, and names it to anyone', async () => {
+    const { root, org, lead, drive } = await setup();
+    // A new organization gets book drives only.
+    expect(org.features).toEqual({ draws: false, drives: true });
+    const me = await json(await call('/api/v1/auth/me', { token: lead.token }));
+    expect(me.organizations).toEqual([expect.objectContaining({ id: org.id, features: { draws: false, drives: true } })]);
+
+    // Without book drives, its drives are gone for its admins and none can be made.
+    const off = await json(
+      await call(`/api/v1/admin/organizations/${org.id}`, {
+        token: root.token,
+        method: 'PATCH',
+        body: { features: { drives: false, draws: true } },
+      }),
+    );
+    expect(off.features).toEqual({ draws: true, drives: false });
+    expect((await call(`/api/v1/drives/${drive.id}`, { token: lead.token })).status).toBe(404);
+    expect((await json(await call('/api/v1/drives', { token: lead.token }))).results).toEqual([]);
+    const refused = await call('/api/v1/drives', { token: lead.token, body: { organization: org.id, title: 'x' } });
+    expect(refused.status).toBe(403);
+    expect((await json(refused)).error.code).toBe('org.errDrivesOff');
+    expect(
+      (await call(`/api/v1/admin/organizations/${org.id}`, { token: root.token, method: 'PATCH', body: { features: { drives: 'yes' } } }))
+        .status,
+    ).toBe(400);
+
+    // Its name, for the event system's public pages: no sign-in, active ones only.
+    const names = await json(await call(`/api/v1/orgs/names?ids=${org.id},${crypto.randomUUID()},bad`));
+    expect(Object.keys(names)).toEqual([org.id]);
+    expect(names[org.id]).toContain('國立臺灣大學');
+    await call(`/api/v1/admin/organizations/${org.id}`, { token: root.token, method: 'PATCH', body: { is_active: false } });
+    expect(await json(await call(`/api/v1/orgs/names?ids=${org.id}`))).toEqual({});
+  });
+
   it('takes books in with consecutive shelf numbers, and stops once the drive closes', async () => {
     const { lead, drive } = await setup();
     const first = await call(`/api/v1/drives/${drive.id}/copies`, {

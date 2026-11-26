@@ -43,7 +43,7 @@ import { findOrCreateBook } from '../services/catalog/books';
 import { regionCategories } from '../services/listings/places';
 import { organizationDisplayName, requireOrgAdmin, schoolsOf } from '../services/orgs/organizations';
 import { departmentField, gradeField, today } from '../services/orgs/roster';
-import { assertCollecting, requireDrive, type DriveRole } from '../services/drives/access';
+import { assertCollecting, requireDrive, runsDrives, type DriveRole } from '../services/drives/access';
 
 export const driveRoutes = new Hono<AppEnv>();
 
@@ -128,15 +128,12 @@ driveRoutes.get('/', async (c) => {
   const user = c.get('user')!;
   const db = createDb(c.env.DB);
   const orgFilter = c.req.query('organization');
-  const conds: (SQL | undefined)[] = [
-    eq(organizations.isActive, 1),
-    or(sql`${organizationAdmins.userId} IS NOT NULL`, sql`${bookDriveStaff.userId} IS NOT NULL`),
-  ];
+  const conds: (SQL | undefined)[] = [or(sql`${organizationAdmins.userId} IS NOT NULL`, sql`${bookDriveStaff.userId} IS NOT NULL`)];
   if (orgFilter) conds.push(eq(bookDrives.organizationId, orgFilter));
   const rows = await db
     .select({ drive: bookDrives, org: organizations, isAdmin: organizationAdmins.userId })
     .from(bookDrives)
-    .innerJoin(organizations, eq(organizations.id, bookDrives.organizationId))
+    .innerJoin(organizations, runsDrives)
     .leftJoin(organizationAdmins, and(eq(organizationAdmins.organizationId, organizations.id), eq(organizationAdmins.userId, user.id)))
     .leftJoin(bookDriveStaff, and(eq(bookDriveStaff.driveId, bookDrives.id), eq(bookDriveStaff.userId, user.id)))
     .where(and(...conds))
@@ -151,6 +148,7 @@ driveRoutes.get('/', async (c) => {
 driveRoutes.post('/', async (c) => {
   const body = await readJson(c.req);
   const org = await requireOrgAdmin(c, typeof body.organization === 'string' ? body.organization : '');
+  if (!org.drivesEnabled) apiError(403, 'org.errDrivesOff');
   const now = nowIso();
   const drive: BookDrive = {
     id: crypto.randomUUID(),

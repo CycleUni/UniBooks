@@ -4,6 +4,8 @@
  * they named for the drive ('staff': intake and, later, pickup). Site staff
  * have no role here unless they hold one of these: drives carry students'
  * details. Anyone else gets a 404 for every drive, so ids reveal nothing.
+ * An organization's drives are there only while it is active and staff give it
+ * book drives (its `drives_enabled`).
  */
 import type { Context } from 'hono';
 import { and, eq, ne } from 'drizzle-orm';
@@ -13,6 +15,13 @@ import { apiError } from '../../lib/http';
 import { organizationDisplayName, schoolsOf } from '../orgs/organizations';
 
 export type DriveRole = 'admin' | 'staff';
+
+/** The join to a drive's organization: an active one that may run book drives. */
+export const runsDrives = and(
+  eq(organizations.id, bookDrives.organizationId),
+  eq(organizations.isActive, 1),
+  eq(organizations.drivesEnabled, 1),
+);
 
 export interface DriveAccess {
   drive: BookDrive;
@@ -33,7 +42,7 @@ export async function requireDrive(c: Context<AppEnv>, id: string, need: DriveRo
       isStaff: bookDriveStaff.userId,
     })
     .from(bookDrives)
-    .innerJoin(organizations, and(eq(organizations.id, bookDrives.organizationId), eq(organizations.isActive, 1)))
+    .innerJoin(organizations, runsDrives)
     .leftJoin(organizationAdmins, and(eq(organizationAdmins.organizationId, organizations.id), eq(organizationAdmins.userId, user.id)))
     .leftJoin(bookDriveStaff, and(eq(bookDriveStaff.driveId, bookDrives.id), eq(bookDriveStaff.userId, user.id)))
     .where(eq(bookDrives.id, id))
@@ -55,7 +64,7 @@ export async function drivesStaffedBy(env: Env, userId: string, lang: string) {
     .select({ drive: bookDrives, org: organizations })
     .from(bookDriveStaff)
     .innerJoin(bookDrives, eq(bookDrives.id, bookDriveStaff.driveId))
-    .innerJoin(organizations, and(eq(organizations.id, bookDrives.organizationId), eq(organizations.isActive, 1)))
+    .innerJoin(organizations, runsDrives)
     .where(and(eq(bookDriveStaff.userId, userId), ne(bookDrives.status, 'closed')));
   const schools = await schoolsOf(
     env,

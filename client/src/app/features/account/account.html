@@ -77,15 +77,17 @@
                 <a regionLink="/account/settings" routerLinkActive="active">{{ 'acct.tabSettings' | t }}</a>
               </div>
             </div>
-            <!-- Staff only, and a group of its own: running the site is not
-                 one of the user's personal pages. The event system is a
-                 separate app on this origin, so its link is a full page load
-                 (the service worker leaves /event alone). -->
-            <div *ngIf="isStaff" class="nav-group admin-group" role="group" aria-labelledby="acct-nav-admin">
+            <!-- A group of its own: running the site, a student organization
+                 or a book drive is not one of the user's personal pages. The
+                 admin console is staff only; the event system is for staff
+                 and for whoever runs an organization or works at a drive. It
+                 is a separate app on this origin, so its link is a full page
+                 load (the service worker leaves /event alone). -->
+            <div *ngIf="isStaff || eventsPath" class="nav-group admin-group" role="group" aria-labelledby="acct-nav-admin">
               <h4 class="nav-group-title" id="acct-nav-admin">{{ 'acct.navGroupAdmin' | t }}</h4>
               <div class="nav-links">
-                <a regionLink="/admin" class="admin-console-link">{{ 'nav.admin' | t }}</a>
-                <a href="/event">{{ 'acct.navEvents' | t }}</a>
+                <a *ngIf="isStaff" regionLink="/admin" class="admin-console-link">{{ 'nav.admin' | t }}</a>
+                <a *ngIf="eventsPath as path" [href]="path">{{ 'acct.navEvents' | t }}</a>
               </div>
             </div>
             <!-- Phones only: region and language live here rather than under

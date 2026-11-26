@@ -1211,6 +1211,7 @@ export const zhHK: Record<string, string> = {
   'org.errName': '姓名最多 50 個字。',
   'org.errDepartment': '科系最多 50 個字。',
   'org.errGrade': '年級要係 1 至 7 嘅整數。',
+  'org.errDrivesOff': '呢個組織而家未開放收書贈書。',
   'org.errValidUntil': '會員效期要係今日或之後嘅日期（YYYY-MM-DD）。',
   'org.errDuplicateInFile': '呢個學號喺檔案入面出現多過一次。',
   'org.warnDepartmentUnlisted': '科系唔喺清單度，會照住輸入內容儲存。',

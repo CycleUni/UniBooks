@@ -1,16 +1,19 @@
 /**
  * /api/v1/orgs: what an organization's admins manage (docs/plans/2026-11-25-book-drive.md).
+ *   names?ids=<id>,<id>          GET     public: active organizations' names, as {id: name},
+ *                                        for the event system's pages (who hosts a draw)
  *   <id>                         GET     the organization and its member count
  *   <id>/members                 GET     the roster (?q=, ?page=, ?page_size=)
  *   <id>/members/import          POST    {mode: merge|replace, commit, rows}: a preview, or the import
  *   <id>/members/<student no.>   PUT     add or change one member; DELETE removes them
- * Only the organization's own admins get anything; to anyone else every id is a 404.
+ * Apart from the names, only the organization's own admins get anything; to
+ * anyone else every id is a 404.
  * The event system's admin pages call these from the same origin.
  */
 import { Hono } from 'hono';
-import { and, asc, count, eq, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, or, sql } from 'drizzle-orm';
 import type { AppEnv } from '../env';
-import { createDb, organizationMembers } from '../db';
+import { createDb, organizationMembers, organizations } from '../db';
 import { apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { authMiddleware } from '../middleware/auth';
 import { normalizeStudentNumber } from '../lib/studentNumber';
@@ -18,7 +21,7 @@ import { writeAudit } from '../services/admin/audit';
 import { likeContains } from '../services/admin/scope';
 import { resolveLanguage } from '../services/accounts/i18n';
 import { regionCategories } from '../services/listings/places';
-import { organizationJson, requireOrgAdmin, schoolsOf } from '../services/orgs/organizations';
+import { organizationDisplayName, organizationJson, requireOrgAdmin, schoolsOf } from '../services/orgs/organizations';
 import {
   IMPORT_MODES,
   MAX_IMPORT_BYTES,
@@ -31,6 +34,24 @@ import {
 } from '../services/orgs/roster';
 
 export const orgRoutes = new Hono<AppEnv>();
+
+const MAX_NAMES = 50;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// Registered before the sign-in middleware below, so it answers anyone: an
+// organization's name is what it shows the public anyway.
+orgRoutes.get('/names', async (c) => {
+  const ids = [...new Set((c.req.query('ids') ?? '').split(',').map((s) => s.trim().toLowerCase()))].filter((id) => UUID.test(id));
+  if (ids.length > MAX_NAMES) fieldErrors({ ids: ['common.errValidation'] });
+  if (!ids.length) return c.json({});
+  const rows = await createDb(c.env.DB)
+    .select()
+    .from(organizations)
+    .where(and(inArray(organizations.id, ids), eq(organizations.isActive, 1)));
+  const [schoolMap, lang] = await Promise.all([schoolsOf(c.env, rows), resolveLanguage(c)]);
+  c.header('Cache-Control', 'public, max-age=300');
+  return c.json(Object.fromEntries(rows.map((o) => [o.id, organizationDisplayName(schoolMap.get(o.schoolId), o.name, lang)])));
+});
 
 orgRoutes.use('*', authMiddleware());
 

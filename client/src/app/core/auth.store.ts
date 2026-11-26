@@ -83,6 +83,24 @@ export function hasStaffAccess(user: { role?: unknown } | null | undefined): boo
   return user?.role === 'staff' || user?.role === 'admin';
 }
 
+/**
+ * Where this account's work in the event system starts, or null when it has
+ * none there. Staff run the whole system; an organization's admins and a
+ * drive's staff are ordinary accounts, sent to their region's 收書贈書 page
+ * (where their drives are listed), or to its 抽獎 when their organization
+ * only hosts draws.
+ */
+export function eventSystemPath(user: AuthUser | null | undefined): string | null {
+  if (!user) return null;
+  if (hasStaffAccess(user)) return '/event';
+  const drive = user.staffed_drives?.[0];
+  if (drive) return `/event/${drive.region.toLowerCase()}/drives`;
+  const orgs = user.organizations ?? [];
+  const org = orgs.find((o) => o.features?.drives) ?? orgs.find((o) => o.features?.draws);
+  if (!org) return null;
+  return `/event/${org.region.toLowerCase()}${org.features?.drives ? '/drives' : ''}`;
+}
+
 /** Full admin: everything staff can do, plus staff and advertiser management. */
 export function isAdminUser(user: { role?: unknown } | null | undefined): boolean {
   return user?.role === 'admin';
@@ -125,6 +143,10 @@ export interface AuthUser {
   passkey_2fa?: boolean;
   role?: UserRole;
   managed_regions?: string[];
+  /** The organizations this account runs, and what each may use in the event system. */
+  organizations?: { id: string; region: string; features?: { draws?: boolean; drives?: boolean } }[];
+  /** The open book drives this account works at as staff. */
+  staffed_drives?: { id: string; region: string }[];
   verifications?: RegionVerification[];
   /** The language the site was last used in, as last reported. */
   site_language?: string;

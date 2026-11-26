@@ -4,7 +4,7 @@ import { CommonModule } from '@angular/common';
 import { UiButton } from '../../shared/ui/button.component';
 import { UiPrefsSelector } from '../../shared/ui/prefs-selector.component';
 
-import { AuthStore, hasStaffAccess } from '../../core/auth.store';
+import { AuthStore, eventSystemPath, hasStaffAccess } from '../../core/auth.store';
 import { AccountService } from '../../core/services/account.service';
 import { OrderService } from '../../core/services/order.service';
 import { I18nService, TPipe } from '../../core/i18n.service';
@@ -93,6 +93,11 @@ export class Account {
    *  longer a bottom tab (the desktop header still links it directly). */
   get isStaff(): boolean {
     return this.auth.isAuthenticated() && hasStaffAccess(this.auth.user());
+  }
+
+  /** The event system, for staff and for anyone running an organization or working at a drive. */
+  get eventsPath(): string | null {
+    return this.auth.isAuthenticated() ? eventSystemPath(this.auth.user()) : null;
   }
 
   get aboutUrl(): string {

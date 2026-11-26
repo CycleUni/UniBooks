@@ -1215,6 +1215,7 @@ export const en: Record<string, string> = {
   'org.errName': 'Name can be at most 50 characters.',
   'org.errDepartment': 'Department can be at most 50 characters.',
   'org.errGrade': 'Year must be a whole number from 1 to 7.',
+  'org.errDrivesOff': 'Book drives are not open to this organization.',
   'org.errValidUntil': 'Membership end must be a date (YYYY-MM-DD) from today on.',
   'org.errDuplicateInFile': 'This student number appears more than once in the file.',
   'org.warnDepartmentUnlisted': 'Department not in the list; saved as typed.',

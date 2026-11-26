@@ -1,7 +1,8 @@
 /**
  * Organizations (a school's student union and the like) and who runs them.
- * Site staff create them and name their admins (routes/admin/organizations.ts);
- * the admins manage the roster (routes/orgs.ts) and, later, book drives.
+ * Site staff create them, name their admins and choose what they may use in
+ * the event system (routes/admin/organizations.ts): their own draws, book
+ * drives. The admins manage the roster (routes/orgs.ts) and what they were given.
  */
 import type { Context } from 'hono';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -26,6 +27,7 @@ export function organizationJson(org: Organization, school: SchoolRow | undefine
     display_name: organizationDisplayName(school, org.name, lang),
     school: school ? { id: school.id, code: school.code, name: localizedName(school as unknown as Record<string, unknown>, lang) } : null,
     is_active: !!org.isActive,
+    features: { draws: !!org.drawsEnabled, drives: !!org.drivesEnabled },
     created_at: org.createdAt,
   };
 }
