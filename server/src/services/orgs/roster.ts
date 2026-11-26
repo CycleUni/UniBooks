@@ -81,6 +81,28 @@ function text(v: unknown): string | null {
   return typeof v === 'string' ? v.trim() : null;
 }
 
+/**
+ * A department as typed (roster, intake): filed under the region's canonical
+ * name when it is one of its spellings, else kept as typed with a warning.
+ * Null when it is not text or too long.
+ */
+export function departmentField(cats: RegionCategories, raw: unknown): { value: string; unlisted: boolean } | null {
+  const typed = text(raw);
+  if (typed === null || typed.length > MAX_DEPARTMENT) return null;
+  if (!typed) return { value: '', unlisted: false };
+  const canonical = canonicalDepartment(cats, typed);
+  return canonical ? { value: canonical, unlisted: false } : { value: typed, unlisted: true };
+}
+
+/** A year 1-7 as a roster or a form writes it (2, 大二, 二年級), null for none given; undefined when it is not one. */
+export function gradeField(raw: unknown): number | null | undefined {
+  const g = text(raw);
+  if (g === null) return undefined;
+  if (g === '') return null;
+  const n = parseGrade(g);
+  return n >= 1 && n <= MAX_GRADE ? n : undefined;
+}
+
 /** One roster row, as a client sends it ({student_number, name, department, grade, valid_until}). */
 export function validateMember(raw: unknown, cats: RegionCategories, now = new Date()): MemberCheck {
   const r = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
@@ -93,29 +115,22 @@ export function validateMember(raw: unknown, cats: RegionCategories, now = new D
   const name = text(r.name);
   if (name === null || name.length > MAX_NAME) errors.push('org.errName');
 
-  let department = text(r.department);
-  if (department === null || department.length > MAX_DEPARTMENT) {
-    errors.push('org.errDepartment');
-  } else if (department) {
-    const canonical = canonicalDepartment(cats, department);
-    if (canonical) department = canonical;
-    else warnings.push('org.warnDepartmentUnlisted');
-  }
+  const dept = departmentField(cats, r.department);
+  if (!dept) errors.push('org.errDepartment');
+  else if (dept.unlisted) warnings.push('org.warnDepartmentUnlisted');
+  const department = dept?.value ?? '';
 
-  let grade: number | null = null;
-  const g = text(r.grade);
-  if (g === null) errors.push('org.errGrade');
-  else if (g !== '') {
-    grade = parseGrade(g);
-    if (!(grade >= 1 && grade <= MAX_GRADE)) errors.push('org.errGrade');
-  }
+  const grade = gradeField(r.grade);
+  if (grade === undefined) errors.push('org.errGrade');
 
   const v = text(r.valid_until);
   const validUntil = v === '' ? academicYearEnd(now) : v === null ? null : parseDate(v);
   if (validUntil === null || validUntil < today(now)) errors.push('org.errValidUntil');
 
   return {
-    member: errors.length ? null : { studentNumber: studentNumber!, name: name!, department: department!, grade, validUntil: validUntil! },
+    member: errors.length
+      ? null
+      : { studentNumber: studentNumber!, name: name!, department, grade: grade ?? null, validUntil: validUntil! },
     errors,
     warnings,
   };

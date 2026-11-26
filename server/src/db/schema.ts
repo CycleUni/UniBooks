@@ -1078,3 +1078,104 @@ export const organizationMembers = sqliteTable(
 );
 
 export type OrganizationMember = InferSelectModel<typeof organizationMembers>;
+
+// ============================================================================
+// 28. Book drives (an organization's 收書贈書; docs/plans/2026-11-25-book-drive.md)
+// ============================================================================
+/**
+ * One drive: books collected (intake), then registered for, allocated and
+ * picked up. `status` moves forward through those phases; 'closed' ends it.
+ */
+export const bookDrives = sqliteTable(
+  'book_drives',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    regionCode: text('region_code')
+      .notNull()
+      .references(() => regions.code),
+    title: text('title').notNull(),
+    description: text('description').notNull().default(''),
+    status: text('status', { enum: ['draft', 'intake', 'claiming', 'allocated', 'pickup', 'closed'] })
+      .notNull()
+      .default('intake'),
+    claimOpensAt: text('claim_opens_at'),
+    claimClosesAt: text('claim_closes_at'),
+    pickupStartsAt: text('pickup_starts_at'),
+    pickupEndsAt: text('pickup_ends_at'),
+    maxClaimsPerUser: integer('max_claims_per_user').notNull().default(3),
+    memberPriority: integer('member_priority').notNull().default(1),
+    allocationSeed: text('allocation_seed'),
+    allocatedAt: text('allocated_at'),
+    /** When it was closed (null while open): donors' details are cleared some time after. */
+    closedAt: text('closed_at'),
+    /** The shelf number the next collected copy gets (1, 2, …), unique within the drive. */
+    nextShelfNo: integer('next_shelf_no').notNull().default(1),
+    createdById: text('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [index('book_drives_organization_idx').on(table.organizationId, table.createdAt)],
+);
+
+export type BookDrive = InferSelectModel<typeof bookDrives>;
+
+/** The accounts an organization's admins named to work a drive: intake and, later, pickup. */
+export const bookDriveStaff = sqliteTable(
+  'book_drive_staff',
+  {
+    driveId: text('drive_id')
+      .notNull()
+      .references(() => bookDrives.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    addedById: text('added_by_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.driveId, table.userId] }), index('book_drive_staff_user_idx').on(table.userId)],
+);
+
+/**
+ * One physical book a drive collected. `shelf_no` is written on it, so it can
+ * be found at pickup. The donor's student number and department are seen only
+ * by the drive's people, and cleared some time after the drive closes.
+ */
+export const driveCopies = sqliteTable(
+  'drive_copies',
+  {
+    id: text('id').primaryKey(),
+    driveId: text('drive_id')
+      .notNull()
+      .references(() => bookDrives.id, { onDelete: 'cascade' }),
+    bookId: text('book_id')
+      .notNull()
+      .references(() => books.id),
+    shelfNo: integer('shelf_no').notNull(),
+    condition: text('condition', { enum: ['new', 'like_new', 'noted', 'damaged'] }).notNull(),
+    donorStudentNumber: text('donor_student_number').notNull().default(''),
+    donorDepartment: text('donor_department').notNull().default(''),
+    /** Who the book suits: a department (canonical name, or text as typed) and a year 1-7. */
+    targetDepartment: text('target_department').notNull().default(''),
+    targetGrade: integer('target_grade'),
+    status: text('status', { enum: ['in_stock', 'allocated', 'picked_up', 'withdrawn'] })
+      .notNull()
+      .default('in_stock'),
+    note: text('note').notNull().default(''),
+    intakeById: text('intake_by_id').references(() => users.id, { onDelete: 'set null' }),
+    pickedUpAt: text('picked_up_at'),
+    pickedUpById: text('picked_up_by_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    unique('drive_copies_drive_shelf_unique').on(table.driveId, table.shelfNo),
+    index('drive_copies_drive_book_status_idx').on(table.driveId, table.bookId, table.status),
+    index('drive_copies_book_idx').on(table.bookId),
+    index('drive_copies_drive_donor_idx').on(table.driveId, table.donorStudentNumber),
+  ],
+);
+
+export type DriveCopy = InferSelectModel<typeof driveCopies>;

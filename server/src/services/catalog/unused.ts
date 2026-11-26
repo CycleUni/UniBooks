@@ -1,6 +1,6 @@
 import { and, eq, lt, notExists, type SQL } from 'drizzle-orm';
 import type { Env } from '../../env';
-import { books, createDb, listings, subscriptions } from '../../db';
+import { books, createDb, driveCopies, listings, subscriptions } from '../../db';
 import { inList } from '../../lib/sql';
 
 /**
@@ -12,8 +12,8 @@ export const UNUSED_BOOK_GRACE_MS = 60 * 60 * 1000;
 
 /**
  * Delete books nothing uses: no listing in any status (a sold or removed
- * listing is still the seller's history and what its orders point at) and no
- * request, older than the grace period. `bookIds` limits it to those books;
+ * listing is still the seller's history and what its orders point at), no
+ * request and no book drive copy, older than the grace period. `bookIds` limits it to those books;
  * omitted, every book is considered. Their R2 covers go too.
  */
 export async function deleteUnusedBooks(env: Env, bookIds?: readonly string[], now = Date.now()): Promise<number> {
@@ -23,6 +23,7 @@ export async function deleteUnusedBooks(env: Env, bookIds?: readonly string[], n
     lt(books.createdAt, new Date(now - UNUSED_BOOK_GRACE_MS).toISOString()),
     notExists(db.select({ id: listings.id }).from(listings).where(eq(listings.bookId, books.id))),
     notExists(db.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.bookId, books.id))),
+    notExists(db.select({ id: driveCopies.id }).from(driveCopies).where(eq(driveCopies.bookId, books.id))),
   ];
   if (bookIds) conds.push(inList(books.id, bookIds));
   const deleted = await db

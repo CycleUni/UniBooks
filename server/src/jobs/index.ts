@@ -16,6 +16,8 @@ import {
   pushSent,
   studentIdVerifications,
   organizationMembers,
+  bookDrives,
+  driveCopies,
 } from '../db';
 import type { EmailMessage, PushMessage } from '../queues/types';
 import { notExpired } from '../lib/requestExpiry';
@@ -726,6 +728,26 @@ export async function purgeLapsedMembers(env: Env): Promise<number> {
   return res.meta.changes ?? 0;
 }
 
+/** Days after a book drive closes that its donors' student numbers and departments are kept. */
+export const DRIVE_DONOR_RETENTION_DAYS = 30;
+
+/** Clear the donors' details of drives closed longer ago than that; the books' own records stay. */
+export async function purgeClosedDriveDonors(env: Env, now = Date.now()): Promise<number> {
+  const before = new Date(now - DRIVE_DONOR_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const db = createDb(env.DB);
+  const res = await db
+    .update(driveCopies)
+    .set({ donorStudentNumber: '', donorDepartment: '' })
+    .where(
+      and(
+        sql`${driveCopies.driveId} IN (SELECT ${bookDrives.id} FROM ${bookDrives} WHERE ${bookDrives.status} = 'closed' AND ${bookDrives.closedAt} < ${before})`,
+        or(ne(driveCopies.donorStudentNumber, ''), ne(driveCopies.donorDepartment, '')),
+      ),
+    )
+    .run();
+  return res.meta.changes ?? 0;
+}
+
 export async function runCleanup(env: Env) {
   const [{ total }] = await createDb(env.DB)
     .select({ total: sql<number>`count(*)` })
@@ -740,6 +762,7 @@ export async function runCleanup(env: Env) {
   const studentIdExpired = await purgeExpiredStudentIdVerifications(env);
   const requestsExpired = await purgeExpiredRequests(env);
   const membersLapsed = await purgeLapsedMembers(env);
+  const donorsCleared = await purgeClosedDriveDonors(env);
   // Redelivery only happens within the queue's retry window, so a day is plenty.
   // A day covers a redelivery and the next run of every job that enqueues with a dedupe key (6 h at most).
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -760,6 +783,7 @@ export async function runCleanup(env: Env) {
     student_id_verifications_expired: studentIdExpired,
     expired_requests_purged: requestsExpired,
     lapsed_members_purged: membersLapsed,
+    drive_donors_cleared: donorsCleared,
     email_sent_purged: sentPurged.meta.changes ?? 0,
     push_sent_purged: pushSentPurged.meta.changes ?? 0,
   };

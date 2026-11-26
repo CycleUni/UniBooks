@@ -23,6 +23,7 @@ import { activeRegions, getRegion, liveVerification } from '../../lib/region';
 import { resolveLanguage } from './i18n';
 import { localizedName, type Row } from './regionData';
 import { organizationsAdministeredBy } from '../orgs/organizations';
+import { drivesStaffedBy } from '../drives/access';
 import { cancelEmailChangeStatement } from './oneTimeTokens';
 import { revokeAllTokensForUser } from './tokens';
 import { newHexId } from '../../lib/uuid';
@@ -195,17 +196,19 @@ export async function managedRegionsOf(env: Env, userId: string): Promise<string
 export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Record<string, unknown>> {
   const isStaff = isStaffRole(user.role);
   const langP = resolveLanguage(c);
-  const [region, lang, verifications, declared, lapsed, reputation, managedRegions, active, organizations] = await Promise.all([
-    getRegion(c),
-    langP,
-    verificationsOf(c.env, user.id),
-    declaredSchoolsOf(c.env, user.id),
-    lapsedVerificationsOf(c.env, user.id),
-    reputationOf(c.env, user.id),
-    isStaff ? managedRegionsOf(c.env, user.id) : Promise.resolve([]),
-    activeRegions(c.env),
-    langP.then((l) => organizationsAdministeredBy(c.env, user.id, l)),
-  ]);
+  const [region, lang, verifications, declared, lapsed, reputation, managedRegions, active, organizations, staffedDrives] =
+    await Promise.all([
+      getRegion(c),
+      langP,
+      verificationsOf(c.env, user.id),
+      declaredSchoolsOf(c.env, user.id),
+      lapsedVerificationsOf(c.env, user.id),
+      reputationOf(c.env, user.id),
+      isStaff ? managedRegionsOf(c.env, user.id) : Promise.resolve([]),
+      activeRegions(c.env),
+      langP.then((l) => organizationsAdministeredBy(c.env, user.id, l)),
+      langP.then((l) => drivesStaffedBy(c.env, user.id, l)),
+    ]);
   const regions = verifications.map((v) => v.region_code.toUpperCase());
 
   // Current region status
@@ -313,6 +316,8 @@ export async function serializeUser(c: Context<AppEnv>, user: User): Promise<Rec
     managed_regions: managedRegions,
     // The organizations this account runs (book drives, rosters).
     organizations,
+    // The open book drives this account works as staff.
+    staffed_drives: staffedDrives,
     regions,
     verifications: verifications.map((v) => ({
       region: v.region_code.toUpperCase(),
