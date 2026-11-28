@@ -285,6 +285,7 @@ type FilterDraft = Pick<SearchUrlState, 'conditions' | 'category' | 'course' | '
                 [minPrice]="item.minPrice"
                 [sellerCount]="item.activeListings"
                 [waitingCount]="item.waitlistCount"
+                [giveawayCount]="item.driveCopies || 0"
                 [link]="['/book']"
                 [linkParams]="bookLinkParams(item)"
                 [linkState]="previewState"

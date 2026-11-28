@@ -11,6 +11,7 @@ import {
 import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { HomeHero, HeroCover } from './home-hero.component';
+import { HomeDrives } from './home-drives.component';
 import { UiCategoryRail } from '../../shared/ui/category-rail.component';
 import { UiPullToRefresh } from '../../shared/ui/pull-to-refresh.component';
 import { UiSearchField } from '../../shared/ui/search-field.component';
@@ -38,6 +39,7 @@ import { hasCoverFailed, markCoverFailed } from '../../shared/ui/book-cover.comp
     RouterModule,
     FormsModule,
     HomeHero,
+    HomeDrives,
     UiButton,
     UiRecentListings,
     UiCategoryRail,
@@ -85,6 +87,9 @@ import { hasCoverFailed, markCoverFailed } from '../../shared/ui/book-cover.comp
         (adClick)="onAdClick($event)"
       ></app-home-hero>
       <h1 *ngIf="isPhone && seenHero" class="sr-only">{{ 'home.heroTitle' | t }}</h1>
+
+      <!-- The chosen school's student organizations giving books away now: timely, so above the listings. -->
+      <app-home-drives *ngIf="schoolReady" [school]="currentSchool"></app-home-drives>
 
       <!-- Categories: show skeleton during load, then the real content, never blank -->
       <div class="two-cols container" [class.hero-has-covers]="heroCovers.length > 0">
@@ -548,6 +553,7 @@ export class Home implements OnInit, OnDestroy {
   refreshing = false;
   private unwatchPhone?: () => void;
   @ViewChild(UiRecentListings) recentListings?: UiRecentListings;
+  @ViewChild(HomeDrives) homeDrives?: HomeDrives;
 
   categories: any[] = [];
   waitlist: any[] = [];
@@ -746,6 +752,7 @@ export class Home implements OnInit, OnDestroy {
     // Pull to refresh means fresh data: drop the shared recent-books page.
     this.listingService.clearRecentBooks();
     this.recentListings?.reload();
+    this.homeDrives?.load();
 
     let pending = 2;
     const checkDone = () => {

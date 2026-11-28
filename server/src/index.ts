@@ -22,6 +22,7 @@ import { adminRoutes } from './routes/admin';
 import { promotionRoutes } from './routes/promotions';
 import { orgRoutes } from './routes/orgs';
 import { driveRoutes } from './routes/drives';
+import { driveClaimRoutes } from './routes/driveClaims';
 import { frontendRoutes } from './routes/frontend';
 import { handleScheduled } from './jobs/index';
 import { handleEmailQueue } from './queues/email';
@@ -69,6 +70,8 @@ app.route('/api/v1/orders', orderRoutes);
 app.route('/api/v1/admin', adminRoutes);
 app.route('/api/v1/promotions', promotionRoutes);
 app.route('/api/v1/orgs', orgRoutes);
+// The public side first: its paths are open to anyone, routes/drives.ts signs in for every path.
+app.route('/api/v1/drives', driveClaimRoutes);
 app.route('/api/v1/drives', driveRoutes);
 app.route('/api/v1', sitemapRoutes); // /api/v1/sitemap.xml, /api/v1/sitemap/<kind>-<region>-<page>.xml
 

@@ -34,6 +34,10 @@ const featureRoutes: Routes = [
     loadComponent: () => import('./features/book/book').then((m) => m.Book),
   },
   {
+    path: 'drive',
+    loadComponent: () => import('./features/drive/drive').then((m) => m.DrivePageComponent),
+  },
+  {
     path: 'sell',
     data: { seo: { titleKey: 'nav.sell' }, preload: true },
     canDeactivate: [unsavedChangesGuard],
@@ -61,6 +65,7 @@ const featureRoutes: Routes = [
     children: [
       { path: '', canActivate: [accountIndexGuard], data: { preload: true }, loadComponent: () => import('./features/account/account-index.component').then(m => m.AccountIndexComponent) },
       { path: 'listings', canActivate: [authGuard], data: { seo: { titleKey: 'acct.tabListings' }, preload: true }, loadComponent: () => import('./features/account/listings').then(m => m.ListingsComponent) },
+      { path: 'claims', canActivate: [authGuard], data: { seo: { titleKey: 'acct.tabClaims' } }, loadComponent: () => import('./features/account/claims').then(m => m.ClaimsComponent) },
       { path: 'subscriptions', canActivate: [authGuard], data: { seo: { titleKey: 'acct.tabSubs' } }, loadComponent: () => import('./features/account/subscriptions').then(m => m.SubscriptionsComponent) },
       { path: 'orders', canActivate: [authGuard], data: { seo: { titleKey: 'acct.myOrders' } }, loadComponent: () => import('./features/account/orders').then(m => m.OrdersComponent) },
       { path: 'reports', canActivate: [authGuard], data: { seo: { titleKey: 'acct.tabReports' } }, loadComponent: () => import('./features/account/reports').then(m => m.ReportsComponent) },

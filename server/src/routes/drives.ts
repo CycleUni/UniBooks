@@ -2,7 +2,8 @@
  * /api/v1/drives: book drives (收書贈書; docs/plans/2026-11-25-book-drive.md).
  *   ''                         GET  the drives this account runs or staffs (?organization=)
  *                              POST {organization, title, description}: an organization's admins
- *   <id>                       GET, PATCH {title, description, max_claims_per_user, member_priority, status}
+ *   <id>                       GET, PATCH {title, description, max_claims_per_user, member_priority, status, claim_closes_at}
+ *                              status 'claiming' opens registration until claim_closes_at (routes/driveClaims.ts)
  *   <id>/staff                 GET, POST {email}; <id>/staff/<user id> DELETE   (admins)
  *   <id>/copies                GET (?q=, ?status=, ?page=), POST: take a book in (while collecting)
  *   <id>/copies/<copy id>      PATCH, DELETE (a copy entered by mistake)
@@ -19,6 +20,7 @@ import {
   bookDriveStaff,
   books,
   createDb,
+  driveClaims,
   driveCopies,
   organizationAdmins,
   organizationMembers,
@@ -28,6 +30,7 @@ import {
   type DriveCopy,
   type Organization,
 } from '../db';
+import { inList } from '../lib/sql';
 import { apiError, fieldErrors, pagination, readJson } from '../lib/http';
 import { authMiddleware } from '../middleware/auth';
 import { checkRate } from '../middleware/rateLimit';
@@ -44,6 +47,7 @@ import { regionCategories } from '../services/listings/places';
 import { organizationDisplayName, requireOrgAdmin, schoolsOf } from '../services/orgs/organizations';
 import { departmentField, gradeField, today } from '../services/orgs/roster';
 import { assertCollecting, requireDrive, runsDrives, type DriveRole } from '../services/drives/access';
+import { MAX_CLAIM_WINDOW_DAYS } from '../services/drives/claims';
 
 export const driveRoutes = new Hono<AppEnv>();
 
@@ -54,8 +58,8 @@ const MAX_DESCRIPTION = 2000;
 const MAX_NOTE = 200;
 const MAX_CLAIMS = 20;
 const CONDITIONS = ['new', 'like_new', 'noted', 'damaged'] as const;
-/** Statuses an admin may set by hand now; the ones between (claiming, allocation, pickup) come with those phases. */
-const SETTABLE_STATUSES = ['intake', 'closed'] as const;
+/** Statuses an admin may set by hand now; allocation and pickup come with those phases. */
+const SETTABLE_STATUSES = ['intake', 'claiming', 'closed'] as const;
 
 function cleanText(v: unknown, field: string, max: number, required = false): string {
   const s = typeof v === 'string' ? v.trim() : v === undefined || v === null ? '' : null;
@@ -70,7 +74,7 @@ async function driveView(c: Context<AppEnv>, rows: { drive: BookDrive; org: Orga
   if (!rows.length) return [];
   const db = createDb(c.env.DB);
   const ids = rows.map((r) => r.drive.id);
-  const [schools, lang, copyCounts, staffCounts] = await Promise.all([
+  const [schools, lang, copyCounts, staffCounts, claimCounts] = await Promise.all([
     schoolsOf(
       c.env,
       rows.map((r) => r.org),
@@ -85,14 +89,20 @@ async function driveView(c: Context<AppEnv>, rows: { drive: BookDrive; org: Orga
         titles: sql<number>`count(distinct ${driveCopies.bookId})`,
       })
       .from(driveCopies)
-      .where(inArray(driveCopies.driveId, ids))
+      .where(inList(driveCopies.driveId, ids))
       .groupBy(driveCopies.driveId),
     db
       .select({ driveId: bookDriveStaff.driveId, n: count() })
       .from(bookDriveStaff)
-      .where(inArray(bookDriveStaff.driveId, ids))
+      .where(inList(bookDriveStaff.driveId, ids))
       .groupBy(bookDriveStaff.driveId),
+    db
+      .select({ driveId: driveClaims.driveId, n: count(), people: sql<number>`count(distinct ${driveClaims.userId})` })
+      .from(driveClaims)
+      .where(and(inList(driveClaims.driveId, ids), eq(driveClaims.status, 'registered')))
+      .groupBy(driveClaims.driveId),
   ]);
+  const claims = new Map(claimCounts.map((r) => [r.driveId, r]));
   const copies = new Map(copyCounts.map((r) => [r.driveId, r]));
   const staff = new Map(staffCounts.map((r) => [r.driveId, r.n]));
   return rows.map(({ drive: d, org, role }) => {
@@ -119,6 +129,8 @@ async function driveView(c: Context<AppEnv>, rows: { drive: BookDrive; org: Orga
         withdrawn: Number(n?.withdrawn ?? 0),
         titles: n?.titles ?? 0,
         staff: staff.get(d.id) ?? 0,
+        claims: claims.get(d.id)?.n ?? 0,
+        claimants: Number(claims.get(d.id)?.people ?? 0),
       },
     };
   });
@@ -210,16 +222,44 @@ driveRoutes.patch('/:id', async (c) => {
     if (typeof body.member_priority !== 'boolean') fieldErrors({ member_priority: ['common.errValidation'] });
     set.memberPriority = body.member_priority ? 1 : 0;
   }
-  if ('status' in body && body.status !== drive.status) {
-    const status = SETTABLE_STATUSES.find((s) => s === body.status);
-    if (!status) fieldErrors({ status: ['common.errValidation'] });
-    set.status = status;
-    set.closedAt = status === 'closed' ? nowIso() : null;
-  }
   const db = createDb(c.env.DB);
+  const now = nowIso();
+  const status = 'status' in body ? SETTABLE_STATUSES.find((s) => s === body.status) : drive.status;
+  if (!status) fieldErrors({ status: ['common.errValidation'] });
+  // Registration runs until claim_closes_at: set when opening it, movable while it runs.
+  if ('claim_closes_at' in body || (status === 'claiming' && drive.status !== 'claiming')) {
+    if (status !== 'claiming') fieldErrors({ claim_closes_at: ['common.errValidation'] });
+    const raw = typeof body.claim_closes_at === 'string' ? Date.parse(body.claim_closes_at) : NaN;
+    const latest = Date.now() + MAX_CLAIM_WINDOW_DAYS * 86_400_000;
+    if (!Number.isFinite(raw) || raw <= Date.now() || raw > latest) fieldErrors({ claim_closes_at: ['drive.errClaimWindow'] });
+    set.claimClosesAt = new Date(raw).toISOString();
+  }
+  if (status !== drive.status) {
+    if (status === 'claiming') {
+      if (drive.status !== 'intake') apiError(400, 'drive.errNotCollecting');
+      const [{ onShelf }] = await db
+        .select({ onShelf: count() })
+        .from(driveCopies)
+        .where(and(eq(driveCopies.driveId, drive.id), eq(driveCopies.status, 'in_stock')));
+      if (!onShelf) apiError(400, 'drive.errNoCopies');
+      set.claimOpensAt = now;
+    }
+    // Back to collecting only while nobody has registered: their registrations would hang on a drive that hides them.
+    if (status === 'intake' && drive.status === 'claiming') {
+      const [{ live }] = await db
+        .select({ live: count() })
+        .from(driveClaims)
+        .where(and(eq(driveClaims.driveId, drive.id), eq(driveClaims.status, 'registered')));
+      if (live) apiError(400, 'drive.errHasClaims');
+      set.claimOpensAt = null;
+      set.claimClosesAt = null;
+    }
+    set.status = status;
+    set.closedAt = status === 'closed' ? now : null;
+  }
   if (Object.keys(set).length) {
     const changes = changedFields(drive, set);
-    set.updatedAt = nowIso();
+    set.updatedAt = now;
     await db.update(bookDrives).set(set).where(eq(bookDrives.id, drive.id));
     await writeAudit(
       db,
@@ -294,9 +334,9 @@ async function copyView(c: Context<AppEnv>, rows: DriveCopy[]) {
   const bookIds = [...new Set(rows.map((r) => r.bookId))];
   const userIds = [...new Set(rows.map((r) => r.intakeById).filter((x): x is string => !!x))];
   const [bookRows, userRows] = await Promise.all([
-    db.select().from(books).where(inArray(books.id, bookIds)),
+    db.select().from(books).where(inList(books.id, bookIds)),
     userIds.length
-      ? db.select({ id: users.id, first: users.firstName, last: users.lastName }).from(users).where(inArray(users.id, userIds))
+      ? db.select({ id: users.id, first: users.firstName, last: users.lastName }).from(users).where(inList(users.id, userIds))
       : Promise.resolve([]),
   ]);
   const bookMap = new Map(bookRows.map((b) => [b.id, b]));
@@ -416,6 +456,19 @@ driveRoutes.get('/:id/copies', async (c) => {
   );
 });
 
+/** A book without an ISBN already in this drive under the same title and authors (case and spacing aside), or null. */
+async function untitledBookInDrive(c: Context<AppEnv>, driveId: string, body: Record<string, unknown>): Promise<string | null> {
+  const fold = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').toLowerCase() : '');
+  const title = fold(body.title);
+  if (!title || (typeof body.isbn13 === 'string' && body.isbn13.trim())) return null;
+  const rows = await createDb(c.env.DB)
+    .selectDistinct({ id: books.id, title: books.title, authors: books.authors })
+    .from(driveCopies)
+    .innerJoin(books, eq(books.id, driveCopies.bookId))
+    .where(and(eq(driveCopies.driveId, driveId), sql`${books.isbn13} IS NULL`));
+  return rows.find((b) => fold(b.title) === title && fold(b.authors) === fold(body.authors))?.id ?? null;
+}
+
 driveRoutes.post('/:id/copies', async (c) => {
   const { drive } = await requireDrive(c, c.req.param('id'), 'staff');
   assertCollecting(drive);
@@ -436,11 +489,17 @@ driveRoutes.post('/:id/copies', async (c) => {
     bookId = b.id;
   } else {
     const bookBody = body.book && typeof body.book === 'object' && !Array.isArray(body.book) ? (body.book as Record<string, unknown>) : {};
-    const { book } = await findOrCreateBook(c.env, drive.regionCode, bookBody, {
-      isAdmin: c.get('user')!.isAdmin,
-      origin: new URL(c.req.url).origin,
-    });
-    bookId = book.id;
+    // A book with no ISBN, typed again for its next copy, is the title this drive already holds:
+    // registration is per title, so a second record would split it in two.
+    const sameTitle = await untitledBookInDrive(c, drive.id, bookBody);
+    if (sameTitle) bookId = sameTitle;
+    else {
+      const { book } = await findOrCreateBook(c.env, drive.regionCode, bookBody, {
+        isAdmin: c.get('user')!.isAdmin,
+        origin: new URL(c.req.url).origin,
+      });
+      bookId = book.id;
+    }
   }
 
   // The shelf number and the copy in one transaction: the copy takes the

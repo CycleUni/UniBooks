@@ -26,6 +26,8 @@ import { UiSkeleton } from '../../shared/ui/skeleton.component';
 import { UiErrorState } from '../../shared/ui/error-state.component';
 import { UiEmpty } from '../../shared/ui/empty.component';
 import { UiVerificationPrompt } from '../../shared/ui/verification-prompt.component';
+import { UiDrivePin } from '../../shared/ui/drive-pin.component';
+import type { BookDrive } from '../../core/services/drive.service';
 import { BookReportModalComponent } from './book-report-modal.component';
 import { RegionLinkService } from '../../core/region-link.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -43,7 +45,7 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
 @Component({
   selector: 'app-book',
   standalone: true,
-  imports: [CommonModule, RouterModule, UiButton, UiBackButton, UiBreadcrumb, TPipe, UiListingCard, UiBookCover, UiPagination, UiInfiniteScroll, UiEmpty, UiSkeleton, UiErrorState, UiVerificationPrompt, BookReportModalComponent],
+  imports: [CommonModule, RouterModule, UiButton, UiBackButton, UiBreadcrumb, TPipe, UiListingCard, UiBookCover, UiPagination, UiInfiniteScroll, UiEmpty, UiSkeleton, UiErrorState, UiVerificationPrompt, BookReportModalComponent, UiDrivePin],
   template: `
       <!-- Opened directly (no cached preview to paint first), the page used
            to stay blank until the book request answered. -->
@@ -115,6 +117,19 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
               <ui-button *ngIf="book.is_subscribed" variant="white" [disabled]="notifyBusy" style="color: var(--muted); border-color: var(--muted);" (onClick)="unsubscribeBook()">{{ 'search.cancelNotify' | t }}</ui-button>
             </div>
           </div>
+        </div>
+
+        <!-- Student organizations giving this book away, one entry each, pinned above the listings. -->
+        <div class="drive-pins" *ngIf="drives.length">
+          <ui-drive-pin
+            *ngFor="let d of drives; trackBy: trackDrive"
+            [drive]="d"
+            [bookId]="book.id"
+            [bookTitle]="book.title"
+            [remaining]="d.remaining"
+            [claimants]="d.claimants"
+            [claim]="d.my_claim"
+          ></ui-drive-pin>
         </div>
 
         <div class="listings-section">
@@ -299,6 +314,12 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
       color: var(--ink-soft);
       text-align: center;
     }
+    .drive-pins {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
     .course-info {
       font-size: var(--text-base);
       color: var(--muted);
@@ -341,6 +362,11 @@ export { BOOK_SOURCE_LABEL_KEYS, bookSourceLabelKey } from '../../core/book-sour
 export class Book implements OnInit {
   bookId: string | null = null;
   book: any = null;
+  /** Student organizations giving this book away (only our own catalogue's books have any). */
+  get drives(): BookDrive[] {
+    return Array.isArray(this.book?.drives) ? this.book.drives : [];
+  }
+  trackDrive = (_: number, d: BookDrive) => d.id;
   listings: any[] = [];
   totalListings = 0;
   localListingsCount = -1;

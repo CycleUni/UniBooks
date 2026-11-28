@@ -1182,3 +1182,47 @@ export const driveCopies = sqliteTable(
 );
 
 export type DriveCopy = InferSelectModel<typeof driveCopies>;
+
+/**
+ * A student's wish for one title of a drive (登記): not for a particular copy.
+ * Registering takes no copy; allocation (phase 4) ranks the claims and gives
+ * out copies. One row per student and title: cancelling keeps the row, and
+ * registering again brings it back. The student number is only ever one
+ * staff approved for the organization's school; member, score and rank are
+ * worked out at allocation.
+ */
+export const driveClaims = sqliteTable(
+  'drive_claims',
+  {
+    id: text('id').primaryKey(),
+    driveId: text('drive_id')
+      .notNull()
+      .references(() => bookDrives.id, { onDelete: 'cascade' }),
+    bookId: text('book_id')
+      .notNull()
+      .references(() => books.id),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The approved student number at the organization's school when registered ('' when none). */
+    studentNumber: text('student_number').notNull().default(''),
+    department: text('department').notNull().default(''),
+    grade: integer('grade'),
+    isMember: integer('is_member').notNull().default(0),
+    score: integer('score'),
+    rank: integer('rank'),
+    status: text('status', { enum: ['registered', 'won', 'waitlisted', 'not_won', 'picked_up', 'forfeited', 'cancelled'] })
+      .notNull()
+      .default('registered'),
+    copyId: text('copy_id').references(() => driveCopies.id, { onDelete: 'set null' }),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    unique('drive_claims_drive_user_book_unique').on(table.driveId, table.userId, table.bookId),
+    index('drive_claims_drive_book_status_idx').on(table.driveId, table.bookId, table.status),
+    index('drive_claims_user_idx').on(table.userId, table.createdAt),
+  ],
+);
+
+export type DriveClaim = InferSelectModel<typeof driveClaims>;

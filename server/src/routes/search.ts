@@ -333,6 +333,7 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
     cc: number;
     mp: number | null;
     w: number;
+    dv: number | null;
   }
 
   // ---- facets: each facet ignores its own filter ----
@@ -404,7 +405,11 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
            (SELECT count(*) FROM listings l WHERE l.book_id = b.id AND l.status = 'active'${lp.sql}) AS lc,
            ${cc.sql} AS cc,
            (SELECT MIN(l.price) FROM listings l WHERE l.book_id = b.id AND l.status = 'active') AS mp,
-           (SELECT count(*) FROM subscriptions s WHERE s.book_id = b.id) AS w
+           (SELECT count(*) FROM subscriptions s WHERE s.book_id = b.id) AS w,
+           (SELECT count(*) FROM drive_copies k
+              JOIN book_drives d ON d.id = k.drive_id AND d.status = 'claiming'
+              JOIN organizations o ON o.id = d.organization_id AND o.is_active = 1 AND o.drives_enabled = 1
+             WHERE k.book_id = b.id AND k.status = 'in_stock') AS dv
          FROM books b
         WHERE b.region_code = ?
           AND (b.isbn13 IN (SELECT value FROM json_each(?)) OR b.id IN (SELECT value FROM json_each(?)))`,
@@ -515,6 +520,8 @@ async function searchBooks(c: Context<AppEnv>): Promise<Response> {
       cityActiveListings: book ? Number(book.cc) : 0,
       minPrice: book ? Number(book.mp ?? 0) : 0,
       waitlistCount: book ? Number(book.w) : 0,
+      // Copies student organizations are giving away (book drives taking registrations).
+      driveCopies: book ? Number(book.dv ?? 0) : 0,
       conditions: book ? (conditionsByBook.get(book.id) ?? []) : [],
       is_subscribed: subscriptionId !== null,
       subscription_id: subscriptionId,

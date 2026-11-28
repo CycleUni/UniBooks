@@ -26,6 +26,7 @@ import {
 import { resolveLanguage, schoolFilterId } from '../services/listings/places';
 import { serializeBook, serializeListings } from '../services/listings/serialize';
 import { findOrCreateBook } from '../services/catalog/books';
+import { drivesForBook } from '../services/drives/claims';
 import { UUID_RE } from '../lib/uuid';
 
 export const bookRoutes = new Hono<AppEnv>();
@@ -106,7 +107,7 @@ bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
   }
 
   const activeWhere = and(eq(listings.bookId, book.id), eq(listings.regionCode, region.code), eq(listings.status, 'active'));
-  const [[agg], [{ waiting }]] = await Promise.all([
+  const [[agg], [{ waiting }], drives] = await Promise.all([
     db
       .select({ n: sql<number>`count(*)`, lo: min(listings.price), hi: max(listings.price) })
       .from(listings)
@@ -115,6 +116,8 @@ bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
       .select({ waiting: sql<number>`count(*)` })
       .from(subscriptions)
       .where(eq(subscriptions.bookId, book.id)),
+    // Student organizations giving this book away: pinned above the listings.
+    drivesForBook(c.env, book.id, region.code, lang, c.get('userId') ?? undefined, new Date().toISOString()),
   ]);
   const count = Number(agg?.n ?? 0);
   const p = pagination(c.req.url);
@@ -130,6 +133,7 @@ bookRoutes.get('/', optionalAuthMiddleware(), async (c) => {
     listings: p.wrap(results, count),
     price_stats: { count, min: agg?.lo ?? null, max: agg?.hi ?? null },
     waiting_count: Number(waiting),
+    drives,
     is_subscribed: false,
     subscription_id: null,
   };

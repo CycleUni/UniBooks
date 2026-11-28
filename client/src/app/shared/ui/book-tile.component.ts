@@ -18,6 +18,8 @@ import { UiBookCover } from './book-cover.component';
  *   book-discovery contexts where the book has active listings.
  * - 'waitlist': waiting-count stamp (in the --flag hue) and no seller/price
  *   line, for "most wanted" contexts where a book may have zero listings.
+ * - 'plain': no stamp and no seller line, for a book a student organization
+ *   gives away (a book drive), where the copies left say it under the tile.
  *
  * The tile body is a real anchor whenever the caller supplies `link` — it
  * used to be a bare `<div (click)>`, which meant the single most important
@@ -92,8 +94,11 @@ import { UiBookCover } from './book-cover.component';
         <!-- Condition is the single fact a used-book buyer decides on, and it
              was only visible after opening the detail page — the tile read as
              a new-book catalogue entry. -->
-        <span class="tile-conditions" *ngIf="mode === 'sellers' && conditionKeys.length">
-          <span class="cond-chip" *ngFor="let c of conditionKeys">{{ ('cond.' + c) | t }}</span>
+        <span class="tile-conditions" *ngIf="(mode === 'sellers' && conditionKeys.length) || giveawayCount > 0">
+          <span class="cond-chip" *ngIf="giveawayCount > 0">{{ 'drive.giveaway' | t }}</span>
+          <ng-container *ngIf="mode === 'sellers'">
+            <span class="cond-chip" *ngFor="let c of conditionKeys">{{ ('cond.' + c) | t }}</span>
+          </ng-container>
         </span>
       </ng-template>
 
@@ -215,7 +220,8 @@ export class UiBookTile {
   @Input() feature: boolean = false;
   /** Passed to the cover; see UiBookCover.priority. */
   @Input() priority = false;
-  @Input() mode: 'sellers' | 'waitlist' = 'sellers';
+  /** 'plain': the cover, title and author only, for books given away rather than sold (book drives). */
+  @Input() mode: 'sellers' | 'waitlist' | 'plain' = 'sellers';
 
   /**
    * Router target for the tile. When set, the tile renders as a real anchor
@@ -238,6 +244,8 @@ export class UiBookTile {
 
   // mode: 'waitlist'
   @Input() waitingCount?: number;
+  /** Copies student organizations are giving away (book drives taking registrations). */
+  @Input() giveawayCount = 0;
 
   @Output() tileClick = new EventEmitter<void>();
 
